@@ -143,10 +143,10 @@ class Node(DpgNodeABC):
                                        50, (0, 0, 255),
                                        thickness=-1)
                 rec_frame = cv2.putText(rec_frame,
-                                        'Rec', (130, 120),
+                                        'CV_STUDIO', (130, 120),
                                         cv2.FONT_HERSHEY_SIMPLEX,
                                         4.0, (0, 0, 255),
-                                        thickness=10)
+                                        thickness=1)
 
 
             texture = convert_cv_to_dpg(

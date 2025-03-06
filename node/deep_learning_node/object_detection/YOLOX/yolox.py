@@ -265,7 +265,7 @@ class YOLOX(object):
         scores,
         class_ids,
         coco_classes,
-        thickness=3,
+        thickness=1,
     ):
         debug_image = copy.deepcopy(image)
 
