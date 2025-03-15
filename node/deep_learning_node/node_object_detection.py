@@ -21,6 +21,8 @@ from node.deep_learning_node.object_detection.coco_class_names_only_person impor
 
 from node.draw_node.draw_util.draw_util import draw_object_detection_info
 
+import traceback
+
 
 class Node(DpgNodeABC):
     _ver = '0.0.1'
@@ -42,6 +44,7 @@ class Node(DpgNodeABC):
         'YOLOX-Nano(416x416)': YOLOX,
         'FreeYOLO-Nano(640x640)': FreeYOLO,
         'FreeYOLO-Nano-CrowdHuman(640x640)': FreeYOLO,
+        'YOLO11Nano': YOLOX
     }
     _model_base_path = os.path.dirname(
         os.path.abspath(__file__)) + '/object_detection/'
@@ -52,12 +55,15 @@ class Node(DpgNodeABC):
         _model_base_path + 'YOLOX/model/yolox_tiny.onnx',
         'YOLOX-S(640x640)':
         _model_base_path + 'YOLOX/model/yolox_s.onnx',
+        'YOLO11Nano' : _model_base_path + 'YOLOX/model/yolo11_n.onnx',
         'FreeYOLO-Nano(640x640)':
         _model_base_path + 'FreeYOLO/model/yolo_free_nano_640x640.onnx',
         'FreeYOLO-Nano-CrowdHuman(640x640)':
         _model_base_path +
         'FreeYOLO/model/yolo_free_nano_crowdhuman_640x640.onnx',
+
     }
+
     _model_class_name_list = {
         'YOLOX-Nano(416x416)': coco_class_names,
         'YOLOX-Tiny(416x416)': coco_class_names,
@@ -65,6 +71,7 @@ class Node(DpgNodeABC):
         'Light-Weight Person Detector': coco_class_names_only_person,
         'FreeYOLO-Nano(640x640)': coco_class_names,
         'FreeYOLO-Nano-CrowdHuman(640x640)': coco_class_names_only_person,
+        'YOLO11Nano': coco_class_names
     }
 
     _model_instance = {}
@@ -193,125 +200,126 @@ class Node(DpgNodeABC):
 
         return tag_node_name
 
-    def update(
-        self,
-        node_id,
-        connection_list,
-        node_image_dict,
-        node_result_dict,
-    ):
-        tag_node_name = str(node_id) + ':' + self.node_tag
-        input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
-        input_value03_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
-        output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
-        output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
+    def update(self, node_id,connection_list,node_image_dict,node_result_dict,):
+        
+            try:
+                tag_node_name = str(node_id) + ':' + self.node_tag
+                input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
+                input_value03_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
+                output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
+                output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
-        tag_provider_select_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
+                tag_provider_select_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
 
-        small_window_w = self._opencv_setting_dict['process_width']
-        small_window_h = self._opencv_setting_dict['process_height']
-        use_pref_counter = self._opencv_setting_dict['use_pref_counter']
-        use_gpu = self._opencv_setting_dict['use_gpu']
+                small_window_w = self._opencv_setting_dict['process_width']
+                small_window_h = self._opencv_setting_dict['process_height']
+                use_pref_counter = self._opencv_setting_dict['use_pref_counter']
+                use_gpu = self._opencv_setting_dict['use_gpu']
 
-        # 接続情報確認
-        connection_info_src = ''
-        for connection_info in connection_list:
-            connection_type = connection_info[0].split(':')[2]
-            if connection_type == self.TYPE_FLOAT:
-                # 接続タグ取得
-                source_tag = connection_info[0] + 'Value'
-                destination_tag = connection_info[1] + 'Value'
-                # 値更新
-                input_value = round(float(dpg_get_value(source_tag)), 3)
-                input_value = max([self._min_val, input_value])
-                input_value = min([self._max_val, input_value])
-                dpg_set_value(destination_tag, input_value)
-            if connection_type == self.TYPE_IMAGE:
-                # 画像取得元のノード名(ID付き)を取得
-                connection_info_src = connection_info[0]
-                connection_info_src = connection_info_src.split(':')[:2]
-                connection_info_src = ':'.join(connection_info_src)
+                # 接続情報確認
+                connection_info_src = ''
+                for connection_info in connection_list:
+                    connection_type = connection_info[0].split(':')[2]
+                    if connection_type == self.TYPE_FLOAT:
+                        # 接続タグ取得
+                        source_tag = connection_info[0] + 'Value'
+                        destination_tag = connection_info[1] + 'Value'
+                        # 値更新
+                        input_value = round(float(dpg_get_value(source_tag)), 3)
+                        input_value = max([self._min_val, input_value])
+                        input_value = min([self._max_val, input_value])
+                        dpg_set_value(destination_tag, input_value)
+                    if connection_type == self.TYPE_IMAGE:
+                        # 画像取得元のノード名(ID付き)を取得
+                        connection_info_src = connection_info[0]
+                        connection_info_src = connection_info_src.split(':')[:2]
+                        connection_info_src = ':'.join(connection_info_src)
 
-        # 画像取得
-        frame = node_image_dict.get(connection_info_src, None)
+                # 画像取得
+                frame = node_image_dict.get(connection_info_src, None)
 
-        # スコア閾値
-        score_th = round(float(dpg_get_value(input_value03_tag)), 3)
+                # スコア閾値
+                score_th = round(float(dpg_get_value(input_value03_tag)), 3)
 
-        # CPU/GPU選択状態取得
-        provider = 'CPU'
-        if use_gpu:
-            provider = dpg_get_value(tag_provider_select_value_name)
+                # CPU/GPU選択状態取得
+                provider = 'CPU'
+                if use_gpu:
+                    provider = dpg_get_value(tag_provider_select_value_name)
 
-        # モデル情報取得
-        model_name = dpg_get_value(input_value02_tag)
-        model_path = self._model_path_setting[model_name]
-        model_class = self._model_class[model_name]
-        class_name_dict = self._model_class_name_list[model_name]
+                # モデル情報取得
+                model_name = dpg_get_value(input_value02_tag)
+                model_path = self._model_path_setting[model_name]
+                model_class = self._model_class[model_name]
+                class_name_dict = self._model_class_name_list[model_name]
 
-        model_name_with_provider = model_name + '_' + provider
+                model_name_with_provider = model_name + '_' + provider
 
-        # モデル取得
-        if frame is not None:
-            if model_name_with_provider not in self._model_instance:
-                if provider == 'CPU':
-                    providers = ['CPUExecutionProvider']
-                    self._model_instance[
-                        model_name_with_provider] = model_class(
-                            model_path,
-                            providers=providers,
-                        )
-                else:
-                    self._model_instance[
-                        model_name_with_provider] = model_class(model_path)
+                # モデル取得
+                if frame is not None:
+                    if model_name_with_provider not in self._model_instance:
+                        if provider == 'CPU':
+                            providers = ['CPUExecutionProvider']
+                            self._model_instance[
+                                model_name_with_provider] = model_class(
+                                    model_path,
+                                    providers=providers,
+                                )
+                        else:
+                            self._model_instance[
+                                model_name_with_provider] = model_class(model_path)
 
-        # 計測開始
-        if frame is not None and use_pref_counter:
-            start_time = time.perf_counter()
+                # 計測開始
+                if frame is not None and use_pref_counter:
+                    start_time = time.perf_counter()
 
-        result = {}
-        if frame is not None:
-            bboxes, scores, class_ids = self._model_instance[
-                model_name_with_provider](frame)
-            if len(bboxes) > 0:
-                result['bboxes'] = bboxes.tolist()
-                result['scores'] = scores.tolist()
-                result['class_ids'] = class_ids.tolist()
-                result['class_names'] = class_name_dict
-                result['score_th'] = score_th
-            else:
-                result['bboxes'] = []
-                result['scores'] = []
-                result['class_ids'] = []
-                result['class_names'] = class_name_dict
-                result['score_th'] = score_th
+                result = {}
+                if frame is not None:
+                    bboxes, scores, class_ids = self._model_instance[
+                        model_name_with_provider](frame)
+                    if len(bboxes) > 0:
+                        result['bboxes'] = bboxes.tolist()
+                        result['scores'] = scores.tolist()
+                        result['class_ids'] = class_ids.tolist()
+                        result['class_names'] = class_name_dict
+                        result['score_th'] = score_th
+                    else:
+                        result['bboxes'] = []
+                        result['scores'] = []
+                        result['class_ids'] = []
+                        result['class_names'] = class_name_dict
+                        result['score_th'] = score_th
 
-        # 計測終了
-        if frame is not None and use_pref_counter:
-            elapsed_time = time.perf_counter() - start_time
-            elapsed_time = int(elapsed_time * 1000)
-            dpg_set_value(output_value02_tag,
-                          str(elapsed_time).zfill(4) + 'ms')
+                # 計測終了
+                if frame is not None and use_pref_counter:
+                    elapsed_time = time.perf_counter() - start_time
+                    elapsed_time = int(elapsed_time * 1000)
+                    dpg_set_value(output_value02_tag,
+                                  str(elapsed_time).zfill(4) + 'ms')
 
-        # 描画
-        if frame is not None:
-            debug_frame = copy.deepcopy(frame)
-            debug_frame = draw_object_detection_info(
-                debug_frame,
-                score_th,
-                bboxes,
-                scores,
-                class_ids,
-                class_name_dict,
-            )
-            texture = convert_cv_to_dpg(
-                debug_frame,
-                small_window_w,
-                small_window_h,
-            )
-            dpg_set_value(output_value01_tag, texture)
+                # 描画
+                if frame is not None:
+                    debug_frame = copy.deepcopy(frame)
+                    debug_frame = draw_object_detection_info(
+                        debug_frame,
+                        score_th,
+                        bboxes,
+                        scores,
+                        class_ids,
+                        class_name_dict,
+                    )
+                    texture = convert_cv_to_dpg(
+                        debug_frame,
+                        small_window_w,
+                        small_window_h,
+                    )
+                    dpg_set_value(output_value01_tag, texture)
 
-        return frame, result
+                print(model_name_with_provider, result)
+                return frame, result
+            except Exception as e:
+                    error_trace = traceback.format_exc()  # Récupère la stack trace sous forme de string
+                    print("Stack Trace :\n", error_trace)
+
 
     def close(self, node_id):
         pass

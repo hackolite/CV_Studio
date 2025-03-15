@@ -21,7 +21,7 @@ from node.draw_node.draw_util.draw_util import draw_multi_object_tracking_info
 class Node(DpgNodeABC):
     _ver = '0.0.1'
 
-    node_label = 'MOT(Preview Release Version)'
+    node_label = 'MOT'
     node_tag = 'MultiObjectTracking'
 
     _opencv_setting_dict = None

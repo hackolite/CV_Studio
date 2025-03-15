@@ -7,13 +7,14 @@ import numpy as np
 import onnxruntime
 
 
+
 class FreeYOLO(object):
     def __init__(
         self,
         model_path,
         num_classes=80,
-        class_score_th=0.05,
-        nms_th=0.5,
+        class_score_th=0.1,
+        nms_th=0.2,
         providers=[
             # ('TensorrtExecutionProvider', {
             #     'trt_engine_cache_enable': True,

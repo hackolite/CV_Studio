@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import os
+os.environ["ORT_CUDA_USE_CUDNN"] = "0"  # Désactive cuDNN et utilise le fallback CUDA
 import copy
-
 import cv2
 import numpy as np
 import onnxruntime
@@ -26,14 +27,12 @@ class YOLOX(object):
         ],
     ):
 
-        # 閾値
         self.class_score_th = class_score_th
         self.nms_th = nms_th
         self.nms_score_th = nms_score_th
 
         self.with_p6 = with_p6
 
-        # モデル読み込み
         self.onnx_session = onnxruntime.InferenceSession(
             model_path,
             providers=providers,
@@ -45,11 +44,13 @@ class YOLOX(object):
 
         # 各種設定
         self.input_shape = self.input_detail.shape[2:]
+        print(self.input_shape)
+        self.input_shape = 416,416
 
     def __call__(self, image):
         temp_image = copy.deepcopy(image)
         image_height, image_width = image.shape[0], image.shape[1]
-
+        print(self.input_shape)
         # 前処理
         image, ratio = self._preprocess(temp_image, self.input_shape)
 
@@ -58,7 +59,6 @@ class YOLOX(object):
             None,
             {self.input_name: image[None, :, :, :]},
         )
-
         # 後処理
         bboxes, scores, class_ids = self._postprocess(
             results[0],
@@ -70,10 +70,10 @@ class YOLOX(object):
             image_height,
             p6=self.with_p6,
         )
-
         return bboxes, scores, class_ids
 
     def _preprocess(self, image, input_size, swap=(2, 0, 1)):
+
         if len(image.shape) == 3:
             padded_image = np.ones(
                 (input_size[0], input_size[1], 3), dtype=np.uint8) * 114
@@ -316,7 +316,7 @@ if __name__ == '__main__':
     cap = cv2.VideoCapture(0)
 
     # Load model
-    model_path = 'model/yolox_nano.onnx'
+    model_path = './model/yolox_nano.onnx'
     model = YOLOX(model_path)
 
     # Load COCO Classes List

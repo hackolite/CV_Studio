@@ -39,7 +39,7 @@ def get_args():
 
 
 def async_main(node_editor):
-    # 各ノードの処理結果保持用Dict
+
     node_image_dict = {}
     node_result_dict = {}
 
@@ -54,13 +54,13 @@ def update_node_info(
     node_result_dict,
     mode_async=True,
 ):
-    # ノードリスト取得
+
     node_list = node_editor.get_node_list()
 
-    # ノード接続情報取得
+
     sorted_node_connection_dict = node_editor.get_sorted_node_connection()
 
-    # 各ノードの情報をアップデート
+
     for node_id_name in node_list:
         if node_id_name not in node_image_dict:
             node_image_dict[node_id_name] = None
@@ -68,10 +68,10 @@ def update_node_info(
         node_id, node_name = node_id_name.split(':')
         connection_list = sorted_node_connection_dict.get(node_id_name, [])
 
-        # ノード名からインスタンスを取得
+
         node_instance = node_editor.get_node_instance(node_name)
 
-        # 指定ノードの情報を更新
+
         if mode_async:
             try:
                 image, result = node_instance.update(
@@ -101,7 +101,7 @@ def main():
     unuse_async_draw = args.unuse_async_draw
     use_debug_print = args.use_debug_print
 
-    # 動作設定
+
     print('**** Load Config ********')
     opencv_setting_dict = None
     with open(setting) as fp:
@@ -109,7 +109,7 @@ def main():
     webcam_width = opencv_setting_dict['webcam_width']
     webcam_height = opencv_setting_dict['webcam_height']
 
-    # 接続カメラチェック
+
     print('**** Check Camera Connection ********')
     device_no_list = check_camera_connection()
     camera_capture_list = []
@@ -119,15 +119,15 @@ def main():
         video_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, webcam_height)
         camera_capture_list.append(video_capture)
 
-    # カメラ設定保持
+
     opencv_setting_dict['device_no_list'] = device_no_list
     opencv_setting_dict['camera_capture_list'] = camera_capture_list
 
-    # DearPyGui準備(コンテキスト生成、セットアップ、ビューポート生成)
+
     editor_width = opencv_setting_dict['editor_width']
     editor_height = opencv_setting_dict['editor_height']
 
-    # Serial接続デバイスチェック
+
     serial_device_no_list = []
     serial_connection_list = []
     use_serial = opencv_setting_dict['use_serial']
@@ -143,7 +143,7 @@ def main():
             ser = serial.Serial(serial_device_no,115200)
             serial_connection_list.append(ser)
         
-    # Serial接続デバイス設定保持
+
     opencv_setting_dict['serial_device_no_list'] = serial_device_no_list
     opencv_setting_dict['serial_connection_list'] = serial_connection_list
 
@@ -151,7 +151,7 @@ def main():
     dpg.create_context()
     dpg.setup_dearpygui()
     dpg.create_viewport(
-        title="Image Processing Node Editor",
+        title="CV_STUDIO",
         width=editor_width,
         height=editor_height,
     )
@@ -182,7 +182,7 @@ def main():
         'Fusion': 'draw_node',
 
     })
-    # print
+
     node_editor = DpgNodeEditor(
         width=editor_width - 15,
         height=editor_height - 40,
@@ -195,14 +195,14 @@ def main():
 
     dpg.show_viewport()
 
-    # メインループ
+
     print('**** Start Main Event Loop ********')
     if not unuse_async_draw:
         event_loop = asyncio.get_event_loop()
         event_loop.run_in_executor(None, async_main, node_editor)
         dpg.start_dearpygui()
     else:
-        # 各ノードの処理結果保持用Dict
+
         node_image_dict = {}
         node_result_dict = {}
         while dpg.is_dearpygui_running():
@@ -214,24 +214,24 @@ def main():
             )
             dpg.render_dearpygui_frame()
 
-    # 終了処理
+
     print('**** Terminate process ********')
-    # 各ノードの終了処理
+
     print('**** Close All Node ********')
     node_list = node_editor.get_node_list()
     for node_id_name in node_list:
         node_id, node_name = node_id_name.split(':')
         node_instance = node_editor.get_node_instance(node_name)
         node_instance.close(node_id)
-    # OpenCV関連終了処理
+
     print('**** Release All VideoCapture ********')
     for camera_capture in camera_capture_list:
         camera_capture.release()
-    # イベントループの停止
+
     print('**** Stop Event Loop ********')
     node_editor.set_terminate_flag()
     event_loop.stop()
-    # DearPyGuiコンテキスト破棄
+
     print('**** Destroy DearPyGui Context ********')
     dpg.destroy_context()
 
