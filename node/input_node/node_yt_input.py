@@ -13,7 +13,9 @@ from node.node_abc import DpgNodeABC
 
 
 # 📌 Identifiant du live YouTube (à remplacer)
-VIDEO_ID = "loHbMM9JfCs"
+#VIDEO_ID = "VR-x3HdhKLQ"
+#VIDEO_ID = "loHbMM9JfCs"
+VIDEO_ID = "elhJf3krR94"
 #https://www.youtube.com/watch?v=loHbMM9JfCs
 # ========================== #
 #    FONCTION UTILITAIRE     #

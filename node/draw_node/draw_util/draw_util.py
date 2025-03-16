@@ -181,7 +181,7 @@ def draw_object_detection_info(
     thickness=3,
 ):
     debug_image = copy.deepcopy(image)
-
+    print("external :", debug_image.shape)
     for bbox, score, class_id in zip(bboxes, scores, class_ids):
         x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
 
