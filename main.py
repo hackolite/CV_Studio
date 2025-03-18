@@ -8,7 +8,7 @@ import argparse
 from collections import OrderedDict
 import os
 
-import cv2
+import cv2  
 import dearpygui.dearpygui as dpg
 
 try:
