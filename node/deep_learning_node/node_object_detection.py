@@ -31,7 +31,6 @@ class Node(DpgNodeABC):
 
     _opencv_setting_dict = None
 
-
     _model_class = {
         'YOLOX-Nano(416x416)': YOLOX,
         'YOLOX-Tiny(416x416)': YOLOX,
@@ -94,10 +93,12 @@ class Node(DpgNodeABC):
         tag_node_input02_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         tag_node_input03_name = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03'
         tag_node_input03_value_name = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
-        tag_node_output01_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01'
-        tag_node_output01_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
-        tag_node_output02_name = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02'
-        tag_node_output02_value_name = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
+        
+
+        self.tag_node_output_image_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01'
+        self.tag_node_output_image = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
+        self.tag_node_output_result_name = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02'
+        self.tag_node_output_result = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
         tag_provider_select_name = tag_node_name + ':' + self.TYPE_TEXT + ':Provider'
         tag_provider_select_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
@@ -123,7 +124,7 @@ class Node(DpgNodeABC):
                 small_window_w,
                 small_window_h,
                 black_texture,
-                tag=tag_node_output01_value_name,
+                tag=self.tag_node_output_image,
                 format=dpg.mvFormat_Float_rgb,
             )
 
@@ -145,10 +146,10 @@ class Node(DpgNodeABC):
                 )
 
             with dpg.node_attribute(
-                    tag=tag_node_output01_name,
+                    tag=self.tag_node_output_image_name,
                     attribute_type=dpg.mvNode_Attr_Output,
             ):
-                dpg.add_image(tag_node_output01_value_name)
+                dpg.add_image(self.tag_node_output_image)
 
             with dpg.node_attribute(
                     tag=tag_node_input02_name,
@@ -189,14 +190,13 @@ class Node(DpgNodeABC):
 
             if use_pref_counter:
                 with dpg.node_attribute(
-                        tag=tag_node_output02_name,
+                        tag=self.tag_node_output_result_name,
                         attribute_type=dpg.mvNode_Attr_Output,
                 ):
                     dpg.add_text(
-                        tag=tag_node_output02_value_name,
+                        tag=self.tag_node_output_result,
                         default_value='elapsed time(ms)',
                     )
-
         return tag_node_name
 
     def update(self, node_id,connection_list,node_image_dict,node_result_dict,):
@@ -205,8 +205,9 @@ class Node(DpgNodeABC):
                 tag_node_name = str(node_id) + ':' + self.node_tag
                 input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
                 input_value03_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
-                output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
-                output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
+                
+                #output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
+                #output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
                 tag_provider_select_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
 
@@ -247,6 +248,7 @@ class Node(DpgNodeABC):
 
 
                 model_name = dpg_get_value(input_value02_tag)
+                print(model_name)
                 model_path = self._model_path_setting[model_name]
                 model_class = self._model_class[model_name]
                 class_name_dict = self._model_class_name_list[model_name]
@@ -293,7 +295,7 @@ class Node(DpgNodeABC):
                 if frame is not None and use_pref_counter:
                     elapsed_time = time.perf_counter() - start_time
                     elapsed_time = int(elapsed_time * 1000)
-                    dpg_set_value(output_value02_tag,
+                    dpg_set_value(self.tag_node_output_result,
                                   str(elapsed_time).zfill(4) + 'ms')
 
 
@@ -312,7 +314,7 @@ class Node(DpgNodeABC):
                         small_window_w,
                         small_window_h,
                     )
-                    dpg_set_value(output_value01_tag, texture)
+                    dpg_set_value(self.tag_node_output_image, texture)
 
                 try:
                     print("frame :", frame.shape)

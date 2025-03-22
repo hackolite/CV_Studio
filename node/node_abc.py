@@ -12,6 +12,7 @@ class DpgNodeABC(metaclass=ABCMeta):
     TYPE_IMAGE = 'Image'
     TYPE_TIME_MS = 'TimeMS'
     TYPE_TEXT = 'Text'
+    TYPE_SOUND = 'Sound'
 
     @abstractmethod
     def add_node(

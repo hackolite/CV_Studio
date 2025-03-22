@@ -98,7 +98,7 @@ class DpgNodeEditor(object):
         ):
 
             with dpg.menu_bar(label='MenuBar'):
-                # Export/Importメニュー
+                # Export/Import
                 with dpg.menu(label='File'):
                     dpg.add_menu_item(
                         tag='Menu_File_Export',
@@ -141,13 +141,13 @@ class DpgNodeEditor(object):
                             # __init__.pyのみ除外
                             if import_path.endswith('__init__'):
                                 continue
-                            # モジュールを動的インポート
+
                             module = import_module(import_path)
 
-                            # ノードインスタンス生成
+
                             node = module.Node()
 
-                            # メニューアイテム追加
+
                             print(node.node_tag)
                             dpg.add_menu_item(
                                 tag='Menu_' + node.node_tag,
