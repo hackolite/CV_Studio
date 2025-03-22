@@ -128,7 +128,7 @@ class DpgNodeEditor(object):
 
                         node_sources = glob(node_sources_path)
                         for node_source in node_sources:
-                            print(node_source)
+
                             import_path = os.path.splitext(
                                 os.path.normpath(node_source))[0]
                             if platform.system() == 'Windows':
@@ -138,7 +138,7 @@ class DpgNodeEditor(object):
 
                             import_path = import_path.split('.')
                             import_path = '.'.join(import_path[-3:])
-                            # __init__.pyのみ除外
+
                             if import_path.endswith('__init__'):
                                 continue
 
@@ -147,8 +147,6 @@ class DpgNodeEditor(object):
 
                             node = module.Node()
 
-
-                            print(node.node_tag)
                             dpg.add_menu_item(
                                 tag='Menu_' + node.node_tag,
                                 label=node.node_label,
@@ -157,8 +155,7 @@ class DpgNodeEditor(object):
                             )
 
 
-                            self._node_instance_list[node.node_tag] = node
-
+                            self._node_instance_list[node.node_tag] = {1: node}
 
             with dpg.node_editor(
                     tag=self._node_editor_tag,
@@ -216,13 +213,12 @@ class DpgNodeEditor(object):
         return self._terminate_flag
 
     def _callback_add_node(self, sender, data, user_data):
-        self._node_id += 1
-
-
-        node = self._node_instance_list[user_data]
-
- 
+        print("user_data :", user_data)
+        node_instance_list  = self._node_instance_list[user_data]
+        node_id = len(node_instance_list) - 1
+        self.node_id  = node_id
         last_pos = [0, 0]
+        
         if self._last_pos is not None:
             last_pos = [self._last_pos[0] + 30, self._last_pos[1] + 30]
         tag_name = node.add_node(
@@ -231,7 +227,7 @@ class DpgNodeEditor(object):
             pos=last_pos,
             opencv_setting_dict=self._opencv_setting_dict,
         )
-
+        print("tag :", tag_name)
         self._node_list.append(tag_name)
 
         if self._use_debug_print:

@@ -41,6 +41,7 @@ class Node(DpgNodeABC):
         'FreeYOLO-Nano-CrowdHuman(640x640)': FreeYOLO,
         'YOLO11Nano': YOLO
     }
+
     _model_base_path = os.path.dirname(
         os.path.abspath(__file__)) + '/object_detection/'
     _model_path_setting = {
@@ -86,25 +87,29 @@ class Node(DpgNodeABC):
         callback=None,
     ):
 
-        tag_node_name = str(node_id) + ':' + self.node_tag
-        tag_node_input01_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01'
-        tag_node_input01_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01Value'
-        tag_node_input02_name = tag_node_name + ':' + self.TYPE_TEXT + ':Input02'
-        tag_node_input02_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
-        tag_node_input03_name = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03'
-        tag_node_input03_value_name = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
+        self.tag_node_name = str(node_id) + ':' + self.node_tag
+        
+        self.tag_node_input_image_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Input01'
+        self.tag_node_input_image_value_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Input01Value'
+        
+        self.tag_node_input_text_name = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02'
+        self.tag_node_input_text_value_name = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         
 
-        self.tag_node_output_image_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01'
-        self.tag_node_output_image = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
-        self.tag_node_output_result_name = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02'
-        self.tag_node_output_result = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
+        self.tag_node_input_float_name = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03'
+        self.tag_node_input_float_value_name = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
+        
 
-        tag_provider_select_name = tag_node_name + ':' + self.TYPE_TEXT + ':Provider'
-        tag_provider_select_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
+        self.tag_node_output_image_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01'
+        self.tag_node_output_image = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
+        self.tag_node_output_result_name = self.tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02'
+        self.tag_node_output_result = self.tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
-
+        self.tag_provider_select_name = self.tag_node_name + ':' + self.TYPE_TEXT + ':Provider'
+        self.tag_provider_select_value_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
         self._opencv_setting_dict = opencv_setting_dict
+        
+
         small_window_w = self._opencv_setting_dict['process_width']
         small_window_h = self._opencv_setting_dict['process_height']
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
@@ -130,18 +135,18 @@ class Node(DpgNodeABC):
 
 
         with dpg.node(
-                tag=tag_node_name,
+                tag=self.tag_node_name,
                 parent=parent,
                 label=self.node_label,
                 pos=pos,
         ):
 
             with dpg.node_attribute(
-                    tag=tag_node_input01_name,
+                    tag=self.tag_node_input_image_name,
                     attribute_type=dpg.mvNode_Attr_Input,
             ):
                 dpg.add_text(
-                    tag=tag_node_input01_value_name,
+                    tag=self.tag_node_input_image_value_name,
                     default_value='Input BGR image',
                 )
 
@@ -152,34 +157,34 @@ class Node(DpgNodeABC):
                 dpg.add_image(self.tag_node_output_image)
 
             with dpg.node_attribute(
-                    tag=tag_node_input02_name,
+                    tag=self.tag_node_input_text_name,
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_combo(
                     list(self._model_class.keys()),
                     default_value=list(self._model_class.keys())[0],
                     width=small_window_w,
-                    tag=tag_node_input02_value_name,
+                    tag=self.tag_node_input_text_value_name,
                 )
             if use_gpu:
 
                 with dpg.node_attribute(
-                        tag=tag_provider_select_name,
+                        tag=self.tag_provider_select_name,
                         attribute_type=dpg.mvNode_Attr_Static,
                 ):
                     dpg.add_radio_button(
                         ("CPU", "GPU"),
-                        tag=tag_provider_select_value_name,
+                        tag=self.tag_provider_select_value_name,
                         default_value='CPU',
                         horizontal=True,
                     )
 
             with dpg.node_attribute(
-                    tag=tag_node_input03_name,
+                    tag=self.tag_node_input_float_name,
                     attribute_type=dpg.mvNode_Attr_Input,
             ):
                 dpg.add_slider_float(
-                    tag=tag_node_input03_value_name,
+                    tag=self.tag_node_input_float_value_name,
                     label="score",
                     width=small_window_w - 80,
                     default_value=0.3,
@@ -197,19 +202,13 @@ class Node(DpgNodeABC):
                         tag=self.tag_node_output_result,
                         default_value='elapsed time(ms)',
                     )
-        return tag_node_name
+        return self.tag_node_name
 
-    def update(self, node_id,connection_list,node_image_dict,node_result_dict,):
-        
+    def update(self, node_id, connection_list, node_image_dict, node_result_dict,):
             try:
-                tag_node_name = str(node_id) + ':' + self.node_tag
-                input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
-                input_value03_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
-                
-                #output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
-                #output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
+                self.tag_node_name = str(node_id) + ':' + self.node_tag
 
-                tag_provider_select_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
+                self.tag_provider_select_value_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
 
                 small_window_w = self._opencv_setting_dict['process_width']
                 small_window_h = self._opencv_setting_dict['process_height']
@@ -224,37 +223,36 @@ class Node(DpgNodeABC):
 
                         source_tag = connection_info[0] + 'Value'
                         destination_tag = connection_info[1] + 'Value'
-
+                        print("source :", source_tag, "destination :", destination_tag)
                         input_value = round(float(dpg_get_value(source_tag)), 3)
                         input_value = max([self._min_val, input_value])
                         input_value = min([self._max_val, input_value])
                         dpg_set_value(destination_tag, input_value)
                     if connection_type == self.TYPE_IMAGE:
-
                         connection_info_src = connection_info[0]
                         connection_info_src = connection_info_src.split(':')[:2]
                         connection_info_src = ':'.join(connection_info_src)
-
+                        print(connection_info_src)
 
                 frame = node_image_dict.get(connection_info_src, None)
 
 
-                score_th = round(float(dpg_get_value(input_value03_tag)), 3)
+                score_th = round(float(dpg_get_value(self.tag_node_input_float_value_name)), 3)
 
 
                 provider = 'CPU'
                 if use_gpu:
-                    provider = dpg_get_value(tag_provider_select_value_name)
+                    provider = dpg_get_value(self.tag_provider_select_value_name)
 
-
-                model_name = dpg_get_value(input_value02_tag)
+                print(self.tag_node_input_text_value_name)
+                model_name = dpg_get_value(self.tag_node_input_text_value_name)
                 print(model_name)
+
                 model_path = self._model_path_setting[model_name]
                 model_class = self._model_class[model_name]
                 class_name_dict = self._model_class_name_list[model_name]
 
                 model_name_with_provider = model_name + '_' + provider
-
 
                 if frame is not None:
                     if model_name_with_provider not in self._model_instance:
@@ -320,7 +318,6 @@ class Node(DpgNodeABC):
                     print("frame :", frame.shape)
                 except:
                     pass
-
                 return frame, result
             except Exception as e:
                     error_trace = traceback.format_exc()  # Récupère la stack trace sous forme de string
@@ -331,16 +328,16 @@ class Node(DpgNodeABC):
         pass
 
     def get_setting_dict(self, node_id):
-        tag_node_name = str(node_id) + ':' + self.node_tag
-        input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
-        input_value03_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
+        self.tag_node_name = str(node_id) + ':' + self.node_tag
+        input_value02_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
+        input_value03_tag = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
 
 
         model_name = dpg_get_value(input_value02_tag)
 
         score_th = round(float(dpg_get_value(input_value03_tag)), 3)
 
-        pos = dpg.get_item_pos(tag_node_name)
+        pos = dpg.get_item_pos(self.tag_node_name)
 
         setting_dict = {}
         setting_dict['ver'] = self._ver
@@ -351,12 +348,16 @@ class Node(DpgNodeABC):
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
-        tag_node_name = str(node_id) + ':' + self.node_tag
-        input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
-        input_value03_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
+        self.tag_node_name = str(node_id) + ':' + self.node_tag
+        input_value02_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
+        input_value03_tag = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
 
         model_name = setting_dict[input_value02_tag]
         score_th = setting_dict[input_value03_tag]
 
-        dpg_set_value(input_value02_tag, model_name)
-        dpg_set_value(input_value03_tag, score_th)
+        dpg_set_value(self.tag_node_input_text_value_name, model_name)
+        dpg_set_value(self.tag_node_input_float_value_name, score_th)
+
+
+
+

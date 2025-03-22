@@ -7,7 +7,7 @@ import asyncio
 import argparse
 from collections import OrderedDict
 import os
-
+import serial 
 import cv2  
 import dearpygui.dearpygui as dpg
 
@@ -43,7 +43,7 @@ def async_main(node_editor):
     node_image_dict = {}
     node_result_dict = {}
 
-    # メインループ
+
     while not node_editor.get_terminate_flag():
         update_node_info(node_editor, node_image_dict, node_result_dict)
 
@@ -56,8 +56,7 @@ def update_node_info(
 ):
 
     node_list = node_editor.get_node_list()
-
-
+    print(node_list)
     sorted_node_connection_dict = node_editor.get_sorted_node_connection()
 
 
@@ -132,7 +131,6 @@ def main():
     serial_connection_list = []
     use_serial = opencv_setting_dict['use_serial']
     if use_serial == True:
-        import serial
         try:
             from .node_editor.util import check_serial_connection
         except:

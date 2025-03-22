@@ -59,13 +59,13 @@ class Node(DpgNodeABC):
         tag_node_output02_name = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02'
         tag_node_output02_value_name = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
-        # OpenCV向け設定
+
         self._opencv_setting_dict = opencv_setting_dict
         small_window_w = self._opencv_setting_dict['process_width']
         small_window_h = self._opencv_setting_dict['process_height']
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
-        # 初期化用黒画像
+
         black_image = np.zeros((small_window_w, small_window_h, 3))
         black_texture = convert_cv_to_dpg(
             black_image,
@@ -73,7 +73,6 @@ class Node(DpgNodeABC):
             small_window_h,
         )
 
-        # テクスチャ登録
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(
                 small_window_w,
