@@ -8,14 +8,14 @@ import numpy as np
 import dearpygui.dearpygui as dpg
 
 
-from DLNode.object_detection.YOLOX.yolox import YOLOX
-from DLNode.object_detection.YOLO.yolo import YOLO
-from DLNode.object_detection.LightWeightPersonDetector.detector import LWPDetector
-from DLNode.object_detection.FreeYOLO.freeyolo import FreeYOLO
-from DLNode.object_detection.coco_class_names import coco_class_names
-from DLNode.object_detection.coco_class_names_only_person import coco_class_names_only_person
-from node.draw_node.draw_util.draw_util import draw_object_detection_info
+#from DLNode.object_detection.YOLOX.yolox import YOLOX
+#from DLNode.object_detection.YOLO.yolo import YOLO
+#from DLNode.object_detection.LightWeightPersonDetector.detector import LWPDetector
+#from DLNode.object_detection.FreeYOLO.freeyolo import FreeYOLO
+#from DLNode.object_detection.coco_class_names import coco_class_names
+#from DLNode.object_detection.coco_class_names_only_person import coco_class_names_only_person
 import traceback
+import uuid
 
 
 class DataType:
@@ -33,69 +33,19 @@ class PortType:
 
 
 
-
-_model_class = {
-        'YOLOX-Nano(416x416)': YOLOX,
-        'YOLOX-Tiny(416x416)': YOLOX,
-        'YOLOX-S(640x640)': YOLOX,
-        'Light-Weight Person Detector': LWPDetector,
-        'YOLOX-Nano(416x416)': YOLOX,
-        'FreeYOLO-Nano(640x640)': FreeYOLO,
-        'FreeYOLO-Nano-CrowdHuman(640x640)': FreeYOLO,
-        'YOLO11Nano': YOLO
-    }
-
-
-
-#_model_base_path = os.path.dirname(
-#        os.path.abspath(__file__)) + '/object_detection/'
-
-
-#_model_path_setting = {
-#        'YOLOX-Nano(416x416)':
-#        _model_base_path + 'YOLOX/model/yolox_nano.onnx',
-#        'YOLOX-Tiny(416x416)':
-#        _model_base_path + 'YOLOX/model/yolox_tiny.onnx',
-#        'YOLOX-S(640x640)':
-#        _model_base_path + 'YOLOX/model/yolox_s.onnx',
-#        'YOLO11Nano' : _model_base_path + 'YOLO/model/yolo11_n.onnx',
-#        'FreeYOLO-Nano(640x640)':
-#        _model_base_path + 'FreeYOLO/model/yolo_free_nano_640x640.onnx',
-#        'FreeYOLO-Nano-CrowdHuman(640x640)':
-#        _model_base_path +
-#        'FreeYOLO/model/yolo_free_nano_crowdhuman_640x640.onnx',
-#         'Light-Weight Person Detector': 
-#        _model_base_path +
-#        'LightWeightPersonDetector/model/model.onnx'
-
-#    }
-
-
-#_model_class_name_list = {
-#        'YOLOX-Nano(416x416)': coco_class_names,
-#        'YOLOX-Tiny(416x416)': coco_class_names,
-#        'YOLOX-S(640x640)': coco_class_names,
-#        'Light-Weight Person Detector': coco_class_names_only_person,
-#        'FreeYOLO-Nano(640x640)': coco_class_names,
-#        'FreeYOLO-Nano-CrowdHuman(640x640)': coco_class_names_only_person,
-#        'YOLO11Nano': coco_class_names
-#    }
-
-
-
 class Node:
     _ver = '0.0.1'
     node_label = 'BaseNode'
     node_tag = 'BaseNode'
 
-    def __init__(self, node_id, connection_dict, opencv_setting_dict=None):
+    def __init__(self, node_id=1, connection_dict=None, opencv_setting_dict=None):
         self.id = self.generate_id()
         self.node_label = 'BaseNode'
         self.node_tag = 'BaseNode'
         self.tag_node_name = f"{node_id}:{self.node_tag}"
 
         # Générer les tags dynamiquement en fonction du dictionnaire
-        self.tags = self.generate_tags(connection_dict)
+        #self.tags = self.generate_tags(connection_dict)
 
         # Paramètres OpenCV
         self._opencv_setting_dict = opencv_setting_dict if opencv_setting_dict else {}

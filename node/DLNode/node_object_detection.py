@@ -19,10 +19,58 @@ from node.draw_node.draw_util.draw_util import draw_object_detection_info
 import traceback
 
 
-class Node:
+
+
+
+_model_base_path = os.path.dirname(
+    os.path.abspath(__file__)) + '/object_detection/'
+
+
+# Combinaison de tous les dictionnaires en un seul dictionnaire _model_info
+_model_info = {
+    'YOLOX-Nano(416x416)': {
+        'model': YOLOX,
+        'model_path': _model_base_path + 'YOLOX/model/yolox_nano.onnx',
+        'class_names': coco_class_names
+    },
+    'YOLOX-Tiny(416x416)': {
+        'model': YOLOX,
+        'model_path': _model_base_path + 'YOLOX/model/yolox_tiny.onnx',
+        'class_names': coco_class_names
+    },
+    'YOLOX-S(640x640)': {
+        'model': YOLOX,
+        'model_path': _model_base_path + 'YOLOX/model/yolox_s.onnx',
+        'class_names': coco_class_names
+    },
+    'YOLO11Nano': {
+        'model': YOLO,
+        'model_path': _model_base_path + 'YOLO/model/yolo11_n.onnx',
+        'class_names': coco_class_names
+    },
+    'FreeYOLO-Nano(640x640)': {
+        'model': FreeYOLO,
+        'model_path': _model_base_path + 'FreeYOLO/model/yolo_free_nano_640x640.onnx',
+        'class_names': coco_class_names
+    },
+    'FreeYOLO-Nano-CrowdHuman(640x640)': {
+        'model': FreeYOLO,
+        'model_path': _model_base_path + 'FreeYOLO/model/yolo_free_nano_crowdhuman_640x640.onnx',
+        'class_names': coco_class_names_only_person
+    },
+    'Light-Weight Person Detector': {
+        'model': LWPDetector,
+        'model_path': _model_base_path + 'LightWeightPersonDetector/model/model.onnx',
+        'class_names': coco_class_names_only_person
+    }
+}
+
+
+
+class ObjectDetectionNode:
     _ver = '0.0.1'
 
-    node_label = 'Object Detection'
+    node_label = 'ObjectDetection'
     node_tag = 'ObjectDetection'
 
     _min_val = 0.0
@@ -30,47 +78,18 @@ class Node:
 
     _opencv_setting_dict = None
 
-    _model_class = {
-        'YOLOX-Nano(416x416)': YOLOX,
-        'YOLOX-Tiny(416x416)': YOLOX,
-        'YOLOX-S(640x640)': YOLOX,
-        'Light-Weight Person Detector': LWPDetector,
-        'YOLOX-Nano(416x416)': YOLOX,
-        'FreeYOLO-Nano(640x640)': FreeYOLO,
-        'FreeYOLO-Nano-CrowdHuman(640x640)': FreeYOLO,
-        'YOLO11Nano': YOLO
-    }
+
 
     _model_base_path = os.path.dirname(
         os.path.abspath(__file__)) + '/object_detection/'
-    _model_path_setting = {
-        'YOLOX-Nano(416x416)':
-        _model_base_path + 'YOLOX/model/yolox_nano.onnx',
-        'YOLOX-Tiny(416x416)':
-        _model_base_path + 'YOLOX/model/yolox_tiny.onnx',
-        'YOLOX-S(640x640)':
-        _model_base_path + 'YOLOX/model/yolox_s.onnx',
-        'YOLO11Nano' : _model_base_path + 'YOLO/model/yolo11_n.onnx',
-        'FreeYOLO-Nano(640x640)':
-        _model_base_path + 'FreeYOLO/model/yolo_free_nano_640x640.onnx',
-        'FreeYOLO-Nano-CrowdHuman(640x640)':
-        _model_base_path +
-        'FreeYOLO/model/yolo_free_nano_crowdhuman_640x640.onnx',
-         'Light-Weight Person Detector': 
-        _model_base_path +
-        'LightWeightPersonDetector/model/model.onnx'
 
-    }
 
-    _model_class_name_list = {
-        'YOLOX-Nano(416x416)': coco_class_names,
-        'YOLOX-Tiny(416x416)': coco_class_names,
-        'YOLOX-S(640x640)': coco_class_names,
-        'Light-Weight Person Detector': coco_class_names_only_person,
-        'FreeYOLO-Nano(640x640)': coco_class_names,
-        'FreeYOLO-Nano-CrowdHuman(640x640)': coco_class_names_only_person,
-        'YOLO11Nano': coco_class_names
-    }
+    # Chemin de base pour les modèles
+    _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/object_detection/'
+
+
+
+
 
     _model_instance = {}
 
