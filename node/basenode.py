@@ -7,13 +7,6 @@ import os
 import numpy as np
 import dearpygui.dearpygui as dpg
 
-
-#from DLNode.object_detection.YOLOX.yolox import YOLOX
-#from DLNode.object_detection.YOLO.yolo import YOLO
-#from DLNode.object_detection.LightWeightPersonDetector.detector import LWPDetector
-#from DLNode.object_detection.FreeYOLO.freeyolo import FreeYOLO
-#from DLNode.object_detection.coco_class_names import coco_class_names
-#from DLNode.object_detection.coco_class_names_only_person import coco_class_names_only_person
 import traceback
 import uuid
 
@@ -109,8 +102,6 @@ class Node:
         # Mise à jour des tags selon les settings
         for tag, value in setting_dict.items():
             dpg.set_value(tag, value)  # Exemple d'utilisation de dpg.set_value
-
-
 
 
 

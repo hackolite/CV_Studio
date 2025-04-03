@@ -11,12 +11,9 @@ import serial
 import cv2  
 import dearpygui.dearpygui as dpg
 
-try:
-    from .node_editor.util import check_camera_connection
-    from .node_editor.node_editor import DpgNodeEditor
-except ImportError:
-    from node_editor.util import check_camera_connection
-    from node_editor.node_editor import DpgNodeEditor
+
+from node_editor.util import check_camera_connection
+from node_editor.node_editor import DpgNodeEditor
 
 
 def get_args():
@@ -32,9 +29,7 @@ def get_args():
     )
     parser.add_argument("--unuse_async_draw", action="store_true")
     parser.add_argument("--use_debug_print", action="store_true")
-
     args = parser.parse_args()
-
     return args
 
 
@@ -165,19 +160,20 @@ def main():
             dpg.add_font_range_hint(dpg.mvFontRangeHint_Japanese)
     dpg.bind_font(default_font)
 
-
     print('**** Create NodeEditor ********')
     menu_dict = OrderedDict({
-        'Input': 'input_node',
-        'VisionProcess': 'process_node',
-        'VisionModel': 'deep_learning_node',
-        'Analysis': 'analysis_node',
-        'Trigger': 'trigger_node',
-        'Router' : 'router_node',
-        'Action' : 'action_node',
-        'Record' : 'other_node',
-        'Tracking': 'preview_release_node',
-        'Fusion': 'draw_node',
+        'Input': 'InputNode',
+        'VisionProcess': 'ProcessNode',
+        'VisionModel': 'DLNode',
+        'Stats': 'StatsNode ',
+        'Trigger': 'TriggerNode',
+        'Router' : 'RouterNode',
+        'Action' : 'ActionNode',
+        'Record' : 'VideoNode',
+        'Tracking': 'TrackerNode',
+        'Fusion': 'OverlayNode',
+        'Viz': 'VizNode',
+        'Timeseries': 'TimeseriesNode',
 
     })
 

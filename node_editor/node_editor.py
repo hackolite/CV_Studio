@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
 import os
 import copy
 import json
@@ -10,6 +11,10 @@ from collections import OrderedDict
 from importlib import import_module
 
 import dearpygui.dearpygui as dpg
+from  node.node_factory import NodeFactory
+
+
+#object_factory = NodeFactory.create()
 
 
 class DpgNodeEditor(object):
@@ -521,3 +526,5 @@ class DpgNodeEditor(object):
             print('    self._node_link_list       : ', self._node_link_list)
             print('    self._node_connection_dict : ',
                   self._node_connection_dict)
+
+

@@ -11,9 +11,9 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node_editor.util import convert_cv_to_dpg
 
-from node.deep_learning_node.low_light_image_enhancement.TBEFN.tbefn import TBEFN
-from node.deep_learning_node.low_light_image_enhancement.SCI.sci import SCI
-from node.deep_learning_node.low_light_image_enhancement.AGLLNet.agllnet import AGLLNet
+from node.DLNode.low_light_image_enhancement.TBEFN.tbefn import TBEFN
+from node.DLNode.low_light_image_enhancement.SCI.sci import SCI
+from node.DLNode.low_light_image_enhancement.AGLLNet.agllnet import AGLLNet
 
 
 class Node(DpgNodeABC):
