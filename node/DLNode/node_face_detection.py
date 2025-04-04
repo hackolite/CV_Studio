@@ -12,12 +12,12 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node_editor.util import convert_cv_to_dpg
 
-from node.deep_learning_node.face_detection.YuNet.yunet import YuNet
-from node.deep_learning_node.face_detection.mediapipe_facedetection.mediapipe_facedetection import (
+from node.DLNode.face_detection.YuNet.yunet import YuNet
+from node.DLNode.face_detection.mediapipe_facedetection.mediapipe_facedetection import (
     MediaPipeFaceDetectionModel0,
     MediaPipeFaceDetectionModel1,
 )
-from node.deep_learning_node.face_detection.mediapipe_facemesh.mediapipe_facemesh import (
+from node.DLNode.face_detection.mediapipe_facemesh.mediapipe_facemesh import (
     MediaPipeFaceMeshNonRefine,
     MediaPipeFaceMeshRefine,
 )

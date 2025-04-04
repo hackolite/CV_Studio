@@ -11,10 +11,10 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node_editor.util import convert_cv_to_dpg
 
-from node.deep_learning_node.semantic_segmentation.deeplab_v3.deeplab_v3 import DeepLabV3
-from node.deep_learning_node.semantic_segmentation.road_segmentation_adas_0001.road_segmentation import RoadSegmentation
-from node.deep_learning_node.semantic_segmentation.skin_clothes_hair_segmentation.skin_clothes_hair_segmentation import SkinClothesHairSegmentation
-from node.deep_learning_node.semantic_segmentation.mediapipe_selfie_segmentation.mediapipe_selfie_segmentation import (
+from node.DLNode.semantic_segmentation.deeplab_v3.deeplab_v3 import DeepLabV3
+from node.DLNode.semantic_segmentation.road_segmentation_adas_0001.road_segmentation import RoadSegmentation
+from node.DLNode.semantic_segmentation.skin_clothes_hair_segmentation.skin_clothes_hair_segmentation import SkinClothesHairSegmentation
+from node.DLNode.semantic_segmentation.mediapipe_selfie_segmentation.mediapipe_selfie_segmentation import (
     MediaPipeSelfieSegmentationNormal,
     MediaPipeSelfieSegmentationLandScape,
 )

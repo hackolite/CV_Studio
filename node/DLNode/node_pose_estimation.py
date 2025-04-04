@@ -12,16 +12,16 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node_editor.util import convert_cv_to_dpg
 
-from node.deep_learning_node.pose_estimation.movenet.movenet import (
+from node.DLNode.pose_estimation.movenet.movenet import (
     MoveNetSinglePoseLightning,
     MoveNetSinglePoseThunder,
     MoveNetMultiPoseLightning,
 )
-from node.deep_learning_node.pose_estimation.mediapipe_hands.mediapipe_hands import (
+from node.DLNode.pose_estimation.mediapipe_hands.mediapipe_hands import (
     MediaPipeHandsComplexity0,
     MediaPipeHandsComplexity1,
 )
-from node.deep_learning_node.pose_estimation.mediapipe_pose.mediapipe_pose import (
+from node.DLNode.pose_estimation.mediapipe_pose.mediapipe_pose import (
     MediaPipePoseComplexity0,
     MediaPipePoseComplexity1,
     MediaPipePoseComplexity2,

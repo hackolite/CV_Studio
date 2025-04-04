@@ -9,12 +9,12 @@ import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
 from node_editor.util import convert_cv_to_dpg
-from node.deep_learning_node.object_detection.YOLOX.yolox import YOLOX
-from node.deep_learning_node.object_detection.YOLO.yolo import YOLO
-from node.deep_learning_node.object_detection.LightWeightPersonDetector.detector import LWPDetector
-from node.deep_learning_node.object_detection.FreeYOLO.freeyolo import FreeYOLO
-from node.deep_learning_node.object_detection.coco_class_names import coco_class_names
-from node.deep_learning_node.object_detection.coco_class_names_only_person import coco_class_names_only_person
+from node.DLNode.object_detection.YOLOX.yolox import YOLOX
+from node.DLNode.object_detection.YOLO.yolo import YOLO
+from node.DLNode.object_detection.LightWeightPersonDetector.detector import LWPDetector
+from node.DLNode.object_detection.FreeYOLO.freeyolo import FreeYOLO
+from node.DLNode.object_detection.coco_class_names import coco_class_names
+from node.DLNode.object_detection.coco_class_names_only_person import coco_class_names_only_person
 from node.draw_node.draw_util.draw_util import draw_object_detection_info
 import traceback
 

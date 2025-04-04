@@ -24,7 +24,6 @@ class Node(DpgNodeABC):
 
     _opencv_setting_dict = None
 
-    # モデル設定
     _model_class = {
         'TBEFN(320x180)': TBEFN,
         'TBEFN(640x360)': TBEFN,
