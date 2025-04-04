@@ -22,7 +22,7 @@ from node.DLNode.face_detection.mediapipe_facemesh.mediapipe_facemesh import (
     MediaPipeFaceMeshRefine,
 )
 
-from node.draw_node.draw_util.draw_util import draw_face_detection_info
+#from node.draw_node.draw_util.draw_util import draw_face_detection_info
 
 
 class Node(DpgNodeABC):

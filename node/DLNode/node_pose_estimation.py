@@ -27,7 +27,7 @@ from node.DLNode.pose_estimation.mediapipe_pose.mediapipe_pose import (
     MediaPipePoseComplexity2,
 )
 
-from node.draw_node.draw_util.draw_util import draw_pose_estimation_info
+#from node.draw_node.draw_util.draw_util import draw_pose_estimation_info
 
 
 class Node(DpgNodeABC):

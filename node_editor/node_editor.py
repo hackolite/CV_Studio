@@ -149,7 +149,7 @@ class DpgNodeEditor(object):
 
                             module = import_module(import_path)
 
-
+                            print(import_path)
                             node = module.Node()
 
                             dpg.add_menu_item(

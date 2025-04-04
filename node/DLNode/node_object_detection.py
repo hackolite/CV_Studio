@@ -15,7 +15,7 @@ from node.DLNode.object_detection.LightWeightPersonDetector.detector import LWPD
 from node.DLNode.object_detection.FreeYOLO.freeyolo import FreeYOLO
 from node.DLNode.object_detection.coco_class_names import coco_class_names
 from node.DLNode.object_detection.coco_class_names_only_person import coco_class_names_only_person
-from node.draw_node.draw_util.draw_util import draw_object_detection_info
+#from node.draw_node.draw_util.draw_util import draw_object_detection_info
 import traceback
 
 
@@ -67,7 +67,7 @@ _model_info = {
 
 
 
-class ObjectDetectionNode:
+class Node:
     _ver = '0.0.1'
 
     node_label = 'ObjectDetection'

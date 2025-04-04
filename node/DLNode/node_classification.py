@@ -12,15 +12,15 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node_editor.util import convert_cv_to_dpg
 
-from node.deep_learning_node.classification.MobileNetV3.mobilenet_v3 import MobileNetV3
-from node.deep_learning_node.classification.EfficientNetB0.efficientnet import EfficientNetB0
+from node.DLNode.classification.MobileNetV3.mobilenet_v3 import MobileNetV3
+from node.DLNode.classification.EfficientNetB0.efficientnet import EfficientNetB0
 
-from node.deep_learning_node.classification.imagenet_class_names import imagenet_class_names
+from node.DLNode.classification.imagenet_class_names import imagenet_class_names
 
-from node.draw_node.draw_util.draw_util import (
-    draw_classification_info,
-    draw_classification_with_od_info,
-)
+#from node.draw_node.draw_util.draw_util import (
+#    draw_classification_info,
+#    draw_classification_with_od_info,
+#)
 
 
 class Node(DpgNodeABC):

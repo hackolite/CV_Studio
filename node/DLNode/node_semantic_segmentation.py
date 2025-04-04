@@ -19,7 +19,7 @@ from node.DLNode.semantic_segmentation.mediapipe_selfie_segmentation.mediapipe_s
     MediaPipeSelfieSegmentationLandScape,
 )
 
-from node.draw_node.draw_util.draw_util import draw_semantic_segmentation_info
+#from node.draw_node.draw_util.draw_util import draw_semantic_segmentation_info
 
 
 class Node(DpgNodeABC):
