@@ -51,7 +51,7 @@ def update_node_info(
 ):
 
     node_list = node_editor.get_node_list()
-    print(node_list)
+    print("node_list", node_list)
     sorted_node_connection_dict = node_editor.get_sorted_node_connection()
 
 
@@ -192,11 +192,13 @@ def main():
 
     print('**** Start Main Event Loop ********')
     if not unuse_async_draw:
+        print("asyncdraw is enabled")
         event_loop = asyncio.get_event_loop()
         event_loop.run_in_executor(None, async_main, node_editor)
         dpg.start_dearpygui()
+    
     else:
-
+        print("asyncdraw is disabled")
         node_image_dict = {}
         node_result_dict = {}
         while dpg.is_dearpygui_running():

@@ -82,6 +82,19 @@ class Node:
         pass
 
 
+    def convert_cv_to_dpg(self, image, width, height):
+        resize_image = cv2.resize(image, (width, height))
+
+        data = np.flip(resize_image, 2)
+        data = data.ravel()
+        data = np.asfarray(data, dtype='f')
+
+        texture_data = np.true_divide(data, 255.0)
+
+        return texture_data
+
+
+
     def get_setting_dict(self, node_id):
         self.tag_node_name = f"{node_id}:{self.node_tag}"
         # Assurez-vous que dpg.get_value est bien défini

@@ -11,11 +11,11 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node_editor.util import convert_cv_to_dpg
 
-from node.preview_release_node.mot.motpy.motpy import Motpy
+from node.TrackerNode.mot.motpy.motpy import Motpy
 # from node.preview_release_node.mot.bytetrack.mc_bytetrack import MultiClassByteTrack
 # from node.preview_release_node.mot.norfair.mc_norfair import MultiClassNorfair
 
-from node.draw_node.draw_util.draw_util import draw_multi_object_tracking_info
+#from node.draw_node.draw_util.draw_util import draw_multi_object_tracking_info
 
 
 class Node(DpgNodeABC):

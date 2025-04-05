@@ -11,9 +11,9 @@ from filterpy.kalman import KalmanFilter
 # from motpy.core import Box, Detection, Track, Vector, setup_logger
 # from motpy.metrics import angular_similarity, calculate_iou
 # from motpy.model import Model, ModelPreset
-from node.preview_release_node.mot.motpy.tracker.core import Box, Detection, Track, Vector, setup_logger
-from node.preview_release_node.mot.motpy.tracker.metrics import angular_similarity, calculate_iou
-from node.preview_release_node.mot.motpy.tracker.model import Model, ModelPreset
+from node.TrackerNode.mot.motpy.tracker.core import Box, Detection, Track, Vector, setup_logger
+from node.TrackerNode.mot.motpy.tracker.metrics import angular_similarity, calculate_iou
+from node.TrackerNode.mot.motpy.tracker.model import Model, ModelPreset
 
 logger = setup_logger(__name__)
 

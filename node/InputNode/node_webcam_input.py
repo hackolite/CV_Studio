@@ -8,10 +8,11 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
-from node_editor.util import convert_cv_to_dpg
+from node.basenode import Node
+#from node_editor.util import self.convert_cv_to_dpg
 
 
-class Node(DpgNodeABC):
+class Node(Node):
     _ver = '0.0.1'
 
     node_label = 'WebCam'
@@ -47,7 +48,7 @@ class Node(DpgNodeABC):
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
         black_image = np.zeros((small_window_w, small_window_h, 3))
-        black_texture = convert_cv_to_dpg(
+        black_texture = self.convert_cv_to_dpg(
             black_image,
             small_window_w,
             small_window_h,
@@ -121,7 +122,7 @@ class Node(DpgNodeABC):
 
         camera_no = dpg_get_value(input_value01_tag)
 
-        # VideoCapture()
+
         camera_capture = None
         if camera_no != '':
             camera_no = int(camera_no)
@@ -148,7 +149,7 @@ class Node(DpgNodeABC):
 
 
         if frame is not None:
-            texture = convert_cv_to_dpg(
+            texture = self.convert_cv_to_dpg(
                 frame,
                 small_window_w,
                 small_window_h,

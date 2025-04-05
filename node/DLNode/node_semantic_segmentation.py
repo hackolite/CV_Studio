@@ -9,7 +9,7 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
-from node_editor.util import convert_cv_to_dpg
+#from node_editor.util import convert_cv_to_dpg
 
 from node.DLNode.semantic_segmentation.deeplab_v3.deeplab_v3 import DeepLabV3
 from node.DLNode.semantic_segmentation.road_segmentation_adas_0001.road_segmentation import RoadSegmentation
@@ -19,10 +19,12 @@ from node.DLNode.semantic_segmentation.mediapipe_selfie_segmentation.mediapipe_s
     MediaPipeSelfieSegmentationLandScape,
 )
 
+
+from node.basenode import Node
 #from node.draw_node.draw_util.draw_util import draw_semantic_segmentation_info
 
 
-class Node(DpgNodeABC):
+class Node(Node):
     _ver = '0.0.1'
 
     node_label = 'Semantic Segmentation'

@@ -9,14 +9,14 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
-from node_editor.util import convert_cv_to_dpg
-
+#from node_editor.util import convert_cv_to_dpg
+from node.basenode import Node
 from node.DLNode.low_light_image_enhancement.TBEFN.tbefn import TBEFN
 from node.DLNode.low_light_image_enhancement.SCI.sci import SCI
 from node.DLNode.low_light_image_enhancement.AGLLNet.agllnet import AGLLNet
 
 
-class Node(DpgNodeABC):
+class Node(Node):
     _ver = '0.0.1'
 
     node_label = 'Low-Light Image Enhancement'

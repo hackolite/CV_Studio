@@ -10,7 +10,7 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
-from node_editor.util import convert_cv_to_dpg
+#from node_editor.util import convert_cv_to_dpg
 
 from node.DLNode.face_detection.YuNet.yunet import YuNet
 from node.DLNode.face_detection.mediapipe_facedetection.mediapipe_facedetection import (
@@ -23,9 +23,9 @@ from node.DLNode.face_detection.mediapipe_facemesh.mediapipe_facemesh import (
 )
 
 #from node.draw_node.draw_util.draw_util import draw_face_detection_info
+from node.basenode import Node
 
-
-class Node(DpgNodeABC):
+class Node(Node):
     _ver = '0.0.1'
 
     node_label = 'Face Detection'
@@ -92,7 +92,7 @@ class Node(DpgNodeABC):
 
 
         black_image = np.zeros((small_window_w, small_window_h, 3))
-        black_texture = convert_cv_to_dpg(
+        black_texture = self.convert_cv_to_dpg(
             black_image,
             small_window_w,
             small_window_h,

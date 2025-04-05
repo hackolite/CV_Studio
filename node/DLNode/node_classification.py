@@ -10,7 +10,7 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
-from node_editor.util import convert_cv_to_dpg
+#from node_editor.util import convert_cv_to_dpg
 
 from node.DLNode.classification.MobileNetV3.mobilenet_v3 import MobileNetV3
 from node.DLNode.classification.EfficientNetB0.efficientnet import EfficientNetB0
@@ -22,8 +22,10 @@ from node.DLNode.classification.imagenet_class_names import imagenet_class_names
 #    draw_classification_with_od_info,
 #)
 
+from node.basenode import Node
 
-class Node(DpgNodeABC):
+
+class Node(Node):
     _ver = '0.0.1'
 
     node_label = 'Classification'

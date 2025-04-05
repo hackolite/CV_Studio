@@ -8,8 +8,9 @@ import yt_dlp
 import dearpygui.dearpygui as dpg
 
 # Importation des utilitaires
-from node_editor.util import dpg_get_value, dpg_set_value, convert_cv_to_dpg
+#from node_editor.util import dpg_get_value, dpg_set_value, convert_cv_to_dpg
 from node.node_abc import DpgNodeABC
+from node.basenode import Node
 
 
 # 📌 Identifiant du live YouTube (à remplacer)
@@ -42,7 +43,7 @@ def get_light_live_stream_url(video_id):
 #       CLASSE NODE          #
 # ========================== #
 
-class Node(DpgNodeABC):
+class Node(Node):
     """Node DearPyGui pour afficher un flux YouTube Live."""
     
     _ver = '0.0.1'

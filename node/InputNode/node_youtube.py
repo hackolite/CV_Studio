@@ -10,12 +10,13 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
-from node_editor.util import convert_cv_to_dpg
+from node.basenode import Node
+#from node_editor.util import convert_cv_to_dpg
 
 import threading
 from threading import Lock
 
-
+from node.basenode import Node
 class YoutubeCapture(object):
     _frame = None
     _ret = None
@@ -62,7 +63,7 @@ class YoutubeCapture(object):
         self._wait_interval = interval_time
 
 
-class Node(DpgNodeABC):
+class Node(Node):
     _ver = '0.0.1'
 
     node_label = 'YouTube'

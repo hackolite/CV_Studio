@@ -9,8 +9,8 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
-from node_editor.util import convert_cv_to_dpg
-
+#from node_editor.util import convert_cv_to_dpg
+from node.basenode import Node
 
 def image_process(image, min_x, max_x, min_y, max_y):
     if max_x < min_x:

@@ -5,16 +5,7 @@ import numpy as np
 import dearpygui.dearpygui as dpg
 
 
-def convert_cv_to_dpg(image, width, height):
-    resize_image = cv2.resize(image, (width, height))
 
-    data = np.flip(resize_image, 2)
-    data = data.ravel()
-    data = np.asfarray(data, dtype='f')
-
-    texture_data = np.true_divide(data, 255.0)
-
-    return texture_data
 
 def check_camera_connection(max_device_count=4, is_debug=False):
     device_no_list = []

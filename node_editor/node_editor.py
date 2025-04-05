@@ -21,7 +21,7 @@ class DpgNodeEditor(object):
     _ver = '0.0.1'
 
     _node_editor_tag = 'NodeEditor'
-    _node_editor_label = 'Node editor'
+    _node_editor_label = 'NodeEditor'
 
     _node_id = 0
     _node_instance_list = {}
@@ -121,7 +121,7 @@ class DpgNodeEditor(object):
 
                 for menu_info in menu_dict.items():
                     menu_label = menu_info[0]
-
+                    print("menu_label :", menu_label)
                     with dpg.menu(label=menu_label):
 
                         node_sources_path = os.path.join(
@@ -132,8 +132,9 @@ class DpgNodeEditor(object):
 
 
                         node_sources = glob(node_sources_path)
+                        print("node_sources :", node_sources)
                         for node_source in node_sources:
-
+                            print("node_source :", node_source)
                             import_path = os.path.splitext(
                                 os.path.normpath(node_source))[0]
                             if platform.system() == 'Windows':
@@ -149,9 +150,9 @@ class DpgNodeEditor(object):
 
                             module = import_module(import_path)
 
-                            print(import_path)
+                            print("import path", import_path)
                             node = module.Node()
-
+                            print(node.node_tag)
                             dpg.add_menu_item(
                                 tag='Menu_' + node.node_tag,
                                 label=node.node_label,
@@ -159,9 +160,8 @@ class DpgNodeEditor(object):
                                 user_data=node.node_tag,
                             )
 
-
-                            self._node_instance_list[node.node_tag] = {1: node}
-
+                            self._node_instance_list[node.node_tag] = node
+                #exit()
             with dpg.node_editor(
                     tag=self._node_editor_tag,
                     callback=self._callback_link,
@@ -219,6 +219,7 @@ class DpgNodeEditor(object):
 
     def _callback_add_node(self, sender, data, user_data):
         print("user_data :", user_data)
+        exit(0)
         node_instance_list  = self._node_instance_list[user_data]
         node_id = len(node_instance_list) - 1
         self.node_id  = node_id

@@ -9,7 +9,8 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
-from node_editor.util import convert_cv_to_dpg
+from node.basenode import Node
+#from node_editor.util import convert_cv_to_dpg
 
 
 def image_process(image, beta):
@@ -17,7 +18,7 @@ def image_process(image, beta):
     return image
 
 
-class Node(DpgNodeABC):
+class Node(Node):
     _ver = '0.0.1'
 
     node_label = 'Brightness'

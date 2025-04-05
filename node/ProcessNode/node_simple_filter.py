@@ -9,8 +9,8 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
-from node_editor.util import convert_cv_to_dpg
-
+#from node_editor.util import convert_cv_to_dpg
+from node.basenode import Node
 
 def image_process(image, x0y0, x1y0, x2y0, x0y1, x1y1, x2y1, x0y2, x1y2, x2y2, k):
     kernel = np.array([[x0y0, x1y0, x2y0],[x0y1, x1y1, x2y1],[x0y2, x1y2, x2y2]])*k
@@ -18,7 +18,7 @@ def image_process(image, x0y0, x1y0, x2y0, x0y1, x1y1, x2y1, x0y2, x1y2, x2y2, k
     return image
 
 
-class Node(DpgNodeABC):
+class Node(Node):
     _ver = '0.0.1'
 
     node_label = 'Simple Filter'

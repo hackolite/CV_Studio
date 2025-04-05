@@ -8,7 +8,7 @@ import numpy as np
 import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
-from node_editor.util import convert_cv_to_dpg
+#from node_editor.util import convert_cv_to_dpg
 from node.DLNode.object_detection.YOLOX.yolox import YOLOX
 from node.DLNode.object_detection.YOLO.yolo import YOLO
 from node.DLNode.object_detection.LightWeightPersonDetector.detector import LWPDetector
