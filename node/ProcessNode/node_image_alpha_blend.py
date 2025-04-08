@@ -116,7 +116,7 @@ class Node(Node):
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
         black_image = np.zeros((small_window_w, small_window_h, 3))
-        black_texture = convert_cv_to_dpg(
+        black_texture = self.convert_cv_to_dpg(
             black_image,
             small_window_w,
             small_window_h,

@@ -11,14 +11,14 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
-from node_editor.util import convert_cv_to_dpg
-
+#from node_editor.util import convert_cv_to_dpg
+from node.basenode import Node
 
 def slow_motion_interpolation(prev_frame, next_frame, alpha):
     """ Génère une frame intermédiaire fluide entre 2 images """
     return cv2.addWeighted(prev_frame, 1 - alpha, next_frame, alpha, 0)
 
-class Node(DpgNodeABC):
+class Node(Node):
     _ver = '0.0.1'
 
     node_label = 'Video Writer'
@@ -58,13 +58,13 @@ class Node(DpgNodeABC):
 
 
         black_image = np.zeros((small_window_w, small_window_h, 3))
-        black_texture = convert_cv_to_dpg(
+        black_texture = self.convert_cv_to_dpg(
             black_image,
             small_window_w,
             small_window_h,
         )
 
-        # テクスチャ登録
+
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(
                 small_window_w,
@@ -74,7 +74,7 @@ class Node(DpgNodeABC):
                 format=dpg.mvFormat_Float_rgb,
             )
 
-        # ノード
+
         with dpg.node(
                 tag=tag_node_name,
                 parent=parent,
@@ -142,7 +142,7 @@ class Node(DpgNodeABC):
                                        50, (0, 0, 255),
                                        thickness=-1)
 
-            texture = convert_cv_to_dpg(
+            texture = self.convert_cv_to_dpg(
                 rec_frame,
                 small_window_w,
                 small_window_h,
@@ -156,7 +156,7 @@ class Node(DpgNodeABC):
 
                 black_image = np.zeros((small_window_w, small_window_h, 3))
 
-                texture = convert_cv_to_dpg(
+                texture = self.convert_cv_to_dpg(
                     black_image,
                     small_window_w,
                     small_window_h,

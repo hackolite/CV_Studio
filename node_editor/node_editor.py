@@ -12,7 +12,7 @@ from importlib import import_module
 
 import dearpygui.dearpygui as dpg
 from  node.node_factory import NodeFactory
-
+import time
 
 #object_factory = NodeFactory.create()
 
@@ -130,11 +130,10 @@ class DpgNodeEditor(object):
                             '*.py',
                         )
 
-
                         node_sources = glob(node_sources_path)
-                        print("node_sources :", node_sources)
+                        #print("node_sources :", node_sources)
                         for node_source in node_sources:
-                            print("node_source :", node_source)
+                            #print("node_source :", node_source)
                             import_path = os.path.splitext(
                                 os.path.normpath(node_source))[0]
                             if platform.system() == 'Windows':
@@ -152,7 +151,7 @@ class DpgNodeEditor(object):
 
                             print("import path", import_path)
                             node = module.Node()
-                            print(node.node_tag)
+                            print("tag", node.node_tag)
                             dpg.add_menu_item(
                                 tag='Menu_' + node.node_tag,
                                 label=node.node_label,
@@ -160,8 +159,9 @@ class DpgNodeEditor(object):
                                 user_data=node.node_tag,
                             )
 
+                            print("instance", node.node_tag)
                             self._node_instance_list[node.node_tag] = node
-                #exit()
+
             with dpg.node_editor(
                     tag=self._node_editor_tag,
                     callback=self._callback_link,
@@ -218,13 +218,10 @@ class DpgNodeEditor(object):
         return self._terminate_flag
 
     def _callback_add_node(self, sender, data, user_data):
-        print("user_data :", user_data)
-        exit(0)
-        node_instance_list  = self._node_instance_list[user_data]
-        node_id = len(node_instance_list) - 1
-        self.node_id  = node_id
+        self._node_id += 1
+        print("node name :", self._node_id)
+        node = self._node_instance_list[user_data]
         last_pos = [0, 0]
-        
         if self._last_pos is not None:
             last_pos = [self._last_pos[0] + 30, self._last_pos[1] + 30]
         tag_name = node.add_node(
@@ -233,17 +230,18 @@ class DpgNodeEditor(object):
             pos=last_pos,
             opencv_setting_dict=self._opencv_setting_dict,
         )
-        print("tag :", tag_name)
+
         self._node_list.append(tag_name)
 
-        if self._use_debug_print:
-            print('**** _callback_add_node ****')
-            print('    Node ID         : ' + str(self._node_id))
-            print('    sender          : ' + str(sender))
-            print('    data            : ' + str(data))
-            print('    user_data       : ' + str(user_data))
-            print('    self._node_list : ' + ', '.join(self._node_list))
-            print()
+        #if self._use_debug_print:
+        print('**** _callback_add_node ****')
+        print('    Node ID         : ' + str(self._node_id))
+        print('    sender          : ' + str(sender))
+        print('    data            : ' + str(data))
+        print('    user_data       : ' + str(user_data))
+        print('    self._node_list : ' + ', '.join(self._node_list))
+        print()
+    
 
     def _callback_link(self, sender, data):
 
@@ -357,6 +355,7 @@ class DpgNodeEditor(object):
         for unfinded_value in unfinded_id_dict.values():
             node_connection_list.insert(0, (unfinded_value, []))
 
+
         return OrderedDict(node_connection_list)
 
     def _callback_file_export(self, sender, data):
@@ -419,7 +418,7 @@ class DpgNodeEditor(object):
 
                 node = self._node_instance_list[node_name]
 
-                # バージョン警告
+
                 ver = setting_dict[node_id_name]['setting']['ver']
                 if ver != node._ver:
                     warning_node_name = setting_dict[node_id_name]['name']

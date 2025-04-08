@@ -6,72 +6,26 @@ import os
 
 import numpy as np
 import dearpygui.dearpygui as dpg
-
+import cv2 
 from node_editor.util import dpg_get_value, dpg_set_value
-#from node_editor.util import convert_cv_to_dpg
+
+from node.basenode import Node
 from node.DLNode.object_detection.YOLOX.yolox import YOLOX
 from node.DLNode.object_detection.YOLO.yolo import YOLO
 from node.DLNode.object_detection.LightWeightPersonDetector.detector import LWPDetector
 from node.DLNode.object_detection.FreeYOLO.freeyolo import FreeYOLO
 from node.DLNode.object_detection.coco_class_names import coco_class_names
 from node.DLNode.object_detection.coco_class_names_only_person import coco_class_names_only_person
-#from node.draw_node.draw_util.draw_util import draw_object_detection_info
 import traceback
 
 
 
 
-
-_model_base_path = os.path.dirname(
-    os.path.abspath(__file__)) + '/object_detection/'
-
-
-# Combinaison de tous les dictionnaires en un seul dictionnaire _model_info
-_model_info = {
-    'YOLOX-Nano(416x416)': {
-        'model': YOLOX,
-        'model_path': _model_base_path + 'YOLOX/model/yolox_nano.onnx',
-        'class_names': coco_class_names
-    },
-    'YOLOX-Tiny(416x416)': {
-        'model': YOLOX,
-        'model_path': _model_base_path + 'YOLOX/model/yolox_tiny.onnx',
-        'class_names': coco_class_names
-    },
-    'YOLOX-S(640x640)': {
-        'model': YOLOX,
-        'model_path': _model_base_path + 'YOLOX/model/yolox_s.onnx',
-        'class_names': coco_class_names
-    },
-    'YOLO11Nano': {
-        'model': YOLO,
-        'model_path': _model_base_path + 'YOLO/model/yolo11_n.onnx',
-        'class_names': coco_class_names
-    },
-    'FreeYOLO-Nano(640x640)': {
-        'model': FreeYOLO,
-        'model_path': _model_base_path + 'FreeYOLO/model/yolo_free_nano_640x640.onnx',
-        'class_names': coco_class_names
-    },
-    'FreeYOLO-Nano-CrowdHuman(640x640)': {
-        'model': FreeYOLO,
-        'model_path': _model_base_path + 'FreeYOLO/model/yolo_free_nano_crowdhuman_640x640.onnx',
-        'class_names': coco_class_names_only_person
-    },
-    'Light-Weight Person Detector': {
-        'model': LWPDetector,
-        'model_path': _model_base_path + 'LightWeightPersonDetector/model/model.onnx',
-        'class_names': coco_class_names_only_person
-    }
-}
-
-
-
-class Node:
+class Node(Node):
     _ver = '0.0.1'
-
     node_label = 'ObjectDetection'
     node_tag = 'ObjectDetection'
+    TYPE_IMAGE = 'IMAGE'
 
     _min_val = 0.0
     _max_val = 1.0
@@ -79,15 +33,51 @@ class Node:
     _opencv_setting_dict = None
 
 
-
-    _model_base_path = os.path.dirname(
-        os.path.abspath(__file__)) + '/object_detection/'
-
-
     # Chemin de base pour les modèles
     _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/object_detection/'
 
 
+    _model_class = {
+        'YOLOX-Nano(416x416)': YOLOX,
+        'YOLOX-Tiny(416x416)': YOLOX,
+        'YOLOX-S(640x640)': YOLOX,
+        'Light-Weight Person Detector': LWPDetector,
+        'YOLOX-Nano(416x416)': YOLOX,
+        'FreeYOLO-Nano(640x640)': FreeYOLO,
+        'FreeYOLO-Nano-CrowdHuman(640x640)': FreeYOLO,
+        'YOLO11Nano': YOLO
+    }
+
+
+    _model_path_setting = {
+        'YOLOX-Nano(416x416)':
+        _model_base_path + 'YOLOX/model/yolox_nano.onnx',
+        'YOLOX-Tiny(416x416)':
+        _model_base_path + 'YOLOX/model/yolox_tiny.onnx',
+        'YOLOX-S(640x640)':
+        _model_base_path + 'YOLOX/model/yolox_s.onnx',
+        'YOLO11Nano' : _model_base_path + 'YOLO/model/yolo11_n.onnx',
+        'FreeYOLO-Nano(640x640)':
+        _model_base_path + 'FreeYOLO/model/yolo_free_nano_640x640.onnx',
+        'FreeYOLO-Nano-CrowdHuman(640x640)':
+        _model_base_path +
+        'FreeYOLO/model/yolo_free_nano_crowdhuman_640x640.onnx',
+         'Light-Weight Person Detector': 
+        _model_base_path +
+        'LightWeightPersonDetector/model/model.onnx'
+
+    }
+
+
+    _model_class_name_list = {
+        'YOLOX-Nano(416x416)': coco_class_names,
+        'YOLOX-Tiny(416x416)': coco_class_names,
+        'YOLOX-S(640x640)': coco_class_names,
+        'Light-Weight Person Detector': coco_class_names_only_person,
+        'FreeYOLO-Nano(640x640)': coco_class_names,
+        'FreeYOLO-Nano-CrowdHuman(640x640)': coco_class_names_only_person,
+        'YOLO11Nano': coco_class_names
+    }
 
 
 
@@ -135,7 +125,7 @@ class Node:
 
 
         black_image = np.zeros((small_window_w, small_window_h, 3))
-        black_texture = convert_cv_to_dpg(
+        black_texture = self.convert_cv_to_dpg(
             black_image,
             small_window_w,
             small_window_h,
@@ -220,9 +210,11 @@ class Node:
                         tag=self.tag_node_output_result,
                         default_value='elapsed time(ms)',
                     )
+        #print(self.tag_node_name)
         return self.tag_node_name
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict,):
+            print(node_id, connection_list, node_image_dict.keys(), node_result_dict.keys())
             try:
                 self.tag_node_name = str(node_id) + ':' + self.node_tag
 
@@ -238,10 +230,9 @@ class Node:
                 for connection_info in connection_list:
                     connection_type = connection_info[0].split(':')[2]
                     if connection_type == self.TYPE_FLOAT:
-
                         source_tag = connection_info[0] + 'Value'
                         destination_tag = connection_info[1] + 'Value'
-                        print("source :", source_tag, "destination :", destination_tag)
+                        #print("source :", source_tag, "destination :", destination_tag)
                         input_value = round(float(dpg_get_value(source_tag)), 3)
                         input_value = max([self._min_val, input_value])
                         input_value = min([self._max_val, input_value])
@@ -250,22 +241,27 @@ class Node:
                         connection_info_src = connection_info[0]
                         connection_info_src = connection_info_src.split(':')[:2]
                         connection_info_src = ':'.join(connection_info_src)
-                        print(connection_info_src)
+                        print("connection", node_id, self.tag_node_name, connection_info_src)
 
                 frame = node_image_dict.get(connection_info_src, None)
+                try:
+                    print(frame.shape)
+
+                except:
+                    pass
 
 
-                score_th = round(float(dpg_get_value(self.tag_node_input_float_value_name)), 3)
-
+                try:
+                    score_th = round(float(dpg_get_value(self.tag_node_input_float_value_name)), 3)
+                except:
+                    score_th = 0.3
 
                 provider = 'CPU'
                 if use_gpu:
                     provider = dpg_get_value(self.tag_provider_select_value_name)
 
-                print(self.tag_node_input_text_value_name)
-                model_name = dpg_get_value(self.tag_node_input_text_value_name)
-                print(model_name)
 
+                model_name = dpg_get_value(self.tag_node_input_text_value_name )
                 model_path = self._model_path_setting[model_name]
                 model_class = self._model_class[model_name]
                 class_name_dict = self._model_class_name_list[model_name]
@@ -317,7 +313,7 @@ class Node:
 
                 if frame is not None:
                     debug_frame = copy.deepcopy(frame)
-                    debug_frame = draw_object_detection_info(
+                    debug_frame = self.draw_object_detection_info(
                         debug_frame,
                         score_th,
                         bboxes,
@@ -325,17 +321,13 @@ class Node:
                         class_ids,
                         class_name_dict,
                     )
-                    texture = convert_cv_to_dpg(
+                    texture = self.convert_cv_to_dpg(
                         debug_frame,
                         small_window_w,
                         small_window_h,
                     )
                     dpg_set_value(self.tag_node_output_image, texture)
 
-                try:
-                    print("frame :", frame.shape)
-                except:
-                    pass
                 return frame, result
             except Exception as e:
                     error_trace = traceback.format_exc()  # Récupère la stack trace sous forme de string
@@ -379,3 +371,57 @@ class Node:
 
 
 
+    def draw_object_detection_info(
+            self,
+            image,
+            score_th,
+            bboxes,
+            scores,
+            class_ids,
+            class_names,
+            thickness=3,
+        ):
+            debug_image = copy.deepcopy(image)
+            print("external :", debug_image.shape)
+            for bbox, score, class_id in zip(bboxes, scores, class_ids):
+                x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+
+                if score_th > score:
+                    continue
+
+                color = self.get_color(class_id)
+
+                debug_image = cv2.rectangle(
+                    debug_image,
+                    (x1, y1),
+                    (x2, y2),
+                    color,
+                    thickness=thickness,
+                )
+
+
+                score = '%.2f' % score
+                text = '%s:%s(%s)' % (int(class_id), str(
+                    class_names[int(class_id)]), score)
+                debug_image = cv2.putText(
+                    debug_image,
+                    text,
+                    (x1, y1 - 12),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.9,
+                    color,
+                    thickness=thickness,
+                )
+
+            return debug_image
+
+
+
+    def get_color(self, index):
+        temp_index = abs(int(index + 35)) * 3
+        color = (
+            (29 * temp_index) % 255,
+            (17 * temp_index) % 255,
+            (37 * temp_index) % 255,
+        )
+        return color

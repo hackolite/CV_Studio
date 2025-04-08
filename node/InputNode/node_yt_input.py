@@ -8,7 +8,7 @@ import yt_dlp
 import dearpygui.dearpygui as dpg
 
 # Importation des utilitaires
-#from node_editor.util import dpg_get_value, dpg_set_value, convert_cv_to_dpg
+from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node
 
@@ -19,11 +19,8 @@ VIDEO_ID = "zeSG7Js32Us"
 #VIDEO_ID = "loHbMM9JfCs"
 #VIDEO_ID = "elhJf3krR94"
 VIDEO_ID = "KSsfLxP-A9g"
-#VIDEO_ID = "i3w7qZVSAsY"
-#https://www.youtube.com/watch?v=loHbMM9JfCs
-# ========================== #
-#    FONCTION UTILITAIRE     #
-# ========================== #
+
+
 
 def get_light_live_stream_url(video_id):
     """Récupère l'URL du flux live en basse résolution (360p max)."""
@@ -39,9 +36,7 @@ def get_light_live_stream_url(video_id):
         return cv2.VideoCapture(info.get("url", None))
 
 
-# ========================== #
-#       CLASSE NODE          #
-# ========================== #
+
 
 class Node(Node):
     """Node DearPyGui pour afficher un flux YouTube Live."""
@@ -70,7 +65,7 @@ class Node(Node):
 
         # Image noire pour le démarrage
         black_image = np.zeros((self.small_window_w, self.small_window_h, 3))
-        black_texture = convert_cv_to_dpg(black_image, self.small_window_w, self.small_window_h)
+        black_texture = self.convert_cv_to_dpg(black_image, self.small_window_w, self.small_window_h)
 
         # Création de la texture pour afficher l'image
         with dpg.texture_registry(show=False):
@@ -104,7 +99,7 @@ class Node(Node):
 
         if ret and frame is not None:
             frame = cv2.resize(frame, (600, 400))  # Réduction de la taille pour alléger
-            texture = convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
+            texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
             dpg_set_value(output_value01_tag, texture)
 
         return frame, None
@@ -120,6 +115,7 @@ class Node(Node):
         pos = dpg.get_item_pos(tag_node_name)
 
         return {"ver": self._ver, "pos": pos}
+
 
     def set_setting_dict(self, node_id, setting_dict):
         """Charge les paramètres enregistrés du nœud."""
