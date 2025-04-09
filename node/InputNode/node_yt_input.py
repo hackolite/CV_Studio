@@ -53,9 +53,10 @@ class FactoryNode:
         # Génération des tags pour le Node et ses attributs
         node = Node()
 
+        # Génération des tags pour le Node et ses attributs
         node.tag_node_name = f"{node_id}:{node.node_tag}"
-        tag_node_output01_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01"
-        tag_node_output01_value_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01Value"
+        node.tag_node_output01_name = f"{node.tag_node_name}:{node.TYPE_IMAGE}:Output01"
+        node.tag_node_output01_value_name = f"{node.tag_node_name}:{node.TYPE_IMAGE}:Output01Value"
 
         # Initialisation du flux vidéo
         node.cap = get_light_live_stream_url(VIDEO_ID)
@@ -64,23 +65,22 @@ class FactoryNode:
         node.small_window_w, node.small_window_h = 600, 400  # Taille de l'affichage
 
         # Image noire pour le démarrage
-        black_image = np.zeros((nodesmall_window_w, node.small_window_h, 3))
+        black_image = np.zeros((node.small_window_w, node.small_window_h, 3))
         black_texture = node.convert_cv_to_dpg(black_image, node.small_window_w, node.small_window_h)
 
         # Création de la texture pour afficher l'image
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(
                 node.small_window_w, node.small_window_h, black_texture,
-                tag=tag_node_output01_value_name, format=dpg.mvFormat_Float_rgb
+                tag=node.tag_node_output01_value_name, format=dpg.mvFormat_Float_rgb
             )
 
         # Création du nœud dans l'interface graphique
-        with dpg.node(tag=tag_node_name, parent=parent, label=node.node_label, pos=pos):
-            with dpg.node_attribute(tag=tag_node_output01_name, attribute_type=dpg.mvNode_Attr_Output):
-                dpg.add_image(tag_node_output01_value_name)
+        with dpg.node(tag=node.tag_node_name, parent=parent, label=node.node_label, pos=pos):
+            with dpg.node_attribute(tag=node.tag_node_output01_name, attribute_type=dpg.mvNode_Attr_Output):
+                dpg.add_image(node.tag_node_output01_value_name)
 
         return node
-
 
 
 
@@ -98,7 +98,7 @@ class Node(Node):
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict):
         """Met à jour l'image du flux vidéo."""
-        
+        print("update YT")
         tag_node_name = f"{node_id}:{self.node_tag}"
         output_value01_tag = f"{tag_node_name}:{self.TYPE_IMAGE}:Output01Value"
 

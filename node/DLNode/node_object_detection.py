@@ -114,7 +114,7 @@ class FactoryNode:
             ):
                 dpg.add_combo(
                     list(node._model_class.keys()),
-                    default_value=list(self._model_class.keys())[0],
+                    default_value=list(node._model_class.keys())[0],
                     width=small_window_w,
                     tag=node.tag_node_input_text_value_name,
                 )

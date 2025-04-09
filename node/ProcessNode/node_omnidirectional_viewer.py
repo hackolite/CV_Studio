@@ -120,6 +120,8 @@ def remap_image(image, phi, theta):
 
     return output_image
 
+
+
 class FactoryNode:
     node_label = 'OmnidirectionalViewer'
     node_tag = 'OmnidirectionalViewer'
