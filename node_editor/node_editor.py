@@ -233,14 +233,14 @@ class DpgNodeEditor(object):
 
         self._node_list.append(tag_name)
 
-        #if self._use_debug_print:
-        print('**** _callback_add_node ****')
-        print('    Node ID         : ' + str(self._node_id))
-        print('    sender          : ' + str(sender))
-        print('    data            : ' + str(data))
-        print('    user_data       : ' + str(user_data))
-        print('    self._node_list : ' + ', '.join(self._node_list))
-        print()
+        if self._use_debug_print:
+            print('**** _callback_add_node ****')
+            print('    Node ID         : ' + str(self._node_id))
+            print('    sender          : ' + str(sender))
+            print('    data            : ' + str(data))
+            print('    user_data       : ' + str(user_data))
+            print('    self._node_list : ' + ', '.join(self._node_list))
+            print()
     
 
     def _callback_link(self, sender, data):
@@ -249,7 +249,6 @@ class DpgNodeEditor(object):
         destination = dpg.get_item_alias(data[1])
         source_type = source.split(':')[2]
         destination_type = destination.split(':')[2]
-
 
         if source_type == destination_type:
 
@@ -267,7 +266,7 @@ class DpgNodeEditor(object):
                     dpg.add_node_link(source, destination, parent=sender)
                     self._node_link_list.append([source, destination])
 
-
+        print("source, destination", source, destination)
         self._node_connection_dict = self._sort_node_graph(
             self._node_list,
             self._node_link_list,

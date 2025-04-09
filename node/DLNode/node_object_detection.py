@@ -110,6 +110,7 @@ class Node(Node):
 
         self.tag_node_output_image_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01'
         self.tag_node_output_image = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
+        
         self.tag_node_output_result_name = self.tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02'
         self.tag_node_output_result = self.tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
@@ -210,14 +211,15 @@ class Node(Node):
                         tag=self.tag_node_output_result,
                         default_value='elapsed time(ms)',
                     )
-        #print(self.tag_node_name)
         return self.tag_node_name
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict,):
-            print(node_id, connection_list, node_image_dict.keys(), node_result_dict.keys())
-            try:
-                self.tag_node_name = str(node_id) + ':' + self.node_tag
 
+            try:
+                
+                
+                self.tag_node_name = str(node_id) + ':' + self.node_tag
+                tag_node_output_image = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
                 self.tag_provider_select_value_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
 
                 small_window_w = self._opencv_setting_dict['process_width']
@@ -232,11 +234,12 @@ class Node(Node):
                     if connection_type == self.TYPE_FLOAT:
                         source_tag = connection_info[0] + 'Value'
                         destination_tag = connection_info[1] + 'Value'
-                        #print("source :", source_tag, "destination :", destination_tag)
+                        print("source :", source_tag, "destination :", destination_tag)
                         input_value = round(float(dpg_get_value(source_tag)), 3)
                         input_value = max([self._min_val, input_value])
                         input_value = min([self._max_val, input_value])
                         dpg_set_value(destination_tag, input_value)
+                    
                     if connection_type == self.TYPE_IMAGE:
                         connection_info_src = connection_info[0]
                         connection_info_src = connection_info_src.split(':')[:2]
@@ -261,7 +264,8 @@ class Node(Node):
                     provider = dpg_get_value(self.tag_provider_select_value_name)
 
 
-                model_name = dpg_get_value(self.tag_node_input_text_value_name )
+
+                model_name = dpg_get_value(self.tag_node_input_text_value_name)
                 model_path = self._model_path_setting[model_name]
                 model_class = self._model_class[model_name]
                 class_name_dict = self._model_class_name_list[model_name]
@@ -326,7 +330,7 @@ class Node(Node):
                         small_window_w,
                         small_window_h,
                     )
-                    dpg_set_value(self.tag_node_output_image, texture)
+                    dpg_set_value(tag_node_output_image, texture)
 
                 return frame, result
             except Exception as e:

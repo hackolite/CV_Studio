@@ -51,9 +51,7 @@ def update_node_info(
 ):
 
     node_list = node_editor.get_node_list()
-    print("node_list", node_list)
     sorted_node_connection_dict = node_editor.get_sorted_node_connection()
-    #print("sorted_node_connection_dict", sorted_node_connection_dict)
 
     for node_id_name in node_list:
         if node_id_name not in node_image_dict:
@@ -62,7 +60,6 @@ def update_node_info(
         node_id, node_name = node_id_name.split(':')
         connection_list = sorted_node_connection_dict.get(node_id_name, [])
         node_instance = node_editor.get_node_instance(node_name)
-
 
         if mode_async:
             try:
