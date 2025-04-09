@@ -12,16 +12,16 @@ from node.basenode import Node
 #from node_editor.util import self.convert_cv_to_dpg
 
 
-class Node(Node):
-    _ver = '0.0.1'
 
+
+class FactoryNode:
     node_label = 'WebCam'
     node_tag = 'WebCam'
-
-    _opencv_setting_dict = None
+    
 
     def __init__(self):
         pass
+
 
     def add_node(
         self,
@@ -32,6 +32,7 @@ class Node(Node):
         callback=None,
     ):
 
+        node = Node()
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_input01_name = tag_node_name + ':' + self.TYPE_INT + ':Input01'
         tag_node_input01_value_name = tag_node_name + ':' + self.TYPE_INT + ':Input01Value'
@@ -99,7 +100,25 @@ class Node(Node):
                         default_value='elapsed time(ms)',
                     )
 
-        return tag_node_name
+        return node
+    
+
+
+
+
+
+class Node(Node):
+    _ver = '0.0.1'
+
+    node_label = 'WebCam'
+    node_tag = 'WebCam'
+
+    _opencv_setting_dict = None
+
+    def __init__(self):
+        pass
+
+
 
     def update(
         self,

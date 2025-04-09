@@ -19,13 +19,151 @@ from node.DLNode.object_detection.coco_class_names_only_person import coco_class
 import traceback
 
 
+class FactoryNode:
+    node_label = 'ObjectDetection'
+    node_tag = 'ObjectDetection'
+    
+
+    def __init__(self):
+        pass
+
+    def add_node(
+        self,
+        parent,
+        node_id,
+        pos=[0, 0],
+        opencv_setting_dict=None,
+        callback=None,
+    ):
+
+        
+        node = Node()
+        node.tag_node_name = str(node_id) + ':' + self.node_tag
+        
+        node.tag_node_input_image_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Input01'
+        node.tag_node_input_image_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Input01Value'
+        
+        node.tag_node_input_text_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input02'
+        node.tag_node_input_text_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input02Value'
+        
+
+        node.tag_node_input_float_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input03'
+        node.tag_node_input_float_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input03Value'
+        
+
+        node.tag_node_output_image_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
+        node.tag_node_output_image = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
+        
+        node.tag_node_output_result_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
+        node.tag_node_output_result = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02Value'
+
+        node.tag_provider_select_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Provider'
+        node.tag_provider_select_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':ProviderValue'
+        node._opencv_setting_dict = opencv_setting_dict
+        
+
+        small_window_w = node._opencv_setting_dict['process_width']
+        small_window_h = node._opencv_setting_dict['process_height']
+        use_pref_counter = node._opencv_setting_dict['use_pref_counter']
+        use_gpu = node._opencv_setting_dict['use_gpu']
+
+
+        black_image = np.zeros((small_window_w, small_window_h, 3))
+        black_texture = node.convert_cv_to_dpg(
+            black_image,
+            small_window_w,
+            small_window_h,
+        )
+
+
+        with dpg.texture_registry(show=False):
+            dpg.add_raw_texture(
+                small_window_w,
+                small_window_h,
+                black_texture,
+                tag=node.tag_node_output_image,
+                format=dpg.mvFormat_Float_rgb,
+            )
+
+
+        with dpg.node(
+                tag=node.tag_node_name,
+                parent=parent,
+                label=node.node_label,
+                pos=pos,
+        ):
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_input_image_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_input_image_value_name,
+                    default_value='Input BGR image',
+                )
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_output_image_name,
+                    attribute_type=dpg.mvNode_Attr_Output,
+            ):
+                dpg.add_image(node.tag_node_output_image)
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_input_text_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    list(node._model_class.keys()),
+                    default_value=list(self._model_class.keys())[0],
+                    width=small_window_w,
+                    tag=node.tag_node_input_text_value_name,
+                )
+            if use_gpu:
+
+                with dpg.node_attribute(
+                        tag=node.tag_provider_select_name,
+                        attribute_type=dpg.mvNode_Attr_Static,
+                ):
+                    dpg.add_radio_button(
+                        ("CPU", "GPU"),
+                        tag=node.tag_provider_select_value_name,
+                        default_value='CPU',
+                        horizontal=True,
+                    )
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_input_float_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_input_float_value_name,
+                    label="score",
+                    width=small_window_w - 80,
+                    default_value=0.3,
+                    min_value=node._min_val,
+                    max_value=node._max_val,
+                    callback=None,
+                )
+
+            if use_pref_counter:
+                with dpg.node_attribute(
+                        tag=node.tag_node_output_result_name,
+                        attribute_type=dpg.mvNode_Attr_Output,
+                ):
+                    dpg.add_text(
+                        tag=node.tag_node_output_result,
+                        default_value='elapsed time(ms)',
+                    )
+        return node
+
+
 
 
 class Node(Node):
     _ver = '0.0.1'
     node_label = 'ObjectDetection'
     node_tag = 'ObjectDetection'
-    TYPE_IMAGE = 'IMAGE'
+
 
     _min_val = 0.0
     _max_val = 1.0
@@ -86,137 +224,11 @@ class Node(Node):
     def __init__(self):
         pass
 
-    def add_node(
-        self,
-        parent,
-        node_id,
-        pos=[0, 0],
-        opencv_setting_dict=None,
-        callback=None,
-    ):
 
-        self.tag_node_name = str(node_id) + ':' + self.node_tag
-        
-        self.tag_node_input_image_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Input01'
-        self.tag_node_input_image_value_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Input01Value'
-        
-        self.tag_node_input_text_name = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02'
-        self.tag_node_input_text_value_name = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
-        
-
-        self.tag_node_input_float_name = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03'
-        self.tag_node_input_float_value_name = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
-        
-
-        self.tag_node_output_image_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01'
-        self.tag_node_output_image = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
-        
-        self.tag_node_output_result_name = self.tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02'
-        self.tag_node_output_result = self.tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
-
-        self.tag_provider_select_name = self.tag_node_name + ':' + self.TYPE_TEXT + ':Provider'
-        self.tag_provider_select_value_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
-        self._opencv_setting_dict = opencv_setting_dict
-        
-
-        small_window_w = self._opencv_setting_dict['process_width']
-        small_window_h = self._opencv_setting_dict['process_height']
-        use_pref_counter = self._opencv_setting_dict['use_pref_counter']
-        use_gpu = self._opencv_setting_dict['use_gpu']
-
-
-        black_image = np.zeros((small_window_w, small_window_h, 3))
-        black_texture = self.convert_cv_to_dpg(
-            black_image,
-            small_window_w,
-            small_window_h,
-        )
-
-
-        with dpg.texture_registry(show=False):
-            dpg.add_raw_texture(
-                small_window_w,
-                small_window_h,
-                black_texture,
-                tag=self.tag_node_output_image,
-                format=dpg.mvFormat_Float_rgb,
-            )
-
-
-        with dpg.node(
-                tag=self.tag_node_name,
-                parent=parent,
-                label=self.node_label,
-                pos=pos,
-        ):
-
-            with dpg.node_attribute(
-                    tag=self.tag_node_input_image_name,
-                    attribute_type=dpg.mvNode_Attr_Input,
-            ):
-                dpg.add_text(
-                    tag=self.tag_node_input_image_value_name,
-                    default_value='Input BGR image',
-                )
-
-            with dpg.node_attribute(
-                    tag=self.tag_node_output_image_name,
-                    attribute_type=dpg.mvNode_Attr_Output,
-            ):
-                dpg.add_image(self.tag_node_output_image)
-
-            with dpg.node_attribute(
-                    tag=self.tag_node_input_text_name,
-                    attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_combo(
-                    list(self._model_class.keys()),
-                    default_value=list(self._model_class.keys())[0],
-                    width=small_window_w,
-                    tag=self.tag_node_input_text_value_name,
-                )
-            if use_gpu:
-
-                with dpg.node_attribute(
-                        tag=self.tag_provider_select_name,
-                        attribute_type=dpg.mvNode_Attr_Static,
-                ):
-                    dpg.add_radio_button(
-                        ("CPU", "GPU"),
-                        tag=self.tag_provider_select_value_name,
-                        default_value='CPU',
-                        horizontal=True,
-                    )
-
-            with dpg.node_attribute(
-                    tag=self.tag_node_input_float_name,
-                    attribute_type=dpg.mvNode_Attr_Input,
-            ):
-                dpg.add_slider_float(
-                    tag=self.tag_node_input_float_value_name,
-                    label="score",
-                    width=small_window_w - 80,
-                    default_value=0.3,
-                    min_value=self._min_val,
-                    max_value=self._max_val,
-                    callback=None,
-                )
-
-            if use_pref_counter:
-                with dpg.node_attribute(
-                        tag=self.tag_node_output_result_name,
-                        attribute_type=dpg.mvNode_Attr_Output,
-                ):
-                    dpg.add_text(
-                        tag=self.tag_node_output_result,
-                        default_value='elapsed time(ms)',
-                    )
-        return self.tag_node_name
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict,):
 
             try:
-                
                 
                 self.tag_node_name = str(node_id) + ':' + self.node_tag
                 tag_node_output_image = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
@@ -429,3 +441,4 @@ class Node(Node):
             (37 * temp_index) % 255,
         )
         return color
+

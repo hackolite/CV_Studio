@@ -48,8 +48,10 @@ class DpgNodeEditor(object):
     ):
 
         self._node_id = 0
-        self._node_instance_list = {}
-        self._node_list = []
+        #self._node_instance_list = {}
+        self._node_factory_list = {}   #NodeFactorylist (objects), factory list
+        self._node_instances_list = {} #NodeInstanceList (objects), instances list
+        self._node_list = []           #NodeList
         self._node_link_list = []
         self._node_connection_dict = OrderedDict([])
         self._use_debug_print = use_debug_print
@@ -131,9 +133,9 @@ class DpgNodeEditor(object):
                         )
 
                         node_sources = glob(node_sources_path)
-                        #print("node_sources :", node_sources)
+
                         for node_source in node_sources:
-                            #print("node_source :", node_source)
+
                             import_path = os.path.splitext(
                                 os.path.normpath(node_source))[0]
                             if platform.system() == 'Windows':
@@ -148,19 +150,17 @@ class DpgNodeEditor(object):
                                 continue
 
                             module = import_module(import_path)
+                            factorynode = module.FactoryNode()
 
-                            print("import path", import_path)
-                            node = module.Node()
-                            print("tag", node.node_tag)
                             dpg.add_menu_item(
-                                tag='Menu_' + node.node_tag,
-                                label=node.node_label,
+                                tag='Menu_' + factorynode.node_tag,
+                                label=factorynode.node_label,
                                 callback=self._callback_add_node,
-                                user_data=node.node_tag,
+                                user_data=factorynode.node_tag,
                             )
 
-                            print("instance", node.node_tag)
-                            self._node_instance_list[node.node_tag] = node
+                            print("Factory Instance :", factorynode.node_tag)
+                            self._node_factory_list[factorynode.node_tag] = factorynode
 
             with dpg.node_editor(
                     tag=self._node_editor_tag,
@@ -208,8 +208,14 @@ class DpgNodeEditor(object):
     def get_sorted_node_connection(self):
         return self._node_connection_dict
 
-    def get_node_instance(self, node_name):
-        return self._node_instance_list.get(node_name, None)
+
+    def get_node_instances(self, node_name):
+        return self._node_instances_list.get(node_name, None)
+
+
+    def get_node_factory(self, node_name):
+        return self._node_factory_list.get(node_name, None)
+
 
     def set_terminate_flag(self, flag=True):
         self._terminate_flag = flag
@@ -220,18 +226,21 @@ class DpgNodeEditor(object):
     def _callback_add_node(self, sender, data, user_data):
         self._node_id += 1
         print("node name :", self._node_id)
-        node = self._node_instance_list[user_data]
+        factorynode = self._node_factory_list[user_data]
         last_pos = [0, 0]
+        
         if self._last_pos is not None:
             last_pos = [self._last_pos[0] + 30, self._last_pos[1] + 30]
-        tag_name = node.add_node(
+        
+        node = factorynode.add_node(
             self._node_editor_tag,
             self._node_id,
             pos=last_pos,
             opencv_setting_dict=self._opencv_setting_dict,
         )
 
-        self._node_list.append(tag_name)
+        self._node_instances_list[node.tag_node_name] = node
+        self._node_list.append(node.tag_node_name)
 
         if self._use_debug_print:
             print('**** _callback_add_node ****')
@@ -266,7 +275,7 @@ class DpgNodeEditor(object):
                     dpg.add_node_link(source, destination, parent=sender)
                     self._node_link_list.append([source, destination])
 
-        print("source, destination", source, destination)
+
         self._node_connection_dict = self._sort_node_graph(
             self._node_list,
             self._node_link_list,
@@ -278,8 +287,7 @@ class DpgNodeEditor(object):
             print('    data                       : ', data)
             print('    self._node_list            :    ', self._node_list)
             print('    self._node_link_list       : ', self._node_link_list)
-            print('    self._node_connection_dict : ',
-                  self._node_connection_dict)
+            print('    self._node_connection_dict : ',self._node_connection_dict)
             print()
 
 
