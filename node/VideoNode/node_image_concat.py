@@ -68,38 +68,87 @@ class FactoryNode:
     def __init__(self):
         pass
 
-    
-    def add_node(self, parent, node_id, pos=[0, 0], callback=None, opencv_setting_dict=None):
-        """Ajoute un nœud au graphe de traitement."""
-        
-        # Génération des tags pour le Node et ses attributs
+
+    def add_node(
+        self,
+        parent,
+        node_id,
+        pos=[0, 0],
+        opencv_setting_dict=None,
+        callback=None,
+    ):
+
+
         node = Node()
+        node._value_history = {}
 
-        node.tag_node_name = f"{node_id}:{node.node_tag}"
-        tag_node_output01_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01"
-        tag_node_output01_value_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01Value"
+        node.tag_node_name = str(node_id) + ':' + node.node_tag
+        node.tag_node_input00_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Input00'
+        node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Input01'
+        node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Input01Value'
+        node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
+        node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
 
-        # Initialisation du flux vidéo
-        node.cap = get_light_live_stream_url(VIDEO_ID)
-        node.last_frame_time = None
-        node.frame_time = 1.0 / 32  # 15 FPS pour une lecture fluide
-        node.small_window_w, node.small_window_h = 600, 400  # Taille de l'affichage
 
-        # Image noire pour le démarrage
-        black_image = np.zeros((nodesmall_window_w, node.small_window_h, 3))
-        black_texture = node.convert_cv_to_dpg(black_image, node.small_window_w, node.small_window_h)
+        node._opencv_setting_dict = opencv_setting_dict
+        small_window_w = node._opencv_setting_dict['process_width']
+        small_window_h = node._opencv_setting_dict['process_height']
 
-        # Création de la texture pour afficher l'image
+
+        black_image = np.zeros((small_window_w, small_window_h, 3))
+        black_texture = node.convert_cv_to_dpg(
+            black_image,
+            small_window_w,
+            small_window_h,
+        )
+
+
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(
-                node.small_window_w, node.small_window_h, black_texture,
-                tag=tag_node_output01_value_name, format=dpg.mvFormat_Float_rgb
+                small_window_w,
+                small_window_h,
+                black_texture,
+                tag=node.tag_node_output01_value_name,
+                format=dpg.mvFormat_Float_rgb,
             )
 
-        # Création du nœud dans l'interface graphique
-        with dpg.node(tag=tag_node_name, parent=parent, label=node.node_label, pos=pos):
-            with dpg.node_attribute(tag=tag_node_output01_name, attribute_type=dpg.mvNode_Attr_Output):
-                dpg.add_image(tag_node_output01_value_name)
+
+        if node.tag_node_name not in node._slot_id:
+            node._slot_id[node.tag_node_name] = 1
+
+
+        with dpg.node(
+                tag=node.tag_node_name,
+                parent=parent,
+                label=node.node_label,
+                pos=pos,
+        ):
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_output01_name,
+                    attribute_type=dpg.mvNode_Attr_Output,
+            ):
+                dpg.add_image(node.tag_node_output01_value_name)
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_input00_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_button(
+                    label='Add Slot',
+                    width=int(small_window_w / 3),
+                    callback=node._add_slot,
+                    user_data=node.tag_node_name,
+                )
+            # スロット
+            with dpg.node_attribute(
+                    tag=node.tag_node_input01_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_input01_value_name,
+                    default_value='Input BGR image',
+                )
 
         return node
 
@@ -118,89 +167,6 @@ class Node(Node):
 
     def __init__(self):
         pass
-
-    def add_node(
-        self,
-        parent,
-        node_id,
-        pos=[0, 0],
-        opencv_setting_dict=None,
-        callback=None,
-    ):
-        self._value_history = {}
-
-
-        tag_node_name = str(node_id) + ':' + self.node_tag
-        tag_node_input00_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Input00'
-        tag_node_input01_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01'
-        tag_node_input01_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01Value'
-        tag_node_output01_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01'
-        tag_node_output01_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
-
-
-        self._opencv_setting_dict = opencv_setting_dict
-        small_window_w = self._opencv_setting_dict['process_width']
-        small_window_h = self._opencv_setting_dict['process_height']
-
-
-        black_image = np.zeros((small_window_w, small_window_h, 3))
-        black_texture = self.convert_cv_to_dpg(
-            black_image,
-            small_window_w,
-            small_window_h,
-        )
-
-
-        with dpg.texture_registry(show=False):
-            dpg.add_raw_texture(
-                small_window_w,
-                small_window_h,
-                black_texture,
-                tag=tag_node_output01_value_name,
-                format=dpg.mvFormat_Float_rgb,
-            )
-
-
-        if tag_node_name not in self._slot_id:
-            self._slot_id[tag_node_name] = 1
-
-
-        with dpg.node(
-                tag=tag_node_name,
-                parent=parent,
-                label=self.node_label,
-                pos=pos,
-        ):
-
-            with dpg.node_attribute(
-                    tag=tag_node_output01_name,
-                    attribute_type=dpg.mvNode_Attr_Output,
-            ):
-                dpg.add_image(tag_node_output01_value_name)
-
-            with dpg.node_attribute(
-                    tag=tag_node_input00_name,
-                    attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_button(
-                    label='Add Slot',
-                    width=int(small_window_w / 3),
-                    callback=self._add_slot,
-                    user_data=tag_node_name,
-                )
-            # スロット
-            with dpg.node_attribute(
-                    tag=tag_node_input01_name,
-                    attribute_type=dpg.mvNode_Attr_Input,
-            ):
-                dpg.add_text(
-                    tag=tag_node_input01_value_name,
-                    default_value='Input BGR image',
-                )
-
-        return tag_node_name
-
-    
 
 
     def create_image_dict(
@@ -253,8 +219,8 @@ class Node(Node):
         node_image_dict,
         node_result_dict,
     ):
-        tag_node_name = str(node_id) + ':' + self.node_tag
-        output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
+        self.tag_node_name = str(node_id) + ':' + self.node_tag
+        self.output_value01_tag = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
 
         small_window_w = self._opencv_setting_dict['process_width']
         small_window_h = self._opencv_setting_dict['process_height']
@@ -284,7 +250,7 @@ class Node(Node):
                 node_name_dict[slot_number] = node_name
                 connection_info_src_dict[slot_number] = connection_info_src
 
-        slot_num = self._slot_id[tag_node_name]
+        slot_num = self._slot_id[self.tag_node_name]
 
 
         frame_dict = {}
@@ -313,7 +279,7 @@ class Node(Node):
                 small_window_w,
                 small_window_h,
             )
-            dpg_set_value(output_value01_tag, texture)
+            dpg_set_value(self.output_value01_tag, texture)
 
         return frame, None
 
@@ -329,7 +295,7 @@ class Node(Node):
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
-        setting_dict['slot_id'] = self._slot_id[tag_node_name]
+        setting_dict['slot_id'] = self._slot_id[self.tag_node_name]
 
         return setting_dict
 
@@ -340,7 +306,7 @@ class Node(Node):
 
         slot_number = int(setting_dict['slot_id'])
         for _ in range(slot_number - 1):
-            self._add_slot(None, None, tag_node_name)
+            self._add_slot(None, None, self.tag_node_name)
 
     
 
@@ -355,18 +321,18 @@ class Node(Node):
             before_tag += str(self._slot_id[tag_node_name] - 1).zfill(2)
 
 
-            tag_node_inputXX_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Input'
+            tag_node_inputXX_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Input'
             tag_node_inputXX_name += str(self._slot_id[tag_node_name]).zfill(2)
 
-            tag_node_inputXX_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Input'
+            tag_node_inputXX_value_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Input'
             tag_node_inputXX_value_name += str(
-                self._slot_id[tag_node_name]).zfill(2) + 'Value'
+                self._slot_id[self.tag_node_name]).zfill(2) + 'Value'
 
 
             with dpg.node_attribute(
                     tag=tag_node_inputXX_name,
                     attribute_type=dpg.mvNode_Attr_Input,
-                    parent=tag_node_name,
+                    parent=self.tag_node_name,
                     before=before_tag,
             ):
                 dpg.add_text(
