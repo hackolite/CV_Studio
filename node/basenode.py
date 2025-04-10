@@ -131,6 +131,111 @@ class Node:
 
 
 
+    def draw_info(self, node_name, node_result, image):
+            classification_nodes = ['Classification']
+            object_detection_nodes = ['ObjectDetection']
+            semantic_segmentation_nodes = ['SemanticSegmentation']
+            pose_estimation_nodes = ['PoseEstimation']
+            face_detection_nodes = ['FaceDetection']
+            multi_object_tracking_nodes = ['MultiObjectTracking']
+            qr_code_detection_nodes = ['QRCodeDetection']
+
+            debug_image = copy.deepcopy(image)
+            if node_name in classification_nodes:
+                use_object_detection = node_result.get('use_object_detection', [])
+                class_ids = node_result.get('class_ids', [])
+                class_scores = node_result.get('class_scores', [])
+                class_names = node_result.get('class_names', [])
+
+                if use_object_detection:
+                    od_bboxes = node_result.get('od_bboxes', [])
+                    od_scores = node_result.get('od_scores', [])
+                    od_class_ids = node_result.get('od_class_ids', [])
+                    od_class_names = node_result.get('od_class_names', [])
+                    od_score_th = node_result.get('od_score_th', [])
+                    debug_image = self.draw_classification_with_od_info(
+                        debug_image,
+                        class_ids,
+                        class_scores,
+                        class_names,
+                        od_bboxes,
+                        od_scores,
+                        od_class_ids,
+                        od_class_names,
+                        od_score_th,
+                        thickness=3,
+                    )
+                else:
+                    debug_image = self.draw_classification_info(
+                        debug_image,
+                        class_ids,
+                        class_scores,
+                        class_names,
+                    )
+            elif node_name in object_detection_nodes:
+                bboxes = node_result.get('bboxes', [])
+                scores = node_result.get('scores', [])
+                class_ids = node_result.get('class_ids', [])
+                class_names = node_result.get('class_names', [])
+                score_th = node_result.get('score_th', [])
+                debug_image = self.draw_object_detection_info(
+                    debug_image,
+                    score_th,
+                    bboxes,
+                    scores,
+                    class_ids,
+                    class_names,
+                )
+            elif node_name in semantic_segmentation_nodes:
+                class_num = node_result.get('class_num', [])
+                segmentation_map = node_result.get('segmentation_map', [])
+                score_th = node_result.get('score_th', [])
+                debug_image = self.draw_semantic_segmentation_info(
+                    debug_image,
+                    score_th,
+                    class_num,
+                    segmentation_map,
+                )
+            elif node_name in pose_estimation_nodes:
+                model_name = node_result.get('model_name', [])
+                results_list = node_result.get('results_list', [])
+                score_th = node_result.get('score_th', [])
+                debug_image = self.draw_pose_estimation_info(
+                    model_name,
+                    debug_image,
+                    results_list,
+                    score_th,
+                )
+            elif node_name in face_detection_nodes:
+                model_name = node_result.get('model_name', [])
+                results_list = node_result.get('results_list', [])
+                score_th = node_result.get('score_th', [])
+                debug_image = self.draw_face_detection_info(
+                    model_name,
+                    debug_image,
+                    results_list,
+                    score_th,
+                )
+            elif node_name in multi_object_tracking_nodes:
+                track_ids = node_result.get('track_ids', [])
+                bboxes = node_result.get('bboxes', [])
+                scores = node_result.get('scores', [])
+                class_ids = node_result.get('class_ids', [])
+                class_names = node_result.get('class_names', [])
+                track_id_dict = node_result.get('track_id_dict', [])
+                debug_image = self.draw_multi_object_tracking_info(
+                    debug_image,
+                    track_ids,
+                    bboxes,
+                    scores,
+                    class_ids,
+                    class_names,
+                    track_id_dict,
+                )
+
+            return debug_image
+
+
 
     def draw_classification_info(
         self,
