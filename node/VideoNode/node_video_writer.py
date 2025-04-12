@@ -29,37 +29,70 @@ class FactoryNode:
         pass
 
     
-    def add_node(self, parent, node_id, pos=[0, 0], callback=None, opencv_setting_dict=None):
-        """Ajoute un nœud au graphe de traitement."""
-        
-        # Génération des tags pour le Node et ses attributs
+    def add_node(
+        self,
+        parent,
+        node_id,
+        pos=[0, 0],
+        opencv_setting_dict=None,
+        callback=None,
+    ):
+
         node = Node()
+        node.tag_node_name = str(node_id) + ':' + node.node_tag
+        node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Input01'
+        node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Input01Value'
 
-        node.tag_node_name = f"{node_id}:{node.node_tag}"
-        tag_node_output01_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01"
-        tag_node_output01_value_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01Value"
+        node.tag_node_button_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Button'
+        node.tag_node_button_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':ButtonValue'
 
-        # Initialisation du flux vidéo
-        node.cap = get_light_live_stream_url(VIDEO_ID)
-        node.last_frame_time = None
-        node.frame_time = 1.0 / 32  # 15 FPS pour une lecture fluide
-        node.small_window_w, node.small_window_h = 600, 400  # Taille de l'affichage
 
-        # Image noire pour le démarrage
-        black_image = np.zeros((nodesmall_window_w, node.small_window_h, 3))
-        black_texture = node.convert_cv_to_dpg(black_image, node.small_window_w, node.small_window_h)
+        node._opencv_setting_dict = opencv_setting_dict
+        small_window_w = node._opencv_setting_dict['process_width']
+        small_window_h = node._opencv_setting_dict['process_height']
 
-        # Création de la texture pour afficher l'image
+
+        black_image = np.zeros((small_window_w, small_window_h, 3))
+        black_texture = node.convert_cv_to_dpg(
+            black_image,
+            small_window_w,
+            small_window_h,
+        )
+
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(
-                node.small_window_w, node.small_window_h, black_texture,
-                tag=tag_node_output01_value_name, format=dpg.mvFormat_Float_rgb
+                small_window_w,
+                small_window_h,
+                black_texture,
+                tag=node.tag_node_input01_value_name,
+                format=dpg.mvFormat_Float_rgb,
             )
 
-        # Création du nœud dans l'interface graphique
-        with dpg.node(tag=tag_node_name, parent=parent, label=node.node_label, pos=pos):
-            with dpg.node_attribute(tag=tag_node_output01_name, attribute_type=dpg.mvNode_Attr_Output):
-                dpg.add_image(tag_node_output01_value_name)
+
+        with dpg.node(
+                tag=node.tag_node_name,
+                parent=parent,
+                label=self.node_label,
+                pos=pos,
+        ):
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_input01_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_image(node.tag_node_input01_value_name)
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_button_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_button(
+                    label=node._start_label,
+                    tag=node.tag_node_button_value_name,
+                    width=small_window_w,
+                    callback=node._recording_button,
+                    user_data=node.tag_node_name,
+                )
 
         return node
 
@@ -82,72 +115,7 @@ class Node(Node):
     def __init__(self):
         pass
 
-    def add_node(
-        self,
-        parent,
-        node_id,
-        pos=[0, 0],
-        opencv_setting_dict=None,
-        callback=None,
-    ):
 
-        tag_node_name = str(node_id) + ':' + self.node_tag
-        tag_node_input01_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01'
-        tag_node_input01_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01Value'
-
-        tag_node_button_name = tag_node_name + ':' + self.TYPE_TEXT + ':Button'
-        tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
-
-
-        self._opencv_setting_dict = opencv_setting_dict
-        small_window_w = self._opencv_setting_dict['process_width']
-        small_window_h = self._opencv_setting_dict['process_height']
-
-
-        black_image = np.zeros((small_window_w, small_window_h, 3))
-        black_texture = self.convert_cv_to_dpg(
-            black_image,
-            small_window_w,
-            small_window_h,
-        )
-
-
-        with dpg.texture_registry(show=False):
-            dpg.add_raw_texture(
-                small_window_w,
-                small_window_h,
-                black_texture,
-                tag=tag_node_input01_value_name,
-                format=dpg.mvFormat_Float_rgb,
-            )
-
-
-        with dpg.node(
-                tag=tag_node_name,
-                parent=parent,
-                label=self.node_label,
-                pos=pos,
-        ):
-
-            with dpg.node_attribute(
-                    tag=tag_node_input01_name,
-                    attribute_type=dpg.mvNode_Attr_Input,
-            ):
-                dpg.add_image(tag_node_input01_value_name)
-
-            with dpg.node_attribute(
-                    tag=tag_node_button_name,
-                    attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_button(
-                    label=self._start_label,
-                    tag=tag_node_button_value_name,
-                    width=small_window_w,
-                    callback=self._recording_button,
-                    user_data=tag_node_name,
-                )
-
-        return tag_node_name
 
     def update(
         self,
@@ -240,9 +208,6 @@ class Node(Node):
     
 
 
-
-
-
     def _recording_button(self, sender, data, user_data):
         tag_node_name = user_data
         tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
@@ -252,9 +217,8 @@ class Node(Node):
         if label == self._start_label:
 
             datetime_now = datetime.datetime.now()
+            
             startup_time_text = datetime_now.strftime('%Y%m%d_%H%M%S')
-
-
             writer_width = self._opencv_setting_dict['video_writer_width']
             writer_height = self._opencv_setting_dict['video_writer_height']
             writer_fps = self._opencv_setting_dict['video_writer_fps']
