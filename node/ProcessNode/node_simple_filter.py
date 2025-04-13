@@ -26,39 +26,235 @@ class FactoryNode:
         pass
 
     
-    def add_node(self, parent, node_id, pos=[0, 0], callback=None, opencv_setting_dict=None):
-        """Ajoute un nœud au graphe de traitement."""
-        
-        # Génération des tags pour le Node et ses attributs
+    def add_node(
+        self,
+        parent,
+        node_id,
+        pos=[0, 0],
+        opencv_setting_dict=None,
+        callback=None,
+    ):
+
         node = Node()
 
-        node.tag_node_name = f"{node_id}:{node.node_tag}"
-        tag_node_output01_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01"
-        tag_node_output01_value_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01Value"
+        node.tag_node_name = str(node_id) + ':' + node.node_tag
+        node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Input01'
+        node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Input01Value'
+        node.tag_node_input02_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input02'
+        node.tag_node_input02_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input02Value'
+        node.tag_node_input03_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input03'
+        node.tag_node_input03_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input03Value'
+        node.tag_node_input04_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input04'
+        node.tag_node_input04_value_name = node.tag_node_name + ':' +node.TYPE_FLOAT + ':Input04Value'
+        node.tag_node_input05_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input05'
+        node.tag_node_input05_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input05Value'
+        node.tag_node_input06_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input06'
+        node.tag_node_input06_value_name = node.tag_node_name + ':' +node.TYPE_FLOAT + ':Input06Value'
+        node.tag_node_input07_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input07'
+        node.tag_node_input07_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input07Value'
+        node.tag_node_input08_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input08'
+        node.tag_node_input08_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input08Value'
+        node.tag_node_input09_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input09'
+        node.tag_node_input09_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input09Value'
+        node.tag_node_input10_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input10'
+        node.tag_node_input10_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input10Value'
+        node.tag_node_input11_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input11'
+        node.tag_node_input11_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input11Value'
+        node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
+        node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
+        node.tag_node_output02_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
+        node.tag_node_output02_value_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02Value'
 
-        # Initialisation du flux vidéo
-        node.cap = get_light_live_stream_url(VIDEO_ID)
-        node.last_frame_time = None
-        node.frame_time = 1.0 / 32  # 15 FPS pour une lecture fluide
-        node.small_window_w, node.small_window_h = 600, 400  # Taille de l'affichage
 
-        # Image noire pour le démarrage
-        black_image = np.zeros((nodesmall_window_w, node.small_window_h, 3))
-        black_texture = node.convert_cv_to_dpg(black_image, node.small_window_w, node.small_window_h)
+        node._opencv_setting_dict = opencv_setting_dict
+        small_window_w = node._opencv_setting_dict['process_width']
+        small_window_h = node._opencv_setting_dict['process_height']
+        use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
-        # Création de la texture pour afficher l'image
+
+        black_image = np.zeros((small_window_w, small_window_h, 3))
+        black_texture = convert_cv_to_dpg(
+            black_image,
+            small_window_w,
+            small_window_h,
+        )
+
+
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(
-                node.small_window_w, node.small_window_h, black_texture,
-                tag=tag_node_output01_value_name, format=dpg.mvFormat_Float_rgb
+                small_window_w,
+                small_window_h,
+                black_texture,
+                tag=node.tag_node_output01_value_name,
+                format=dpg.mvFormat_Float_rgb,
             )
 
-        # Création du nœud dans l'interface graphique
-        with dpg.node(tag=tag_node_name, parent=parent, label=node.node_label, pos=pos):
-            with dpg.node_attribute(tag=tag_node_output01_name, attribute_type=dpg.mvNode_Attr_Output):
-                dpg.add_image(tag_node_output01_value_name)
+
+        with dpg.node(
+                tag=node.tag_node_name,
+                parent=parent,
+                label=node.node_label,
+                pos=pos,
+        ):
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_input01_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_input01_value_name,
+                    default_value='Input BGR image',
+                )
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_output01_name,
+                    attribute_type=dpg.mvNode_Attr_Output,
+            ):
+                dpg.add_image(node.tag_node_output01_value_name)
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_input02_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_input02_value_name,
+                    label="x-1,y-1",
+                    width=small_window_w - 80,
+                    default_value=0,
+                    min_value=node._min_val,
+                    max_value=node._max_val,
+                    callback=None,
+                )
+            with dpg.node_attribute(
+                    tag=node.tag_node_input03_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_input03_value_name,
+                    label="x, y-1",
+                    width=small_window_w - 80,
+                    default_value=0.0,
+                    min_value=node._min_val,
+                    max_value=node._max_val,
+                    callback=None,
+                )
+            with dpg.node_attribute(
+                    tag=node.tag_node_input04_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_input04_value_name,
+                    label="x+1, y-1",
+                    width=small_window_w - 80,
+                    default_value=0.0,
+                    min_value=self._min_val,
+                    max_value=self._max_val,
+                    callback=None,
+                )
+            with dpg.node_attribute(
+                    tag=node.tag_node_input05_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_input05_value_name,
+                    label="x-1, y",
+                    width=small_window_w - 80,
+                    default_value=0.0,
+                    min_value=node._min_val,
+                    max_value=node._max_val,
+                    callback=None,
+                )
+            with dpg.node_attribute(
+                    tag=node.tag_node_input06_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_input06_value_name,
+                    label="x, y",
+                    width=small_window_w - 80,
+                    default_value=1.0,
+                    min_value=node._min_val,
+                    max_value=node._max_val,
+                    callback=None,
+                )
+            with dpg.node_attribute(
+                    tag=node.tag_node_input07_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_input07_value_name,
+                    label="x+1, y",
+                    width=small_window_w - 80,
+                    default_value=0.0,
+                    min_value=node._min_val,
+                    max_value=node._max_val,
+                    callback=None,
+                )
+            with dpg.node_attribute(
+                    tag=node.tag_node_input08_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_input08_value_name,
+                    label="x-1, y+1",
+                    width=small_window_w - 80,
+                    default_value=0.0,
+                    min_value=node._min_val,
+                    max_value=node._max_val,
+                    callback=None,
+                )
+            with dpg.node_attribute(
+                    tag=node.tag_node_input09_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_input09_value_name,
+                    label="x, y+1",
+                    width=small_window_w - 80,
+                    default_value=0.0,
+                    min_value=node._min_val,
+                    max_value=node._max_val,
+                    callback=None,
+                )
+            with dpg.node_attribute(
+                    tag=node.tag_node_input10_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_input10_value_name,
+                    label="x+1, y+1",
+                    width=small_window_w - 80,
+                    default_value=0.0,
+                    min_value=node._min_val,
+                    max_value=node._max_val,
+                    callback=None,
+                )
+            with dpg.node_attribute(
+                    tag=node.tag_node_input11_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_input11_value_name,
+                    label="K",
+                    width=small_window_w - 80,
+                    default_value=1.0,
+                    min_value=node._min_k,
+                    max_value=node._max_k,
+                    callback=None,
+                )
+            # 処理時間
+            if use_pref_counter:
+                with dpg.node_attribute(
+                        tag=node.tag_node_output02_name,
+                        attribute_type=dpg.mvNode_Attr_Output,
+                ):
+                    dpg.add_text(
+                        tag=node.tag_node_output02_value_name,
+                        default_value='elapsed time(ms)',
+                    )
 
         return node
+
 class Node(Node):
     _ver = '0.0.1'
 
