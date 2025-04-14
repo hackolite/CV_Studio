@@ -14,12 +14,12 @@ from node.basenode import Node
 
 
 # 📌 Identifiant du live YouTube (à remplacer)
-VIDEO_ID = "VR-x3HdhKLQ"
-VIDEO_ID = "zeSG7Js32Us"
+#VIDEO_ID = "VR-x3HdhKLQ"
+#VIDEO_ID = "zeSG7Js32Us"
 #VIDEO_ID = "loHbMM9JfCs"
 #VIDEO_ID = "elhJf3krR94"
-VIDEO_ID = "KSsfLxP-A9g"
-
+#VIDEO_ID = "KSsfLxP-A9g"
+VIDEO_ID = "DjdUEyjx8GM"
 
 
 def get_light_live_stream_url(video_id):

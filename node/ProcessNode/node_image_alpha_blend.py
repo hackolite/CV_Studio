@@ -141,7 +141,6 @@ class FactoryNode:
                     default_value='Input BGR image',
                 )
 
-            
 
             with dpg.node_attribute(
                     tag=node.tag_node_input02_name,

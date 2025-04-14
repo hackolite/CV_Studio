@@ -132,7 +132,7 @@ class Node(Node):
                 label=self.node_label,
                 pos=pos,
         ):
-            # 入力端子
+
             with dpg.node_attribute(
                     tag=tag_node_input01_name,
                     attribute_type=dpg.mvNode_Attr_Input,
@@ -141,13 +141,13 @@ class Node(Node):
                     tag=tag_node_input01_value_name,
                     default_value='Input Detection Node',
                 )
-            # 画像
+
             with dpg.node_attribute(
                     tag=tag_node_output01_name,
                     attribute_type=dpg.mvNode_Attr_Output,
             ):
                 dpg.add_image(tag_node_output01_value_name)
-            # 使用アルゴリズム
+
             with dpg.node_attribute(
                     tag=tag_node_input02_name,
                     attribute_type=dpg.mvNode_Attr_Static,
@@ -158,7 +158,7 @@ class Node(Node):
                     width=small_window_w,
                     tag=tag_node_input02_value_name,
                 )
-            # 処理時間
+
             if use_pref_counter:
                 with dpg.node_attribute(
                         tag=tag_node_output02_name,
@@ -187,51 +187,57 @@ class Node(Node):
         small_window_h = self._opencv_setting_dict['process_height']
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
-        # 接続情報確認
+
         src_node_name = ''
         connection_info_src = ''
         for connection_info in connection_list:
             connection_type = connection_info[0].split(':')[2]
             if connection_type == self.TYPE_INT:
-                # 接続タグ取得
+
                 source_tag = connection_info[0] + 'Value'
                 destination_tag = connection_info[1] + 'Value'
-                # 値更新
+
                 input_value = int(dpg_get_value(source_tag))
                 input_value = max([self._min_val, input_value])
                 input_value = min([self._max_val, input_value])
                 dpg_set_value(destination_tag, input_value)
             if connection_type == self.TYPE_IMAGE:
-                # 画像取得元のノード名(ID付き)を取得
+
                 connection_info_src = connection_info[0]
                 connection_info_src = connection_info_src.split(':')[:2]
                 src_node_name = connection_info_src[1]
                 connection_info_src = ':'.join(connection_info_src)
 
-        # 画像取得
+            else:
+                print('Unknown connection type: ' + connection_type)
+                source_tag = connection_info[0] + 'Value'
+                destination_tag = connection_info[1] + 'Value'
+                print(dpg_get_value(source_tag))
+
+
         frame = node_image_dict.get(connection_info_src, None)
 
-        # モデル情報取得
+
         model_name = dpg_get_value(input_value02_tag)
         model_class = self._model_class[model_name]
 
         model_name_with_provider = tag_node_name + ':' + model_name
 
-        # モデル取得
+
         if frame is not None:
             if model_name_with_provider not in self._model_instance:
-                # ToDo：FPS初期指定未実施(デフォルト30)
+
                 self._model_instance[model_name_with_provider] = model_class()
 
-        # 計測開始
+
         if frame is not None and use_pref_counter:
             start_time = time.perf_counter()
 
-        # 接続元がObjectDetectionノードの場合、各バウンディングボックスに対して推論
+
         result = {}
         if frame is not None:
             if src_node_name == 'ObjectDetection':
-                # 物体検出情報取得
+
                 node_result = node_result_dict.get(connection_info_src, [])
                 od_bboxes = node_result.get('bboxes', [])
                 od_scores = node_result.get('scores', [])
@@ -250,7 +256,7 @@ class Node(Node):
                 if node_id not in self._track_id_dict:
                     self._track_id_dict[node_id] = {}
 
-                # トラッキングIDと連番の紐付け
+
                 for track_id in track_ids:
                     if track_id not in self._track_id_dict[node_id]:
                         new_id = len(self._track_id_dict[node_id])
@@ -270,7 +276,7 @@ class Node(Node):
                     False,
                 )
                 if use_object_detection:
-                    # 物体検出情報取得
+
                     od_bboxes = node_result.get('od_bboxes', [])
                     od_scores = node_result.get('class_scores', [])
                     od_class_ids = node_result.get('class_ids', [])
@@ -287,7 +293,7 @@ class Node(Node):
                     if node_id not in self._track_id_dict:
                         self._track_id_dict[node_id] = {}
 
-                    # トラッキングIDと連番の紐付け
+
                     for track_id in track_ids:
                         if track_id not in self._track_id_dict[node_id]:
                             new_id = len(self._track_id_dict[node_id])
@@ -300,14 +306,13 @@ class Node(Node):
                     result['class_names'] = od_class_names
                     result['track_id_dict'] = self._track_id_dict[node_id]
 
-        # 計測終了
+
         if frame is not None and use_pref_counter:
             elapsed_time = time.perf_counter() - start_time
             elapsed_time = int(elapsed_time * 1000)
             dpg_set_value(output_value02_tag,
                           str(elapsed_time).zfill(4) + 'ms')
 
-        # 描画
         if frame is not None:
             if src_node_name == 'ObjectDetection' or src_node_name == 'Classification':
                 # 描画

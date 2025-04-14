@@ -214,7 +214,7 @@ def main():
     node_list = node_editor.get_node_list()
     for node_id_name in node_list:
         node_id, node_name = node_id_name.split(':')
-        node_instance = node_editor.get_node_instance(node_name)
+        node_instance = node_editor.get_node_instances(node_name)
         node_instance.close(node_id)
 
     print('**** Release All VideoCapture ********')
