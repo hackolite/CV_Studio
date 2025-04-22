@@ -20,7 +20,7 @@ from node.basenode import Node
 #VIDEO_ID = "elhJf3krR94"
 #VIDEO_ID = "KSsfLxP-A9g"
 VIDEO_ID = "DjdUEyjx8GM"
-
+#VIDEO_ID = "ROaqNQ-12Js"
 
 def get_light_live_stream_url(video_id):
     """Récupère l'URL du flux live en basse résolution (360p max)."""

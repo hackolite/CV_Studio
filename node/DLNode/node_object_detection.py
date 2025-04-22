@@ -12,11 +12,12 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.basenode import Node
 from node.DLNode.object_detection.YOLOX.yolox import YOLOX
 from node.DLNode.object_detection.YOLO.yolo import YOLO
+from node.DLNode.object_detection.TennisYOLO.yolotennis import YOLOTENNIS
 from node.DLNode.object_detection.LightWeightPersonDetector.detector import LWPDetector
 from node.DLNode.object_detection.FreeYOLO.freeyolo import FreeYOLO
 from node.DLNode.object_detection.coco_class_names import coco_class_names
 from node.DLNode.object_detection.coco_class_names_only_person import coco_class_names_only_person
-import traceback
+from node.DLNode.object_detection.coco_class_names_tennis import coco_class_names_tennis
 
 
 class FactoryNode:
@@ -183,7 +184,9 @@ class Node(Node):
         'YOLOX-Nano(416x416)': YOLOX,
         'FreeYOLO-Nano(640x640)': FreeYOLO,
         'FreeYOLO-Nano-CrowdHuman(640x640)': FreeYOLO,
-        'YOLO11Nano': YOLO
+        'YOLO11Nano': YOLO,
+        'YOLOTENNIS': YOLOTENNIS,
+
     }
 
 
@@ -202,7 +205,10 @@ class Node(Node):
         'FreeYOLO/model/yolo_free_nano_crowdhuman_640x640.onnx',
          'Light-Weight Person Detector': 
         _model_base_path +
-        'LightWeightPersonDetector/model/model.onnx'
+        'LightWeightPersonDetector/model/model.onnx',
+        'YOLOTENNIS': 
+        _model_base_path +
+        'TennisYOLO/model/tennis.onnx'
 
     }
 
@@ -214,7 +220,8 @@ class Node(Node):
         'Light-Weight Person Detector': coco_class_names_only_person,
         'FreeYOLO-Nano(640x640)': coco_class_names,
         'FreeYOLO-Nano-CrowdHuman(640x640)': coco_class_names_only_person,
-        'YOLO11Nano': coco_class_names
+        'YOLO11Nano': coco_class_names,
+        'YOLOTENNIS': coco_class_names_tennis
     }
 
 
@@ -346,8 +353,8 @@ class Node(Node):
 
                 return frame, result
             except Exception as e:
-                    error_trace = traceback.format_exc()  # Récupère la stack trace sous forme de string
-                    print("Stack Trace :\n", error_trace)
+                    #error_trace = traceback.format_exc()  # Récupère la stack trace sous forme de string
+                    print("Stack Trace :\n", e)
 
 
     def close(self, node_id):
