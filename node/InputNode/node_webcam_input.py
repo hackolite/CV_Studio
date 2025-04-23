@@ -33,70 +33,70 @@ class FactoryNode:
     ):
 
         node = Node()
-        tag_node_name = str(node_id) + ':' + self.node_tag
-        tag_node_input01_name = tag_node_name + ':' + self.TYPE_INT + ':Input01'
-        tag_node_input01_value_name = tag_node_name + ':' + self.TYPE_INT + ':Input01Value'
-        tag_node_output01_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01'
-        tag_node_output01_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
-        tag_node_output02_name = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02'
-        tag_node_output02_value_name = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
+        node.tag_node_name = str(node_id) + ':' + node.node_tag
+        node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_INT + ':Input01'
+        node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_INT + ':Input01Value'
+        node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
+        node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
+        node.tag_node_output02_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
+        node.tag_node_output02_value_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02Value'
 
 
-        self._opencv_setting_dict = opencv_setting_dict
-        small_window_w = self._opencv_setting_dict['input_window_width']
-        small_window_h = self._opencv_setting_dict['input_window_height']
-        device_no_list = self._opencv_setting_dict['device_no_list']
-        use_pref_counter = self._opencv_setting_dict['use_pref_counter']
+        node._opencv_setting_dict = opencv_setting_dict
+        node.small_window_w = node._opencv_setting_dict['input_window_width']
+        node.small_window_h = node._opencv_setting_dict['input_window_height']
+        device_no_list = node._opencv_setting_dict['device_no_list']
+        use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
-        black_image = np.zeros((small_window_w, small_window_h, 3))
-        black_texture = self.convert_cv_to_dpg(
+        black_image = np.zeros((node.small_window_w, node.small_window_h, 3))
+        black_texture = node.convert_cv_to_dpg(
             black_image,
-            small_window_w,
-            small_window_h,
+            node.small_window_w,
+            node.small_window_h,
         )
 
 
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(
-                small_window_w,
-                small_window_h,
+                node.small_window_w,
+                node.small_window_h,
                 black_texture,
-                tag=tag_node_output01_value_name,
+                tag=node.tag_node_output01_value_name,
                 format=dpg.mvFormat_Float_rgb,
             )
 
 
         with dpg.node(
-                tag=tag_node_name,
+                tag=node.tag_node_name,
                 parent=parent,
-                label=self.node_label,
+                label=node.node_label,
                 pos=pos,
         ):
  
             with dpg.node_attribute(
-                    tag=tag_node_input01_name,
+                    tag=node.tag_node_input01_name,
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_combo(
                     device_no_list,
-                    width=small_window_w - 100,
+                    width=node.small_window_w - 100,
                     label="Device No",
-                    tag=tag_node_input01_value_name,
+                    tag=node.tag_node_input01_value_name,
                 )
 
             with dpg.node_attribute(
-                    tag=tag_node_output01_name,
+                    tag=node.tag_node_output01_name,
                     attribute_type=dpg.mvNode_Attr_Output,
             ):
-                dpg.add_image(tag_node_output01_value_name)
+                dpg.add_image(node.tag_node_output01_value_name)
 
             if use_pref_counter:
                 with dpg.node_attribute(
-                        tag=tag_node_output02_name,
+                        tag=node.tag_node_output02_name,
                         attribute_type=dpg.mvNode_Attr_Output,
                 ):
                     dpg.add_text(
-                        tag=tag_node_output02_value_name,
+                        tag=node.tag_node_output02_value_name,
                         default_value='elapsed time(ms)',
                     )
 

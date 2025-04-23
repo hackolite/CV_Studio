@@ -19,7 +19,7 @@ from node.basenode import Node
 #VIDEO_ID = "loHbMM9JfCs"
 #VIDEO_ID = "elhJf3krR94"
 #VIDEO_ID = "KSsfLxP-A9g"
-VIDEO_ID = "DjdUEyjx8GM"
+VIDEO_ID = "B2uDfNd9QSo"
 #VIDEO_ID = "ROaqNQ-12Js"
 
 def get_light_live_stream_url(video_id):

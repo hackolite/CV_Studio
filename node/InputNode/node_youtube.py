@@ -17,6 +17,9 @@ import threading
 from threading import Lock
 
 from node.basenode import Node
+
+
+
 class YoutubeCapture(object):
     _frame = None
     _ret = None
@@ -71,40 +74,111 @@ class FactoryNode:
         pass
 
     
-    def add_node(self, parent, node_id, pos=[0, 0], callback=None, opencv_setting_dict=None):
-        """Ajoute un nœud au graphe de traitement."""
-        
-        # Génération des tags pour le Node et ses attributs
+    def add_node(
+        self,
+        parent,
+        node_id,
+        pos=[0, 0],
+        opencv_setting_dict=None,
+        callback=None,
+    ):
         node = Node()
+        node.tag_node_name = str(node_id) + ':' + node.node_tag
+        node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01'
+        node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01Value'
+        node.tag_node_input02_name = node.tag_node_name + ':' + node.TYPE_INT + ':Input02'
+        node.tag_node_input02_value_name = node.tag_node_name + ':' + node.TYPE_INT + ':Input02Value'
+        node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
+        node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
+        node.tag_node_output02_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
+        node.tag_node_output02_value_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02Value'
 
-        node.tag_node_name = f"{node_id}:{node.node_tag}"
-        tag_node_output01_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01"
-        tag_node_output01_value_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01Value"
+        node.tag_node_button_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Button'
+        node.tag_node_button_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':ButtonValue'
 
-        # Initialisation du flux vidéo
-        node.cap = get_light_live_stream_url(VIDEO_ID)
-        node.last_frame_time = None
-        node.frame_time = 1.0 / 32  # 15 FPS pour une lecture fluide
-        node.small_window_w, node.small_window_h = 600, 400  # Taille de l'affichage
+        node._opencv_setting_dict = opencv_setting_dict
+        node.small_window_w = node._opencv_setting_dict['input_window_width']
+        node.small_window_h = node._opencv_setting_dict['input_window_height']
+        use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
-        # Image noire pour le démarrage
-        black_image = np.zeros((nodesmall_window_w, node.small_window_h, 3))
-        black_texture = node.convert_cv_to_dpg(black_image, node.small_window_w, node.small_window_h)
+        black_image = np.zeros((node.small_window_w, node.small_window_h, 3))
+        black_texture = node.convert_cv_to_dpg(
+            black_image,
+            node.small_window_w,
+            node.small_window_h,
+        )
 
-        # Création de la texture pour afficher l'image
+
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(
-                node.small_window_w, node.small_window_h, black_texture,
-                tag=tag_node_output01_value_name, format=dpg.mvFormat_Float_rgb
+                node.small_window_w,
+                node.small_window_h,
+                black_texture,
+                tag=node.tag_node_output01_value_name,
+                format=dpg.mvFormat_Float_rgb,
             )
 
-        # Création du nœud dans l'interface graphique
-        with dpg.node(tag=tag_node_name, parent=parent, label=node.node_label, pos=pos):
-            with dpg.node_attribute(tag=tag_node_output01_name, attribute_type=dpg.mvNode_Attr_Output):
-                dpg.add_image(tag_node_output01_value_name)
+
+        with dpg.node(
+                tag=node.tag_node_name,
+                parent=parent,
+                label=node.node_label,
+                pos=pos,
+        ):
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_input01_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_input_text(
+                    tag=node.tag_node_input01_value_name,
+                    label='URL',
+                    width=node.small_window_w - 30,
+                )
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_output01_name,
+                    attribute_type=dpg.mvNode_Attr_Output,
+            ):
+                dpg.add_image(node.tag_node_output01_value_name)
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_input02_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_slider_int(
+                    tag=node.tag_node_input02_value_name,
+                    label="Interval(ms)",
+                    width=node.small_window_w - 110,
+                    default_value=33,
+                    min_value=node._min_val,
+                    max_value=node._max_val,
+                    callback=None,
+                )
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_button_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_button(
+                    label=node._start_label,
+                    tag=node.tag_node_button_value_name,
+                    width=node.small_window_w,
+                    callback=node._button,
+                    user_data=node.tag_node_name,
+                )
+
+            if use_pref_counter:
+                with dpg.node_attribute(
+                        tag=node.tag_node_output02_name,
+                        attribute_type=dpg.mvNode_Attr_Output,
+                ):
+                    dpg.add_text(
+                        tag=node.tag_node_output02_value_name,
+                        default_value='elapsed time(ms)',
+                    )
 
         return node
-
 
 
 
@@ -131,113 +205,7 @@ class Node(Node):
     def __init__(self):
         pass
 
-    def add_node(
-        self,
-        parent,
-        node_id,
-        pos=[0, 0],
-        opencv_setting_dict=None,
-        callback=None,
-    ):
-        # タグ名
-        tag_node_name = str(node_id) + ':' + self.node_tag
-        tag_node_input01_name = tag_node_name + ':' + self.TYPE_TEXT + ':Input01'
-        tag_node_input01_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':Input01Value'
-        tag_node_input02_name = tag_node_name + ':' + self.TYPE_INT + ':Input02'
-        tag_node_input02_value_name = tag_node_name + ':' + self.TYPE_INT + ':Input02Value'
-        tag_node_output01_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01'
-        tag_node_output01_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
-        tag_node_output02_name = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02'
-        tag_node_output02_value_name = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
-        tag_node_button_name = tag_node_name + ':' + self.TYPE_TEXT + ':Button'
-        tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
-
-        # OpenCV向け設定
-        self._opencv_setting_dict = opencv_setting_dict
-        small_window_w = self._opencv_setting_dict['input_window_width']
-        small_window_h = self._opencv_setting_dict['input_window_height']
-        use_pref_counter = self._opencv_setting_dict['use_pref_counter']
-
-        # 初期化用黒画像
-        black_image = np.zeros((small_window_w, small_window_h, 3))
-        black_texture = convert_cv_to_dpg(
-            black_image,
-            small_window_w,
-            small_window_h,
-        )
-
-        # テクスチャ登録
-        with dpg.texture_registry(show=False):
-            dpg.add_raw_texture(
-                small_window_w,
-                small_window_h,
-                black_texture,
-                tag=tag_node_output01_value_name,
-                format=dpg.mvFormat_Float_rgb,
-            )
-
-        # ノード
-        with dpg.node(
-                tag=tag_node_name,
-                parent=parent,
-                label=self.node_label,
-                pos=pos,
-        ):
-            # YouTube URL入力欄
-            with dpg.node_attribute(
-                    tag=tag_node_input01_name,
-                    attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_input_text(
-                    tag=tag_node_input01_value_name,
-                    label='URL',
-                    width=small_window_w - 30,
-                )
-            # カメラ画像
-            with dpg.node_attribute(
-                    tag=tag_node_output01_name,
-                    attribute_type=dpg.mvNode_Attr_Output,
-            ):
-                dpg.add_image(tag_node_output01_value_name)
-            # 読み込み間隔(ms)
-            with dpg.node_attribute(
-                    tag=tag_node_input02_name,
-                    attribute_type=dpg.mvNode_Attr_Input,
-            ):
-                dpg.add_slider_int(
-                    tag=tag_node_input02_value_name,
-                    label="Interval(ms)",
-                    width=small_window_w - 110,
-                    default_value=33,
-                    min_value=self._min_val,
-                    max_value=self._max_val,
-                    callback=None,
-                )
-            # 録画/再生追加ボタン
-            with dpg.node_attribute(
-                    tag=tag_node_button_name,
-                    attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_button(
-                    label=self._start_label,
-                    tag=tag_node_button_value_name,
-                    width=small_window_w,
-                    callback=self._button,
-                    user_data=tag_node_name,
-                )
-            # 処理時間
-            if use_pref_counter:
-                with dpg.node_attribute(
-                        tag=tag_node_output02_name,
-                        attribute_type=dpg.mvNode_Attr_Output,
-                ):
-                    dpg.add_text(
-                        tag=tag_node_output02_value_name,
-                        default_value='elapsed time(ms)',
-                    )
-
-        return tag_node_name
 
     def update(
         self,
@@ -309,7 +277,7 @@ class Node(Node):
 
         # 描画
         if frame is not None:
-            texture = convert_cv_to_dpg(
+            texture = self.convert_cv_to_dpg(
                 frame,
                 small_window_w,
                 small_window_h,
