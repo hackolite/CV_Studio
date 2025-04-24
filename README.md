@@ -1,12 +1,8 @@
- # Image-Processing-Node-Editor
+ # CV_STUDIO
 An application that performs image processing with the node editor.<br>
 It is used for processing verification and comparison.<br>
 
 <img src="https://user-images.githubusercontent.com/37477845/172011014-23fb025e-68a5-4cb7-925f-c4417029966c.gif" loading="lazy" width="100%">
-
-# Note
-Since the nodes are added in the order in which the author(Takahashi) needs them,<br>
-There may be a shortage of nodes responsible for basic processing in image processing.<br>
 
 ```
 opencv-python   4.5.5.64 or later
