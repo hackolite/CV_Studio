@@ -21,7 +21,7 @@ class MoveNet(object):
             'CPUExecutionProvider',
         ],
     ):
-        # モデル読み込み
+
         self.onnx_session = onnxruntime.InferenceSession(
             model_path,
             providers=providers,
@@ -31,7 +31,7 @@ class MoveNet(object):
         self.input_name = self.input_detail.name
         self.output_detail = self.onnx_session.get_outputs()[0]
 
-        # 各種設定
+
         self.input_shape = input_shape
 
     def __call__(self, image):
@@ -58,7 +58,7 @@ class MoveNet(object):
         landmark_dict = {}
         # SinglePose
         if keypoints_with_scores.shape == (17, 3):
-            # キーポイント
+
             for id in range(17):
                 keypoint_x = int(image_width * keypoints_with_scores[id][1])
                 keypoint_y = int(image_height * keypoints_with_scores[id][0])
@@ -70,7 +70,7 @@ class MoveNet(object):
         # MultiPose
         elif keypoints_with_scores.shape == (6, 56):
             for keypoints_with_score in keypoints_with_scores:
-                # キーポイント
+
                 for id in range(17):
                     keypoint_x = int(image_width *
                                      keypoints_with_score[(id * 3) + 1])
@@ -80,7 +80,6 @@ class MoveNet(object):
 
                     landmark_dict[id] = [keypoint_x, keypoint_y, score]
 
-                # バウンディングボックス
                 bbox_ymin = int(image_height * keypoints_with_score[51])
                 bbox_xmin = int(image_width * keypoints_with_score[52])
                 bbox_ymax = int(image_height * keypoints_with_score[53])

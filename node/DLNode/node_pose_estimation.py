@@ -30,7 +30,12 @@ from node.DLNode.pose_estimation.mediapipe_pose.mediapipe_pose import (
     MediaPipePoseComplexity2,
 )
 
+from node.DLNode.pose_estimation.tennis_keypoints.tennis_keypoints import tennis_keypoints 
+from node.DLNode.pose_estimation.tennis_keypoints_2.tennis_keypoints_2 import tennis_keypoints_2
 
+
+
+import random
 
 class FactoryNode:
     node_label = 'PoseEstimation'
@@ -51,7 +56,7 @@ class FactoryNode:
     ):
 
         node = Node()
-        node.tag_node_name = str(node_id) + ':' + node.node_tag
+        node.tag_node_name = str(node_id) + ':' + self.node_tag
         node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Input01'
         node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Input01Value'
         node.tag_node_input02_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input02'
@@ -92,6 +97,7 @@ class FactoryNode:
             )
 
 
+        print(node.node_label)
         with dpg.node(
                 tag=node.tag_node_name,
                 parent=parent,
@@ -162,11 +168,11 @@ class FactoryNode:
                     )
 
             with dpg.node_attribute(
-                        tag="toto",
+                        tag=node.tag_node_output02_name + "result",
                         attribute_type=dpg.mvNode_Attr_Output,
                 ):
                     dpg.add_text(
-                        tag="bidul",
+                        tag=node.tag_node_output02_name + "result_1",
                         default_value='Pose Results',
                     )
 
@@ -178,14 +184,13 @@ class FactoryNode:
 class Node(Node):
     _ver = '0.0.1'
 
-    node_label = 'Pose Estimation'
+    node_label = 'PoseEstimation'
     node_tag = 'PoseEstimation'
 
     _min_val = 0.0
     _max_val = 1.0
 
     _opencv_setting_dict = None
-
 
     _model_class = {
         'MoveNet(SinglePose Lightning)': MoveNetSinglePoseLightning,
@@ -196,7 +201,10 @@ class Node(Node):
         'MediaPipe Pose(Complexity0)': MediaPipePoseComplexity0,
         'MediaPipe Pose(Complexity1)': MediaPipePoseComplexity1,
         'MediaPipe Pose(Complexity2)': MediaPipePoseComplexity2,
+        'TennisKeyPoints': tennis_keypoints,
+        'TennisKeyPoints_2': tennis_keypoints_2,
     }
+
     _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/pose_estimation/'
     _model_path_setting = {
         'MoveNet(SinglePose Lightning)':
@@ -205,6 +213,8 @@ class Node(Node):
         _model_base_path + 'movenet/model/movenet_singlepose_thunder_4.onnx',
         'MoveNet(MulitPose Lightning)':
         _model_base_path + 'movenet/model/movenet_multipose_lightning_1.onnx',
+        'TennisKeyPoints': _model_base_path + 'tennis_keypoints/model/tennis.onnx',
+        'TennisKeyPoints_2': _model_base_path + 'tennis_keypoints_2/model/tennis_old.onnx',
         'MediaPipe Hands(Complexity0)': None,
         'MediaPipe Hands(Complexity1)': None,
         'MediaPipe Pose(Complexity0)': None,
@@ -226,16 +236,16 @@ class Node(Node):
         node_image_dict,
         node_result_dict,
     ):
-        tag_node_name = str(node_id) + ':' + self.node_tag
-        input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
-        input_value03_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
-        output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
-        output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
+        self.tag_node_name = str(node_id) + ':' + self.node_tag
+        self.input_value02_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
+        self.input_value03_tag = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
+        self.output_value01_tag = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
+        self.output_value02_tag = self.tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
-        tag_provider_select_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
+        tag_provider_select_value_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
 
-        small_window_w = self._opencv_setting_dict['process_width']
-        small_window_h = self._opencv_setting_dict['process_height']
+        self.small_window_w = self._opencv_setting_dict['process_width']
+        self.small_window_h = self._opencv_setting_dict['process_height']
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
         use_gpu = self._opencv_setting_dict['use_gpu']
 
@@ -262,7 +272,7 @@ class Node(Node):
         frame = node_image_dict.get(connection_info_src, None)
 
 
-        score_th = round(float(dpg_get_value(input_value03_tag)), 3)
+        score_th = round(float(dpg_get_value(self.input_value03_tag)), 3)
 
 
         provider = 'CPU'
@@ -270,7 +280,7 @@ class Node(Node):
         	provider = dpg_get_value(tag_provider_select_value_name)
 
 
-        model_name = dpg_get_value(input_value02_tag)
+        model_name = dpg_get_value(self.input_value02_tag)
         model_path = self._model_path_setting[model_name]
         model_class = self._model_class[model_name]
 
@@ -301,12 +311,12 @@ class Node(Node):
             result['model_name'] = model_name
             result['score_th'] = score_th
             result['results_list'] = results_list
-            print(results_list)
+
 
         if frame is not None and use_pref_counter:
             elapsed_time = time.perf_counter() - start_time
             elapsed_time = int(elapsed_time * 1000)
-            dpg_set_value(output_value02_tag,
+            dpg_set_value(self.output_value02_tag,
                           str(elapsed_time).zfill(4) + 'ms')
 
 
@@ -318,12 +328,13 @@ class Node(Node):
                 results_list,
                 score_th,
             )
+
             texture = self.convert_cv_to_dpg(
                 debug_frame,
-                small_window_w,
-                small_window_h,
+                self.small_window_w,
+                self.small_window_h,
             )
-            dpg_set_value(output_value01_tag, texture)
+            dpg_set_value(self.output_value01_tag, texture)
 
         return frame, result
 

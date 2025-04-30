@@ -447,7 +447,42 @@ class Node:
                 score_th,
             )
 
+        
+        else:
+            debug_image = self.draw_keypoints_info(debug_image, results_list, score_th)
+
         return debug_image
+
+
+
+
+    def draw_keypoints_info(self, image, rescaled_kps, score_th):
+            points =  rescaled_kps
+            #for x, y in rescaled_kps:
+            #        cv2.circle(image, (int(x), int(y)), 3, (0, 0, 255), -1)
+
+
+            points = [tuple(map(int, pt)) for pt in points]
+            # Contour du terrain (4 coins)
+            cv2.line(image, points[0], points[1], (0, 255, 0), 2)
+            cv2.line(image, points[1], points[3], (0, 255, 0), 2)
+            cv2.line(image, points[3], points[2], (0, 255, 0), 2)
+            cv2.line(image, points[2], points[0], (0, 255, 0), 2)
+
+            # Zones de service (interne)
+            cv2.line(image, points[4], points[6], (0, 255, 0), 2)  # ligne interne haut
+            cv2.line(image, points[5], points[7], (0, 255, 0), 2)  # ligne interne bas
+            cv2.line(image, points[4], points[5], (0, 255, 0), 2)  # côté gauche
+            cv2.line(image, points[6], points[7], (0, 255, 0), 2)  # côté droit
+
+            # Lignes de service horizontales
+            cv2.line(image, points[8], points[9], (0, 255, 0), 1)
+            cv2.line(image, points[10], points[11], (0, 255, 0), 1)
+
+            # Filet au centre
+            cv2.line(image, points[12], points[13], (0, 255, 0), 2)
+
+            return image
 
 
     def draw_mediapipe_hands_info(self,image, results_list):
