@@ -16,7 +16,7 @@ filterpy        1.4.5    or later ※Required to run MOT(motpy) node
 # Installation
 Please prepare the environment by one of the following methods.<br>
 * Run the script directly
-    1. Clone repository<br>`git clone https://github.com/Kazuhito00/Image-Processing-Node-Editor`
+    1. Clone repository<br>`git clone https://github.com/hackolite/CV_Studio.git`
     1. Install package <br>`pip install -r requirements.txt`  
     1. Run "main.py" <br>`python main.py`
 * Use Docker
