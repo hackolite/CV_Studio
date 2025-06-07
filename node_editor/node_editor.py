@@ -13,8 +13,23 @@ from importlib import import_module
 import dearpygui.dearpygui as dpg
 from  node.node_factory import NodeFactory
 import time
+from .style import STYLE
 
-#object_factory = NodeFactory.create()
+dpg.create_context()
+
+
+
+def node_style(module_name):
+        tuple_style  = STYLE[module_name]["style"][0]
+        with dpg.theme() as custom_theme:
+            with dpg.theme_component(dpg.mvNode):
+                # Jaune plein pour la barre de titre
+                dpg.add_theme_color(dpg.mvNodeCol_TitleBar, tuple_style , category=dpg.mvThemeCat_Nodes)
+                dpg.add_theme_color(dpg.mvNodeCol_TitleBarHovered, tuple_style , category=dpg.mvThemeCat_Nodes)
+                dpg.add_theme_color(dpg.mvNodeCol_TitleBarSelected, tuple_style , category=dpg.mvThemeCat_Nodes)
+                # Texte en noir
+                dpg.add_theme_color(dpg.mvThemeCol_Text, (0, 0, 0, 255), category=dpg.mvThemeCat_Core)
+        return custom_theme
 
 
 class DpgNodeEditor(object):
@@ -48,7 +63,7 @@ class DpgNodeEditor(object):
     ):
 
         self._node_id = 0
-        #self._node_instance_list = {}
+
         self._node_factory_list = {}   #NodeFactorylist (objects), factory list
         self._node_instances_list = {} #NodeInstanceList (objects), instances list
         self._node_list = []           #NodeList
@@ -121,6 +136,8 @@ class DpgNodeEditor(object):
                     )
 
 
+                print(menu_dict.items())
+
                 for menu_info in menu_dict.items():
                     menu_label = menu_info[0]
                     print("menu_label :", menu_label)
@@ -160,6 +177,7 @@ class DpgNodeEditor(object):
                             )
 
                             print("Factory Instance :", factorynode.node_tag)
+                            factorynode.style = node_style(menu_label)
                             self._node_factory_list[factorynode.node_tag] = factorynode
 
             with dpg.node_editor(
@@ -202,6 +220,7 @@ class DpgNodeEditor(object):
                     callback=self._callback_mv_key_del,
                 )
 
+
     def get_node_list(self):
         return self._node_list
 
@@ -239,6 +258,7 @@ class DpgNodeEditor(object):
             opencv_setting_dict=self._opencv_setting_dict,
         )
 
+        dpg.bind_item_theme(node.tag_node_name, factorynode.style)
         self._node_instances_list[node.tag_node_name] = node
         self._node_list.append(node.tag_node_name)
 
@@ -367,7 +387,6 @@ class DpgNodeEditor(object):
 
     def _callback_file_export(self, sender, data):
         setting_dict = {}
-
 
         setting_dict['node_list'] = self._node_list
         setting_dict['link_list'] = self._node_link_list

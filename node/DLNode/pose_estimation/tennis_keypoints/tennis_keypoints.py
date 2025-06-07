@@ -3,6 +3,8 @@ import copy
 import cv2 as cv
 import onnxruntime as ort
 import numpy as np
+
+
 class KeypointsProcess(object):
 
     def __init__(
@@ -40,7 +42,6 @@ class KeypointsProcess(object):
         scale_x = orig_w / 224
         scale_y = orig_h / 224
         rescaled_kps = pred_kps * np.array([scale_x, scale_y])
-        
         return rescaled_kps
 
 

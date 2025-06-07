@@ -234,7 +234,7 @@ class Node(Node):
 
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict,):
-
+            data = {}
             try:
                 
                 self.tag_node_name = str(node_id) + ':' + self.node_tag
@@ -351,7 +351,9 @@ class Node(Node):
                     )
                     dpg_set_value(tag_node_output_image, texture)
 
-                return frame, result
+                data["image"] = frame
+                data["json"] = result 
+                return data
             except Exception as e:
                     #error_trace = traceback.format_exc()  # Récupère la stack trace sous forme de string
                     print("Stack Trace :\n", e)

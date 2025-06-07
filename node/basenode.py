@@ -11,6 +11,8 @@ import traceback
 import uuid
 import cv2 
 
+
+
 class DataType:
     TYPE_BOOLEAN = "BOOLEAN"
     TYPE_TEXT = "TEXT"

@@ -176,8 +176,6 @@ class FactoryNode:
                         default_value='Pose Results',
                     )
 
-
-
         return node
 
 

@@ -7,20 +7,14 @@ import cv2
 import yt_dlp
 import dearpygui.dearpygui as dpg
 
-# Importation des utilitaires
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node
 
 
 # 📌 Identifiant du live YouTube (à remplacer)
-#VIDEO_ID = "VR-x3HdhKLQ"
-#VIDEO_ID = "zeSG7Js32Us"
-#VIDEO_ID = "loHbMM9JfCs"
-#VIDEO_ID = "elhJf3krR94"
-#VIDEO_ID = "KSsfLxP-A9g"
-VIDEO_ID = "B2uDfNd9QSo"
-#VIDEO_ID = "ROaqNQ-12Js"
+VIDEO_ID = "VR-x3HdhKLQ"
+#VIDEO_ID = "fwGfdwm7ryc"
 
 def get_light_live_stream_url(video_id):
     """Récupère l'URL du flux live en basse résolution (360p max)."""
@@ -28,14 +22,12 @@ def get_light_live_stream_url(video_id):
     
     ydl_opts = {
         "quiet": True,
-        "format": "best[height<=400]",  # Limitation à 360p pour réduire la charge
+        "format": "best[height<=720]",  # Limitation à 360p pour réduire la charge
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
         return cv2.VideoCapture(info.get("url", None))
-
-
 
 
 class FactoryNode:
@@ -49,7 +41,6 @@ class FactoryNode:
     
     def add_node(self, parent, node_id, pos=[0, 0], callback=None, opencv_setting_dict=None):
         """Ajoute un nœud au graphe de traitement."""
-        
         # Génération des tags pour le Node et ses attributs
         node = Node()
 

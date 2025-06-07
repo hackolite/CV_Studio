@@ -64,7 +64,7 @@ def update_node_info(
 
         if mode_async:
             try:
-                image, result = node_instance.update(
+                data = node_instance.update(
                     node_id,
                     connection_list,
                     node_image_dict,
@@ -74,15 +74,17 @@ def update_node_info(
                 print(e)
                 sys.exit()
         else:
-            image, result = node_instance.update(
+            data = node_instance.update(
                 node_id,
                 connection_list,
                 node_image_dict,
                 node_result_dict,
             )
 
-        node_image_dict[node_id_name] = copy.deepcopy(image)
-        node_result_dict[node_id_name] = copy.deepcopy(result)
+        
+        #data[image]
+        node_image_dict[node_id_name] = copy.deepcopy(data["image"])
+        node_result_dict[node_id_name] = copy.deepcopy(data["json"])
 
 
 def main():

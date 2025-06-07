@@ -1,8 +1,6 @@
 from node import *
 
 
-
-
 class NodeFactory:
     @classmethod
     def create(cls, node_classe):

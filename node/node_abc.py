@@ -11,7 +11,7 @@ class DpgNodeABC(metaclass=ABCMeta):
     TYPE_FLOAT = 'Float'
     TYPE_IMAGE = 'Image'
     TYPE_TIME_MS = 'TimeMS'
-    TYPE_TEXT = 'Text'
+    TYPE_JSON = 'Json'
     TYPE_SOUND = 'Sound'
 
     @abstractmethod

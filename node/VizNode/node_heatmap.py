@@ -246,8 +246,10 @@ class Node(Node):
 
         return frame, None
 
+
     def close(self, node_id):
         pass
+
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
