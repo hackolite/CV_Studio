@@ -66,8 +66,8 @@ class YoutubeCapture(object):
         self._wait_interval = interval_time
 
 class FactoryNode:
-    node_label = 'YouTubeInput'
-    node_tag = 'YouTubeInput'
+    node_label = 'Websocket'
+    node_tag = 'Websocket'
     
 
     def __init__(self):
@@ -192,8 +192,8 @@ class FactoryNode:
 class Node(Node):
     _ver = '0.0.1'
 
-    node_label = 'YouTubeInput'
-    node_tag = 'YouTubeInput'
+    node_label = 'WebsocketInput'
+    node_tag = 'WebsocketInput'
 
     _opencv_setting_dict = None
     _start_label = 'Start'

@@ -66,8 +66,8 @@ class YoutubeCapture(object):
         self._wait_interval = interval_time
 
 class FactoryNode:
-    node_label = 'YouTubeInput'
-    node_tag = 'YouTubeInput'
+    node_label = 'Mqtt'
+    node_tag = 'Mqtt'
     
 
     def __init__(self):
@@ -192,8 +192,8 @@ class FactoryNode:
 class Node(Node):
     _ver = '0.0.1'
 
-    node_label = 'YouTubeInput'
-    node_tag = 'YouTubeInput'
+    node_label = 'MqttInput'
+    node_tag = 'MqttInput'
 
     _opencv_setting_dict = None
     _start_label = 'Start'
@@ -246,7 +246,7 @@ class Node(Node):
         # Interval time
         wait_interval = dpg_get_value(input_value02_tag)
 
-        # VideoCapture()
+
         youtube_capture = None
         if youtube_url != '':
             if youtube_url in self._youtube_capture:

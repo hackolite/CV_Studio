@@ -66,8 +66,8 @@ class YoutubeCapture(object):
         self._wait_interval = interval_time
 
 class FactoryNode:
-    node_label = 'YouTubeInput'
-    node_tag = 'YouTubeInput'
+    node_label = 'Api'
+    node_tag = 'Api'
     
 
     def __init__(self):
@@ -192,8 +192,8 @@ class FactoryNode:
 class Node(Node):
     _ver = '0.0.1'
 
-    node_label = 'YouTubeInput'
-    node_tag = 'YouTubeInput'
+    node_label = 'ApiInput'
+    node_tag = 'ApiInput'
 
     _opencv_setting_dict = None
     _start_label = 'Start'
@@ -228,35 +228,35 @@ class Node(Node):
         small_window_h = self._opencv_setting_dict['input_window_height']
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
-
+        # 接続情報確認
         for connection_info in connection_list:
             connection_type = connection_info[0].split(':')[2]
             if connection_type == self.TYPE_INT:
-
+                # 接続タグ取得
                 source_tag = connection_info[0] + 'Value'
                 destination_tag = connection_info[1] + 'Value'
-
+                # 値更新
                 input_value = int(dpg_get_value(source_tag))
                 input_value = max([self._min_val, input_value])
                 input_value = min([self._max_val, input_value])
                 dpg_set_value(destination_tag, input_value)
 
-        # YouTube URL
+        # YouTube URL取得
         youtube_url = dpg_get_value(input_value01_tag)
-        # Interval time
+        # Interval time取得
         wait_interval = dpg_get_value(input_value02_tag)
 
-        # VideoCapture()
+        # VideoCapture()インスタンス取得
         youtube_capture = None
         if youtube_url != '':
             if youtube_url in self._youtube_capture:
                 youtube_capture = self._youtube_capture[youtube_url]
 
-
+        # 計測開始
         if youtube_url != '' and use_pref_counter:
             start_time = time.perf_counter()
 
-
+        # 画像取得
         frame = None
         if youtube_capture is not None:
             ret = False
@@ -272,14 +272,14 @@ class Node(Node):
 
             self._prev_read_time[youtube_url] = start_time
 
-
+        # 計測終了
         if youtube_url != '' and use_pref_counter:
             elapsed_time = time.perf_counter() - start_time
             elapsed_time = int(elapsed_time * 1000)
             dpg_set_value(output_value02_tag,
                           str(elapsed_time).zfill(4) + 'ms')
 
-
+        # 描画
         if frame is not None:
             texture = self.convert_cv_to_dpg(
                 frame,

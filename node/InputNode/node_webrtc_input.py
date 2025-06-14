@@ -66,8 +66,8 @@ class YoutubeCapture(object):
         self._wait_interval = interval_time
 
 class FactoryNode:
-    node_label = 'YouTubeInput'
-    node_tag = 'YouTubeInput'
+    node_label = 'Webrtc'
+    node_tag = 'Webrtc'
     
 
     def __init__(self):
@@ -192,8 +192,8 @@ class FactoryNode:
 class Node(Node):
     _ver = '0.0.1'
 
-    node_label = 'YouTubeInput'
-    node_tag = 'YouTubeInput'
+    node_label = 'WebrtcInput'
+    node_tag = 'WebrtcInput'
 
     _opencv_setting_dict = None
     _start_label = 'Start'
@@ -256,7 +256,7 @@ class Node(Node):
         if youtube_url != '' and use_pref_counter:
             start_time = time.perf_counter()
 
-
+ 
         frame = None
         if youtube_capture is not None:
             ret = False
