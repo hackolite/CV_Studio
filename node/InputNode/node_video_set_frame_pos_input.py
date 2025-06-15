@@ -34,6 +34,17 @@ class FactoryNode:
         tag_node_output01_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01"
         tag_node_output01_value_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01Value"
 
+
+        node.tag_node_output_audio_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudio'
+        node.tag_node_output_audio_value_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudioValue'
+
+        node.tag_node_output_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJson'
+        node.tag_node_output_json_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJsonValue'
+
+        node.tag_node_output_float_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloat'
+        node.tag_node_output_float_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloatValue'
+
+
         # Initialisation du flux vidéo
         node.cap = get_light_live_stream_url(VIDEO_ID)
         node.last_frame_time = None

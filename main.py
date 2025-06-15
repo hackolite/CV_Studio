@@ -38,7 +38,6 @@ def async_main(node_editor):
     node_image_dict = {}
     node_result_dict = {}
 
-
     while not node_editor.get_terminate_flag():
         update_node_info(node_editor, node_image_dict, node_result_dict)
 
@@ -49,8 +48,22 @@ def update_node_info(
     node_result_dict,
     mode_async=True,
 ):
-
+        
+    editor_width = dpg.get_viewport_client_width()
+    editor_height = dpg.get_viewport_client_height()
+    
+    print(editor_width, editor_height)
+    print(node_editor.window)
+    
+    try:
+        dpg.set_item_pos(node_editor.window, [0, 0])
+        dpg.set_item_width(node_editor.window, dpg.get_viewport_client_width())
+        dpg.set_item_height(node_editor.window, dpg.get_viewport_client_height())
+    except Exception as e:
+        print(e)
+		
     node_list = node_editor.get_node_list()
+
     sorted_node_connection_dict = node_editor.get_sorted_node_connection()
 
     for node_id_name in node_list:
@@ -82,11 +95,11 @@ def update_node_info(
             )
 
         
-        #data[image]
         node_image_dict[node_id_name] = copy.deepcopy(data["image"])
         node_result_dict[node_id_name] = copy.deepcopy(data["json"])
 
 
+    
 def main():
 
     args = get_args()
@@ -140,6 +153,7 @@ def main():
     opencv_setting_dict['serial_connection_list'] = serial_connection_list
 
     print('**** DearPyGui Setup ********')
+    
     dpg.create_context()
     dpg.setup_dearpygui()
     dpg.create_viewport(
@@ -176,18 +190,19 @@ def main():
 
     })
 
+
+
+    dpg.show_viewport(maximized=True)
+
+    
     node_editor = DpgNodeEditor(
-        width=editor_width - 15,
-        height=editor_height - 40,
+        width=editor_width,
+        height=editor_height,
         opencv_setting_dict=opencv_setting_dict,
         menu_dict=menu_dict,
         use_debug_print=use_debug_print,
         node_dir=current_path + '/node',
     )
-
-
-    dpg.show_viewport()
-
 
     print('**** Start Main Event Loop ********')
     if not unuse_async_draw:

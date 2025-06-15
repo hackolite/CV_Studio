@@ -53,8 +53,8 @@ class DpgNodeEditor(object):
 
     def __init__(
         self,
-        width=1280,
-        height=720,
+        width=None,
+        height=None,
         pos=[0, 0],
         opencv_setting_dict=None,
         node_dir='node',
@@ -74,7 +74,7 @@ class DpgNodeEditor(object):
         self._terminate_flag = False
 
         self._opencv_setting_dict = opencv_setting_dict
-
+        self.window = None
 
         if menu_dict is None:
             menu_dict = OrderedDict({
@@ -117,7 +117,7 @@ class DpgNodeEditor(object):
                 pos=pos,
                 menubar=True,
                 on_close=self._callback_close_window,
-        ):
+        ) as window:
 
             with dpg.menu_bar(label='MenuBar'):
                 # Export/Import
@@ -136,7 +136,7 @@ class DpgNodeEditor(object):
                     )
 
 
-                print(menu_dict.items())
+                #print(menu_dict.items())
 
                 for menu_info in menu_dict.items():
                     menu_label = menu_info[0]
@@ -168,7 +168,7 @@ class DpgNodeEditor(object):
 
                             module = import_module(import_path)
                             factorynode = module.FactoryNode()
-
+                            print("Factory Instance :", factorynode.node_tag)
                             dpg.add_menu_item(
                                 tag='Menu_' + factorynode.node_tag,
                                 label=factorynode.node_label,
@@ -219,7 +219,7 @@ class DpgNodeEditor(object):
                     dpg.mvKey_Delete,
                     callback=self._callback_mv_key_del,
                 )
-
+            self.window = window  
 
     def get_node_list(self):
         return self._node_list

@@ -17,40 +17,29 @@ class FactoryNode:
     def __init__(self):
         pass
 
-    
     def add_node(self, parent, node_id, pos=[0, 0], callback=None, opencv_setting_dict=None):
-        """Ajoute un nœud au graphe de traitement."""
+      """Ajoute un nœud au graphe de traitement avec champ de lien et bouton Start."""
+    
+      # Génération des tags pour le Node et ses attributs
+      node = Node()
+      node.tag_node_name = f"{node_id}:{node.node_tag}"
+    
+      tag_input_url = f"{node.tag_node_name}:InputURL"
+      tag_start_button = f"{node.tag_node_name}:StartButton"
+      tag_node_output01_name = f"{node.tag_node_name}:{node.TYPE_IMAGE}:Output01"
+      tag_node_output01_value_name = f"{node.tag_node_name}:{node.TYPE_IMAGE}:Output01Value"
+    
+      # Création du nœud dans l'interface graphique
+      with dpg.node(tag=node.tag_node_name, parent=parent, label=node.node_label, pos=pos):
+        # Champ de saisie pour le lien (Input)
+        with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+          dpg.add_input_text(label="Lien URL", tag=tag_input_url, width=200, hint="Entrer une URL")
+    
+        # Bouton Start (avec callback si fourni)
+        with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+          dpg.add_button(label="Start", tag=tag_start_button, callback=callback, user_data=tag_input_url)
         
-        # Génération des tags pour le Node et ses attributs
-        node = Node()
-
-        node.tag_node_name = f"{node_id}:{node.node_tag}"
-        tag_node_output01_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01"
-        tag_node_output01_value_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01Value"
-
-        # Initialisation du flux vidéo
-        node.cap = get_light_live_stream_url(VIDEO_ID)
-        node.last_frame_time = None
-        node.frame_time = 1.0 / 32  # 15 FPS pour une lecture fluide
-        node.small_window_w, node.small_window_h = 600, 400  # Taille de l'affichage
-
-        # Image noire pour le démarrage
-        black_image = np.zeros((nodesmall_window_w, node.small_window_h, 3))
-        black_texture = node.convert_cv_to_dpg(black_image, node.small_window_w, node.small_window_h)
-
-        # Création de la texture pour afficher l'image
-        with dpg.texture_registry(show=False):
-            dpg.add_raw_texture(
-                node.small_window_w, node.small_window_h, black_texture,
-                tag=tag_node_output01_value_name, format=dpg.mvFormat_Float_rgb
-            )
-
-        # Création du nœud dans l'interface graphique
-        with dpg.node(tag=tag_node_name, parent=parent, label=node.node_label, pos=pos):
-            with dpg.node_attribute(tag=tag_node_output01_name, attribute_type=dpg.mvNode_Attr_Output):
-                dpg.add_image(tag_node_output01_value_name)
-
-        return node
+      return node
 
 
 
@@ -72,34 +61,21 @@ class Node(Node):
         opencv_setting_dict=None,
         callback=None,
     ):
-        # タグ名
+
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_output01_name = tag_node_name + ':' + self.TYPE_INT + ':Output01'
         tag_node_output01_value_name = tag_node_name + ':' + self.TYPE_INT + ':Output01Value'
 
-        # 設定
-        self._opencv_setting_dict = opencv_setting_dict
-        small_window_w = self._opencv_setting_dict['input_window_width']
+        node.tag_node_output_audio_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudio'
+        node.tag_node_output_audio_value_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudioValue'
 
-        # ノード
-        with dpg.node(
-                tag=tag_node_name,
-                parent=parent,
-                label=self.node_label,
-                pos=pos,
-        ):
-            # 整数入力
-            with dpg.node_attribute(
-                    tag=tag_node_output01_name,
-                    attribute_type=dpg.mvNode_Attr_Output,
-            ):
-                dpg.add_input_int(
-                    tag=tag_node_output01_value_name,
-                    label="Int value",
-                    width=small_window_w - 76,
-                    default_value=0,
-                    callback=callback,
-                )
+        node.tag_node_output_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJson'
+        node.tag_node_output_json_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJsonValue'
+
+        node.tag_node_output_float_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloat'
+        node.tag_node_output_float_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloatValue'
+
+
 
         return tag_node_name
 

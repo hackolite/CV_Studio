@@ -33,13 +33,16 @@ class Node:
     _ver            = '0.0.1'
     node_label      = 'BaseNode'
     node_tag        = 'BaseNode'
+    node_data       =  None
+        
     TYPE_BOOLEAN    = "BOOLEAN"
     TYPE_TEXT       = "TEXT"
     TYPE_IMAGE      = "IMAGE"
     TYPE_FLOAT      = "FLOAT"
     TYPE_INT        = "INT"
     TYPE_TIME_MS    = "TIME_MS"
-    TYPE_SOUND      = "SOUND"
+    TYPE_AUDIO      = "AUDIO"
+    TYPE_JSON       = "JSON"
     INPUT           = "INPUT"
     OUTPUT          = "OUTPUT"
 
@@ -90,7 +93,6 @@ class Node:
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict):
         pass
-
 
 
     def close(self, node_id):

@@ -27,50 +27,51 @@ TIMESERIES = []
 STYLE = {
     "Input": {
         "names": INPUT,
-        "style": [(255, 255, 0, 255)]  # jaune
+        "style": [(255, 255, 153, 255)]  # jaune pastel doux
     },
     "VisionProcess": {
         "names": PROCESS,
-        "style": [(0, 128, 0, 255)]  # vert plein
+        "style": [(144, 238, 144, 255)]  # vert pastel
     },
     "VisionModel": {
         "names": MODEL,
-        "style": [(255, 165, 0, 255)]  # tournesol (jaune doré)
+        "style": [(255, 218, 185, 255)]  # pêche pastel (peach puff)
     },
     "Stats": {
         "names": STATS,
-        "style": [(173, 216, 230, 255)]  # bleu clair (light blue)
+        "style": [(173, 216, 230, 255)]  # bleu clair pastel (inchangé)
     },
     "Trigger": {
         "names": TRIGGER,
-        "style": [(255, 0, 255, 255)]  # magenta
+        "style": [(221, 160, 221, 255)]  # violet clair (plum pastel)
     },
     "Router": {
         "names": ROUTER,
-        "style": [(128, 0, 128, 255)]  # violet
+        "style": [(216, 191, 216, 255)]  # lavande pastel
     },
     "Action": {
         "names": ACTION,
-        "style": [(255, 165, 0, 255)]  # orange
+        "style": [(255, 204, 153, 255)]  # orange pastel doux
     },
     "Video": {
         "names": VIDEO,
-        "style": [(144, 238, 144, 255)]  # vert clair (light green)
+        "style": [(193, 255, 193, 255)]  # vert très clair pastel
     },
     "Tracking": {
         "names": TRACKING,
-        "style": [(0, 0, 255, 255)]  # bleu plein
+        "style": [(173, 216, 230, 255)]  # bleu pastel
     },
     "Overlay": {
         "names": OVERLAY,
-        "style": [(255, 255, 255, 255)]  # blanc
+        "style": [(245, 245, 245, 255)]  # gris très clair (presque blanc)
     },
     "Viz": {
         "names": VIZ,
-        "style": [(255, 0, 0, 255)]  # rouge
+        "style": [(255, 182, 193, 255)]  # rose clair (light pink)
     },
     "Timeseries": {
         "names": TIMESERIES,
-        "style": [(255, 192, 203, 255)]  # rose (pink)
+        "style": [(255, 222, 243, 255)]  # rose pastel très tendre
     }
 }
+
