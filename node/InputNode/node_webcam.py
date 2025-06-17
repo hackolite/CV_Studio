@@ -15,8 +15,8 @@ from node.basenode import Node
 
 
 class FactoryNode:
-    node_label = 'WebCam'
-    node_tag = 'WebCam'
+    node_label = 'Webcam'
+    node_tag = 'Webcam'
     
 
     def __init__(self):
@@ -32,14 +32,20 @@ class FactoryNode:
         callback=None,
     ):
 
-        node = Node()
+        node = WebcamNode()
         node.tag_node_name = str(node_id) + ':' + node.node_tag
         node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_INT + ':Input01'
         node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_INT + ':Input01Value'
+        
         node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
         node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
+        
         node.tag_node_output02_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
         node.tag_node_output02_value_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02Value'
+
+
+        node.tag_node_button_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Button'
+        node.tag_node_button_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':ButtonValue'
 
 
         node.tag_node_output_audio_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudio'
@@ -57,10 +63,16 @@ class FactoryNode:
         node._opencv_setting_dict = opencv_setting_dict
         node.small_window_w = node._opencv_setting_dict['input_window_width']
         node.small_window_h = node._opencv_setting_dict['input_window_height']
+        
+        node._small_window_w = node._opencv_setting_dict['input_window_width']
+        node._small_window_h = node._opencv_setting_dict['input_window_height']
+        
         device_no_list = node._opencv_setting_dict['device_no_list']
         use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
         black_image = np.zeros((node.small_window_w, node.small_window_h, 3))
+        
+        
         black_texture = node.convert_cv_to_dpg(
             black_image,
             node.small_window_w,
@@ -78,6 +90,16 @@ class FactoryNode:
             )
 
 
+        # Création d’un thème jaune pour boutons avec texte en blanc
+        with dpg.theme() as yellow_button_theme:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 0, 255))          # Fond jaune
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255)) # Jaune clair au survol
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 64, 255))   # Jaune plus foncé en appui
+                #dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))          # Texte en blanc
+        
+        
+        
         with dpg.node(
                 tag=node.tag_node_name,
                 parent=parent,
@@ -102,16 +124,44 @@ class FactoryNode:
             ):
                 dpg.add_image(node.tag_node_output01_value_name)
 
-            if use_pref_counter:
-                with dpg.node_attribute(
-                        tag=node.tag_node_output02_name,
-                        attribute_type=dpg.mvNode_Attr_Output,
-                ):
-                    dpg.add_text(
-                        tag=node.tag_node_output02_value_name,
-                        default_value='elapsed time(ms)',
-                    )
 
+            # Bouton Start avec thème jaune
+            with dpg.node_attribute(
+                    tag=node.tag_node_button_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                btn_start = dpg.add_button(
+                    label=node._start_label,
+                    tag=node.tag_node_button_value_name,
+                    width=node._small_window_w,
+                    callback=node._button,
+                    user_data=node.tag_node_name,
+                )
+                
+                dpg.bind_item_theme(btn_start, yellow_button_theme)
+
+            # Outputs audio, json, float, elapsed time en boutons désactivés mais jaune
+            def add_yellow_disabled_button(label, tag):
+                btn = dpg.add_button(
+                    label=label,
+                    tag=tag,
+                    width=node._small_window_w,
+                    enabled=False,
+                )
+                dpg.bind_item_theme(btn, yellow_button_theme)
+                return btn
+
+
+
+            with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Output):
+                btn = add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
+                
+            with dpg.node_attribute(tag=node.tag_node_output_json_name, attribute_type=dpg.mvNode_Attr_Output):
+                btn = add_yellow_disabled_button("JSON", node.tag_node_output_json_value_name)
+
+            with dpg.node_attribute(tag=node.tag_node_output_float_name, attribute_type=dpg.mvNode_Attr_Static):
+                btn = add_yellow_disabled_button("Float", node.tag_node_output_float_value_name)
+        
         return node
     
 
@@ -119,19 +169,32 @@ class FactoryNode:
 
 
 
-class Node(Node):
+class WebcamNode(Node):
     _ver = '0.0.1'
 
-    node_label = 'WebCam'
-    node_tag = 'WebCam'
+    node_label = 'Webcam'
+    node_tag = 'Webcam'
 
-    _opencv_setting_dict = None
+    #_opencv_setting_dict = None
 
     def __init__(self):
-        pass
+        super().__init__()  # Appel du constructeur parent
+        self._min_val = 1
+        self._max_val = 1000
 
+        self._small_window_w = 240
+        self._small_window_h = 135
+        self.small_window_w = 240
+        self.small_window_h = 135
+        self._start_label = "Start"
+        self.node_tag = "Webcam"
+        self.node_label = "Webcam"
+        self._start_label = "Webcam"
 
-
+    def _button(self, sender, app_data, user_data):
+        print(f"Button clicked for {user_data}")
+    
+    
     def update(
         self,
         node_id,

@@ -54,7 +54,6 @@ class Node:
         self.node_label = 'BaseNode'
         self.node_tag = 'BaseNode'
         self.tag_node_name = f"{node_id}:{self.node_tag}"
-
         # Générer les tags dynamiquement en fonction du dictionnaire
         #self.tags = self.generate_tags(connection_dict)
 
@@ -62,6 +61,8 @@ class Node:
         self._opencv_setting_dict = opencv_setting_dict if opencv_setting_dict else {}
         self.small_window_w = self._opencv_setting_dict.get('process_width', 640)
         self.small_window_h = self._opencv_setting_dict.get('process_height', 480)
+        self._small_window_w = self._opencv_setting_dict.get('process_width', 640)
+        self._small_window_h = self._opencv_setting_dict.get('process_height', 480)
         self.use_pref_counter = self._opencv_setting_dict.get('use_pref_counter', False)
         self.use_gpu = self._opencv_setting_dict.get('use_gpu', False)
 

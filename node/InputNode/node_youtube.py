@@ -10,7 +10,7 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
-from node.basenode import Node
+
 #from node_editor.util import convert_cv_to_dpg
 
 import threading
@@ -70,27 +70,7 @@ class YoutubeCapture(object):
 import numpy as np
 import dearpygui.dearpygui as dpg
 
-class Node:
-    TYPE_TEXT = "Text"
-    TYPE_INT = "Int"
-    TYPE_IMAGE = "Image"
-    TYPE_TIME_MS = "TimeMs"
-    TYPE_AUDIO = "Audio"
-    TYPE_JSON = "Json"
-    TYPE_FLOAT = "Float"
-    
-    def __init__(self):
-        self._min_val = 1
-        self._max_val = 1000
-        self._start_label = "Start"
-        self.node_tag = "YouTube"
-        self.node_label = "YouTube"
-        
-    def convert_cv_to_dpg(self, cv_img, w, h):
-        return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
-    
-    def _button(self, sender, app_data, user_data):
-        print(f"Button clicked for {user_data}")
+
 
 class FactoryNode:
     node_label = 'YouTube'
@@ -107,7 +87,7 @@ class FactoryNode:
         opencv_setting_dict=None,
         callback=None,
     ):
-        node = Node()
+        node = YoutubeNode()
         node.tag_node_name = str(node_id) + ':' + node.node_tag
         node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01'
         node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01Value'
@@ -123,6 +103,7 @@ class FactoryNode:
 
         node.tag_node_button_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Button'
         node.tag_node_button_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':ButtonValue'
+
 
         node.tag_node_output_audio_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudio'
         node.tag_node_output_audio_value_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudioValue'
@@ -189,7 +170,7 @@ class FactoryNode:
 
             with dpg.node_attribute(
                     tag=node.tag_node_input02_name,
-                    attribute_type=dpg.mvNode_Attr_Input,
+                    attribute_type=dpg.mvNode_Attr_Static
             ):
                 dpg.add_slider_int(
                     tag=node.tag_node_input02_value_name,
@@ -242,7 +223,7 @@ class FactoryNode:
 
 
 
-class Node(Node):
+class YoutubeNode(Node):
     _ver = '0.0.1'
 
     node_label = 'YouTube'
@@ -259,11 +240,31 @@ class Node(Node):
     _youtube_capture = {}
     _prev_read_time = {}
 
+    
+    
+    TYPE_TEXT = "Text"
+    TYPE_INT = "Int"
+    TYPE_IMAGE = "Image"
+    TYPE_TIME_MS = "TimeMs"
+    TYPE_AUDIO = "Audio"
+    TYPE_JSON = "Json"
+    TYPE_FLOAT = "Float"
+    
     def __init__(self):
-        pass
-
-
-
+        super().__init__()  # Appel du constructeur parent
+        self._min_val = 1
+        self._max_val = 1000
+        self._start_label = "Start"
+        self.node_tag = "YouTube"
+        self.node_label = "YouTube"
+        
+    def convert_cv_to_dpg(self, cv_img, w, h):
+        return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
+    
+    def _button(self, sender, app_data, user_data):
+        print(f"Button clicked for {user_data}")
+    
+    
     def update(
         self,
         node_id,

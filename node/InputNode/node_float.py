@@ -10,8 +10,8 @@ from node.basenode import Node
 
 
 class FactoryNode:
-    node_label = 'FloatValue'
-    node_tag = 'FloatValue'
+    node_label = 'Float'
+    node_tag = 'Float'
     
 
     def __init__(self):
@@ -57,8 +57,8 @@ class FactoryNode:
 class Node(Node):
     _ver = '0.0.1'
 
-    node_label = 'FloatValue'
-    node_tag = 'FloatValue'
+    node_label = 'Float'
+    node_tag = 'Float'
 
     def __init__(self):
         pass

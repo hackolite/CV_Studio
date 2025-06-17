@@ -30,7 +30,8 @@ class FactoryNode:
     ):
 
 
-        node = Node() 
+        node = VideoNode() 
+        
         node.tag_node_name = str(node_id) + ':' + self.node_tag
         node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_INT + ':Input01'
         node.tag_node_input02_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input02'
@@ -41,6 +42,10 @@ class FactoryNode:
         node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
         node.tag_node_output02_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
         node.tag_node_output02_value_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02Value'
+
+        node.tag_node_button_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Button'
+        node.tag_node_button_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':ButtonValue'
+
 
 
         node.tag_node_output_audio_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudio'
@@ -58,24 +63,34 @@ class FactoryNode:
         small_window_h = node._opencv_setting_dict['input_window_height']
         use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
-
-        black_image = np.zeros((small_window_w, small_window_h, 3))
+        print("small :" , node._small_window_w, node._small_window_h)
+        black_image = np.zeros((node._small_window_w, node._small_window_h, 3))
         black_texture = node.convert_cv_to_dpg(
             black_image,
-            small_window_w,
-            small_window_h,
+            node._small_window_w,
+            node._small_window_h,
         )
 
-
+        
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(
-                small_window_w,
+                node._small_window_w,
                 small_window_h,
                 black_texture,
                 tag=node.tag_node_output01_value_name,
                 format=dpg.mvFormat_Float_rgb,
             )
 
+        
+        # Création d’un thème jaune pour boutons avec texte en blanc
+        with dpg.theme() as yellow_button_theme:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 0, 255))          # Fond jaune
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255)) # Jaune clair au survol
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 64, 255))   # Jaune plus foncé en appui
+                #dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))          # Texte en blanc
+        
+        
         with dpg.file_dialog(
                 directory_selector=False,
                 show=False,
@@ -101,7 +116,7 @@ class FactoryNode:
             ):
                 dpg.add_button(
                     label='Select Movie',
-                    width=small_window_w,
+                    width=node._small_window_w,
                     callback=lambda: dpg.show_item(
                         'movie_select:' + str(node_id), ),
                 )
@@ -127,12 +142,12 @@ class FactoryNode:
 
             with dpg.node_attribute(
                     tag=node.tag_node_input03_name,
-                    attribute_type=dpg.mvNode_Attr_Input,
+                    attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_slider_int(
                     tag=node.tag_node_input03_value_name,
                     label="Skip Rate",
-                    width=small_window_w - 80,
+                    width=node._small_window_w - 80,
                     default_value=1,
                     min_value=node._min_val,
                     max_value=node._max_val,
@@ -149,16 +164,62 @@ class FactoryNode:
                         default_value='elapsed time(ms)',
                     )
 
+            # Bouton Start avec thème jaune
+            with dpg.node_attribute(
+                    tag=node.tag_node_button_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                btn_start = dpg.add_button(
+                    label=node._start_label,
+                    tag=node.tag_node_button_value_name,
+                    width=node._small_window_w,
+                    callback=node._button,
+                    user_data=node.tag_node_name,
+                )
+                dpg.bind_item_theme(btn_start, yellow_button_theme)
+
+            # Outputs audio, json, float, elapsed time en boutons désactivés mais jaune
+            def add_yellow_disabled_button(label, tag):
+                btn = dpg.add_button(
+                    label=label,
+                    tag=tag,
+                    width=node._small_window_w,
+                    enabled=False,
+                )
+                dpg.bind_item_theme(btn, yellow_button_theme)
+                return btn
+
+            #with dpg.node_attribute(tag=node.tag_node_output02_name, attribute_type=dpg.mvNode_Attr_Output):
+            #    add_yellow_disabled_button("Elapsed time (ms)", node.tag_node_output02_value_name)
+
+            with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Output):
+                btn = add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
+                
+            with dpg.node_attribute(tag=node.tag_node_output_json_name, attribute_type=dpg.mvNode_Attr_Output):
+                btn = add_yellow_disabled_button("JSON", node.tag_node_output_json_value_name)
+
+            with dpg.node_attribute(tag=node.tag_node_output_float_name, attribute_type=dpg.mvNode_Attr_Static):
+                btn = add_yellow_disabled_button("Float", node.tag_node_output_float_value_name)
+        
         return node
 
 
-
-
-class Node(Node):
+class VideoNode(Node):
     _ver = '0.0.1'
 
     node_label = 'Video'
     node_tag = 'Video'
+
+    _opencv_setting_dict = None
+    _start_label = 'Start'
+    _stop_label = 'Stop'
+    _loading_label = 'Loading...'
+
+    _min_val = 1
+    _max_val = 200
+
+    _youtube_capture = {}
+    _prev_read_time = {}
 
     _opencv_setting_dict = None
 
@@ -169,10 +230,34 @@ class Node(Node):
 
     _min_val = 1
     _max_val = 10
-
+    
+    TYPE_TEXT = "Text"
+    TYPE_INT = "Int"
+    TYPE_IMAGE = "Image"
+    TYPE_TIME_MS = "TimeMs"
+    TYPE_AUDIO = "Audio"
+    TYPE_JSON = "Json"
+    TYPE_FLOAT = "Float"
+    
     def __init__(self):
-        pass
+        super().__init__()  # Appel du constructeur parent
+        self._min_val = 1
+        self._max_val = 1000
 
+        self._small_window_w = 240
+        self._small_window_h = 135
+
+
+
+        self._start_label = "Start"
+        self.node_tag = "Video"
+        self.node_label = "Video"
+        
+    def convert_cv_to_dpg(self, cv_img, w, h):
+        return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
+    
+    def _button(self, sender, app_data, user_data):
+        print(f"Button clicked for {user_data}")
 
 
     def update(
@@ -188,8 +273,8 @@ class Node(Node):
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
-        small_window_w = self._opencv_setting_dict['input_window_width']
-        small_window_h = self._opencv_setting_dict['input_window_height']
+        small_window_w = self._small_window_w 
+        small_window_h = self._small_window_h
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
 
@@ -260,12 +345,13 @@ class Node(Node):
         if frame is not None:
             texture = self.convert_cv_to_dpg(
                 frame,
-                small_window_w,
+                self._small_window_w,
                 small_window_h,
             )
             frame = cv2.resize(frame, (600, 400))  # Réduction de la taille pour alléger
             dpg_set_value(output_value01_tag, texture)
 
+        
         return frame, None
 
     def close(self, node_id):
