@@ -83,8 +83,8 @@ class Node:
         self._min_val = 1
         self._max_val = 1000
         self._start_label = "Start"
-        self.node_tag = "YouTubeInput"
-        self.node_label = "YouTubeInput"
+        self.node_tag = "YouTube"
+        self.node_label = "YouTube"
         
     def convert_cv_to_dpg(self, cv_img, w, h):
         return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
@@ -94,7 +94,7 @@ class Node:
 
 class FactoryNode:
     node_label = 'YouTube'
-    node_tag = 'YouTubeInput'
+    node_tag = 'YouTube'
 
     def __init__(self):
         pass
@@ -245,8 +245,8 @@ class FactoryNode:
 class Node(Node):
     _ver = '0.0.1'
 
-    node_label = 'YouTubeInput'
-    node_tag = 'YouTubeInput'
+    node_label = 'YouTube'
+    node_tag = 'YouTube'
 
     _opencv_setting_dict = None
     _start_label = 'Start'
@@ -380,8 +380,8 @@ class Node(Node):
         tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
 
         label = dpg.get_item_label(tag_node_button_value_name)
-
-
+        
+        
         youtube_url = dpg_get_value(input_value01_tag)
 
         if label == self._start_label:

@@ -31,7 +31,7 @@ class FactoryNode:
     ):
 
 
-        node = Node()
+        node = ImageNode()
         node.tag_node_name = str(node_id) + ':' + node.node_tag
         node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_INT + ':Input01'
         node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
@@ -86,7 +86,29 @@ class FactoryNode:
                 'Image (*.bmp *.jpg *.png *.gif){.bmp,.jpg,.png,.gif}')
             dpg.add_file_extension('', color=(150, 255, 150, 255))
 
-        # ノード
+
+                # Création d'un thème jaune pour boutons avec texte en blanc
+        with dpg.theme() as yellow_button_theme:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))          # Fond jaune
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255)) # Jaune clair au survol
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 64, 255))   # Jaune plus foncé en appui
+                dpg.add_theme_color(dpg.mvThemeCol_Text, (0, 0, 0, 255))                # Texte en noir pour meilleure lisibilité
+        
+        # Outputs audio, json, float, elapsed time en boutons désactivés mais jaune
+        def add_yellow_disabled_button(label, tag):
+            btn = dpg.add_button(
+                label=label,
+                tag=tag,
+                enabled=False,
+                width=node.small_window_w
+                
+            )
+            dpg.bind_item_theme(btn, yellow_button_theme)
+            return btn  
+        
+        
+        
         with dpg.node(
                 tag=node.tag_node_name,
                 parent=parent,
@@ -110,12 +132,24 @@ class FactoryNode:
                     attribute_type=dpg.mvNode_Attr_Output,
             ):
                 dpg.add_image(node.tag_node_output01_value_name)
+                
+                # Outputs (décommentés et corrigés)
+            with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Static):
+                    add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
+                    
+            with dpg.node_attribute(tag=node.tag_node_output_json_name, attribute_type=dpg.mvNode_Attr_Output):
+                    add_yellow_disabled_button("JSON", node.tag_node_output_json_value_name)
 
+            with dpg.node_attribute(tag=node.tag_node_output_float_name, attribute_type=dpg.mvNode_Attr_Static):
+                    add_yellow_disabled_button("Float", node.tag_node_output_float_value_name)
+                    
         return node
+        
 
 
 
-class Node(Node):
+
+class ImageNode(Node):
     _ver = '0.0.1'
 
     node_label = 'Image'
@@ -128,7 +162,9 @@ class Node(Node):
     _prev_image_filepath = {}
 
     def __init__(self):
-        pass
+        super().__init__()  # Appel du constructeur parent
+        self.node_label = 'Image'
+        self.node_tag = 'Image'
 
     def update(
         self,
