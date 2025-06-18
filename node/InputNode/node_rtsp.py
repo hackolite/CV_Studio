@@ -34,7 +34,8 @@ class FactoryNode:
     ):
 
 
-        node = Node()
+        node = RtspNode()
+        
         node.tag_node_name = str(node_id) + ':' + node.node_tag
         node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01'
         node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01Value'
@@ -84,6 +85,16 @@ class FactoryNode:
                 format=dpg.mvFormat_Float_rgb,
             )
 
+        
+        # Création d’un thème jaune pour boutons avec texte en blanc
+        with dpg.theme() as yellow_button_theme:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 0, 255))          # Fond jaune
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255)) # Jaune clair au survol
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 64, 255))   # Jaune plus foncé en appui
+                #dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))          # Texte en blanc 
+
+
 
         with dpg.node(
                 tag=node.tag_node_name,
@@ -120,16 +131,29 @@ class FactoryNode:
                     user_data=node.tag_node_name,
                 )
 
-            if use_pref_counter:
-                with dpg.node_attribute(
-                        tag=node.tag_node_output02_name,
-                        attribute_type=dpg.mvNode_Attr_Output,
-                ):
-                    dpg.add_text(
-                        tag=node.tag_node_output02_value_name,
-                        default_value='elapsed time(ms)',
-                    )
 
+
+            # Outputs audio, json, float, elapsed time en boutons désactivés mais jaune
+            def add_yellow_disabled_button(label, tag):
+                btn = dpg.add_button(
+                    label=label,
+                    tag=tag,
+                    width=node._small_window_w,
+                    enabled=False,
+                )
+                dpg.bind_item_theme(btn, yellow_button_theme)
+                return btn
+
+
+            with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Output):
+                btn = add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
+                
+            with dpg.node_attribute(tag=node.tag_node_output_json_name, attribute_type=dpg.mvNode_Attr_Output):
+                btn = add_yellow_disabled_button("JSON", node.tag_node_output_json_value_name)
+
+            with dpg.node_attribute(tag=node.tag_node_output_float_name, attribute_type=dpg.mvNode_Attr_Static):
+                btn = add_yellow_disabled_button("Float", node.tag_node_output_float_value_name)
+        
         return node
 
 
@@ -158,11 +182,11 @@ def receive_image_process(rtsp_url, image_queue, request):
             break
 
 
-class Node(Node):
+class RtspNode(Node):
     _ver = '0.0.1'
 
-    node_label = 'RTSP'
-    node_tag = 'RTSP'
+    node_label = 'Rtsp'
+    node_tag = 'Rtsp'
 
     _opencv_setting_dict = None
     _start_label = 'Start'
@@ -175,9 +199,19 @@ class Node(Node):
     _process = {}
 
     def __init__(self):
-        pass
+        super().__init__()  # Appel du constructeur parent
+        self._min_val = 1
+        self._max_val = 1000
 
+        self._small_window_w = 240
+        self._small_window_h = 135
 
+        self._start_label = "Start"
+        self._stop_label  = "Stop"
+        
+        self.node_tag = "Rtsp"
+        self.node_label = "Rtsp"
+        
 
     def update(
         self,

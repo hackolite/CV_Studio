@@ -9,9 +9,6 @@ from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
 from node.basenode import Node
-#from node_editor.util import self.convert_cv_to_dpg
-
-
 
 
 class FactoryNode:
@@ -33,6 +30,7 @@ class FactoryNode:
     ):
 
         node = WebcamNode()
+        node._opencv_setting_dict = opencv_setting_dict
         node.tag_node_name = str(node_id) + ':' + node.node_tag
         node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_INT + ':Input01'
         node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_INT + ':Input01Value'
@@ -60,15 +58,16 @@ class FactoryNode:
 
 
 
-        node._opencv_setting_dict = opencv_setting_dict
-        node.small_window_w = node._opencv_setting_dict['input_window_width']
-        node.small_window_h = node._opencv_setting_dict['input_window_height']
+        #node._opencv_setting_dict = opencv_setting_dict
+        node.opencv_setting_dict = opencv_setting_dict
+        node.small_window_w = opencv_setting_dict['input_window_width']
+        node.small_window_h = opencv_setting_dict['input_window_height']
         
         node._small_window_w = node._opencv_setting_dict['input_window_width']
         node._small_window_h = node._opencv_setting_dict['input_window_height']
         
-        device_no_list = node._opencv_setting_dict['device_no_list']
-        use_pref_counter = node._opencv_setting_dict['use_pref_counter']
+        device_no_list = opencv_setting_dict['device_no_list']
+        use_pref_counter = opencv_setting_dict['use_pref_counter']
 
         black_image = np.zeros((node.small_window_w, node.small_window_h, 3))
         
@@ -202,22 +201,23 @@ class WebcamNode(Node):
         node_image_dict,
         node_result_dict,
     ):
+
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value01_tag = tag_node_name + ':' + self.TYPE_INT + ':Input01Value'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
-        device_no_list = self._opencv_setting_dict['device_no_list']
-        camera_capture_list = self._opencv_setting_dict['camera_capture_list']
-        small_window_w = self._opencv_setting_dict['input_window_width']
-        small_window_h = self._opencv_setting_dict['input_window_height']
-        use_pref_counter = self._opencv_setting_dict['use_pref_counter']
+        device_no_list = self.opencv_setting_dict['device_no_list']
+        camera_capture_list = self.opencv_setting_dict['camera_capture_list']
+        small_window_w = self.opencv_setting_dict['input_window_width']
+        small_window_h = self.opencv_setting_dict['input_window_height']
+        use_pref_counter = self.opencv_setting_dict['use_pref_counter']
 
+        camera_no = dpg_get_value(self.tag_node_input01_value_name)
 
-        camera_no = dpg_get_value(input_value01_tag)
-
-
+        print(camera_no)
         camera_capture = None
+        
         if camera_no != '':
             camera_no = int(camera_no)
             camera_index = device_no_list.index(camera_no)
@@ -250,7 +250,7 @@ class WebcamNode(Node):
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return frame, None
+        return {"image":frame, "json":None}
 
     def close(self, node_id):
         pass

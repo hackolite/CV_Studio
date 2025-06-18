@@ -186,10 +186,9 @@ def main():
         'Tracking': 'TrackerNode',
         'Overlay': 'OverlayNode',
         'Viz': 'VizNode',
-        'Timeseries': 'TimeseriesNode',
+        'TimeseriesML': 'TimeseriesNode',
 
     })
-
 
 
     dpg.show_viewport(maximized=True)

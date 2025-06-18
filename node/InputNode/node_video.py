@@ -221,7 +221,6 @@ class VideoNode(Node):
     _youtube_capture = {}
     _prev_read_time = {}
 
-    _opencv_setting_dict = None
 
     _video_capture = {}
     _movie_filepath = {}
