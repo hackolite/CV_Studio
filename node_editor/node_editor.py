@@ -168,7 +168,7 @@ class DpgNodeEditor(object):
 
                             module = import_module(import_path)
                             factorynode = module.FactoryNode()
-                            print("Factory Instance :", factorynode.node_tag)
+                            #print("Factory Instance :", factorynode.node_tag)
                             dpg.add_menu_item(
                                 tag='Menu_' + factorynode.node_tag,
                                 label=factorynode.node_label,
@@ -176,7 +176,7 @@ class DpgNodeEditor(object):
                                 user_data=factorynode.node_tag,
                             )
 
-                            print("Factory Instance :", factorynode.node_tag)
+                            #print("Factory Instance :", factorynode.node_tag)
                             factorynode.style = node_style(menu_label)
                             self._node_factory_list[factorynode.node_tag] = factorynode
 

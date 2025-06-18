@@ -6,7 +6,7 @@ import cv2
 import pafy
 import numpy as np
 import dearpygui.dearpygui as dpg
-
+import yt_dlp
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
@@ -20,52 +20,23 @@ from node.basenode import Node
 
 
 
-class YoutubeCapture(object):
-    _frame = None
-    _ret = None
-
-    _lock = Lock()
-
-    _video_capture = None
-    _wait_interval = 5  # ms
-    _prev_read_time = 0
-
-    def __init__(self, rtsp_link):
-        self._video_capture = cv2.VideoCapture(rtsp_link)
-
-        thread = threading.Thread(
-            target=self._youtube_read_thread,
-            args=(self._video_capture, ),
-            name="youtube_read_thread",
-        )
-
-        thread.daemon = True
-        thread.start()
-
-    def _youtube_read_thread(self, video_capture):
-        while True:
-            with self._lock:
-                current_time = time.perf_counter()
-                interval_time = current_time - self._prev_read_time
-                interval_time = int(interval_time * 1000)
-                if interval_time > self._wait_interval:
-                    self._ret, self._frame = video_capture.read()
-                    self._prev_read_time = current_time
-
-    def read(self):
-        if (self._ret is not None) and (self._frame is not None):
-            return self._ret, self._frame.copy()
-        else:
-            return self._ret, None
-
-    def release(self):
-        if self._video_capture is not None:
-            self._video_capture.release()
-
-    def set_interval(self, interval_time):
-        self._wait_interval = interval_time
 
 
+def get_light_live_stream_url(url):
+    """Récupère l'URL du flux live en basse résolution (360p max)."""
+    #url = url
+    
+    ydl_opts = {
+        "quiet": True,
+        "format": "best[height<=400]",  # Limitation à 360p pour réduire la charge
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        return cv2.VideoCapture(info.get("url", None))
+
+
+    
 
 import numpy as np
 import dearpygui.dearpygui as dpg
@@ -119,7 +90,11 @@ class FactoryNode:
         node.small_window_h = node._opencv_setting_dict['input_window_height']
         use_pref_counter = node._opencv_setting_dict.get('use_pref_counter', False)
 
-        black_image = np.zeros((node.small_window_w, node.small_window_h, 3), dtype=np.uint8)
+        
+        
+        
+        
+        black_image = np.zeros((node.small_window_h, node.small_window_w, 3), dtype=np.uint8)
         black_texture = node.convert_cv_to_dpg(
             black_image,
             node.small_window_w,
@@ -136,12 +111,12 @@ class FactoryNode:
             )
 
 		
-        # Création d’un thème jaune pour boutons avec texte en blanc
+        # Création d'un thème jaune pour boutons avec texte en blanc
         with dpg.theme() as yellow_button_theme:
             with dpg.theme_component(dpg.mvButton):
                 dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 0, 255))          # Fond jaune
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255)) # Jaune clair au survol
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 64, 255))   # Jaune plus foncé en appui
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 0, 64, 255))   # Jaune plus foncé en appui
                 #dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))          # Texte en blanc
 
 		
@@ -191,33 +166,35 @@ class FactoryNode:
                     label=node._start_label,
                     tag=node.tag_node_button_value_name,
                     width=node.small_window_w,
-                    callback=node._button,
-                    user_data=node.tag_node_name,
+                    callback=node.button,
+                    user_data=node.tag_node_input01_value_name,
                 )
                 dpg.bind_item_theme(btn_start, yellow_button_theme)
 
             # Outputs audio, json, float, elapsed time en boutons désactivés mais jaune
             def add_yellow_disabled_button(label, tag):
-                btn = dpg.add_button(
+                btnn = dpg.add_button(
                     label=label,
                     tag=tag,
                     width=node.small_window_w,
                     enabled=False,
+
+                    
                 )
-                dpg.bind_item_theme(btn, yellow_button_theme)
-                return btn
+                dpg.bind_item_theme(btnn, yellow_button_theme)
+                return btnn
 
             #with dpg.node_attribute(tag=node.tag_node_output02_name, attribute_type=dpg.mvNode_Attr_Output):
             #    add_yellow_disabled_button("Elapsed time (ms)", node.tag_node_output02_value_name)
 
             with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Output):
-                btn = add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
+                add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
                 
             with dpg.node_attribute(tag=node.tag_node_output_json_name, attribute_type=dpg.mvNode_Attr_Output):
-                btn = add_yellow_disabled_button("JSON", node.tag_node_output_json_value_name)
+                add_yellow_disabled_button("JSON", node.tag_node_output_json_value_name)
 
             with dpg.node_attribute(tag=node.tag_node_output_float_name, attribute_type=dpg.mvNode_Attr_Static):
-                btn = add_yellow_disabled_button("Float", node.tag_node_output_float_value_name)
+                add_yellow_disabled_button("Float", node.tag_node_output_float_value_name)
 
         return node
 
@@ -257,95 +234,67 @@ class YoutubeNode(Node):
         self._start_label = "Start"
         self.node_tag = "YouTube"
         self.node_label = "YouTube"
+        self.cap = None
+        self.small_window_w = 240
+        self.small_window_h = 135
         
     def convert_cv_to_dpg(self, cv_img, w, h):
-        return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
+        """Convertit une image OpenCV en format DearPyGui"""
+        if cv_img is None:
+            # Retourner une image noire si pas d'image
+            return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
+        
+        # Redimensionner l'image à la taille souhaitée
+        resized = cv2.resize(cv_img, (w, h))
+        
+        # Convertir de BGR (OpenCV) vers RGB
+        rgb_image = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        
+        # Normaliser les valeurs de 0-255 vers 0-1 (float32)
+        normalized = rgb_image.astype(np.float32) / 255.0
+        
+        # Aplatir l'array et retourner en bytes
+        return normalized.flatten().tobytes()
     
-    def _button(self, sender, app_data, user_data):
-        print(f"Button clicked for {user_data}")
-    
-    
-    def update(
-        self,
-        node_id,
-        connection_list,
-        node_image_dict,
-        node_result_dict,
-    ):
-        tag_node_name = str(node_id) + ':' + self.node_tag
-        input_value01_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input01Value'
-        input_value02_tag = tag_node_name + ':' + self.TYPE_INT + ':Input02Value'
-        output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
-        output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
-        small_window_w = self._opencv_setting_dict['input_window_width']
-        small_window_h = self._opencv_setting_dict['input_window_height']
-        use_pref_counter = self._opencv_setting_dict['use_pref_counter']
+    def button(self, sender, data, user_data):
+        print(user_data)
+        value = dpg.get_value(user_data)
+        self.cap = get_light_live_stream_url(value)
+        print(f"Button clicked, URL: {value}")
+        
+    def update(self, node_id, connection_list, node_image_dict, node_result_dict):
+        """Met à jour l'image du flux vidéo."""
+        print("update YT")
+        ret, frame = False, None
+        tag_node_name = f"{node_id}:{self.node_tag}"
+        output_value01_tag = f"{tag_node_name}:{self.TYPE_IMAGE}:Output01Value"
 
+        self.current_time = time.time()
+        
+        # Vérifier si la capture est initialisée
+        if self.cap is not None:
+            try:
+                ret, frame = self.cap.read()
+                print(f"Frame read: ret={ret}, frame shape={frame.shape if frame is not None else None}")
+            except Exception as e:
+                print(f"Erreur lors de la lecture: {e}")
+                ret, frame = False, None
 
-        for connection_info in connection_list:
-            connection_type = connection_info[0].split(':')[2]
-            if connection_type == self.TYPE_INT:
-
-                source_tag = connection_info[0] + 'Value'
-                destination_tag = connection_info[1] + 'Value'
-
-                input_value = int(dpg_get_value(source_tag))
-                input_value = max([self._min_val, input_value])
-                input_value = min([self._max_val, input_value])
-                dpg_set_value(destination_tag, input_value)
-
-        # YouTube URL
-        youtube_url = dpg_get_value(input_value01_tag)
-        # Interval time
-        wait_interval = dpg_get_value(input_value02_tag)
-
-        # VideoCapture()
-        youtube_capture = None
-        if youtube_url != '':
-            if youtube_url in self._youtube_capture:
-                youtube_capture = self._youtube_capture[youtube_url]
-
-
-        if youtube_url != '' and use_pref_counter:
-            start_time = time.perf_counter()
-
-
-        frame = None
-        if youtube_capture is not None:
-            ret = False
-
-            if youtube_url not in self._prev_read_time:
-                ret, frame = youtube_capture.read()
-            else:
-                youtube_capture.set_interval(wait_interval)
-                ret, frame = youtube_capture.read()
-
-            if not ret:
-                return None, None
-
-            self._prev_read_time[youtube_url] = start_time
-
-
-        if youtube_url != '' and use_pref_counter:
-            elapsed_time = time.perf_counter() - start_time
-            elapsed_time = int(elapsed_time * 1000)
-            dpg_set_value(output_value02_tag,
-                          str(elapsed_time).zfill(4) + 'ms')
-
-
-        if frame is not None:
-            texture = self.convert_cv_to_dpg(
-                frame,
-                small_window_w,
-                small_window_h,
-            )
+        if ret and frame is not None:
+            # Convertir et mettre à jour la texture
+            texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
             dpg_set_value(output_value01_tag, texture)
+            print("Texture mise à jour")
+        else:
+            print("Pas de frame valide")
 
-        return frame, None
+        return {"image": frame, "json": None}   
 
     def close(self, node_id):
-        pass
+        if self.cap is not None:
+            self.cap.release()
+            self.cap = None
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
@@ -374,34 +323,3 @@ class YoutubeNode(Node):
 
         dpg_set_value(tag_node_input01_value_name, youtube_url)
         dpg_set_value(tag_node_input02_value_name, interval_time)
-
-    def _button(self, sender, data, user_data):
-        tag_node_name = user_data
-        input_value01_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input01Value'
-        tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
-
-        label = dpg.get_item_label(tag_node_button_value_name)
-        
-        
-        youtube_url = dpg_get_value(input_value01_tag)
-
-        if label == self._start_label:
-            if youtube_url != '':
-                if not (youtube_url in self._youtube_capture):
-                    dpg.set_item_label(tag_node_button_value_name,
-                                       self._loading_label)
-
-                    pafy_video = pafy.new(youtube_url)
-                    pafy_best_video = pafy_video.getbest(preftype="mp4")
-                    youtube_capture = YoutubeCapture(pafy_best_video.url)
-                    self._youtube_capture[youtube_url] = youtube_capture
-
-                    dpg.set_item_label(tag_node_button_value_name,
-                                       self._stop_label)
-        elif label == self._stop_label:
-            if youtube_url != '':
-                if youtube_url in self._youtube_capture:
-                    self._youtube_capture[youtube_url].release()
-                    del self._youtube_capture[youtube_url]
-
-            dpg.set_item_label(tag_node_button_value_name, self._start_label)

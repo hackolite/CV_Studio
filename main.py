@@ -52,8 +52,8 @@ def update_node_info(
     editor_width = dpg.get_viewport_client_width()
     editor_height = dpg.get_viewport_client_height()
     
-    print(editor_width, editor_height)
-    print(node_editor.window)
+    #print(editor_width, editor_height)
+    #print(node_editor.window)
     
     try:
         dpg.set_item_pos(node_editor.window, [0, 0])
