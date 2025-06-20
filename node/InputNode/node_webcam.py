@@ -174,12 +174,11 @@ class WebcamNode(Node):
     node_label = 'Webcam'
     node_tag = 'Webcam'
 
-    #_opencv_setting_dict = None
 
     def __init__(self):
         super().__init__()  # Appel du constructeur parent
-        self._min_val = 1
-        self._max_val = 1000
+        #self._min_val = 1
+        #self._max_val = 1000
 
         self._small_window_w = 240
         self._small_window_h = 135
@@ -224,22 +223,15 @@ class WebcamNode(Node):
             camera_capture = camera_capture_list[camera_index]
 
 
-        if camera_no != '' and use_pref_counter:
-            start_time = time.perf_counter()
+        #if camera_no != '' and use_pref_counter:
+        #    start_time = time.perf_counter()
 
 
         frame = None
         if camera_capture is not None:
             ret, frame = camera_capture.read()
-            if not ret:
-                return
-
-
-        if camera_no != '' and use_pref_counter:
-            elapsed_time = time.perf_counter() - start_time
-            elapsed_time = int(elapsed_time * 1000)
-            dpg_set_value(output_value02_tag,
-                          str(elapsed_time).zfill(4) + 'ms')
+            #if not ret:
+            #    return
 
 
         if frame is not None:

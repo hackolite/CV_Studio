@@ -150,9 +150,10 @@ class DpgNodeEditor(object):
                         )
 
                         node_sources = glob(node_sources_path)
+                        #print(node_sources)
 
                         for node_source in node_sources:
-
+                             
                             import_path = os.path.splitext(
                                 os.path.normpath(node_source))[0]
                             if platform.system() == 'Windows':
@@ -179,6 +180,7 @@ class DpgNodeEditor(object):
                             #print("Factory Instance :", factorynode.node_tag)
                             factorynode.style = node_style(menu_label)
                             self._node_factory_list[factorynode.node_tag] = factorynode
+
 
             with dpg.node_editor(
                     tag=self._node_editor_tag,
@@ -244,7 +246,7 @@ class DpgNodeEditor(object):
 
     def _callback_add_node(self, sender, data, user_data):
         self._node_id += 1
-        print("node name :", self._node_id)
+        #print("node name :", self._node_id)
         factorynode = self._node_factory_list[user_data]
         last_pos = [0, 0]
         

@@ -77,14 +77,14 @@ class FactoryNode:
                 format=dpg.mvFormat_Float_rgb,
             )
 
-        # ノード
+
         with dpg.node(
                 tag=node.tag_node_name,
                 parent=parent,
                 label=self.node_label,
                 pos=pos,
         ):
-            # 入力端子
+
             with dpg.node_attribute(
                     tag=node.tag_node_input01_name,
                     attribute_type=dpg.mvNode_Attr_Input,
@@ -93,13 +93,13 @@ class FactoryNode:
                     tag=node.tag_node_input01_value_name,
                     default_value='Input BGR image',
                 )
-            # 画像
+
             with dpg.node_attribute(
                     tag=node.tag_node_output01_name,
                     attribute_type=dpg.mvNode_Attr_Output,
             ):
                 dpg.add_image(node.tag_node_output01_value_name)
-            # ヒステリシス
+
             with dpg.node_attribute(
                     tag=node.tag_node_input02_name,
                     attribute_type=dpg.mvNode_Attr_Input,
@@ -126,7 +126,7 @@ class FactoryNode:
                     max_value=node._maxval_max,
                     callback=None,
                 )
-            # 処理時間
+
             if use_pref_counter:
                 with dpg.node_attribute(
                         tag=node.tag_node_output02_name,
@@ -235,7 +235,7 @@ class Node(Node):
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return frame, None
+        return {"image":frame, "json":None}
 
     def close(self, node_id):
         pass

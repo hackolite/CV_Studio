@@ -232,7 +232,7 @@ class Node(Node):
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return frame, None
+        return {"image":frame, "json":None}
 
     def close(self, node_id):
         pass

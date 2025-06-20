@@ -178,7 +178,7 @@ def main():
         'Input': 'InputNode',
         'VisionProcess': 'ProcessNode',
         'VisionModel': 'DLNode',
-        'Stats': 'StatsNode ',
+        'Stats': 'StatsNode',
         'Trigger': 'TriggerNode',
         'Router' : 'RouterNode',
         'Action' : 'ActionNode',
