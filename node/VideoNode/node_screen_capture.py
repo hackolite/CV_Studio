@@ -32,7 +32,7 @@ class FactoryNode:
         callback=None,
     ):
 
-        node = Node()
+        node = CaptureNode()
         node.tag_node_name = str(node_id) + ':' + node.node_tag
         node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
         node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
@@ -105,7 +105,7 @@ def screen_capture_process(image_queue, request):
             break
 
 
-class Node(Node):
+class CaptureNode(Node):
     _ver = '0.0.1'
 
     node_label = 'Screen Capture'
@@ -140,7 +140,7 @@ class Node(Node):
         small_window_h = self._opencv_setting_dict['input_window_height']
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
-        # スクリーンキャプチャスレッド生成
+
         if self._process is None:
             self._image_queue = mp.Queue(maxsize=1)
             self._request = mp.Value('i', 1)
@@ -153,11 +153,11 @@ class Node(Node):
             )
             self._process.start()
 
-        # 計測開始
+
         if use_pref_counter:
             start_time = time.perf_counter()
 
-        # 画像取得
+
         frame = None
         if self._image_queue is not None:
             num = self._image_queue.qsize()
@@ -167,14 +167,14 @@ class Node(Node):
             else:
                 frame = copy.deepcopy(self._prev_frame)
 
-        # 計測終了
+
         if use_pref_counter:
             elapsed_time = time.perf_counter() - start_time
             elapsed_time = int(elapsed_time * 1000)
             dpg_set_value(output_value02_tag,
                           str(elapsed_time).zfill(4) + 'ms')
 
-        # 描画
+
         if frame is not None:
             texture = self.convert_cv_to_dpg(
                 frame,
@@ -183,7 +183,7 @@ class Node(Node):
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return frame, None
+        return {"image":frame, "json":None}
 
     def close(self, node_id):
         if self._request is not None:

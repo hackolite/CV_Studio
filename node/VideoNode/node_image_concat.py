@@ -157,7 +157,7 @@ class FactoryNode:
 class Node(Node):
     _ver = '0.0.1'
 
-    node_label = 'Image Concat'
+    node_label = 'ImageConcat'
     node_tag = 'ImageConcat'
 
     _opencv_setting_dict = None
@@ -240,6 +240,7 @@ class Node(Node):
             slot_number = int(slot_number) - 1
 
             connection_type = connection_info[0].split(':')[2]
+            print("type :", connection_type)
             if connection_type == self.TYPE_IMAGE:
 
                 connection_info_src = connection_info[0]
@@ -272,7 +273,7 @@ class Node(Node):
         if len(connection_info_src_dict) > 0 and frame_dict is not None:
             frame, display_frame = create_concat_image(frame_dict, slot_num)
 
-
+        print("display :", display_frame)
         if display_frame is not None:
             texture = self.convert_cv_to_dpg(
                 display_frame,
@@ -281,7 +282,8 @@ class Node(Node):
             )
             dpg_set_value(self.output_value01_tag, texture)
 
-        return frame, None
+
+        return {"image" : frame, "json" : None}
 
     def close(self, node_id):
         pass

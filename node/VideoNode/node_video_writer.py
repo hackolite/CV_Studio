@@ -38,7 +38,7 @@ class FactoryNode:
         callback=None,
     ):
 
-        node = Node()
+        node = VideoWriterNode()
         node.tag_node_name = str(node_id) + ':' + node.node_tag
         node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Input01'
         node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Input01Value'
@@ -98,10 +98,10 @@ class FactoryNode:
 
 
 
-class Node(Node):
+class VideoWriterNode(Node):
     _ver = '0.0.1'
 
-    node_label = 'Video Writer'
+    node_label = 'VideoWriter'
     node_tag = 'VideoWriter'
 
     _opencv_setting_dict = None
@@ -130,6 +130,7 @@ class Node(Node):
 
 
         connection_info_src = ''
+        print(connection_list)
         for connection_info in connection_list:
             connection_info_src = connection_info[0]
             connection_info_src = connection_info_src.split(':')[:2]
@@ -183,7 +184,7 @@ class Node(Node):
         else:
             self._prev_frame_flag = False
 
-        return frame, None
+        return {"image":frame, "json":None}
 
     def close(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag

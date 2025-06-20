@@ -177,7 +177,7 @@ class DpgNodeEditor(object):
                                 user_data=factorynode.node_tag,
                             )
 
-                            #print("Factory Instance :", factorynode.node_tag)
+
                             factorynode.style = node_style(menu_label)
                             self._node_factory_list[factorynode.node_tag] = factorynode
 
@@ -246,7 +246,7 @@ class DpgNodeEditor(object):
 
     def _callback_add_node(self, sender, data, user_data):
         self._node_id += 1
-        #print("node name :", self._node_id)
+        print("node name :", self._node_id)
         factorynode = self._node_factory_list[user_data]
         last_pos = [0, 0]
         
@@ -280,7 +280,7 @@ class DpgNodeEditor(object):
         destination = dpg.get_item_alias(data[1])
         source_type = source.split(':')[2]
         destination_type = destination.split(':')[2]
-
+        print(source_type, destination_type)
         if source_type == destination_type:
 
             if len(self._node_link_list) == 0:
@@ -384,7 +384,7 @@ class DpgNodeEditor(object):
         for unfinded_value in unfinded_id_dict.values():
             node_connection_list.insert(0, (unfinded_value, []))
 
-
+        print(node_connection_list)
         return OrderedDict(node_connection_list)
 
     def _callback_file_export(self, sender, data):

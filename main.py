@@ -74,7 +74,7 @@ def update_node_info(
         node_id, _ = node_id_name.split(':')
         connection_list = sorted_node_connection_dict.get(node_id_name, [])
         node_instance = node_editor.get_node_instances(node_id_name)
-
+        print(connection_list)
         if mode_async:
             try:
                 data = node_instance.update(
@@ -95,9 +95,11 @@ def update_node_info(
             )
 
         
-        node_image_dict[node_id_name] = copy.deepcopy(data["image"])
-        node_result_dict[node_id_name] = copy.deepcopy(data["json"])
-
+        try:
+            node_image_dict[node_id_name] = copy.deepcopy(data["image"])
+            node_result_dict[node_id_name] = copy.deepcopy(data["json"])
+        except Exception as e:
+            print(e)
 
     
 def main():

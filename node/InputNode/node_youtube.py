@@ -217,16 +217,7 @@ class YoutubeNode(Node):
     _youtube_capture = {}
     _prev_read_time = {}
 
-    
-    
-    TYPE_TEXT = "Text"
-    TYPE_INT = "Int"
-    TYPE_IMAGE = "Image"
-    TYPE_TIME_MS = "TimeMs"
-    TYPE_AUDIO = "Audio"
-    TYPE_JSON = "Json"
-    TYPE_FLOAT = "Float"
-    
+
     def __init__(self):
         super().__init__()  # Appel du constructeur parent
         self._min_val = 1
@@ -263,7 +254,7 @@ class YoutubeNode(Node):
         self.cap = get_light_live_stream_url(value)
         print(f"Button clicked, URL: {value}")
         
-    def update(self, node_id, connection_list, node_image_dict, node_result_dict):
+    def _update(self, node_id, connection_list, node_image_dict, node_result_dict):
         """Met à jour l'image du flux vidéo."""
         print("update YT")
         ret, frame = False, None
@@ -291,6 +282,43 @@ class YoutubeNode(Node):
 
         return {"image": frame, "json": None}   
 
+    
+    def update(self, node_id, connection_list, node_image_dict, node_result_dict):
+      """Met à jour l'image du flux vidéo."""
+      tag_node_name = f"{node_id}:{self.node_tag}"
+      output_value01_tag = f"{tag_node_name}:{self.TYPE_IMAGE}:Output01Value"
+
+      self.current_time = time.time()
+
+      if not hasattr(self, "_last_frame_time"):
+        self._last_frame_time = 0
+      if not hasattr(self, "_frame_interval"):
+        try:
+            slider_tag = f"{tag_node_name}:{self.TYPE_INT}:Input02Value"
+            self._frame_interval = max(1, dpg_get_value(slider_tag)) / 1000  # ms -> s
+        except:
+            self._frame_interval = 0.033  # default 33 ms
+
+      if self.cap is not None and self.current_time - self._last_frame_time >= self._frame_interval:
+        try:
+            ret, frame = self.cap.read()
+        except Exception as e:
+            print(f"Erreur lecture vidéo : {e}")
+            ret, frame = False, None
+
+        if ret and frame is not None:
+            # Seulement mettre à jour si la frame est différente (évite saccades sur flux figé)
+            if not hasattr(self, "_last_frame") or not np.array_equal(self._last_frame, frame):
+                self._last_frame = frame
+                texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
+                dpg_set_value(output_value01_tag, texture)
+                self._last_frame_time = self.current_time
+        else:
+            print("Pas de frame valide")
+
+      return {"image": getattr(self, "_last_frame", None), "json": None}
+    
+    
     def close(self, node_id):
         if self.cap is not None:
             self.cap.release()

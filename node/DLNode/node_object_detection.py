@@ -57,6 +57,12 @@ class FactoryNode:
         
         node.tag_node_output_result_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
         node.tag_node_output_result = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02Value'
+        
+        node.tag_node_output_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Output03'
+        node.tag_node_output_json = node.tag_node_name + ':' + node.TYPE_JSON + ':Output03Value'
+        
+        
+        
 
         node.tag_provider_select_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Provider'
         node.tag_provider_select_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':ProviderValue'
@@ -100,7 +106,7 @@ class FactoryNode:
             ):
                 dpg.add_text(
                     tag=node.tag_node_input_image_value_name,
-                    default_value='Input BGR image',
+                    default_value='Image',
                 )
 
             with dpg.node_attribute(
@@ -155,6 +161,15 @@ class FactoryNode:
                         tag=node.tag_node_output_result,
                         default_value='elapsed time(ms)',
                     )
+            with dpg.node_attribute(
+                        tag=node.tag_node_output_json_name,
+                        attribute_type=dpg.mvNode_Attr_Output,
+                ):
+                    dpg.add_text(
+                        tag=node.tag_node_output_json,
+                        default_value='coco',
+                    )
+        
         return node
 
 
@@ -266,10 +281,10 @@ class Node(Node):
                         print("connection", node_id, self.tag_node_name, connection_info_src)
 
                 frame = node_image_dict.get(connection_info_src, None)
-                try:
+                try :
                     print(frame.shape)
 
-                except:
+                except Exception as e:
                     pass
 
 
