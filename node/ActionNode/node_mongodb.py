@@ -14,7 +14,7 @@ import pytz  # optionnel mais recommandé pour gérer le fuseau UTC
 
 
 
-uri = "mongodb+srv://affluence:affluence_password@cluster0.nn3l2bm.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+uri = "mongodb+srv://affluence:@cluster0.nn3l2bm.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 
 # Connexion à la base
 client = MongoClient(uri)
