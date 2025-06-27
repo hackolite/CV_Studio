@@ -91,9 +91,8 @@ class MQTTNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
 
     def __init__(self):
         super().__init__()  # Appel du constructeur parent
-        self.node_label = 'Mongodb'
-        self.node_tag = 'Mongodb'
-        self._last_update_time = 0
+        self.node_label = 'Mqtt'
+        self.node_tag = 'Mqtt'
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict):
         return None, None

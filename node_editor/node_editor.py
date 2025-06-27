@@ -275,7 +275,7 @@ class DpgNodeEditor(object):
     
 
     def _callback_link(self, sender, data):
-
+        print("call back")
         source = dpg.get_item_alias(data[0])
         destination = dpg.get_item_alias(data[1])
         source_type = source.split(':')[2]

@@ -19,7 +19,7 @@ ACTION = []
 VIDEO = ["ImageConcat", "VideoWriter", "ScreenCapture"]
 TRACKING = ["MultiObjectTracking"]
 OVERLAY = ["DrawInformation", "PutText"]
-VIZ = ["Heatmap"]
+VIZ = ["Heatmap", "Visual"]
 TIMESERIES = []
 
 
@@ -65,7 +65,7 @@ STYLE = {
         "names": OVERLAY,
         "style": [(245, 245, 245, 255)]  # gris très clair (presque blanc)
     },
-    "Viz": {
+    "Visual": {
         "names": VIZ,
         "style": [(255, 182, 193, 255)]  # rose clair (light pink)
     },

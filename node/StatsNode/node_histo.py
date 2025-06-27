@@ -3,13 +3,12 @@
 import cv2
 import numpy as np
 import dearpygui.dearpygui as dpg
+from collections import deque
+import time
 
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.basenode import Node
 from node.node_abc import DpgNodeABC
-from collections import deque
-import time 
-
 
 class FactoryNode:
     node_label = 'Histogram'
@@ -37,9 +36,6 @@ class FactoryNode:
         node.small_window_w = node._opencv_setting_dict.get('result_width', 240)
         node.small_window_h = node._opencv_setting_dict.get('result_height', 135)
 
-        node._default_xdata = np.linspace(0, 255, 256)
-        node._default_ydata = np.zeros(256)
-
         with dpg.node(
             tag=node.tag_node_name,
             parent=parent,
@@ -51,31 +47,35 @@ class FactoryNode:
                 attribute_type=dpg.mvNode_Attr_Input,
             ):
                 with dpg.group(horizontal=False):
-                    # Boutons
                     with dpg.group(horizontal=True):
                         dpg.add_button(label="Réduire", callback=node.reset_plot_size)
                         dpg.add_button(label="Maximiser", callback=node.maximize_plot_size)
 
-
                     with dpg.child_window(
-                     tag=node.tag_plot_container,
-                     width=node.small_window_w,
-                     height=node.small_window_h,
-                     autosize_x=False,
-                     autosize_y=False,
-                     border=False
-                         ):
-                      with dpg.plot(
-                        width=-1,
-                        height=-1,
-                        tag=node.tag_node_input01_value_name,
-                        no_menus=True
-                         ):
-                          dpg.add_plot_legend(horizontal=True, location=dpg.mvPlot_Location_NorthEast)
-                          dpg.add_plot_axis(dpg.mvXAxis,tag=f"{node.tag_node_input01_value_name}_xaxis")
-                          dpg.set_axis_limits(dpg.last_item(), 0, 256)  # Limite adaptée à ta deque maxlen
-                          dpg.add_plot_axis(dpg.mvYAxis,tag=f"{node.tag_node_input01_value_name}_yaxis")
-                          dpg.add_bar_series(list(range(256)),[0]*256, label='Live Data',parent=f"{node.tag_node_input01_value_name}_yaxis",tag=node.tag_line_b)
+                        tag=node.tag_plot_container,
+                        width=node.small_window_w,
+                        height=node.small_window_h,
+                        autosize_x=False,
+                        autosize_y=False,
+                        border=False
+                    ):
+                        with dpg.plot(
+                            width=-1,
+                            height=-1,
+                            tag=node.tag_node_input01_value_name,
+                            no_menus=True
+                        ):
+                            dpg.add_plot_legend(horizontal=True, location=dpg.mvPlot_Location_NorthEast)
+                            dpg.add_plot_axis(dpg.mvXAxis, tag=f"{node.tag_node_input01_value_name}_xaxis")
+                            dpg.set_axis_limits(f"{node.tag_node_input01_value_name}_xaxis", 0, 3599)
+                            dpg.add_plot_axis(dpg.mvYAxis, tag=f"{node.tag_node_input01_value_name}_yaxis")
+                            dpg.add_line_series(
+                                list(range(3600)),
+                                [0]*3600,
+                                label='Live Data',
+                                parent=f"{node.tag_node_input01_value_name}_yaxis",
+                                tag=node.tag_line_b
+                            )
         return node
 
 
@@ -86,18 +86,11 @@ class HistoNode(Node):
 
     def __init__(self):
         super().__init__()
-        self.node_tag = self.node_tag
-        self.node_label = self.node_label
-        self._history = deque(maxlen=256)
+        self._history = deque(maxlen=3600)
         self.tag_node_name = ""
         self.tag_node_input01_value_name = ""
         self.tag_plot_container = ""
         self.tag_line_b = ""
-        self._default_xdata = np.linspace(0, 255, 256)
-        self._current_ydata = np.zeros(256)  # Histogramme initialisé à zéro
-        self._update_index = 0  # Index de la valeur à mettre à jour
-        #self._default_xdata = np.linspace(0, 255, 256)
-        self._default_ydata = np.zeros(256)
         self._last_update_time = 0
         self.small_window_w = 240
         self.small_window_h = 135
@@ -113,29 +106,35 @@ class HistoNode(Node):
         dpg.set_item_pos(self.tag_node_name, [0, 0])
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict):
-        tag_node_name = f"{node_id}:{self.node_tag}"
-        tag_node_input01_value_name = f"{tag_node_name}:{self.TYPE_IMAGE}:Input01Value"
+        self.tag_node_name = f"{node_id}:{self.node_tag}"
+        self.tag_node_input01_value_name = f"{self.tag_node_name}:{self.TYPE_JSON}:Input01Value"
+        self.tag_line_b = f"{self.tag_node_input01_value_name}:line_b"
+
         affluence = 0
-        connection_info_src = ''
+        clee = ""
+
         for connection_info in connection_list:
             connection_type = connection_info[0].split(':')[2]
             if connection_type == self.TYPE_JSON:
-                        clee = ":".join(connection_info[0].split(":")[0:2])
-                        affluence = len(node_result_dict[clee]['class_ids'])
-                        
-        
+                clee = ":".join(connection_info[0].split(":")[0:2])
+                affluence = len(node_result_dict.get(clee, {}).get('class_ids', []))
 
-        current_time = time.time()
-        if current_time - self._last_update_time >= 1.0:  # toutes les secondes
-            new_value = affluence
-            self._history.append(new_value)
-            self._last_update_time = current_time
+        now = time.time()
+        if now - self._last_update_time >= 1.0:
+            self._history.append(affluence)
+            self._last_update_time = now
 
             if dpg.does_item_exist(self.tag_line_b):
-                x_data = list(range(len(self._history)))
-                y_data = list(self._history)
+                # Créer les données pour l'affichage de gauche à droite
+                if len(self._history) < 3600:
+                    # Les vraies données commencent à gauche, puis des zéros à droite
+                    y_data = list(self._history) + [0] * (3600 - len(self._history))
+                else:
+                    # Si l'historique est plein, on utilise toutes les données
+                    y_data = list(self._history)
+                
+                x_data = list(range(3600))
                 dpg.set_value(self.tag_line_b, [x_data, y_data])
-
 
         return {"image": None, "json": None}
 

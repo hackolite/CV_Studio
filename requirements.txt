@@ -9,3 +9,4 @@ ffmpeg-python
 serial
 pytest 
 youtube-dl
+pymongo

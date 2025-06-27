@@ -5,11 +5,28 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node as BaseNode
+from pymongo import MongoClient
+import time
+from bson import ObjectId
+from datetime import datetime
+import pytz  # optionnel mais recommandé pour gérer le fuseau UTC
+
+
+
+
+uri = "mongodb+srv://affluence:affluence_password@cluster0.nn3l2bm.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+
+# Connexion à la base
+client = MongoClient(uri)
+db = client["AFFLUENCE"]  # nom de ta base
+collection = db["affluence_phili"]  # nom de ta collection
+
+
 
 
 class FactoryNode:
-    node_label = 'Mqtt'
-    node_tag = 'Mqtt'
+    node_label = 'Mongodb'
+    node_tag = 'Mongodb'
     
     def __init__(self):
         pass
@@ -18,7 +35,7 @@ class FactoryNode:
         """Ajoute un nœud au graphe de traitement avec champ de lien et bouton Start."""
         
         # Génération des tags pour le Node et ses attributs
-        node = MQTTNode()  # Utilise la classe MQTTNode au lieu de Node générique
+        node = MongodbNode()  # Utilise la classe MQTTNode au lieu de Node générique
         node.tag_node_name = f"{node_id}:{node.node_tag}"
         
         tag_input_url = f"{node.tag_node_name}:InputURL"
@@ -62,20 +79,11 @@ class FactoryNode:
 
         # Création du nœud dans l'interface graphique
         with dpg.node(tag=node.tag_node_name, parent=parent, label=node.node_label, pos=pos):  
-            # Champ de saisie pour le lien (Input)
-            with dpg.node_attribute(tag=node.tag_node_input_text_name, attribute_type=dpg.mvNode_Attr_Static):
-                dpg.add_input_text(tag=node.tag_node_input_text_value_name, width=300, hint="Entrer une URL")
-        
-            # Bouton Start (décommenté et corrigé)
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
-                btn = dpg.add_button(label="Start", tag=tag_start_button, callback=callback, user_data=tag_input_url, width=300)
-                dpg.bind_item_theme(btn, yellow_button_theme)
-                
             # Outputs (décommentés et corrigés)
             with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Static):
                 add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
                     
-            with dpg.node_attribute(tag=node.tag_node_output_json_name, attribute_type=dpg.mvNode_Attr_Output):
+            with dpg.node_attribute(tag=node.tag_node_output_json_name, attribute_type=dpg.mvNode_Attr_Input):
                 add_yellow_disabled_button("JSON", node.tag_node_output_json_value_name)
 
             with dpg.node_attribute(tag=node.tag_node_output_float_name, attribute_type=dpg.mvNode_Attr_Static):
@@ -84,20 +92,44 @@ class FactoryNode:
         return node
 
 
-class MQTTNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
+class MongodbNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
     _ver = '0.0.1'
-    #node_label = 'MQTT'
-    #node_tag = 'MQTT'
 
     def __init__(self):
         super().__init__()  # Appel du constructeur parent
         self.node_label = 'Mongodb'
         self.node_tag = 'Mongodb'
         self._last_update_time = 0
-
+        
     def update(self, node_id, connection_list, node_image_dict, node_result_dict):
-        return None, None
+        tag_node_name = f"{node_id}:{self.node_tag}"
+        tag_node_input01_value_name = f"{tag_node_name}:{self.TYPE_IMAGE}:Input01Value"
 
+        connection_info_src = ''
+        for connection_info in connection_list:
+            connection_type = connection_info[0].split(':')[2]
+            if connection_type == self.TYPE_JSON:
+                        clee = ":".join(connection_info[0].split(":")[0:2])
+
+        current_time = time.time()
+        if current_time - self._last_update_time >= 10.0:  # toutes les secondes
+
+            try:
+				
+                print(node_result_dict[clee])
+                data = node_result_dict[clee]
+                data['class_names'] = {str(k): v for k, v in data['class_names'].items()}
+                data['time'] = datetime.now(pytz.utc)  # ou datetime.utcnow() si tu ne veux pas utiliser pytz
+
+                result = collection.insert_one(data)
+                print("ID du document inséré :", result.inserted_id)
+            
+            except Exception as e:
+                print(e)
+            
+
+            self._last_update_time = current_time
+        return {"image": None, "json": None}
 
     def close(self, node_id):
         pass
