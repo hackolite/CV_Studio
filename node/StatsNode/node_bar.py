@@ -46,7 +46,7 @@ from collections import deque
 
 
 
-# Liste FIFO globale à mettre à jour à chaque appel
+# Global FIFO list to update on each call
 
 
 
@@ -169,7 +169,7 @@ class FactoryNode:
                     callback=None,
                 )
 
-            # Bouton Start avec thème jaune
+            # Start button with yellow theme
             with dpg.node_attribute(
                     tag=node.tag_node_button_name,
                     attribute_type=dpg.mvNode_Attr_Static,

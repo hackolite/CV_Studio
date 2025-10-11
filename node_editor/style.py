@@ -35,11 +35,11 @@ STYLE = {
     },
     "VisionModel": {
         "names": MODEL,
-        "style": [(255, 218, 185, 255)]  # pêche pastel (peach puff)
+        "style": [(255, 218, 185, 255)]  # peach puff pastel
     },
     "Stats": {
         "names": STATS,
-        "style": [(173, 216, 230, 255)]  # bleu clair pastel (inchangé)
+        "style": [(173, 216, 230, 255)]  # light blue pastel (unchanged)
     },
     "Trigger": {
         "names": TRIGGER,
@@ -55,7 +55,7 @@ STYLE = {
     },
     "Video": {
         "names": VIDEO,
-        "style": [(193, 255, 193, 255)]  # vert très clair pastel
+        "style": [(193, 255, 193, 255)]  # very light green pastel
     },
     "Tracking": {
         "names": TRACKING,
@@ -63,7 +63,7 @@ STYLE = {
     },
     "Overlay": {
         "names": OVERLAY,
-        "style": [(245, 245, 245, 255)]  # gris très clair (presque blanc)
+        "style": [(245, 245, 245, 255)]  # very light gray (almost white)
     },
     "Visual": {
         "names": VIZ,
@@ -71,7 +71,7 @@ STYLE = {
     },
     "Timeseries": {
         "names": TIMESERIES,
-        "style": [(255, 222, 243, 255)]  # rose pastel très tendre
+        "style": [(255, 222, 243, 255)]  # very soft pastel pink
     }
 }
 
