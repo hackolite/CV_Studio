@@ -106,6 +106,9 @@ def main():
     unuse_async_draw = args.unuse_async_draw
     use_debug_print = args.use_debug_print
 
+    # Get the current directory path
+    current_path = os.path.dirname(os.path.abspath(__file__))
+
 
     print('**** Load Config ********')
     opencv_setting_dict = None
