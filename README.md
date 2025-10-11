@@ -1,67 +1,280 @@
- # CV_STUDIO
-An application that performs image processing with the node editor.<br>
-It is used for processing verification and comparison.<br>
+ # CV Studio
+
+> A professional node-based image processing application for computer vision development, verification, and comparison.
 
 <img src="https://user-images.githubusercontent.com/37477845/172011014-23fb025e-68a5-4cb7-925f-c4417029966c.gif" loading="lazy" width="100%">
 
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.7%2B-blue.svg)](https://www.python.org/)
+[![OpenCV](https://img.shields.io/badge/OpenCV-4.5.5%2B-green.svg)](https://opencv.org/)
+
+## 🎯 Overview
+
+CV Studio is an advanced node-based image processing application that allows you to visually create computer vision pipelines through an intuitive drag-and-drop interface. Perfect for:
+
+- **Prototyping** - Quickly test and compare different CV algorithms
+- **Education** - Learn computer vision concepts interactively
+- **Development** - Build and validate processing pipelines before production
+- **Research** - Experiment with ML models and traditional CV techniques
+
+## ✨ Key Features
+
+- 🎨 **Visual Node Editor** - Intuitive drag-and-drop interface powered by DearPyGUI
+- 🔄 **Real-time Processing** - See results instantly as you build your pipeline
+- 🧩 **100+ Built-in Nodes** - Input, processing, ML/DL, analysis, and visualization nodes
+- 🤖 **ML/DL Integration** - Support for ONNX models, MediaPipe, and custom models
+- 📹 **Multiple Input Sources** - Webcam, video files, images, RTSP streams, screen capture
+- 💾 **Save & Load** - Export and import your processing graphs as JSON
+- 🏗️ **Modern Architecture** - Professional codebase with proper error handling, logging, and testing
+- 🔌 **Extensible** - Easy to add custom nodes and processing algorithms
+
+## 📋 Requirements
+
 ```
+Python          3.7 or later
 opencv-python   4.5.5.64 or later
-onnxruntime-gpu 1.12.0   or later
-dearpygui       1.11.0   or later
-mediapipe       0.8.10   or later ※Required to run mediapipe node
-protobuf        3.20.0   or later ※Required to run mediapipe node
-filterpy        1.4.5    or later ※Required to run MOT(motpy) node
+onnxruntime-gpu 1.12.0 or later
+dearpygui       1.11.0 or later
+mediapipe       0.8.10 or later  ※ Required for MediaPipe nodes
+protobuf        3.20.0 or later  ※ Required for MediaPipe nodes
+filterpy        1.4.5 or later   ※ Required for MOT (Multi-Object Tracking) nodes
 ```
 
-# Installation
-Please prepare the environment by one of the following methods.<br>
-* Run the script directly
-    1. Clone repository<br>`git clone https://github.com/hackolite/CV_Studio.git`
-    1. Install package <br>`pip install -r requirements.txt`  
-    1. Run "main.py" <br>`python main.py`
-* Use Docker
-    1. See [Image-Processing-Node-Editor/docker/nvidia-gpu](https://github.com/Kazuhito00/Image-Processing-Node-Editor/tree/main/docker/nvidia-gpu)
-* Use executable file (Windows only)
-    1. Download [ipn-editor_win_x86_64.zip](https://github.com/Kazuhito00/Image-Processing-Node-Editor/releases/download/v0.4.0/ipn-editor_v0.4.0_win_x86_64.zip)
-    1. Run "main.exe"
-* Use pip installation<br><b>※The installed directory names will be "node" and "node_editor", so I plan to fix them in the future.<br>→When using pip, it is strongly recommended to install in a virtual environment such as venv.</b>
-    1. Install build tools<br>Windows：https://visualstudio.microsoft.com/ja/visual-cpp-build-tools/<br>Ubuntu：`sudo apt-get install build-essential libssl-dev libffi-dev python3-dev`
-    1. Install Numpy, Cython, wheel<Br>`pip install Cython numpy wheel`
-    1. Specify the GitHub repository and pip install<br>`pip install git+https://github.com/Kazuhito00/Image-Processing-Node-Editor`
-    1. Start the application with the following command<br>`ipn-editor`  
+## 🚀 Installation
 
-# Usage
-Here's how to run the app.
+### Method 1: Direct Installation (Recommended)
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/hackolite/CV_Studio.git
+   cd CV_Studio
+   ```
+
+2. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Run the application**
+   ```bash
+   python main.py
+   ```
+
+### Method 2: Using Virtual Environment (Recommended for Development)
+
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# On Windows:
+venv\Scripts\activate
+# On Linux/Mac:
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the application
+python main.py
+```
+
+### Method 3: Pip Installation
+
+```bash
+# Install build tools first
+# Windows: https://visualstudio.microsoft.com/visual-cpp-build-tools/
+# Ubuntu: sudo apt-get install build-essential libssl-dev libffi-dev python3-dev
+
+# Install required packages
+pip install Cython numpy wheel
+
+# Install from GitHub
+pip install git+https://github.com/hackolite/CV_Studio.git
+
+# Run the application
+ipn-editor
+```
+
+### Method 4: Docker
+
+See [Image-Processing-Node-Editor/docker/nvidia-gpu](https://github.com/Kazuhito00/Image-Processing-Node-Editor/tree/main/docker/nvidia-gpu) for Docker setup instructions.  
+
+## 💡 Usage
+
+### Basic Usage
+
+Start the application with:
 ```bash
 python main.py
 ```
-* --setting<br>
-Specifying the configuration file path that describes the node size and VideoWriter settings<br>
-Default：node_editor/setting/setting.json
-* --unuse_async_draw<br>
-Do not use asynchronous drawing<Br>→Perform GUI event loop and node update process in series<br>*For investigating the cause of abnormal node termination, etc.<br>
-Default：unspecified
 
-### Create Node
-Select the node you want to create from the menu and click<br>
-<img src="https://user-images.githubusercontent.com/37477845/172030402-80d3d14e-d0c8-464f-bb0c-139bfe676845.gif" loading="lazy" width="50%">
+#### Command Line Options
 
-### Connect Node
-Drag the output terminal to connect to the input terminal<br>
-Only the same type set for the terminal can be connected<br>
-<img src="https://user-images.githubusercontent.com/37477845/172030403-ec4f0a89-22d5-4467-9b11-c8e595e65997.gif" loading="lazy" width="50%">
+- `--setting <path>` - Specify custom configuration file (default: `node_editor/setting/setting.json`)
+- `--unuse_async_draw` - Disable asynchronous drawing for debugging
+- `--use_debug_print` - Enable debug output
 
-### Delete Node
-With the node you want to delete selected, press the "Del" key<br>
-<img src="https://user-images.githubusercontent.com/37477845/172030418-201d7df5-1984-4fa7-8e47-9264c5dcb6cf.gif" loading="lazy" width="50%">
+**Example:**
+```bash
+python main.py --setting custom_config.json --use_debug_print
+```
 
-### Export
-Press "Export" from the menu and save the node settings(json file)<br>
-<img src="https://user-images.githubusercontent.com/37477845/172030429-9c6c453c-b8b0-4ccf-b36e-eb666c2d919f.gif" loading="lazy" width="50%">
+### Quick Start Guide
 
-### Import
-Read the node settings(json file) output by Export<br>
-<img src="https://user-images.githubusercontent.com/37477845/172030433-8a07b702-9ba4-43e7-9f2f-f0885f472c44.gif" loading="lazy" width="50%">
+#### 1. Create a Node
+Select a node from the menu and click to add it to the canvas.
+
+<img src="https://user-images.githubusercontent.com/37477845/172030402-80d3d14e-d0c8-464f-bb0c-139bfe676845.gif" loading="lazy" width="60%">
+
+#### 2. Connect Nodes
+Drag from an output terminal to an input terminal to create connections. Only compatible terminal types can be connected.
+
+<img src="https://user-images.githubusercontent.com/37477845/172030403-ec4f0a89-22d5-4467-9b11-c8e595e65997.gif" loading="lazy" width="60%">
+
+#### 3. Delete a Node
+Select the node and press the **Delete** key.
+
+<img src="https://user-images.githubusercontent.com/37477845/172030418-201d7df5-1984-4fa7-8e47-9264c5dcb6cf.gif" loading="lazy" width="60%">
+
+#### 4. Export Your Graph
+Save your processing pipeline as a JSON file via the **Export** menu option.
+
+<img src="https://user-images.githubusercontent.com/37477845/172030429-9c6c453c-b8b0-4ccf-b36e-eb666c2d919f.gif" loading="lazy" width="60%">
+
+#### 5. Import a Graph
+Load a previously saved processing pipeline from a JSON file.
+
+<img src="https://user-images.githubusercontent.com/37477845/172030433-8a07b702-9ba4-43e7-9f2f-f0885f472c44.gif" loading="lazy" width="60%">
+
+## 🏗️ Architecture
+
+CV Studio features a modern, professional architecture designed for scalability and maintainability.
+
+### Project Structure
+
+```
+CV_Studio/
+├── src/                    # New professional architecture
+│   ├── core/              # Core business logic
+│   │   ├── nodes/         # Node abstractions (BaseNode, NodeFactory, EnhancedNode)
+│   │   ├── config/        # Settings management
+│   │   └── pipeline/      # Processing pipeline (future)
+│   ├── nodes/             # Node implementations with adapters
+│   │   ├── input/         # Input node adapters
+│   │   ├── process/       # Processing node adapters
+│   │   ├── ml/            # ML/DL node adapters
+│   │   └── examples/      # Example implementations
+│   ├── utils/             # Reusable utilities
+│   │   ├── exceptions.py  # Custom exception hierarchy
+│   │   ├── logging.py     # Centralized logging
+│   │   └── resource_manager.py  # Resource lifecycle management
+│   └── gui/               # GUI components (future)
+│
+├── node/                  # Original node implementations (fully compatible)
+│   ├── InputNode/         # Input sources (webcam, video, images)
+│   ├── ProcessNode/       # Image processing nodes
+│   ├── DLNode/            # Deep learning nodes
+│   ├── ActionNode/        # Action/control nodes
+│   ├── OverlayNode/       # Drawing and overlay nodes
+│   └── ...                # Other node categories
+│
+├── node_editor/           # Node editor core and UI
+├── tests/                 # Test suite (38+ tests)
+├── main.py               # Application entry point
+└── requirements.txt      # Python dependencies
+```
+
+### New Features in src/ Directory
+
+The `src/` directory introduces professional development practices:
+
+#### 1. **Exception Hierarchy**
+```python
+from src.utils.exceptions import NodeExecutionError, NodeConfigurationError
+
+# Clear, structured error handling
+raise NodeExecutionError(node_id, "Processing failed", original_exception)
+```
+
+#### 2. **Centralized Logging**
+```python
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
+logger.info("Processing node...")
+logger.error("Node failed", exc_info=True)
+```
+
+#### 3. **Resource Management**
+```python
+from src.utils.resource_manager import get_resource_manager
+
+manager = get_resource_manager()
+manager.register('video_capture', video_cap, cleanup_func=lambda v: v.release())
+```
+
+#### 4. **Settings Management**
+```python
+from src.core.config import Settings
+
+settings = Settings('config.json')
+width = settings.get('webcam_width', 640)
+settings.set('use_gpu', True)
+```
+
+#### 5. **Enhanced Node Development**
+```python
+from src.core.nodes import EnhancedNode
+
+class MyNode(EnhancedNode):
+    node_label = 'My Custom Node'
+    node_tag = 'MyNode'
+    
+    # Built-in logging, error handling, resource management
+    def update(self, node_id, connection_list, node_image_dict, node_result_dict):
+        result = self.safe_execute(self.process_image, node_image_dict)
+        return {"image": result, "json": None}
+```
+
+### Backward Compatibility
+
+**100% backward compatible** - All existing code in the `node/` and `node_editor/` directories continues to work unchanged. The new architecture in `src/` provides optional enhancements for future development.
+
+### Documentation
+
+- **[Architecture Details](ARCHITECTURE.md)** - Complete architecture overview
+- **[Migration Guide](MIGRATION_GUIDE.md)** - How to use new features
+- **[src/README.md](src/README.md)** - Technical architecture documentation
+- **[Restructuring Summary](RESTRUCTURING_SUMMARY.md)** - Changes and improvements
+
+## 🧪 Testing
+
+CV Studio includes comprehensive test coverage (38+ tests).
+
+### Run Tests
+
+```bash
+# Run all tests
+python -m pytest tests/ -v
+
+# Run specific test suite
+python -m pytest tests/test_utils/ -v
+python -m pytest tests/test_core/ -v
+
+# Run with coverage report
+python -m pytest tests/ --cov=src --cov-report=html
+```
+
+### Test Coverage
+
+- ✅ Exception hierarchy (7 tests)
+- ✅ Logging utilities (6 tests)
+- ✅ Resource management (8 tests)
+- ✅ Node factory (7 tests)
+- ✅ Settings management (10 tests)
+
+## 📚 Available Nodes
 
 # Node
 <details>
@@ -640,20 +853,137 @@ To use it with Image-Processing-Node-Editor, follow the installation instruction
 
 </details>
 
+---
 
-# ToDo
-- [ ] Investigating the problem that the graph part of the RGB Histgram node is always in the foreground
-- [ ] Investigating the problem that the connection line remains when deleting a node that connects multiple nodes
-- [ ] Improved behavior that the import feature can only be used before adding a node
-  
-# Author
-Kazuhito Takahashi(https://twitter.com/KzhtTkhs)
- 
-# License 
-Image-Processing-Node-Editor is under [Apache-2.0 license](LICENSE).<br><br>
-IThe source code of mage-Processing-Node-Editor itself is [Apache-2.0 license](LICENSE), but <br>
-The source code for each algorithm is subject to its own license. <br>
-For details, please check the LICENSE file included in each directory.
+## 🛠️ Development
 
-# License(Image)
-The images displayed in the sample are borrowed from the [Free Material Pakutaso](https://www.pakutaso.com/),and  [NHK Creative Library](https://www.nhk.or.jp/archives).
+### Creating Custom Nodes
+
+You can extend CV Studio by creating custom nodes. Use the new architecture for enhanced development experience:
+
+```python
+from src.core.nodes import EnhancedNode
+from src.utils.logging import get_logger
+import cv2
+
+logger = get_logger(__name__)
+
+class MyCustomNode(EnhancedNode):
+    """Example custom node with enhanced features"""
+    
+    node_label = 'My Custom Node'
+    node_tag = 'CustomNode'
+    _ver = '1.0.0'
+    
+    def __init__(self):
+        super().__init__()
+        logger.info(f"Initialized {self.node_tag}")
+    
+    def add_node(self, parent, node_id, pos, opencv_setting_dict=None):
+        """Add node to GUI"""
+        # Implement your GUI setup here
+        pass
+    
+    def update(self, node_id, connection_list, node_image_dict, node_result_dict):
+        """Process the node"""
+        try:
+            # Your processing logic here
+            input_image = self._get_input_image(node_image_dict, connection_list)
+            output_image = cv2.cvtColor(input_image, cv2.COLOR_BGR2GRAY)
+            
+            return {"image": output_image, "json": None}
+        except Exception as e:
+            logger.error(f"Node processing failed: {e}", exc_info=True)
+            return {"image": None, "json": None}
+```
+
+See [src/nodes/examples/example_enhanced_node.py](src/nodes/examples/example_enhanced_node.py) for a complete example.
+
+### Contributing
+
+We welcome contributions! Here's how you can help:
+
+1. **Fork the repository**
+2. **Create a feature branch** (`git checkout -b feature/amazing-feature`)
+3. **Make your changes** using the new architecture in `src/`
+4. **Add tests** for new functionality
+5. **Ensure tests pass** (`python -m pytest tests/`)
+6. **Commit your changes** (`git commit -m 'Add amazing feature'`)
+7. **Push to the branch** (`git push origin feature/amazing-feature`)
+8. **Open a Pull Request**
+
+#### Contribution Guidelines
+
+- Use the new architecture in `src/` for new code
+- Add tests for new functionality
+- Update documentation as needed
+- Maintain backward compatibility
+- Follow existing code style and conventions
+
+## 📋 Roadmap & ToDo
+
+### Current Issues
+- [ ] Fix RGB Histogram node graph always appearing in foreground
+- [ ] Fix connection line remaining when deleting connected nodes
+- [ ] Improve import feature to work after nodes are added
+
+### Future Enhancements
+- [ ] Pipeline processing system (graph-based execution)
+- [ ] GUI component refactoring
+- [ ] Plugin system for dynamic node loading
+- [ ] Type safety with comprehensive type hints
+- [ ] Auto-generated API documentation
+- [ ] Performance monitoring and optimization
+- [ ] Export to production-ready code
+
+## 👥 Authors & Contributors
+
+**Original Author:**  
+Kazuhito Takahashi ([@KzhtTkhs](https://twitter.com/KzhtTkhs))
+
+**Repository Maintainer:**  
+[hackolite](https://github.com/hackolite)
+
+We appreciate all contributions from the community!
+
+## 📄 License
+
+This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for details.
+
+### Important License Notes
+
+- The source code of CV Studio itself is under [Apache-2.0 license](LICENSE)
+- Each algorithm/node implementation is subject to its own license
+- Please check the LICENSE file in each node directory for specific algorithm licenses
+- Third-party dependencies have their own licenses
+
+### Image License
+
+Sample images are sourced from:
+- [Free Material Pakutaso](https://www.pakutaso.com/)
+- [NHK Creative Library](https://www.nhk.or.jp/archives)
+
+## 🙏 Acknowledgments
+
+- Original [Image-Processing-Node-Editor](https://github.com/Kazuhito00/Image-Processing-Node-Editor) project
+- [DearPyGUI](https://github.com/hoffstadt/DearPyGui) for the GUI framework
+- [OpenCV](https://opencv.org/) for computer vision functionality
+- [ONNX Runtime](https://onnxruntime.ai/) for ML model inference
+- [MediaPipe](https://mediapipe.dev/) for ML solutions
+- All contributors and users of this project
+
+## 📞 Support
+
+- **Issues:** [GitHub Issues](https://github.com/hackolite/CV_Studio/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/hackolite/CV_Studio/discussions)
+- **Documentation:** See the docs in this repository
+
+---
+
+<div align="center">
+
+**Made with ❤️ for the Computer Vision Community**
+
+⭐ Star this repo if you find it useful!
+
+</div>
