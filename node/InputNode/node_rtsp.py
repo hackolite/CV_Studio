@@ -249,7 +249,7 @@ class RtspNode(Node):
 
 
         if rtsp_url != '' and use_pref_counter:
-            start_time = time.perf_counter()
+            start_time = time.monotonic()
 
 
         frame = None
@@ -268,7 +268,7 @@ class RtspNode(Node):
 
 
         if rtsp_url != '' and use_pref_counter:
-            elapsed_time = time.perf_counter() - start_time
+            elapsed_time = time.monotonic() - start_time
             elapsed_time = int(elapsed_time * 1000)
             dpg_set_value(output_value02_tag,
                           str(elapsed_time).zfill(4) + 'ms')

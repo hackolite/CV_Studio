@@ -223,7 +223,7 @@ class WebcamNode(Node):
 
 
         #if camera_no != '' and use_pref_counter:
-        #    start_time = time.perf_counter()
+        #    start_time = time.monotonic()
 
 
         frame = None
