@@ -28,7 +28,7 @@ def merge_matches(m1, m2, shape):
 
 
 def _indices_to_matches(cost_matrix, indices, thresh):
-    matched_cost = cost_matrix[tuple(zip(*indices))]
+    matched_cost = cost_matrix[indices[:, 0], indices[:, 1]]
     matched_mask = (matched_cost <= thresh)
 
     matches = indices[matched_mask]

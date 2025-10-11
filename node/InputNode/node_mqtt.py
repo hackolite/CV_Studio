@@ -41,6 +41,9 @@ class FactoryNode:
         node.tag_node_output_float_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloat'
         node.tag_node_output_float_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloatValue'
 
+        node.tag_node_output_type_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':OutputType'
+        node.tag_node_output_type_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':OutputTypeValue'
+
         # Create yellow theme for buttons
         with dpg.theme() as yellow_button_theme:
             with dpg.theme_component(dpg.mvButton):
@@ -70,6 +73,19 @@ class FactoryNode:
             with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
                 btn = dpg.add_button(label="Start", tag=tag_start_button, callback=callback, user_data=tag_input_url, width=300)
                 dpg.bind_item_theme(btn, yellow_button_theme)
+
+            # Add dropdown for output type selection
+            with dpg.node_attribute(
+                    tag=node.tag_node_output_type_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_output_type_value_name,
+                    items=["Image", "Float", "Audio", "JSON"],
+                    label="Output Type",
+                    default_value="JSON",
+                    width=280,
+                )
                 
             # Outputs
             with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Static):
@@ -106,21 +122,27 @@ class MQTTNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
         output_value_tag = tag_node_name + ':' + self.TYPE_INT + ':Output01Value'
+        tag_node_output_type_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':OutputTypeValue'
 
         output_value = round((dpg_get_value(output_value_tag)), 3)
+        output_type = dpg_get_value(tag_node_output_type_value_name)
         pos = dpg.get_item_pos(tag_node_name)
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
         setting_dict[output_value_tag] = output_value
+        setting_dict[tag_node_output_type_value_name] = output_type
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = str(node_id) + ':' + self.node_tag
         output_value_tag = tag_node_name + ':' + self.TYPE_INT + ':Output01Value'
+        tag_node_output_type_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':OutputTypeValue'
 
         output_value = float(setting_dict[output_value_tag])
+        output_type = setting_dict.get(tag_node_output_type_value_name, "JSON")
         dpg_set_value(output_value_tag, output_value)
+        dpg_set_value(tag_node_output_type_value_name, output_type)
 
 
 # Test code to verify that the node displays correctly

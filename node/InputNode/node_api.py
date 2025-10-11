@@ -262,26 +262,32 @@ class ApiNode(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_input02_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         tag_node_input03_value_name = tag_node_name + ':' + self.TYPE_INT + ':Input03Value'
+        tag_node_output_type_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':OutputTypeValue'
 
         pos = dpg.get_item_pos(tag_node_name)
 
         loop_flag = dpg_get_value(tag_node_input02_value_name)
         skip_rate = int(dpg_get_value(tag_node_input03_value_name))
+        output_type = dpg_get_value(tag_node_output_type_value_name)
 
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
         setting_dict[tag_node_input02_value_name] = loop_flag
         setting_dict[tag_node_input03_value_name] = skip_rate
+        setting_dict[tag_node_output_type_value_name] = output_type
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_input02_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         tag_node_input03_value_name = tag_node_name + ':' + self.TYPE_INT + ':Input03Value'
+        tag_node_output_type_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':OutputTypeValue'
 
         loop_flag = setting_dict[tag_node_input02_value_name]
         skip_rate = int(setting_dict[tag_node_input03_value_name])
+        output_type = setting_dict.get(tag_node_output_type_value_name, "Image")
 
         dpg_set_value(tag_node_input02_value_name, loop_flag)
         dpg_set_value(tag_node_input03_value_name, skip_rate)
+        dpg_set_value(tag_node_output_type_value_name, output_type)

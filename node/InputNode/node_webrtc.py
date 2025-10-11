@@ -133,6 +133,9 @@ class FactoryNode:
         node.tag_node_output_float_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloat'
         node.tag_node_output_float_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloatValue'
 
+        node.tag_node_output_type_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':OutputType'
+        node.tag_node_output_type_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':OutputTypeValue'
+
         node._opencv_setting_dict = opencv_setting_dict
         node.small_window_w = node._opencv_setting_dict['input_window_width']
         node.small_window_h = node._opencv_setting_dict['input_window_height']
@@ -198,6 +201,19 @@ class FactoryNode:
                     min_value=node._min_val,
                     max_value=node._max_val,
                     callback=None,
+                )
+
+            # Add dropdown for output type selection
+            with dpg.node_attribute(
+                    tag=node.tag_node_output_type_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_output_type_value_name,
+                    items=["Image", "Float", "Audio", "JSON"],
+                    label="Output Type",
+                    default_value="Image",
+                    width=node.small_window_w - 80,
                 )
 
             # Bouton Start avec thème jaune
@@ -349,16 +365,19 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_input01_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':Input01Value'
         tag_node_input02_value_name = tag_node_name + ':' + self.TYPE_INT + ':Input02Value'
+        tag_node_output_type_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':OutputTypeValue'
 
         pos = dpg.get_item_pos(tag_node_name)
         youtube_url = dpg_get_value(tag_node_input01_value_name)
         interval_time = dpg_get_value(tag_node_input02_value_name)
+        output_type = dpg_get_value(tag_node_output_type_value_name)
 
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
         setting_dict[tag_node_input01_value_name] = youtube_url
         setting_dict[tag_node_input02_value_name] = interval_time
+        setting_dict[tag_node_output_type_value_name] = output_type
 
         return setting_dict
 
@@ -366,12 +385,15 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_input01_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':Input01Value'
         tag_node_input02_value_name = tag_node_name + ':' + self.TYPE_INT + ':Input02Value'
+        tag_node_output_type_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':OutputTypeValue'
 
         youtube_url = setting_dict[tag_node_input01_value_name]
         interval_time = setting_dict[tag_node_input02_value_name]
+        output_type = setting_dict.get(tag_node_output_type_value_name, "Image")
 
         dpg_set_value(tag_node_input01_value_name, youtube_url)
         dpg_set_value(tag_node_input02_value_name, interval_time)
+        dpg_set_value(tag_node_output_type_value_name, output_type)
 
     def _button(self, sender, data, user_data):
         tag_node_name = user_data
