@@ -119,7 +119,7 @@ class MongodbNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
                 data['time'] = datetime.now(pytz.utc)  # ou datetime.utcnow() si tu ne veux pas utiliser pytz
 
                 result = collection.insert_one(data)
-                print("ID du document inséré :", result.inserted_id)
+                print("Inserted document ID:", result.inserted_id)
             
             except Exception as e:
                 print(e)
@@ -152,7 +152,7 @@ class MongodbNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
         dpg_set_value(output_value_tag, output_value)
 
 
-# Code de test pour vérifier que le node s'affiche correctement
+# Test code to verify that the node displays correctly
 if __name__ == "__main__":
     dpg.create_context()
     

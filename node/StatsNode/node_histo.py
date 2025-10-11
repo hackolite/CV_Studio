@@ -48,7 +48,7 @@ class FactoryNode:
             ):
                 with dpg.group(horizontal=False):
                     with dpg.group(horizontal=True):
-                        dpg.add_button(label="Réduire", callback=node.reset_plot_size)
+                        dpg.add_button(label="Reduce", callback=node.reset_plot_size)
                         dpg.add_button(label="Maximiser", callback=node.maximize_plot_size)
 
                     with dpg.child_window(

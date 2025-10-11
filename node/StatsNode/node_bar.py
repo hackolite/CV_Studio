@@ -139,7 +139,6 @@ class FactoryNode:
                 dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))          # Yellow background
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 153, 255)) # Light yellow on hover
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 153, 255))   # Darker yellow on press
-                #dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))          # White text
 
 		
         with dpg.node(
@@ -278,7 +277,7 @@ class StatNode(Node):
                 # Mettre à jour la texture dans DearPyGui
                 dpg.set_value(self.tag_node_output01_value_name, frame)
 
-                print(f"Image mise à jour à {time.strftime('%H:%M:%S')}") 
+                print(f"Image updated at {time.strftime('%H:%M:%S')}") 
     
         return {"image": frame, "json": None}
 

@@ -95,7 +95,6 @@ class FactoryNode:
                 dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 0, 255))          # Yellow background
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255)) # Light yellow on hover
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 64, 255))   # Darker yellow on press
-                #dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))          # White text
         
         
         with dpg.node(

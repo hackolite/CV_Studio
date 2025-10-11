@@ -1,25 +1,18 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import time
+import threading
+from threading import Lock
 
 import cv2
 import pafy
 import numpy as np
 import dearpygui.dearpygui as dpg
 import yt_dlp
+
 from node_editor.util import dpg_get_value, dpg_set_value
-
 from node.node_abc import DpgNodeABC
-
-#from node_editor.util import convert_cv_to_dpg
-
-import threading
-from threading import Lock
-
 from node.basenode import Node
-
-
-
 
 
 def get_light_live_stream_url(url):
@@ -32,13 +25,6 @@ def get_light_live_stream_url(url):
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
         return cv2.VideoCapture(info.get("url", None))
-
-
-    
-
-import numpy as np
-import dearpygui.dearpygui as dpg
-
 
 
 class FactoryNode:

@@ -115,7 +115,7 @@ class FloatNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
         dpg_set_value(output_value_tag, output_value)
 
 
-# Code de test pour vérifier que le node s'affiche correctement
+# Test code to verify that the node displays correctly
 if __name__ == "__main__":
     dpg.create_context()
     
