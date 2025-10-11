@@ -61,8 +61,8 @@ class DummyWebSocketServer:
     
     async def send_image(self, websocket):
         """Send a random generated image"""
-        # Generate a random color image (640x480)
-        width, height = 640, 480
+        # Generate a smaller random color image (320x240)
+        width, height = 320, 240
         img_array = np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
         
         # Convert to PIL Image

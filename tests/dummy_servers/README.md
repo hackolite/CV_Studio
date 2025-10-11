@@ -129,6 +129,22 @@ python run_servers.py --api-port 9000 --ws-image-port 9001 --ws-float-port 9002
 - WebSocket (floats): `ws://localhost:8766`
 - WebRTC: `http://localhost:8081`
 
+## Demo Script
+
+Run the interactive demo to see all servers in action:
+
+```bash
+# Run the complete demonstration
+python demo.py
+```
+
+This will:
+1. Start API server and WebSocket servers
+2. Connect to each server and fetch data
+3. Display received images and float values
+4. Save example images to `/tmp/`
+5. Stop all servers gracefully
+
 ## Testing
 
 ### Quick Test
@@ -225,6 +241,8 @@ tests/dummy_servers/
 ├── webrtc_server.py         # WebRTC peer connection server
 ├── run_servers.py           # Launch all servers
 ├── test_servers.py          # Integration tests
+├── demo.py                  # Interactive demonstration
+├── requirements.txt         # Optional dependencies
 └── README.md                # This file
 ```
 
