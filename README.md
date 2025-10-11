@@ -939,9 +939,9 @@ We welcome contributions! Here's how you can help:
 ## 👥 Authors & Contributors
 
 **Original Author:**  
-Kazuhito Takahashi ([@KzhtTkhs](https://twitter.com/KzhtTkhs))
+Fork from Kazuhito Takahashi ([@KzhtTkhs](https://twitter.com/KzhtTkhs))
 
-**Repository Maintainer:**  
+**Repository Builder :**  
 [hackolite](https://github.com/hackolite)
 
 We appreciate all contributions from the community!
