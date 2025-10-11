@@ -234,7 +234,7 @@ class FactoryNode:
             with dpg.node_attribute(tag=node.tag_node_output_json_name, attribute_type=dpg.mvNode_Attr_Output):
                 btn = add_yellow_disabled_button("JSON", node.tag_node_output_json_value_name)
 
-            with dpg.node_attribute(tag=node.tag_node_output_float_name, attribute_type=dpg.mvNode_Attr_Static):
+            with dpg.node_attribute(tag=node.tag_node_output_float_name, attribute_type=dpg.mvNode_Attr_Output):
                 btn = add_yellow_disabled_button("Float", node.tag_node_output_float_value_name)
 
         return node
