@@ -45,7 +45,7 @@ class YoutubeCapture(object):
     def _youtube_read_thread(self, video_capture):
         while True:
             with self._lock:
-                current_time = time.perf_counter()
+                current_time = time.monotonic()
                 interval_time = current_time - self._prev_read_time
                 interval_time = int(interval_time * 1000)
                 if interval_time > self._wait_interval:
@@ -306,7 +306,7 @@ class Node(Node):
 
 
         if youtube_url != '' and use_pref_counter:
-            start_time = time.perf_counter()
+            start_time = time.monotonic()
 
 
         frame = None
@@ -326,7 +326,7 @@ class Node(Node):
 
 
         if youtube_url != '' and use_pref_counter:
-            elapsed_time = time.perf_counter() - start_time
+            elapsed_time = time.monotonic() - start_time
             elapsed_time = int(elapsed_time * 1000)
             dpg_set_value(output_value02_tag,
                           str(elapsed_time).zfill(4) + 'ms')

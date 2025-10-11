@@ -190,14 +190,14 @@ class Node(Node):
 
 
         if frame is not None and use_pref_counter:
-            start_time = time.perf_counter()
+            start_time = time.monotonic()
 
         if frame is not None:
             frame = image_process(frame, alpha)
 
 
         if frame is not None and use_pref_counter:
-            elapsed_time = time.perf_counter() - start_time
+            elapsed_time = time.monotonic() - start_time
             elapsed_time = int(elapsed_time * 1000)
             dpg_set_value(output_value02_tag,
                           str(elapsed_time).zfill(4) + 'ms')

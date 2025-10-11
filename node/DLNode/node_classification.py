@@ -283,7 +283,7 @@ class Node(Node):
 
         # 計測開始
         if frame is not None and use_pref_counter:
-            start_time = time.perf_counter()
+            start_time = time.monotonic()
 
         # 接続元がObjectDetectionノードの場合、各バウンディングボックスに対して推論
         result = {}
@@ -340,7 +340,7 @@ class Node(Node):
 
         # 計測終了
         if frame is not None and use_pref_counter:
-            elapsed_time = time.perf_counter() - start_time
+            elapsed_time = time.monotonic() - start_time
             elapsed_time = int(elapsed_time * 1000)
             dpg_set_value(output_value02_tag,
                           str(elapsed_time).zfill(4) + 'ms')
