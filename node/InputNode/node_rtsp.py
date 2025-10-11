@@ -86,13 +86,12 @@ class FactoryNode:
             )
 
         
-        # Création d’un thème jaune pour boutons avec texte en blanc
+        # Create yellow theme for buttons
         with dpg.theme() as yellow_button_theme:
             with dpg.theme_component(dpg.mvButton):
-                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 0, 255))          # Fond jaune
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255)) # Jaune clair au survol
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 64, 255))   # Jaune plus foncé en appui
-                #dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))          # Texte en blanc 
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 0, 255))          # Yellow background
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255)) # Light yellow on hover
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 64, 255))   # Darker yellow on press
 
 
 
@@ -133,7 +132,7 @@ class FactoryNode:
 
 
 
-            # Outputs audio, json, float, elapsed time en boutons désactivés mais jaune
+            # Outputs audio, json, float, elapsed time as disabled yellow buttons
             def add_yellow_disabled_button(label, tag):
                 btn = dpg.add_button(
                     label=label,
@@ -199,7 +198,7 @@ class RtspNode(Node):
     _process = {}
 
     def __init__(self):
-        super().__init__()  # Appel du constructeur parent
+        super().__init__()  # Call parent constructor
         self._min_val = 1
         self._max_val = 1000
 

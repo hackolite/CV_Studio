@@ -162,15 +162,8 @@ def main():
     )
 
 
-    current_path = os.path.dirname(os.path.abspath(__file__))
-    with dpg.font_registry():
-        with dpg.font(
-                current_path +
-                '/node_editor/font/YasashisaAntiqueFont/07YasashisaAntique.otf',
-                16,
-        ) as default_font:
-            dpg.add_font_range_hint(dpg.mvFontRangeHint_Japanese)
-    dpg.bind_font(default_font)
+    # Using default DearPyGui font (no custom font needed)
+    # DearPyGui will use its built-in default font automatically
 
     print('**** Create NodeEditor ********')
     menu_dict = OrderedDict({

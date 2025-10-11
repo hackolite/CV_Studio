@@ -370,7 +370,7 @@ class Node(Node):
                 data["json"] = result 
                 return data
             except Exception as e:
-                    #error_trace = traceback.format_exc()  # Récupère la stack trace sous forme de string
+                    #error_trace = traceback.format_exc()  # Get stack trace as string
                     print("Stack Trace :\n", e)
 
 

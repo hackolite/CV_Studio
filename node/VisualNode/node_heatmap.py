@@ -210,7 +210,7 @@ class Node(Node):
                     x1, y1, x2, y2 = map(int, box)
                     heatmap[y1:y2, x1:x2] += score
 
-                # Cumul avec décroissance (effet "mémoire")
+                # Cumul avec décroissance (memory effect)
                 #decay = 0.95  # baisse à chaque frame
                 #self.heatmap_accum = self.heatmap_accum * decay + heatmap
                 self.num_frames += 1

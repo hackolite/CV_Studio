@@ -15,7 +15,7 @@ from node.node_abc import DpgNodeABC
 from node.basenode import Node
 
 def slow_motion_interpolation(prev_frame, next_frame, alpha):
-    """ Génère une frame intermédiaire fluide entre 2 images """
+    """ Generates smooth intermediate frame between 2 images """
     return cv2.addWeighted(prev_frame, 1 - alpha, next_frame, alpha, 0)
 
 

@@ -48,7 +48,7 @@ class FactoryNode:
             ):
                 with dpg.group(horizontal=False):
                     with dpg.group(horizontal=True):
-                        dpg.add_button(label="Réduire", callback=node.reset_plot_size)
+                        dpg.add_button(label="Reduce", callback=node.reset_plot_size)
                         dpg.add_button(label="Maximiser", callback=node.maximize_plot_size)
 
                     with dpg.child_window(
@@ -125,12 +125,12 @@ class HistoNode(Node):
             self._last_update_time = now
 
             if dpg.does_item_exist(self.tag_line_b):
-                # Créer les données pour l'affichage de gauche à droite
+                # Create data for left to right display
                 if len(self._history) < 3600:
-                    # Les vraies données commencent à gauche, puis des zéros à droite
+                    # Real data starts on left, then zeros on right
                     y_data = list(self._history) + [0] * (3600 - len(self._history))
                 else:
-                    # Si l'historique est plein, on utilise toutes les données
+                    # If history is full, use all data
                     y_data = list(self._history)
                 
                 x_data = list(range(3600))

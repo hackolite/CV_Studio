@@ -87,15 +87,15 @@ class FactoryNode:
             dpg.add_file_extension('', color=(150, 255, 150, 255))
 
 
-                # Création d'un thème jaune pour boutons avec texte en blanc
+                # Create yellow theme for buttons
         with dpg.theme() as yellow_button_theme:
             with dpg.theme_component(dpg.mvButton):
-                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))          # Fond jaune
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255)) # Jaune clair au survol
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 64, 255))   # Jaune plus foncé en appui
-                dpg.add_theme_color(dpg.mvThemeCol_Text, (0, 0, 0, 255))                # Texte en noir pour meilleure lisibilité
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))          # Yellow background
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255)) # Light yellow on hover
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 64, 255))   # Darker yellow on press
+                dpg.add_theme_color(dpg.mvThemeCol_Text, (0, 0, 0, 255))                # Black text for better readability
         
-        # Outputs audio, json, float, elapsed time en boutons désactivés mais jaune
+        # Outputs audio, json, float, elapsed time as disabled yellow buttons
         def add_yellow_disabled_button(label, tag):
             btn = dpg.add_button(
                 label=label,
@@ -133,7 +133,7 @@ class FactoryNode:
             ):
                 dpg.add_image(node.tag_node_output01_value_name)
                 
-                # Outputs (décommentés et corrigés)
+                # Outputs
             with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Static):
                     add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
                     
@@ -162,7 +162,7 @@ class ImageNode(Node):
     _prev_image_filepath = {}
 
     def __init__(self):
-        super().__init__()  # Appel du constructeur parent
+        super().__init__()  # Call parent constructor
         self.node_label = 'Image'
         self.node_tag = 'Image'
 

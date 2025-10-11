@@ -9,17 +9,15 @@ from pymongo import MongoClient
 import time
 from bson import ObjectId
 from datetime import datetime
-import pytz  # optionnel mais recommandé pour gérer le fuseau UTC
-
-
+import pytz  # Optional but recommended for UTC timezone handling
 
 
 uri = "mongodb+srv://affluence:@cluster0.nn3l2bm.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 
-# Connexion à la base
+# Database connection
 client = MongoClient(uri)
-db = client["AFFLUENCE"]  # nom de ta base
-collection = db["affluence_phili"]  # nom de ta collection
+db = client["AFFLUENCE"]
+collection = db["affluence_phili"]
 
 
 
@@ -32,10 +30,10 @@ class FactoryNode:
         pass
 
     def add_node(self, parent, node_id, pos=[0, 0], callback=None, opencv_setting_dict=None):
-        """Ajoute un nœud au graphe de traitement avec champ de lien et bouton Start."""
+        """Adds a node to the processing graph with link field and Start button."""
         
-        # Génération des tags pour le Node et ses attributs
-        node = MongodbNode()  # Utilise la classe MQTTNode au lieu de Node générique
+        # Generate tags for Node and its attributes
+        node = MongodbNode()
         node.tag_node_name = f"{node_id}:{node.node_tag}"
         
         tag_input_url = f"{node.tag_node_name}:InputURL"
@@ -44,7 +42,6 @@ class FactoryNode:
         node.tag_node_input_text_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01'
         node.tag_node_input_text_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01Value'
         
-        # Correction: utilise node.node_tag au lieu de self.node_tag
         tag_node_name = str(node_id) + ':' + node.node_tag
         tag_node_output01_name = tag_node_name + ':' + node.TYPE_INT + ':Output01'
         tag_node_output01_value_name = tag_node_name + ':' + node.TYPE_INT + ':Output01Value'
@@ -58,15 +55,15 @@ class FactoryNode:
         node.tag_node_output_float_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloat'
         node.tag_node_output_float_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloatValue'
 
-        # Création d'un thème jaune pour boutons avec texte en blanc
+        # Create yellow theme for buttons with white text
         with dpg.theme() as yellow_button_theme:
             with dpg.theme_component(dpg.mvButton):
-                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))          # Fond jaune
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255)) # Jaune clair au survol
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 64, 255))   # Jaune plus foncé en appui
-                dpg.add_theme_color(dpg.mvThemeCol_Text, (0, 0, 0, 255))                # Texte en noir pour meilleure lisibilité
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 64, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_Text, (0, 0, 0, 255))
         
-        # Outputs audio, json, float, elapsed time en boutons désactivés mais jaune
+        # Outputs audio, json, float, elapsed time as disabled yellow buttons
         def add_yellow_disabled_button(label, tag):
             btn = dpg.add_button(
                 label=label,
@@ -77,7 +74,7 @@ class FactoryNode:
             dpg.bind_item_theme(btn, yellow_button_theme)
             return btn  
 
-        # Création du nœud dans l'interface graphique
+        # Create node in the GUI
         with dpg.node(tag=node.tag_node_name, parent=parent, label=node.node_label, pos=pos):  
             # Outputs (décommentés et corrigés)
             with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Static):
@@ -122,7 +119,7 @@ class MongodbNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
                 data['time'] = datetime.now(pytz.utc)  # ou datetime.utcnow() si tu ne veux pas utiliser pytz
 
                 result = collection.insert_one(data)
-                print("ID du document inséré :", result.inserted_id)
+                print("Inserted document ID:", result.inserted_id)
             
             except Exception as e:
                 print(e)
@@ -155,7 +152,7 @@ class MongodbNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
         dpg_set_value(output_value_tag, output_value)
 
 
-# Code de test pour vérifier que le node s'affiche correctement
+# Test code to verify that the node displays correctly
 if __name__ == "__main__":
     dpg.create_context()
     

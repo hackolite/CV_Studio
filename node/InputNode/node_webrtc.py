@@ -155,13 +155,12 @@ class FactoryNode:
             )
 
 		
-        # Création d’un thème jaune pour boutons avec texte en blanc
+        # Create yellow theme for buttons
         with dpg.theme() as yellow_button_theme:
             with dpg.theme_component(dpg.mvButton):
-                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))          # Fond jaune
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 153, 255)) # Jaune clair au survol
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 153, 255))   # Jaune plus foncé en appui
-                #dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))          # Texte en blanc
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))          # Yellow background
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 153, 255)) # Light yellow on hover
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 153, 255))   # Darker yellow on press
 
 		
         with dpg.node(
@@ -215,7 +214,7 @@ class FactoryNode:
                 )
                 dpg.bind_item_theme(btn_start, yellow_button_theme)
 
-            # Outputs audio, json, float, elapsed time en boutons désactivés mais jaune
+            # Outputs audio, json, float, elapsed time as disabled yellow buttons
             def add_yellow_disabled_button(label, tag):
                 btn = dpg.add_button(
                     label=label,

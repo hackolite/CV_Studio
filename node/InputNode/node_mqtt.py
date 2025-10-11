@@ -15,10 +15,10 @@ class FactoryNode:
         pass
 
     def add_node(self, parent, node_id, pos=[0, 0], callback=None, opencv_setting_dict=None):
-        """Ajoute un nœud au graphe de traitement avec champ de lien et bouton Start."""
+        """Adds a node to the processing graph with link field and Start button."""
         
-        # Génération des tags pour le Node et ses attributs
-        node = MQTTNode()  # Utilise la classe MQTTNode au lieu de Node générique
+        # Generate tags for Node and its attributes
+        node = MQTTNode()  # Use MQTTNode class instead of generic Node
         node.tag_node_name = f"{node_id}:{node.node_tag}"
         
         tag_input_url = f"{node.tag_node_name}:InputURL"
@@ -27,7 +27,7 @@ class FactoryNode:
         node.tag_node_input_text_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01'
         node.tag_node_input_text_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01Value'
         
-        # Correction: utilise node.node_tag au lieu de self.node_tag
+        # Use node.node_tag instead of self.node_tag
         tag_node_name = str(node_id) + ':' + node.node_tag
         tag_node_output01_name = tag_node_name + ':' + node.TYPE_INT + ':Output01'
         tag_node_output01_value_name = tag_node_name + ':' + node.TYPE_INT + ':Output01Value'
@@ -41,15 +41,15 @@ class FactoryNode:
         node.tag_node_output_float_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloat'
         node.tag_node_output_float_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloatValue'
 
-        # Création d'un thème jaune pour boutons avec texte en blanc
+        # Create yellow theme for buttons
         with dpg.theme() as yellow_button_theme:
             with dpg.theme_component(dpg.mvButton):
-                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))          # Fond jaune
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255)) # Jaune clair au survol
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 64, 255))   # Jaune plus foncé en appui
-                dpg.add_theme_color(dpg.mvThemeCol_Text, (0, 0, 0, 255))                # Texte en noir pour meilleure lisibilité
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))          # Yellow background
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255)) # Light yellow on hover
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 64, 255))   # Darker yellow on press
+                dpg.add_theme_color(dpg.mvThemeCol_Text, (0, 0, 0, 255))                # Black text for better readability
         
-        # Outputs audio, json, float, elapsed time en boutons désactivés mais jaune
+        # Outputs audio, json, float, elapsed time as disabled yellow buttons
         def add_yellow_disabled_button(label, tag):
             btn = dpg.add_button(
                 label=label,
@@ -60,18 +60,18 @@ class FactoryNode:
             dpg.bind_item_theme(btn, yellow_button_theme)
             return btn  
 
-        # Création du nœud dans l'interface graphique
+        # Create node in the GUI
         with dpg.node(tag=node.tag_node_name, parent=parent, label=node.node_label, pos=pos):  
-            # Champ de saisie pour le lien (Input)
+            # Input field for link
             with dpg.node_attribute(tag=node.tag_node_input_text_name, attribute_type=dpg.mvNode_Attr_Static):
                 dpg.add_input_text(tag=node.tag_node_input_text_value_name, width=300, hint="Entrer une URL")
         
-            # Bouton Start (décommenté et corrigé)
+            # Start button
             with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
                 btn = dpg.add_button(label="Start", tag=tag_start_button, callback=callback, user_data=tag_input_url, width=300)
                 dpg.bind_item_theme(btn, yellow_button_theme)
                 
-            # Outputs (décommentés et corrigés)
+            # Outputs
             with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Static):
                 add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
                     
@@ -90,7 +90,7 @@ class MQTTNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
     #node_tag = 'MQTT'
 
     def __init__(self):
-        super().__init__()  # Appel du constructeur parent
+        super().__init__()  # Call parent constructor
         self.node_label = 'Mongodb'
         self.node_tag = 'Mongodb'
         self._last_update_time = 0
@@ -123,7 +123,7 @@ class MQTTNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
         dpg_set_value(output_value_tag, output_value)
 
 
-# Code de test pour vérifier que le node s'affiche correctement
+# Test code to verify that the node displays correctly
 if __name__ == "__main__":
     dpg.create_context()
     
