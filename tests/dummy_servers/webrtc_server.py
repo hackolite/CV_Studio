@@ -23,6 +23,23 @@ except ImportError:
     print("Required libraries not found. Install with: pip install aiohttp aiortc")
     web = None
     aiortc = None
+    
+    # Define dummy classes to allow module import when libraries are not available
+    class VideoStreamTrack:
+        """Dummy VideoStreamTrack class for when aiortc is not installed"""
+        pass
+    
+    class VideoFrame:
+        """Dummy VideoFrame class for when av is not installed"""
+        pass
+    
+    class RTCPeerConnection:
+        """Dummy RTCPeerConnection class for when aiortc is not installed"""
+        pass
+    
+    class RTCSessionDescription:
+        """Dummy RTCSessionDescription class for when aiortc is not installed"""
+        pass
 
 
 class RandomVideoStreamTrack(VideoStreamTrack):
