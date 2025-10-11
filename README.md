@@ -147,6 +147,247 @@ Load a previously saved processing pipeline from a JSON file.
 
 <img src="https://user-images.githubusercontent.com/37477845/172030433-8a07b702-9ba4-43e7-9f2f-f0885f472c44.gif" loading="lazy" width="60%">
 
+### Workflow Examples
+
+Here are some practical examples to help you get started with common computer vision tasks:
+
+#### Example 1: Basic Image Processing Pipeline
+
+**Task:** Apply blur and edge detection to an image
+
+1. Add an **Image** node (Input → Image)
+2. Add a **Blur** node (VisionProcess → Blur)
+3. Add a **Canny** node (VisionProcess → Canny)
+4. Add a **Result Image** node (Visual → Result Image)
+5. Connect: Image → Blur → Canny → Result Image
+6. Click "Select Image" in the Image node to load your image
+7. Adjust blur and Canny parameters using the sliders
+
+**Result:** You'll see real-time edge detection applied to your blurred image.
+
+#### Example 2: Webcam Object Detection
+
+**Task:** Detect objects in real-time from your webcam
+
+1. Add a **WebCam** node (Input → WebCam)
+2. Add an **Object Detection** node (VisionModel → Object Detection)
+3. Add a **Draw Information** node (Overlay → Draw Information)
+4. Add a **Result Image** node (Visual → Result Image)
+5. Connect: WebCam → Object Detection → Draw Information → Result Image
+6. Select your camera device in the WebCam node
+7. Choose a detection model in the Object Detection node
+
+**Result:** Real-time object detection with bounding boxes drawn on your webcam feed.
+
+#### Example 3: Video Processing with Multiple Effects
+
+**Task:** Process a video file with multiple filters
+
+1. Add a **Video** node (Input → Video)
+2. Add multiple processing nodes (e.g., **Brightness**, **Contrast**, **Grayscale**)
+3. Add an **Image Concat** node (Overlay → Image Concat) to compare results
+4. Add a **Result Image** node (Visual → Result Image)
+5. Connect the Video node to each processing node
+6. Connect all processing outputs to the Image Concat node
+7. Connect Image Concat to Result Image
+
+**Result:** Side-by-side comparison of different processing effects on your video.
+
+#### Example 4: Face Detection and Analysis
+
+**Task:** Detect faces and apply effects
+
+1. Add an **Image** or **WebCam** node
+2. Add a **Face Detection** node (VisionModel → Face Detection)
+3. Add a **Draw Information** node (Overlay → Draw Information)
+4. Add a **Crop** node (VisionProcess → Crop) - optional, to extract faces
+5. Connect nodes in sequence
+6. Use the Draw Information node to visualize detected faces
+
+**Result:** Automatic face detection with bounding boxes and optional face extraction.
+
+### Tips & Best Practices
+
+#### Working with Nodes
+
+- **Organize Your Workspace:** Arrange nodes logically from left (inputs) to right (outputs) for better readability
+- **Use Image Concat:** Compare different processing approaches side-by-side using the Image Concat node
+- **Check Terminal Colors:** Nodes can only connect if terminal types match (indicated by color)
+- **Start Simple:** Begin with a basic pipeline and add complexity incrementally
+- **Save Frequently:** Use Export to save your work regularly
+
+#### Performance Optimization
+
+- **Reduce Resolution:** Use the **Resize** node early in your pipeline to speed up processing
+- **Toggle Nodes:** Use the **ON/OFF Switch** node to temporarily disable expensive operations
+- **Limit Video FPS:** Adjust skip rate in Video nodes to process fewer frames
+- **GPU Acceleration:** Enable GPU in Deep Learning nodes when available (requires ONNX Runtime GPU)
+
+#### Debugging and Testing
+
+- **Use Debug Print:** Launch with `--use_debug_print` to see detailed node execution logs
+- **Disable Async Draw:** Use `--unuse_async_draw` if you experience UI issues
+- **Check Connections:** Verify all node connections are properly established (no red indicators)
+- **Monitor Performance:** Use the **FPS** node to track processing speed
+- **Test Incrementally:** Add one node at a time and verify it works before adding more
+
+#### Node Selection Tips
+
+- **Input Nodes:** 
+  - Use **Image** for static images and prototyping
+  - Use **WebCam** for real-time testing
+  - Use **Video** for batch processing and testing on recorded content
+  - Use **RTSP** for network camera streams
+
+- **Processing Nodes:**
+  - Start with basic nodes (Brightness, Contrast, Blur) before complex ones
+  - Chain multiple processing nodes to create sophisticated effects
+  - Use **Grayscale** before **Threshold** for better results
+
+- **ML/DL Nodes:**
+  - Check GPU availability before enabling GPU inference
+  - Different models have different performance characteristics - experiment!
+  - Combine detection nodes with tracking for smoother results
+
+- **Visualization:**
+  - Use **Result Image** for final output
+  - Use **Result Image (Large)** when you need more detail
+  - Use **PutText** to add custom labels and timing information
+  - Use **RGB Histogram** for color analysis
+
+### Keyboard Shortcuts & UI Interactions
+
+| Action | Shortcut/Method |
+|--------|----------------|
+| **Add Node** | Click menu item, then click on canvas |
+| **Delete Node** | Select node, press `Delete` key |
+| **Pan Canvas** | Middle mouse button drag or `Ctrl` + Left mouse drag |
+| **Zoom Canvas** | Mouse wheel scroll |
+| **Connect Nodes** | Drag from output terminal to input terminal |
+| **Disconnect Nodes** | Right-click on connection line, select delete |
+| **Select Multiple** | `Ctrl` + Click on nodes |
+| **Minimap** | Click minimap in bottom-right to navigate large graphs |
+
+### Troubleshooting
+
+#### Common Issues and Solutions
+
+**Problem:** Application crashes on startup
+- **Solution:** Check if required dependencies are installed: `pip install -r requirements.txt`
+- **Solution:** Ensure you have a compatible Python version (3.7+)
+- **Solution:** Try disabling async drawing: `python main.py --unuse_async_draw`
+
+**Problem:** Webcam not detected
+- **Solution:** Close other applications using the webcam
+- **Solution:** Check camera permissions in your OS settings
+- **Solution:** Try different device numbers in the WebCam node dropdown
+
+**Problem:** Cannot connect two nodes
+- **Solution:** Verify terminal types match (same color)
+- **Solution:** Check that output terminal connects to input terminal (not output to output)
+- **Solution:** Some nodes require specific input types - check node documentation
+
+**Problem:** Deep Learning node shows "Model not found" error
+- **Solution:** Download the required model files (see node-specific README files)
+- **Solution:** Check the model path in the node configuration
+- **Solution:** Verify you have the correct ONNX runtime installed
+
+**Problem:** Low FPS / Slow processing
+- **Solution:** Add a **Resize** node to reduce image resolution
+- **Solution:** Enable GPU acceleration in DL nodes if available
+- **Solution:** Reduce video skip rate or use lower resolution input
+- **Solution:** Close unnecessary nodes and connections
+
+**Problem:** Export/Import doesn't work
+- **Solution:** Ensure you're saving to a writable location
+- **Solution:** Check that the JSON file is valid and not corrupted
+- **Solution:** Import files should be loaded before adding new nodes
+
+**Problem:** Node parameters don't update
+- **Solution:** Try reconnecting the node connections
+- **Solution:** Restart the application
+- **Solution:** Check if the node is receiving valid input data
+
+### Advanced Usage
+
+#### Custom Configuration Files
+
+Create custom configuration files to save your preferred settings:
+
+```bash
+# Create a custom config
+cp node_editor/setting/setting.json my_config.json
+
+# Edit my_config.json to set your preferences
+# - webcam_width/height: Camera resolution
+# - process_width/height: Processing resolution  
+# - editor_width/height: Window size
+# - use_gpu: Enable GPU acceleration
+# - use_pref_counter: Enable performance monitoring
+
+# Run with custom config
+python main.py --setting my_config.json
+```
+
+#### Working with Multiple Cameras
+
+CV Studio supports multiple cameras simultaneously:
+
+1. The application automatically detects available cameras on startup
+2. Each **WebCam** node can select a different camera device
+3. Use multiple WebCam nodes to process multiple camera feeds in parallel
+4. Combine feeds using **Image Concat** for multi-camera display
+
+#### Creating Custom Nodes
+
+Extend CV Studio with your own nodes:
+
+```python
+# Create a new node file in node/ProcessNode/
+from node.ProcessNode.node_abc import ProcessNodeABC
+
+class MyCustomNode(ProcessNodeABC):
+    node_label = 'My Custom Filter'
+    node_tag = 'MyCustomFilter'
+    
+    def update(self, node_id, connection_list, node_image_dict, node_result_dict):
+        # Your processing logic here
+        input_image = self._get_input_image(node_image_dict, connection_list)
+        # Process input_image...
+        output_image = input_image  # Replace with your processing
+        
+        return {"image": output_image, "json": None}
+```
+
+See the [Development](#-development) section for more details on creating custom nodes.
+
+#### Batch Processing
+
+Process multiple files efficiently:
+
+1. Create your processing pipeline using an **Image** node
+2. Test with a single image
+3. Export the graph configuration
+4. Modify the exported JSON to point to different images
+5. Import and process each configuration
+
+For video batch processing:
+1. Use the **Video** node with your pipeline
+2. Add a **Video Writer** node to save output
+3. Configure output settings in `setting.json`
+4. Process multiple videos by changing the input file
+
+#### Integration with External Systems
+
+CV Studio supports integration with external systems:
+
+- **API Integration:** Use API input nodes to receive data from REST endpoints
+- **WebSocket Streaming:** Real-time data streaming for live applications
+- **RTSP Streams:** Connect to IP cameras and network video sources
+- **Serial Communication:** Interface with Arduino and other embedded devices (enable in settings)
+
+See [tests/dummy_servers/README.md](tests/dummy_servers/README.md) for examples of external server integration.
+
 ## 🏗️ Architecture
 
 CV Studio features a modern, professional architecture designed for scalability and maintainability.
