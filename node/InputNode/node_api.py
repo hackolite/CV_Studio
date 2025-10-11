@@ -145,9 +145,9 @@ class FactoryNode:
             ):
                 dpg.add_combo(
                     tag=node.tag_node_output_type_value_name,
-                    items=["Image", "Float", "Audio", "JSON"],
+                    items=["Audio", "JSON"],
                     label="Output Type",
-                    default_value="Image",
+                    default_value="Audio",
                     width=node._small_window_w - 80,
                 )
 
@@ -286,7 +286,7 @@ class ApiNode(Node):
 
         loop_flag = setting_dict[tag_node_input02_value_name]
         skip_rate = int(setting_dict[tag_node_input03_value_name])
-        output_type = setting_dict.get(tag_node_output_type_value_name, "Image")
+        output_type = setting_dict.get(tag_node_output_type_value_name, "Audio")
 
         dpg_set_value(tag_node_input02_value_name, loop_flag)
         dpg_set_value(tag_node_input03_value_name, skip_rate)

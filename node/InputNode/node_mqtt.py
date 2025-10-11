@@ -81,7 +81,7 @@ class FactoryNode:
             ):
                 dpg.add_combo(
                     tag=node.tag_node_output_type_value_name,
-                    items=["Image", "Float", "Audio", "JSON"],
+                    items=["Audio", "JSON"],
                     label="Output Type",
                     default_value="JSON",
                     width=280,
