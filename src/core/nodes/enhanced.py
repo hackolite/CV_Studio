@@ -8,15 +8,27 @@ This allows gradual migration of nodes to the new system
 import copy
 import uuid
 import traceback
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 
-import cv2
-import numpy as np
-
-try:
+if TYPE_CHECKING:
+    import cv2
+    import numpy as np
     import dearpygui.dearpygui as dpg
-except ImportError:
-    dpg = None
+else:
+    try:
+        import cv2
+    except ImportError:
+        cv2 = None
+
+    try:
+        import numpy as np
+    except ImportError:
+        np = None
+
+    try:
+        import dearpygui.dearpygui as dpg
+    except ImportError:
+        dpg = None
 
 # Import from new architecture
 from ...utils.logging import get_logger
@@ -76,7 +88,7 @@ class EnhancedNode(BaseNode):
         
         logger.debug(f"Initialized enhanced node {self.node_tag}")
     
-    def convert_cv_to_dpg(self, image: np.ndarray, width: int, height: int) -> np.ndarray:
+    def convert_cv_to_dpg(self, image, width: int, height: int):
         """
         Convert OpenCV image to DearPyGUI texture format
         
@@ -88,6 +100,10 @@ class EnhancedNode(BaseNode):
         Returns:
             Texture data for DearPyGUI
         """
+        if cv2 is None or np is None:
+            logger.error("OpenCV or NumPy not available")
+            return np.zeros(width * height * 3, dtype=np.float32) if np else None
+        
         try:
             resize_image = cv2.resize(image, (width, height))
             data = np.flip(resize_image, 2)  # BGR to RGB
