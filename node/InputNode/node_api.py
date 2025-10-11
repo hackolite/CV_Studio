@@ -64,6 +64,9 @@ class FactoryNode:
         node.tag_node_output_float_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloat'
         node.tag_node_output_float_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloatValue'
 
+        node.tag_node_output_type_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':OutputType'
+        node.tag_node_output_type_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':OutputTypeValue'
+
 
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict['input_window_width']
@@ -135,6 +138,19 @@ class FactoryNode:
                     callback=None,
                 )
 
+            # Add dropdown for output type selection
+            with dpg.node_attribute(
+                    tag=node.tag_node_output_type_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_output_type_value_name,
+                    items=["Image", "Float", "Audio", "JSON"],
+                    label="Output Type",
+                    default_value="Image",
+                    width=node._small_window_w - 80,
+                )
+
             # Bouton Start avec thème jaune
             with dpg.node_attribute(
                     tag=node.tag_node_button_name,
@@ -167,7 +183,7 @@ class FactoryNode:
             with dpg.node_attribute(tag=node.tag_node_output_json_name, attribute_type=dpg.mvNode_Attr_Output):
                 btn = add_yellow_disabled_button("JSON", node.tag_node_output_json_value_name)
 
-            with dpg.node_attribute(tag=node.tag_node_output_float_name, attribute_type=dpg.mvNode_Attr_Static):
+            with dpg.node_attribute(tag=node.tag_node_output_float_name, attribute_type=dpg.mvNode_Attr_Output):
                 btn = add_yellow_disabled_button("Float", node.tag_node_output_float_value_name)
         
         return node
