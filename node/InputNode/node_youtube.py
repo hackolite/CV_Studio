@@ -23,12 +23,10 @@ from node.basenode import Node
 
 
 def get_light_live_stream_url(url):
-    """Récupère l'URL du flux live en basse résolution (360p max)."""
-    #url = url
-    
+    """Retrieves live stream URL in low resolution (max 360p)."""
     ydl_opts = {
         "quiet": True,
-        "format": "best[height<=400]",  # Limitation à 360p pour réduire la charge
+        "format": "best[height<=400]",  # Limit to 360p to reduce load
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -110,14 +108,12 @@ class FactoryNode:
                 format=dpg.mvFormat_Float_rgb,
             )
 
-		
-        # Création d'un thème jaune pour boutons avec texte en blanc
+        # Create yellow theme for buttons with white text
         with dpg.theme() as yellow_button_theme:
             with dpg.theme_component(dpg.mvButton):
-                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 0, 255))          # Fond jaune
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255)) # Jaune clair au survol
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 0, 64, 255))   # Jaune plus foncé en appui
-                #dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))          # Texte en blanc
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 0, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 0, 64, 255))
 
 		
         with dpg.node(
@@ -171,7 +167,7 @@ class FactoryNode:
                 )
                 dpg.bind_item_theme(btn_start, yellow_button_theme)
 
-            # Outputs audio, json, float, elapsed time en boutons désactivés mais jaune
+            # Outputs audio, json, float, elapsed time as disabled yellow buttons
             def add_yellow_disabled_button(label, tag):
                 btnn = dpg.add_button(
                     label=label,
@@ -219,7 +215,7 @@ class YoutubeNode(Node):
 
 
     def __init__(self):
-        super().__init__()  # Appel du constructeur parent
+        super().__init__()
         self._min_val = 1
         self._max_val = 1000
         self._start_label = "Start"
@@ -230,21 +226,21 @@ class YoutubeNode(Node):
         self.small_window_h = 135
         
     def convert_cv_to_dpg(self, cv_img, w, h):
-        """Convertit une image OpenCV en format DearPyGui"""
+        """Converts OpenCV image to DearPyGui format"""
         if cv_img is None:
-            # Retourner une image noire si pas d'image
+            # Return black image if no image available
             return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
         
-        # Redimensionner l'image à la taille souhaitée
+        # Resize image to desired size
         resized = cv2.resize(cv_img, (w, h))
         
-        # Convertir de BGR (OpenCV) vers RGB
+        # Convert from BGR (OpenCV) to RGB
         rgb_image = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
         
-        # Normaliser les valeurs de 0-255 vers 0-1 (float32)
+        # Normalize values from 0-255 to 0-1 (float32)
         normalized = rgb_image.astype(np.float32) / 255.0
         
-        # Aplatir l'array et retourner en bytes
+        # Flatten array and return as bytes
         return normalized.flatten().tobytes()
     
 
@@ -255,7 +251,7 @@ class YoutubeNode(Node):
         print(f"Button clicked, URL: {value}")
         
     def _update(self, node_id, connection_list, node_image_dict, node_result_dict):
-        """Met à jour l'image du flux vidéo."""
+        """Updates the video stream image."""
         print("update YT")
         ret, frame = False, None
         tag_node_name = f"{node_id}:{self.node_tag}"
@@ -263,28 +259,28 @@ class YoutubeNode(Node):
 
         self.current_time = time.time()
         
-        # Vérifier si la capture est initialisée
+        # Check if capture is initialized
         if self.cap is not None:
             try:
                 ret, frame = self.cap.read()
                 print(f"Frame read: ret={ret}, frame shape={frame.shape if frame is not None else None}")
             except Exception as e:
-                print(f"Erreur lors de la lecture: {e}")
+                print(f"Error reading frame: {e}")
                 ret, frame = False, None
 
         if ret and frame is not None:
-            # Convertir et mettre à jour la texture
+            # Convert and update texture
             texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
             dpg_set_value(output_value01_tag, texture)
-            print("Texture mise à jour")
+            print("Texture updated")
         else:
-            print("Pas de frame valide")
+            print("No valid frame")
 
         return {"image": frame, "json": None}   
 
     
     def update(self, node_id, connection_list, node_image_dict, node_result_dict):
-      """Met à jour l'image du flux vidéo."""
+      """Updates the video stream image."""
       tag_node_name = f"{node_id}:{self.node_tag}"
       output_value01_tag = f"{tag_node_name}:{self.TYPE_IMAGE}:Output01Value"
 
@@ -303,18 +299,18 @@ class YoutubeNode(Node):
         try:
             ret, frame = self.cap.read()
         except Exception as e:
-            print(f"Erreur lecture vidéo : {e}")
+            print(f"Video read error: {e}")
             ret, frame = False, None
 
         if ret and frame is not None:
-            # Seulement mettre à jour si la frame est différente (évite saccades sur flux figé)
+            # Only update if frame is different (avoid jitter on frozen stream)
             if not hasattr(self, "_last_frame") or not np.array_equal(self._last_frame, frame):
                 self._last_frame = frame
                 texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
                 dpg_set_value(output_value01_tag, texture)
                 self._last_frame_time = self.current_time
         else:
-            print("Pas de frame valide")
+            print("No valid frame")
 
       return {"image": getattr(self, "_last_frame", None), "json": None}
     

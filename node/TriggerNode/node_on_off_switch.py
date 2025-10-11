@@ -25,9 +25,9 @@ class FactoryNode:
 
     
     def add_node(self, parent, node_id, pos=[0, 0], callback=None, opencv_setting_dict=None):
-        """Ajoute un nœud au graphe de traitement."""
+        """Adds a node to the processing graph."""
         
-        # Génération des tags pour le Node et ses attributs
+        # Generate tags for Node and its attributes
         node = Node()
 
         node.tag_node_name = f"{node_id}:{node.node_tag}"
@@ -44,14 +44,14 @@ class FactoryNode:
         black_image = np.zeros((nodesmall_window_w, node.small_window_h, 3))
         black_texture = node.convert_cv_to_dpg(black_image, node.small_window_w, node.small_window_h)
 
-        # Création de la texture pour afficher l'image
+        # Create texture to display image
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(
                 node.small_window_w, node.small_window_h, black_texture,
                 tag=tag_node_output01_value_name, format=dpg.mvFormat_Float_rgb
             )
 
-        # Création du nœud dans l'interface graphique
+        # Create node in the GUI
         with dpg.node(tag=tag_node_name, parent=parent, label=node.node_label, pos=pos):
             with dpg.node_attribute(tag=tag_node_output01_name, attribute_type=dpg.mvNode_Attr_Output):
                 dpg.add_image(tag_node_output01_value_name)
