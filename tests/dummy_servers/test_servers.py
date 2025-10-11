@@ -14,8 +14,8 @@ import json
 import urllib.request
 import signal
 
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add dummy_servers directory to path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 class TestDummyServers(unittest.TestCase):
