@@ -101,7 +101,7 @@ class Node:
 
 
     def convert_cv_to_dpg(self, image, width, height):
-        resize_image = cv2.resize(image, (width, height))
+        resize_image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
 
         data = np.flip(resize_image, 2)
         data = data.ravel()

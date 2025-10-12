@@ -150,7 +150,8 @@ class VideoWriterNode(Node):
             if tag_node_name in self._video_writer_dict:
 
                 writer_frame = cv2.resize(rec_frame,
-                                          (writer_width, writer_height))
+                                          (writer_width, writer_height),
+                                          interpolation=cv2.INTER_CUBIC)
                 self._video_writer_dict[tag_node_name].write(writer_frame)
 
 
