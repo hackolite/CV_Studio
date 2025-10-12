@@ -384,7 +384,7 @@ class DpgNodeEditor(object):
         for unfinded_value in unfinded_id_dict.values():
             node_connection_list.insert(0, (unfinded_value, []))
 
-        print(node_connection_list)
+        logger.debug(f"Node connection list: {node_connection_list}")
         return OrderedDict(node_connection_list)
 
     def _callback_file_export(self, sender, data):
@@ -411,11 +411,10 @@ class DpgNodeEditor(object):
             json.dump(setting_dict, fp, indent=4)
 
         if self._use_debug_print:
-            print('**** _callback_file_export ****')
-            print('    sender          : ' + str(sender))
-            print('    data            : ' + str(data))
-            print('    setting_dict    : ', setting_dict)
-            print()
+            logger.debug('_callback_file_export details:')
+            logger.debug(f'    sender          : {sender}')
+            logger.debug(f'    data            : {data}')
+            logger.debug(f'    setting_dict    : {setting_dict}')
 
     def _callback_file_export_menu(self):
         dpg.show_item('file_export')
@@ -450,11 +449,9 @@ class DpgNodeEditor(object):
                 ver = setting_dict[node_id_name]['setting']['ver']
                 if ver != node._ver:
                     warning_node_name = setting_dict[node_id_name]['name']
-                    print('WARNING : ' + warning_node_name, end='')
-                    print(' is different version')
-                    print('                     Load Version ->' + ver)
-                    print('                     Code Version ->' + node._ver)
-                    print()
+                    logger.warning(f"Node {warning_node_name} version mismatch:")
+                    logger.warning(f"  Load Version: {ver}")
+                    logger.warning(f"  Code Version: {node._ver}")
 
 
                 pos = setting_dict[node_id_name]['setting']['pos']
@@ -490,11 +487,10 @@ class DpgNodeEditor(object):
             )
 
         if self._use_debug_print:
-            print('**** _callback_file_import ****')
-            print('    sender          : ' + str(sender))
-            print('    data            : ' + str(data))
-            print('    setting_dict    : ', setting_dict)
-            print()
+            logger.debug('_callback_file_import details:')
+            logger.debug(f'    sender          : {sender}')
+            logger.debug(f'    data            : {data}')
+            logger.debug(f'    setting_dict    : {setting_dict}')
 
     def _callback_save_last_pos(self):
         if len(dpg.get_selected_nodes(self._node_editor_tag)) > 0:
@@ -549,10 +545,8 @@ class DpgNodeEditor(object):
             dpg.delete_item(dpg.get_selected_links(self._node_editor_tag)[0])
 
         if self._use_debug_print:
-            print('**** _callback_mv_key_del ****')
-            print('    self._node_list            :    ', self._node_list)
-            print('    self._node_link_list       : ', self._node_link_list)
-            print('    self._node_connection_dict : ',
-                  self._node_connection_dict)
-
+            logger.debug('_callback_mv_key_del details:')
+            logger.debug(f'    self._node_list            : {self._node_list}')
+            logger.debug(f'    self._node_link_list       : {self._node_link_list}')
+            logger.debug(f'    self._node_connection_dict : {self._node_connection_dict}')
 
