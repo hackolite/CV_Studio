@@ -261,8 +261,8 @@ if __name__ == '__main__':
 
         # Inference execution
         class_scores, class_ids = model(frame)
-        print(class_scores)
-        print(class_ids)
+        # Debug: print(class_scores)
+        # Debug: print(class_ids)
 
         key = cv.waitKey(1)
         if key == 27:  # ESC

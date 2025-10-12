@@ -32,7 +32,10 @@ from node.DLNode.pose_estimation.mediapipe_pose.mediapipe_pose import (
 
 from node.DLNode.pose_estimation.tennis_keypoints.tennis_keypoints import tennis_keypoints 
 from node.DLNode.pose_estimation.tennis_keypoints_2.tennis_keypoints_2 import tennis_keypoints_2
+from src.utils.logging import get_logger
+from src.utils.gpu_utils import get_execution_providers
 
+logger = get_logger(__name__)
 
 
 import random
@@ -97,7 +100,7 @@ class FactoryNode:
             )
 
 
-        print(node.node_label)
+        logger.debug(f"Creating pose estimation node: {node.node_label}")
         with dpg.node(
                 tag=node.tag_node_name,
                 parent=parent,

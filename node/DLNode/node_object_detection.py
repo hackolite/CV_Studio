@@ -18,6 +18,11 @@ from node.DLNode.object_detection.FreeYOLO.freeyolo import FreeYOLO
 from node.DLNode.object_detection.coco_class_names import coco_class_names
 from node.DLNode.object_detection.coco_class_names_only_person import coco_class_names_only_person
 from node.DLNode.object_detection.coco_class_names_tennis import coco_class_names_tennis
+from src.utils.logging import get_logger
+from src.utils.gpu_utils import get_execution_providers
+
+logger = get_logger(__name__)
+
 
 
 class FactoryNode:
@@ -268,7 +273,7 @@ class Node(Node):
                     if connection_type == self.TYPE_FLOAT:
                         source_tag = connection_info[0] + 'Value'
                         destination_tag = connection_info[1] + 'Value'
-                        print("source :", source_tag, "destination :", destination_tag)
+                        logger.debug(f"Linking float: {source_tag} -> {destination_tag}")
                         input_value = round(float(dpg_get_value(source_tag)), 3)
                         input_value = max([self._min_val, input_value])
                         input_value = min([self._max_val, input_value])
@@ -278,14 +283,11 @@ class Node(Node):
                         connection_info_src = connection_info[0]
                         connection_info_src = connection_info_src.split(':')[:2]
                         connection_info_src = ':'.join(connection_info_src)
-                        print("connection", node_id, self.tag_node_name, connection_info_src)
+                        logger.debug(f"Image connection: {node_id}, {self.tag_node_name}, {connection_info_src}")
 
                 frame = node_image_dict.get(connection_info_src, None)
-                try :
-                    print(frame.shape)
-
-                except Exception as e:
-                    pass
+                if frame is not None:
+                    logger.debug(f"Frame shape: {frame.shape}")
 
 
                 try:
@@ -370,8 +372,7 @@ class Node(Node):
                 data["json"] = result 
                 return data
             except Exception as e:
-                    #error_trace = traceback.format_exc()  # Get stack trace as string
-                    print("Stack Trace :\n", e)
+                    logger.error(f"Error in object detection: {e}", exc_info=True)
 
 
     def close(self, node_id):
@@ -422,7 +423,7 @@ class Node(Node):
             thickness=3,
         ):
             debug_image = copy.deepcopy(image)
-            print("external :", debug_image.shape)
+            logger.debug(f"Drawing object detection info on image with shape: {debug_image.shape}")
             for bbox, score, class_id in zip(bboxes, scores, class_ids):
                 x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
 

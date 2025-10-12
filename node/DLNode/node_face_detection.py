@@ -21,6 +21,10 @@ from node.DLNode.face_detection.mediapipe_facemesh.mediapipe_facemesh import (
     MediaPipeFaceMeshNonRefine,
     MediaPipeFaceMeshRefine,
 )
+from src.utils.logging import get_logger
+from src.utils.gpu_utils import get_execution_providers
+
+logger = get_logger(__name__)
 
 #from node.draw_node.draw_util.draw_util import draw_face_detection_info
 from node.basenode import Node
@@ -327,21 +331,21 @@ class Node(Node):
                 small_window_h,
             )
             dpg_set_value(output_value01_tag, texture)
-        print(result)
+        logger.debug(f"Face detection result: {result}")
 
 
         count = 1
         try:
             if len(result['results_list']) > 0 :
                 if count != 0:
-                    print("detected")
+                    logger.debug("Face detected")
                     count = 0
                     #requests.get("http://192.168.0.47/")
             else:
                     count = 1
 
         except Exception as e:
-            print(e)
+            logger.error(f"Error processing face detection result: {e}")
 
         return frame, result
 
