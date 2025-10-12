@@ -11,9 +11,14 @@ import serial
 import cv2  
 import dearpygui.dearpygui as dpg
 
+from src.utils.logging import setup_logging, get_logger
+from src.utils.gpu_utils import log_gpu_info
 
 from node_editor.util import check_camera_connection
 from node_editor.node_editor import DpgNodeEditor
+
+# Setup logging
+logger = get_logger(__name__)
 
 
 def get_args():
@@ -57,7 +62,7 @@ def update_node_info(
         dpg.set_item_width(node_editor.window, dpg.get_viewport_client_width())
         dpg.set_item_height(node_editor.window, dpg.get_viewport_client_height())
     except Exception as e:
-        print(e)
+        logger.error(f"Failed to set node editor window properties: {e}")
 		
     node_list = node_editor.get_node_list()
 
@@ -71,7 +76,7 @@ def update_node_info(
         node_id, _ = node_id_name.split(':')
         connection_list = sorted_node_connection_dict.get(node_id_name, [])
         node_instance = node_editor.get_node_instances(node_id_name)
-        print(connection_list)
+        logger.debug(f"Processing node {node_id_name} with connections: {connection_list}")
         if mode_async:
             try:
                 data = node_instance.update(
@@ -81,7 +86,7 @@ def update_node_info(
                     node_result_dict,
                 )
             except Exception as e:
-                print(e)
+                logger.error(f"Error updating node {node_id_name}: {e}", exc_info=True)
                 #sys.exit()
         else:
             data = node_instance.update(
@@ -96,7 +101,7 @@ def update_node_info(
             node_image_dict[node_id_name] = copy.deepcopy(data["image"])
             node_result_dict[node_id_name] = copy.deepcopy(data["json"])
         except Exception as e:
-            print(e)
+            logger.error(f"Error processing node {node_id_name} results: {e}")
 
     
 def main():
@@ -106,16 +111,26 @@ def main():
     unuse_async_draw = args.unuse_async_draw
     use_debug_print = args.use_debug_print
 
+    # Setup logging based on debug flag
+    log_level = 'DEBUG' if use_debug_print else 'INFO'
+    setup_logging(level=getattr(__import__('logging'), log_level))
+    
+    logger.info('=' * 60)
+    logger.info('CV_STUDIO Starting')
+    logger.info('=' * 60)
 
-    print('**** Load Config ********')
+    logger.info('Loading configuration')
     opencv_setting_dict = None
     with open(setting) as fp:
         opencv_setting_dict = json.load(fp)
     webcam_width = opencv_setting_dict['webcam_width']
     webcam_height = opencv_setting_dict['webcam_height']
 
+    # Log GPU information
+    if opencv_setting_dict.get('use_gpu', False):
+        log_gpu_info()
 
-    print('**** Check Camera Connection ********')
+    logger.info('Checking camera connections')
     device_no_list = check_camera_connection()
     camera_capture_list = []
     for device_no in device_no_list:
@@ -123,6 +138,7 @@ def main():
         video_capture.set(cv2.CAP_PROP_FRAME_WIDTH, webcam_width)
         video_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, webcam_height)
         camera_capture_list.append(video_capture)
+        logger.info(f"Camera {device_no} connected")
 
 
     opencv_setting_dict['device_no_list'] = device_no_list
@@ -141,17 +157,18 @@ def main():
             from .node_editor.util import check_serial_connection
         except:
             from node_editor.util import check_serial_connection
-        print('**** Check Serial Device Connection ********')
+        logger.info('Checking serial device connections')
         serial_device_no_list = check_serial_connection()
         for serial_device_no in serial_device_no_list:
             ser = serial.Serial(serial_device_no,115200)
             serial_connection_list.append(ser)
+            logger.info(f"Serial device {serial_device_no} connected")
         
 
     opencv_setting_dict['serial_device_no_list'] = serial_device_no_list
     opencv_setting_dict['serial_connection_list'] = serial_connection_list
 
-    print('**** DearPyGui Setup ********')
+    logger.info('Setting up DearPyGui')
     
     dpg.create_context()
     dpg.setup_dearpygui()
@@ -165,7 +182,7 @@ def main():
     # Using default DearPyGui font (no custom font needed)
     # DearPyGui will use its built-in default font automatically
 
-    print('**** Create NodeEditor ********')
+    logger.info('Creating Node Editor')
     menu_dict = OrderedDict({
         'Input': 'InputNode',
         'VisionProcess': 'ProcessNode',
@@ -185,6 +202,7 @@ def main():
 
     dpg.show_viewport(maximized=True)
 
+    current_path = os.path.dirname(os.path.abspath(__file__))
     
     node_editor = DpgNodeEditor(
         width=editor_width,
@@ -195,15 +213,15 @@ def main():
         node_dir=current_path + '/node',
     )
 
-    print('**** Start Main Event Loop ********')
+    logger.info('Starting main event loop')
     if not unuse_async_draw:
-        print("asyncdraw is enabled")
+        logger.info("Async draw is enabled")
         event_loop = asyncio.get_event_loop()
         event_loop.run_in_executor(None, async_main, node_editor)
         dpg.start_dearpygui()
     
     else:
-        print("asyncdraw is disabled")
+        logger.info("Async draw is disabled")
         node_image_dict = {}
         node_result_dict = {}
         while dpg.is_dearpygui_running():
@@ -216,25 +234,27 @@ def main():
             dpg.render_dearpygui_frame()
 
 
-    print('**** Terminate process ********')
+    logger.info('Terminating process')
 
-    print('**** Close All Node ********')
+    logger.info('Closing all nodes')
     node_list = node_editor.get_node_list()
     for node_id_name in node_list:
         node_id, node_name = node_id_name.split(':')
         node_instance = node_editor.get_node_instances(node_name)
         node_instance.close(node_id)
 
-    print('**** Release All VideoCapture ********')
+    logger.info('Releasing all video captures')
     for camera_capture in camera_capture_list:
         camera_capture.release()
 
-    print('**** Stop Event Loop ********')
+    logger.info('Stopping event loop')
     node_editor.set_terminate_flag()
     event_loop.stop()
 
-    print('**** Destroy DearPyGui Context ********')
+    logger.info('Destroying DearPyGui context')
     dpg.destroy_context()
+    
+    logger.info('CV_STUDIO shutdown complete')
 
 
 if __name__ == '__main__':

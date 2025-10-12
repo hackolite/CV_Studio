@@ -15,6 +15,9 @@ from node.basenode import Node
 from node.TrackerNode.mot.motpy.motpy import Motpy
 # from node.preview_release_node.mot.bytetrack.mc_bytetrack import MultiClassByteTrack
 # from node.preview_release_node.mot.norfair.mc_norfair import MultiClassNorfair
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 #from node.draw_node.draw_util.draw_util import draw_multi_object_tracking_info
 
@@ -179,10 +182,10 @@ class Node(Node):
                 connection_info_src = ':'.join(connection_info_src)
 
             else:
-                print('Unknown connection type: ' + connection_type)
+                logger.warning(f'Unknown connection type: {connection_type}')
                 source_tag = connection_info[0] + 'Value'
                 destination_tag = connection_info[1] + 'Value'
-                print(dpg_get_value(source_tag))
+                logger.debug(f"Source value: {dpg_get_value(source_tag)}")
 
 
         frame = node_image_dict.get(connection_info_src, None)
@@ -206,7 +209,7 @@ class Node(Node):
 
         result = {}
         if frame is not None:
-            print(src_node_name)
+            logger.debug(f"Processing tracking for node: {src_node_name}")
             if src_node_name == 'ObjectDetection':
 
                 node_result = node_result_dict.get(connection_info_src, [])

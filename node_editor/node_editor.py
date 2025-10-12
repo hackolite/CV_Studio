@@ -14,9 +14,11 @@ import dearpygui.dearpygui as dpg
 from  node.node_factory import NodeFactory
 import time
 from .style import STYLE
+from src.utils.logging import get_logger
 
 dpg.create_context()
 
+logger = get_logger(__name__)
 
 
 def node_style(module_name):
@@ -140,7 +142,7 @@ class DpgNodeEditor(object):
 
                 for menu_info in menu_dict.items():
                     menu_label = menu_info[0]
-                    print("menu_label :", menu_label)
+                    logger.debug(f"Creating menu: {menu_label}")
                     with dpg.menu(label=menu_label):
 
                         node_sources_path = os.path.join(
@@ -246,7 +248,7 @@ class DpgNodeEditor(object):
 
     def _callback_add_node(self, sender, data, user_data):
         self._node_id += 1
-        print("node name :", self._node_id)
+        logger.debug(f"Adding node with ID: {self._node_id}")
         factorynode = self._node_factory_list[user_data]
         last_pos = [0, 0]
         
@@ -265,22 +267,21 @@ class DpgNodeEditor(object):
         self._node_list.append(node.tag_node_name)
 
         if self._use_debug_print:
-            print('**** _callback_add_node ****')
-            print('    Node ID         : ' + str(self._node_id))
-            print('    sender          : ' + str(sender))
-            print('    data            : ' + str(data))
-            print('    user_data       : ' + str(user_data))
-            print('    self._node_list : ' + ', '.join(self._node_list))
-            print()
+            logger.debug('_callback_add_node details:')
+            logger.debug(f'    Node ID         : {self._node_id}')
+            logger.debug(f'    sender          : {sender}')
+            logger.debug(f'    data            : {data}')
+            logger.debug(f'    user_data       : {user_data}')
+            logger.debug(f"    self._node_list : {', '.join(self._node_list)}")
     
 
     def _callback_link(self, sender, data):
-        print("call back")
+        logger.debug("Link callback triggered")
         source = dpg.get_item_alias(data[0])
         destination = dpg.get_item_alias(data[1])
         source_type = source.split(':')[2]
         destination_type = destination.split(':')[2]
-        print(source_type, destination_type)
+        logger.debug(f"Linking {source_type} -> {destination_type}")
         if source_type == destination_type:
 
             if len(self._node_link_list) == 0:
@@ -304,13 +305,12 @@ class DpgNodeEditor(object):
         )
 
         if self._use_debug_print:
-            print('**** _callback_link ****')
-            print('    sender                     : ' + str(sender))
-            print('    data                       : ', data)
-            print('    self._node_list            :    ', self._node_list)
-            print('    self._node_link_list       : ', self._node_link_list)
-            print('    self._node_connection_dict : ',self._node_connection_dict)
-            print()
+            logger.debug('_callback_link details:')
+            logger.debug(f'    sender                     : {sender}')
+            logger.debug(f'    data                       : {data}')
+            logger.debug(f'    self._node_list            : {self._node_list}')
+            logger.debug(f'    self._node_link_list       : {self._node_link_list}')
+            logger.debug(f'    self._node_connection_dict : {self._node_connection_dict}')
 
 
     def _callback_close_window(self, sender):
