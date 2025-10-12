@@ -48,7 +48,7 @@ class YOLOX(object):
 
     def __call__(self, image):
         temp_image = copy.deepcopy(image)
-        print(image.shape)
+        # Debug: print(image.shape)
         image_height, image_width = image.shape[0], image.shape[1]
 
 

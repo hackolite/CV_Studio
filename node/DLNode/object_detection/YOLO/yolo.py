@@ -36,7 +36,7 @@ class YOLO:
         temp_image = copy.deepcopy(image)
         temp_image = cv2.resize(temp_image, (608, 416), interpolation=cv2.INTER_AREA)
         image = self._preprocess(temp_image)
-        print("preprocess", image.shape) 
+        # Debug: print("preprocess", image.shape) 
         results = self.onnx_session.run(None, {self.input_name: image})
         
         bboxes, scores, class_ids = self._postprocess(results[0], self.nms_th, self.nms_score_th)
