@@ -105,7 +105,7 @@ class EnhancedNode(BaseNode):
             return np.zeros(width * height * 3, dtype=np.float32) if np else None
         
         try:
-            resize_image = cv2.resize(image, (width, height))
+            resize_image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
             data = np.flip(resize_image, 2)  # BGR to RGB
             data = data.ravel()
             data = np.asfarray(data, dtype='f')
