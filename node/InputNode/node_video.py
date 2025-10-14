@@ -4,6 +4,11 @@ import time
 import cv2
 import numpy as np
 import dearpygui.dearpygui as dpg
+import librosa
+import matplotlib.cm
+import subprocess
+import tempfile
+import os
 
 from node_editor.util import dpg_get_value, dpg_set_value
 
@@ -63,6 +68,10 @@ class FactoryNode:
         node.tag_node_output_float_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloat'
         node.tag_node_output_float_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloatValue'
 
+        # Spectrogram tags
+        node.tag_node_spectrogram_name = node.tag_node_name + ':Spectrogram'
+        node.tag_node_spectrogram_value_name = node.tag_node_name + ':SpectrogramValue'
+        node.tag_node_spectrogram_toggle_name = node.tag_node_name + ':SpectrogramToggle'
 
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict['input_window_width']
@@ -84,6 +93,14 @@ class FactoryNode:
                 small_window_h,
                 black_texture,
                 tag=node.tag_node_output01_value_name,
+                format=dpg.mvFormat_Float_rgb,
+            )
+            # Add spectrogram texture (initially black)
+            dpg.add_raw_texture(
+                node._small_window_w,
+                small_window_h,
+                black_texture,
+                tag=node.tag_node_spectrogram_value_name,
                 format=dpg.mvFormat_Float_rgb,
             )
 
@@ -132,6 +149,17 @@ class FactoryNode:
             ):
                 dpg.add_image(node.tag_node_output01_value_name)
 
+            # Spectrogram toggle
+            with dpg.node_attribute(
+                    tag=node.tag_node_spectrogram_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_checkbox(
+                    label='Show Spectrogram',
+                    tag=node.tag_node_spectrogram_toggle_name,
+                    default_value=False,
+                )
+                dpg.add_image(node.tag_node_spectrogram_value_name)
 
             with dpg.node_attribute(
                     tag=node.tag_node_input02_name,
@@ -242,14 +270,118 @@ class VideoNode(Node):
         self._small_window_w = 240
         self._small_window_h = 135
 
-
-
         self._start_label = "Start"
         self.node_tag = "Video"
         self.node_label = "Video"
         
+        # Spectrogram storage
+        self._spectrogram_texture = {}
+        self._spectrogram_array = {}
+        self._spectrogram_params = {}
+        self._spectrogram_meta = {}
+        
     #def convert_cv_to_dpg(self, cv_img, w, h):
     #    return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
+    
+    def _prepare_spectrogram(self, node_id, movie_path):
+        """
+        Extract audio and compute mel-spectrogram from video file.
+        
+        Args:
+            node_id: Node identifier
+            movie_path: Path to video file
+        """
+        if not movie_path or not os.path.exists(movie_path):
+            print(f"Video file not found: {movie_path}")
+            return
+        
+        try:
+            # Try to load audio directly from video file
+            try:
+                y, sr = librosa.load(movie_path, sr=22050)
+            except Exception as e:
+                print(f"Direct audio load failed, trying ffmpeg extraction: {e}")
+                # Fallback: extract audio via ffmpeg
+                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_audio:
+                    tmp_audio_path = tmp_audio.name
+                
+                try:
+                    # Extract audio using ffmpeg
+                    subprocess.run([
+                        'ffmpeg', '-i', movie_path, '-vn', '-acodec', 'pcm_s16le',
+                        '-ar', '22050', '-ac', '1', '-y', tmp_audio_path
+                    ], check=True, capture_output=True)
+                    
+                    # Load extracted audio
+                    y, sr = librosa.load(tmp_audio_path, sr=22050)
+                finally:
+                    # Clean up temp file
+                    if os.path.exists(tmp_audio_path):
+                        os.unlink(tmp_audio_path)
+            
+            # Compute mel-spectrogram
+            S = librosa.feature.melspectrogram(
+                y=y,
+                sr=sr,
+                n_fft=2048,
+                hop_length=512,
+                n_mels=128,
+                fmin=None,
+                fmax=None,
+                power=2.0
+            )
+            
+            # Convert to dB scale
+            S_db = librosa.power_to_db(S, ref=np.max)
+            
+            # Normalize to 0-1 range
+            S_normalized = (S_db - S_db.min()) / (S_db.max() - S_db.min() + 1e-6)
+            
+            # Apply colormap (magma)
+            cmap = matplotlib.cm.get_cmap('magma')
+            S_colored = cmap(S_normalized)
+            
+            # Convert to 8-bit RGB (remove alpha channel)
+            S_rgb = (S_colored[:, :, :3] * 255).astype(np.uint8)
+            
+            # Flip vertically so low frequencies are at bottom
+            S_rgb = np.flipud(S_rgb)
+            
+            # Convert to BGR for OpenCV/DPG compatibility
+            S_bgr = cv2.cvtColor(S_rgb, cv2.COLOR_RGB2BGR)
+            
+            # Store the spectrogram array
+            self._spectrogram_array[node_id] = S_bgr
+            
+            # Convert to DPG texture format
+            texture = self.convert_cv_to_dpg(
+                S_bgr,
+                self._small_window_w,
+                self._small_window_h
+            )
+            self._spectrogram_texture[node_id] = texture
+            
+            # Store metadata for future audio sync
+            video_capture = self._video_capture.get(node_id, None)
+            fps = 30.0  # default
+            if video_capture is not None:
+                fps = video_capture.get(cv2.CAP_PROP_FPS)
+                if fps <= 0:
+                    fps = 30.0
+            
+            self._spectrogram_meta[node_id] = {
+                'y': y,
+                'sr': sr,
+                'hop_length': 512,
+                'fps': fps
+            }
+            
+            print(f"Spectrogram prepared for node {node_id}")
+            
+        except Exception as e:
+            print(f"Failed to prepare spectrogram: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _button(self, sender, app_data, user_data):
         print(f"Button clicked for {user_data}")
@@ -348,6 +480,14 @@ class VideoNode(Node):
             frame = cv2.resize(frame, (600, 400))  # Réduction de la taille pour alléger
             dpg_set_value(tag_node_output_image, texture)
 
+        # Update spectrogram display if toggle is enabled
+        tag_node_spectrogram_toggle = tag_node_name + ':SpectrogramToggle'
+        tag_node_spectrogram_value = tag_node_name + ':SpectrogramValue'
+        
+        if dpg.does_item_exist(tag_node_spectrogram_toggle):
+            show_spectrogram = dpg_get_value(tag_node_spectrogram_toggle)
+            if show_spectrogram and str(node_id) in self._spectrogram_texture:
+                dpg_set_value(tag_node_spectrogram_value, self._spectrogram_texture[str(node_id)])
         
         return {"image":frame, "json" : None}
 
@@ -387,3 +527,5 @@ class VideoNode(Node):
         if data['file_name'] != '.':
             node_id = sender.split(':')[1]
             self._movie_filepath[node_id] = data['file_path_name']
+            # Trigger spectrogram preparation in background
+            self._prepare_spectrogram(node_id, data['file_path_name'])
