@@ -467,6 +467,7 @@ class VideoNode(Node):
                 if not ret:
                     if loop_flag:
                         video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        self._frame_count[str(node_id)] = 0
                         _, frame = video_capture.read()
                     else:
                         video_capture.release()
