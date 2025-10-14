@@ -251,6 +251,7 @@ class ApiNode(Node):
         connection_list,
         node_image_dict,
         node_result_dict,
+        node_audio_dict=None,
     ):
 
         return {"image":frame, "json": None}

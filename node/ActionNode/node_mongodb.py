@@ -98,7 +98,7 @@ class MongodbNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
         self.node_tag = 'Mongodb'
         self._last_update_time = 0
         
-    def update(self, node_id, connection_list, node_image_dict, node_result_dict):
+    def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict=None):
         tag_node_name = f"{node_id}:{self.node_tag}"
         tag_node_input01_value_name = f"{tag_node_name}:{self.TYPE_IMAGE}:Input01Value"
 
