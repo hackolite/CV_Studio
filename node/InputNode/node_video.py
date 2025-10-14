@@ -283,13 +283,15 @@ class VideoNode(Node):
     #def convert_cv_to_dpg(self, cv_img, w, h):
     #    return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
     
-    def _prepare_spectrogram(self, node_id, movie_path):
+    def _prepare_spectrogram(self, node_id, movie_path, fmin=None, fmax=None):
         """
         Extract audio and compute mel-spectrogram from video file.
         
         Args:
             node_id: Node identifier
             movie_path: Path to video file
+            fmin: Minimum frequency for mel filter bank (Hz). If None, uses librosa default.
+            fmax: Maximum frequency for mel filter bank (Hz). If None, uses librosa default.
         """
         if not movie_path or not os.path.exists(movie_path):
             print(f"Video file not found: {movie_path}")
@@ -319,15 +321,27 @@ class VideoNode(Node):
                     if os.path.exists(tmp_audio_path):
                         os.unlink(tmp_audio_path)
             
+            # Build mel-spectrogram kwargs, only including fmin/fmax if not None
+            mel_kwargs = {
+                'y': y,
+                'sr': sr,
+                'n_fft': 2048,
+                'hop_length': 512,
+                'n_mels': 128,
+                'power': 2.0
+            }
+            # Only add fmin/fmax if they are not None to avoid TypeError
+            if fmin is not None:
+                mel_kwargs['fmin'] = fmin
+            if fmax is not None:
+                mel_kwargs['fmax'] = fmax
+            
             # Compute mel-spectrogram
-            S = librosa.feature.melspectrogram(
-                y=y,
-                sr=sr,
-                n_fft=2048,
-                hop_length=512,
-                n_mels=128,
-                power=2.0
-            )
+            try:
+                S = librosa.feature.melspectrogram(**mel_kwargs)
+            except Exception as e:
+                print(f"Error computing mel-spectrogram with fmin={fmin}, fmax={fmax}: {e}")
+                raise
             
             # Convert to dB scale
             S_db = librosa.power_to_db(S, ref=np.max)

@@ -46,10 +46,10 @@ def test_video_node_structure():
     assert 'SpectrogramToggle' in content, "Should have spectrogram toggle tag"
     assert 'SpectrogramValue' in content, "Should have spectrogram value tag"
     
-    # Check mel-spectrogram parameters
-    assert 'n_fft=2048' in content, "Should use n_fft=2048"
-    assert 'hop_length=512' in content, "Should use hop_length=512"
-    assert 'n_mels=128' in content, "Should use n_mels=128"
+    # Check mel-spectrogram parameters (now in kwargs dict)
+    assert "'n_fft': 2048" in content, "Should use n_fft=2048"
+    assert "'hop_length': 512" in content, "Should use hop_length=512"
+    assert "'n_mels': 128" in content, "Should use n_mels=128"
     assert 'sr=22050' in content, "Should use sr=22050"
     
     # Check colormap
