@@ -79,17 +79,17 @@ class FactoryNode:
         use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
 
-        black_image = np.zeros((node._small_window_w, node._small_window_h, 3))
+        black_image = np.zeros((small_window_h, small_window_w, 3))
         black_texture = node.convert_cv_to_dpg(
             black_image,
-            node._small_window_w,
-            node._small_window_h,
+            small_window_w,
+            small_window_h,
         )
 
         
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(
-                node._small_window_w,
+                small_window_w,
                 small_window_h,
                 black_texture,
                 tag=node.tag_node_output01_value_name,
@@ -97,7 +97,7 @@ class FactoryNode:
             )
             # Add spectrogram texture (initially black)
             dpg.add_raw_texture(
-                node._small_window_w,
+                small_window_w,
                 small_window_h,
                 black_texture,
                 tag=node.tag_node_spectrogram_value_name,
@@ -372,6 +372,12 @@ class VideoNode(Node):
                 self._small_window_h
             )
             self._spectrogram_texture[node_id] = texture
+            
+            # Immediately update the DPG texture
+            tag_node_name = str(node_id) + ':' + self.node_tag
+            tag_node_spectrogram_value = tag_node_name + ':SpectrogramValue'
+            if dpg.does_item_exist(tag_node_spectrogram_value):
+                dpg_set_value(tag_node_spectrogram_value, texture)
             
             # Store metadata for future audio sync
             video_capture = self._video_capture.get(node_id, None)
