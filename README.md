@@ -489,6 +489,15 @@ class MyNode(EnhancedNode):
 - **[src/README.md](src/README.md)** - Technical architecture documentation
 - **[Restructuring Summary](RESTRUCTURING_SUMMARY.md)** - Changes and improvements
 
+#### Video-Audio Synchronization Documentation
+
+Comprehensive guides explaining how the Video Node synchronizes audio spectrograms with video playback:
+
+- **[Quick Reference](VIDEO_AUDIO_SYNC_QUICK_REFERENCE.md)** - Quick overview and key formulas ⚡
+- **[Video-Audio Synchronization Explained](VIDEO_AUDIO_SYNCHRONIZATION_EXPLAINED.md)** - Complete technical explanation in English
+- **[Synchronisation Vidéo-Audio Expliquée](SYNCHRONISATION_VIDEO_AUDIO_EXPLIQUEE.md)** - Explication complète en français
+- **[Visual Sync Diagrams](VISUAL_SYNC_DIAGRAMS.md)** - Visual diagrams and flowcharts
+
 ## 🧪 Testing
 
 CV Studio includes comprehensive test coverage (38+ tests).
