@@ -47,6 +47,12 @@ class FactoryNode:
         node.tag_node_input03_name = node.tag_node_name + ':' + node.TYPE_INT + ':Input03'
         node.tag_node_input03_value_name = node.tag_node_name + ':' + node.TYPE_INT + ':Input03Value'
         
+        node.tag_node_input04_name = node.tag_node_name + ':' + node.TYPE_INT + ':Input04'
+        node.tag_node_input04_value_name = node.tag_node_name + ':' + node.TYPE_INT + ':Input04Value'
+        
+        node.tag_node_input05_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input05'
+        node.tag_node_input05_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input05Value'
+        
         node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
         node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
         
@@ -187,6 +193,34 @@ class FactoryNode:
                     callback=None,
                 )
 
+            with dpg.node_attribute(
+                    tag=node.tag_node_input04_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_int(
+                    tag=node.tag_node_input04_value_name,
+                    label="Target FPS",
+                    width=node._small_window_w - 80,
+                    default_value=24,
+                    min_value=1,
+                    max_value=120,
+                    callback=None,
+                )
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_input05_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_input05_value_name,
+                    label="Speed",
+                    width=node._small_window_w - 80,
+                    default_value=1.0,
+                    min_value=0.25,
+                    max_value=4.0,
+                    callback=None,
+                )
+
             if use_pref_counter:
                 with dpg.node_attribute(
                         tag=node.tag_node_output02_name,
@@ -257,6 +291,7 @@ class VideoNode(Node):
     _movie_filepath = {}
     _prev_movie_filepath = {}
     _frame_count = {}
+    _last_frame_time = {}
 
     _min_val = 1
     _max_val = 10
@@ -415,6 +450,8 @@ class VideoNode(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_input02_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         tag_node_input03_value_name = tag_node_name + ':' + self.TYPE_INT + ':Input03Value'
+        tag_node_input04_value_name = tag_node_name + ':' + self.TYPE_INT + ':Input04Value'
+        tag_node_input05_value_name = tag_node_name + ':' + self.TYPE_FLOAT + ':Input05Value'
         
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         tag_node_output_image = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
@@ -447,6 +484,7 @@ class VideoNode(Node):
             self._video_capture[str(node_id)] = cv2.VideoCapture(movie_path)
             self._prev_movie_filepath[str(node_id)] = movie_path
             self._frame_count[str(node_id)] = 0
+            self._last_frame_time[str(node_id)] = None
 
         video_capture = self._video_capture.get(str(node_id), None)
 
@@ -454,6 +492,8 @@ class VideoNode(Node):
         loop_flag = dpg_get_value(tag_node_input02_value_name)
 
         skip_rate = int(dpg_get_value(tag_node_input03_value_name))
+        target_fps = int(dpg_get_value(tag_node_input04_value_name))
+        playback_speed = float(dpg_get_value(tag_node_input05_value_name))
 
 
         if video_capture is not None and use_pref_counter:
@@ -462,25 +502,41 @@ class VideoNode(Node):
 
         frame = None
         if video_capture is not None:
-            while True:
-                ret, frame = video_capture.read()
-                if not ret:
-                    if loop_flag:
-                        video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                        self._frame_count[str(node_id)] = 0
-                        _, frame = video_capture.read()
-                    else:
-                        video_capture.release()
-                        video_capture = None
-                        self._movie_filepath.pop(str(node_id))
-                        self._prev_movie_filepath.pop(str(node_id))
-                        self._video_capture.pop(str(node_id))
+            # Check frame timing for playback speed control
+            current_time = time.time()
+            last_time = self._last_frame_time.get(str(node_id), None)
+            
+            # Calculate desired frame interval based on target FPS and playback speed
+            # Lower speed = longer interval between frames (slower playback)
+            # Higher speed = shorter interval between frames (faster playback)
+            frame_interval = (1.0 / target_fps) / playback_speed if target_fps > 0 and playback_speed > 0 else 0
+            
+            # Only read a new frame if enough time has passed
+            should_read_frame = (last_time is None) or ((current_time - last_time) >= frame_interval)
+            
+            if should_read_frame:
+                while True:
+                    ret, frame = video_capture.read()
+                    if not ret:
+                        if loop_flag:
+                            video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                            self._frame_count[str(node_id)] = 0
+                            _, frame = video_capture.read()
+                        else:
+                            video_capture.release()
+                            video_capture = None
+                            self._movie_filepath.pop(str(node_id))
+                            self._prev_movie_filepath.pop(str(node_id))
+                            self._video_capture.pop(str(node_id))
 
+                            break
+
+                    self._frame_count[str(node_id)] += 1
+                    if (self._frame_count[str(node_id)] % skip_rate) == 0:
                         break
-
-                self._frame_count[str(node_id)] += 1
-                if (self._frame_count[str(node_id)] % skip_rate) == 0:
-                    break
+                
+                # Record the time when we successfully read a frame
+                self._last_frame_time[str(node_id)] = current_time
 
 
         if video_capture is not None and use_pref_counter:
@@ -586,17 +642,23 @@ class VideoNode(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_input02_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         tag_node_input03_value_name = tag_node_name + ':' + self.TYPE_INT + ':Input03Value'
+        tag_node_input04_value_name = tag_node_name + ':' + self.TYPE_INT + ':Input04Value'
+        tag_node_input05_value_name = tag_node_name + ':' + self.TYPE_FLOAT + ':Input05Value'
 
         pos = dpg.get_item_pos(tag_node_name)
 
         loop_flag = dpg_get_value(tag_node_input02_value_name)
         skip_rate = int(dpg_get_value(tag_node_input03_value_name))
+        target_fps = int(dpg_get_value(tag_node_input04_value_name))
+        playback_speed = float(dpg_get_value(tag_node_input05_value_name))
 
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
         setting_dict[tag_node_input02_value_name] = loop_flag
         setting_dict[tag_node_input03_value_name] = skip_rate
+        setting_dict[tag_node_input04_value_name] = target_fps
+        setting_dict[tag_node_input05_value_name] = playback_speed
 
         return setting_dict
 
@@ -604,12 +666,18 @@ class VideoNode(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_input02_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         tag_node_input03_value_name = tag_node_name + ':' + self.TYPE_INT + ':Input03Value'
+        tag_node_input04_value_name = tag_node_name + ':' + self.TYPE_INT + ':Input04Value'
+        tag_node_input05_value_name = tag_node_name + ':' + self.TYPE_FLOAT + ':Input05Value'
 
         loop_flag = setting_dict[tag_node_input02_value_name]
         skip_rate = int(setting_dict[tag_node_input03_value_name])
+        target_fps = int(setting_dict.get(tag_node_input04_value_name, 24))
+        playback_speed = float(setting_dict.get(tag_node_input05_value_name, 1.0))
 
         dpg_set_value(tag_node_input02_value_name, loop_flag)
         dpg_set_value(tag_node_input03_value_name, skip_rate)
+        dpg_set_value(tag_node_input04_value_name, target_fps)
+        dpg_set_value(tag_node_input05_value_name, playback_speed)
 
     def _callback_file_select(self, sender, data):
         if data['file_name'] != '.':
