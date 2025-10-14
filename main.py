@@ -41,16 +41,18 @@ def get_args():
 def async_main(node_editor):
 
     node_image_dict = {}
+    node_audio_dict = {}
     node_result_dict = {}
 
     while not node_editor.get_terminate_flag():
-        update_node_info(node_editor, node_image_dict, node_result_dict)
+        update_node_info(node_editor, node_image_dict, node_result_dict, node_audio_dict)
 
 
 def update_node_info(
     node_editor,
     node_image_dict,
     node_result_dict,
+    node_audio_dict=None,
     mode_async=True,
 ):
         
@@ -68,10 +70,17 @@ def update_node_info(
 
     sorted_node_connection_dict = node_editor.get_sorted_node_connection()
 
+    # Initialize node_audio_dict if not provided
+    if node_audio_dict is None:
+        node_audio_dict = {}
+
     for node_id_name in node_list:
 
         if node_id_name not in node_image_dict:
             node_image_dict[node_id_name] = None
+        
+        if node_id_name not in node_audio_dict:
+            node_audio_dict[node_id_name] = None
 
         node_id, _ = node_id_name.split(':')
         connection_list = sorted_node_connection_dict.get(node_id_name, [])
@@ -84,6 +93,7 @@ def update_node_info(
                     connection_list,
                     node_image_dict,
                     node_result_dict,
+                    node_audio_dict,
                 )
             except Exception as e:
                 logger.error(f"Error updating node {node_id_name}: {e}", exc_info=True)
@@ -94,12 +104,15 @@ def update_node_info(
                 connection_list,
                 node_image_dict,
                 node_result_dict,
+                node_audio_dict,
             )
 
         
         try:
             node_image_dict[node_id_name] = copy.deepcopy(data["image"])
             node_result_dict[node_id_name] = copy.deepcopy(data["json"])
+            if data.get("audio") is not None:
+                node_audio_dict[node_id_name] = copy.deepcopy(data["audio"])
         except Exception as e:
             logger.error(f"Error processing node {node_id_name} results: {e}")
 
@@ -223,12 +236,14 @@ def main():
     else:
         logger.info("Async draw is disabled")
         node_image_dict = {}
+        node_audio_dict = {}
         node_result_dict = {}
         while dpg.is_dearpygui_running():
             update_node_info(
                 node_editor,
                 node_image_dict,
                 node_result_dict,
+                node_audio_dict,
                 mode_async=False,
             )
             dpg.render_dearpygui_frame()
