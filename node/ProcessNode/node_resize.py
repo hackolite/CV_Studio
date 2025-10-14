@@ -52,6 +52,12 @@ class FactoryNode:
         node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
         node.tag_node_output02_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
         node.tag_node_output02_value_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02Value'
+        
+        # Audio tags
+        node.tag_node_input_audio_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':InputAudio'
+        node.tag_node_input_audio_value_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':InputAudioValue'
+        node.tag_node_output_audio_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudio'
+        node.tag_node_output_audio_value_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudioValue'
 
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict['process_width']
@@ -72,6 +78,16 @@ class FactoryNode:
                 small_window_h,
                 black_texture,
                 tag=node.tag_node_output01_value_name,
+                format=dpg.mvFormat_Float_rgb,
+            )
+
+        # Audio texture registry
+        with dpg.texture_registry(show=False):
+            dpg.add_raw_texture(
+                small_window_w,
+                small_window_h,
+                black_texture,
+                tag=node.tag_node_output_audio_value_name,
                 format=dpg.mvFormat_Float_rgb,
             )
 
@@ -97,6 +113,23 @@ class FactoryNode:
                     attribute_type=dpg.mvNode_Attr_Output,
             ):
                 dpg.add_image(node.tag_node_output01_value_name)
+
+            # Audio input
+            with dpg.node_attribute(
+                    tag=node.tag_node_input_audio_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_input_audio_value_name,
+                    default_value='Input Audio Spectrogram',
+                )
+
+            # Audio output
+            with dpg.node_attribute(
+                    tag=node.tag_node_output_audio_name,
+                    attribute_type=dpg.mvNode_Attr_Output,
+            ):
+                dpg.add_image(node.tag_node_output_audio_value_name)
 
             with dpg.node_attribute(
                     tag=node.tag_node_input04_name,
@@ -177,6 +210,7 @@ class Node(Node):
         connection_list,
         node_image_dict,
         node_result_dict,
+        node_audio_dict=None,
     ):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = tag_node_name + ':' + self.TYPE_INT + ':Input02Value'
@@ -184,13 +218,19 @@ class Node(Node):
         input_value04_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input04Value'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
+        output_audio_tag = tag_node_name + ':' + self.TYPE_AUDIO + ':OutputAudioValue'
 
         small_window_w = self._opencv_setting_dict['process_width']
         small_window_h = self._opencv_setting_dict['process_height']
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
+        # Initialize node_audio_dict if not provided
+        if node_audio_dict is None:
+            node_audio_dict = {}
+
 
         connection_info_src = ''
+        connection_info_audio = ''
         for connection_info in connection_list:
             connection_type = connection_info[0].split(':')[2]
             if connection_type == self.TYPE_INT:
@@ -208,9 +248,16 @@ class Node(Node):
                 connection_info_src = connection_info[0]
                 connection_info_src = connection_info_src.split(':')[:2]
                 connection_info_src = ':'.join(connection_info_src)
+            if connection_type == self.TYPE_AUDIO:
+
+                connection_info_audio = connection_info[0]
+                connection_info_audio = connection_info_audio.split(':')[:2]
+                connection_info_audio = ':'.join(connection_info_audio)
+
 
 
         frame = node_image_dict.get(connection_info_src, None)
+        audio_frame = node_audio_dict.get(connection_info_audio, None)
 
 
         width = int(dpg_get_value(input_value02_tag))
@@ -229,8 +276,15 @@ class Node(Node):
         if frame is not None and use_pref_counter:
             start_time = time.monotonic()
 
+        # Process image
         if frame is not None:
             frame = image_process(frame, width, height, interpolation_flag)
+
+        # Process audio (same algorithm as images)
+        processed_audio = None
+        if audio_frame is not None:
+            processed_audio = image_process(audio_frame, frame, width, height, interpolation_flag)
+
 
 
         if frame is not None and use_pref_counter:
@@ -248,7 +302,16 @@ class Node(Node):
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return {"image":frame, "json":None}
+        # Update audio texture
+        if processed_audio is not None:
+            texture = self.convert_cv_to_dpg(
+                processed_audio,
+                small_window_w,
+                small_window_h,
+            )
+            dpg_set_value(output_audio_tag, texture)
+
+        return {"image":frame, "audio": processed_audio, "json":None}
 
     def close(self, node_id):
         pass

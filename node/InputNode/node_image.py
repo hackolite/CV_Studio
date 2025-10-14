@@ -172,6 +172,7 @@ class ImageNode(Node):
         connection_list,
         node_image_dict,
         node_result_dict,
+        node_audio_dict=None,
     ):
         tag_node_name = str(node_id) + ':' + self.node_tag
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'

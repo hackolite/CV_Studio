@@ -442,6 +442,7 @@ class VideoNode(Node):
         connection_list,
         node_image_dict,
         node_result_dict,
+        node_audio_dict=None,
     ):
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_input02_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
@@ -554,6 +555,7 @@ class VideoNode(Node):
         tag_node_spectrogram_toggle = tag_node_name + ':SpectrogramToggle'
         tag_node_spectrogram_value = tag_node_name + ':SpectrogramValue'
         
+        spectrogram_bgr = None
         if dpg.does_item_exist(tag_node_spectrogram_toggle):
             show_spectrogram = dpg_get_value(tag_node_spectrogram_toggle)
             if show_spectrogram and str(node_id) in self._spectrogram_array:
@@ -629,7 +631,7 @@ class VideoNode(Node):
                 )
                 dpg_set_value(tag_node_spectrogram_value, texture)
         
-        return {"image":frame, "json" : None}
+        return {"image":frame, "audio": spectrogram_bgr, "json" : None}
 
     def close(self, node_id):
         pass

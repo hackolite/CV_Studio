@@ -66,6 +66,12 @@ class FactoryNode:
         node.tag_node_output_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Output03'
         node.tag_node_output_json = node.tag_node_name + ':' + node.TYPE_JSON + ':Output03Value'
         
+        # Audio tags
+        node.tag_node_input_audio_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':InputAudio'
+        node.tag_node_input_audio_value_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':InputAudioValue'
+        node.tag_node_output_audio_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudio'
+        node.tag_node_output_audio_value_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudioValue'
+        
         
         
 
@@ -97,6 +103,16 @@ class FactoryNode:
                 format=dpg.mvFormat_Float_rgb,
             )
 
+        # Audio texture registry
+        with dpg.texture_registry(show=False):
+            dpg.add_raw_texture(
+                small_window_w,
+                small_window_h,
+                black_texture,
+                tag=node.tag_node_output_audio_value_name,
+                format=dpg.mvFormat_Float_rgb,
+            )
+
 
         with dpg.node(
                 tag=node.tag_node_name,
@@ -119,6 +135,23 @@ class FactoryNode:
                     attribute_type=dpg.mvNode_Attr_Output,
             ):
                 dpg.add_image(node.tag_node_output_image)
+
+            # Audio input
+            with dpg.node_attribute(
+                    tag=node.tag_node_input_audio_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_input_audio_value_name,
+                    default_value='Input Audio Spectrogram',
+                )
+
+            # Audio output
+            with dpg.node_attribute(
+                    tag=node.tag_node_output_audio_name,
+                    attribute_type=dpg.mvNode_Attr_Output,
+            ):
+                dpg.add_image(node.tag_node_output_audio_value_name)
 
             with dpg.node_attribute(
                     tag=node.tag_node_input_text_name,
@@ -253,12 +286,13 @@ class Node(Node):
 
 
 
-    def update(self, node_id, connection_list, node_image_dict, node_result_dict,):
+    def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict=None,):
             data = {}
             try:
                 
                 self.tag_node_name = str(node_id) + ':' + self.node_tag
                 tag_node_output_image = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
+                tag_node_output_audio = self.tag_node_name + ':' + self.TYPE_AUDIO + ':OutputAudioValue'
                 self.tag_provider_select_value_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
 
                 small_window_w = self._opencv_setting_dict['process_width']
@@ -266,8 +300,13 @@ class Node(Node):
                 use_pref_counter = self._opencv_setting_dict['use_pref_counter']
                 use_gpu = self._opencv_setting_dict['use_gpu']
 
+                # Initialize node_audio_dict if not provided
+                if node_audio_dict is None:
+                    node_audio_dict = {}
+
 
                 connection_info_src = ''
+                connection_info_audio = ''
                 for connection_info in connection_list:
                     connection_type = connection_info[0].split(':')[2]
                     if connection_type == self.TYPE_FLOAT:
@@ -284,10 +323,17 @@ class Node(Node):
                         connection_info_src = connection_info_src.split(':')[:2]
                         connection_info_src = ':'.join(connection_info_src)
                         logger.debug(f"Image connection: {node_id}, {self.tag_node_name}, {connection_info_src}")
+                    
+                    if connection_type == self.TYPE_AUDIO:
+                        connection_info_audio = connection_info[0]
+                        connection_info_audio = connection_info_audio.split(':')[:2]
+                        connection_info_audio = ':'.join(connection_info_audio)
+
 
                 frame = node_image_dict.get(connection_info_src, None)
                 if frame is not None:
                     logger.debug(f"Frame shape: {frame.shape}")
+                audio_frame = node_audio_dict.get(connection_info_audio, None)
 
 
                 try:

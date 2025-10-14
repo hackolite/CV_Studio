@@ -236,6 +236,7 @@ class Node(Node):
         connection_list,
         node_image_dict,
         node_result_dict,
+        node_audio_dict=None,
     ):
         self.tag_node_name = str(node_id) + ':' + self.node_tag
         self.input_value02_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
