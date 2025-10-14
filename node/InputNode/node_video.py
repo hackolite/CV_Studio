@@ -486,10 +486,9 @@ class VideoNode(Node):
         if frame is not None:
             texture = self.convert_cv_to_dpg(
                 frame,
-                self._small_window_w,
+                small_window_w,
                 small_window_h,
             )
-            frame = cv2.resize(frame, (600, 400))  # Réduction de la taille pour alléger
             dpg_set_value(tag_node_output_image, texture)
 
         # Update spectrogram display if toggle is enabled

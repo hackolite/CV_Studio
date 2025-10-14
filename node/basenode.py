@@ -47,8 +47,6 @@ class Node:
     OUTPUT          = "OUTPUT"
 
 
-
-    print("node.................................................")
     def __init__(self, node_id=1, connection_dict=None, opencv_setting_dict=None):
         self.id = self.generate_id()
         self.node_label = 'BaseNode'
