@@ -10,3 +10,6 @@ serial
 pytest 
 youtube-dl
 pymongo
+librosa
+matplotlib
+soundfile
