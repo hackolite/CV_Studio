@@ -155,10 +155,10 @@ class FactoryNode:
             ):
                 dpg.add_image(node.tag_node_output01_value_name)
 
-            # Spectrogram toggle
+            # Spectrogram toggle - using audio output attribute
             with dpg.node_attribute(
-                    tag=node.tag_node_spectrogram_name,
-                    attribute_type=dpg.mvNode_Attr_Static,
+                    tag=node.tag_node_output_audio_name,
+                    attribute_type=dpg.mvNode_Attr_Output,
             ):
                 dpg.add_checkbox(
                     label='Show Spectrogram',
@@ -245,7 +245,7 @@ class FactoryNode:
                 )
                 dpg.bind_item_theme(btn_start, yellow_button_theme)
 
-            # Outputs audio, json, float, elapsed time as disabled yellow buttons
+            # Outputs json, float, elapsed time as disabled yellow buttons
             def add_yellow_disabled_button(label, tag):
                 btn = dpg.add_button(
                     label=label,
@@ -256,10 +256,6 @@ class FactoryNode:
                 dpg.bind_item_theme(btn, yellow_button_theme)
                 return btn
 
-
-            with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Output):
-                btn = add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
-                
             with dpg.node_attribute(tag=node.tag_node_output_json_name, attribute_type=dpg.mvNode_Attr_Output):
                 btn = add_yellow_disabled_button("JSON", node.tag_node_output_json_value_name)
 
