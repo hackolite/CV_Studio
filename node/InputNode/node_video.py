@@ -5,10 +5,10 @@
         if dpg.does_item_exist(tag_node_spectrogram_toggle):
             show_spectrogram = dpg_get_value(tag_node_spectrogram_toggle)
             if show_spectrogram and str(node_id) in self._spectrogram_array:
-                # Get the original spectrogram array
+                # Get the full spectrogram array
                 full_spectrogram = self._spectrogram_array[str(node_id)]
                 
-                # Calculate current playback position and extract window
+                # Calculate current playback position and extract scrolling window
                 if str(node_id) in self._spectrogram_meta and video_capture is not None:
                     meta = self._spectrogram_meta[str(node_id)]
                     fps = meta['fps']
@@ -22,11 +22,10 @@
                     current_time = current_frame / fps if fps > 0 else 0
                     
                     # Calculate spectrogram column position
-                    # Each spectrogram column represents hop_length samples
                     current_sample = int(current_time * sr)
                     spectrogram_col = int(current_sample / hop_length)
                     
-                    # Define window size (number of columns to display, e.g., 2 seconds worth)
+                    # Define scrolling window size (2 seconds)
                     window_duration = 2.0  # seconds
                     window_cols = int((window_duration * sr) / hop_length)
                     
@@ -38,16 +37,16 @@
                     if window_end == full_spectrogram.shape[1]:
                         window_start = max(0, window_end - window_cols)
                     
-                    # Extract the window
-                    spectrogram_window = full_spectrogram[:, window_start:window_end]
+                    # Extract the scrolling window
+                    spectrogram_window = full_spectrogram[:, window_start:window_end].copy()
                     
-                    # If window is smaller than expected (at the edges), pad with black
+                    # If window is smaller than expected, pad with black
                     if spectrogram_window.shape[1] < window_cols:
                         padded = np.zeros((full_spectrogram.shape[0], window_cols, 3), dtype=np.uint8)
                         padded[:, :spectrogram_window.shape[1], :] = spectrogram_window
                         spectrogram_window = padded
                     
-                    # Draw a vertical yellow line in the center to show current position
+                    # Draw yellow line at center to show current position
                     center_col = min((spectrogram_col - window_start), spectrogram_window.shape[1] - 1)
                     if 0 <= center_col < spectrogram_window.shape[1]:
                         cv2.line(spectrogram_window, 
@@ -63,7 +62,7 @@
                     )
                     dpg_set_value(tag_node_spectrogram_value, texture)
                 else:
-                    # Fallback: show the full spectrogram if metadata is not available
+                    # Fallback: show full spectrogram if metadata not available
                     texture = self.convert_cv_to_dpg(
                         full_spectrogram,
                         small_window_w,
