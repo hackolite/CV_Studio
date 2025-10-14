@@ -37,6 +37,9 @@ class FactoryNode:
         node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
         node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
 
+        # Audio input tags (to accept audio spectrograms)
+        node.tag_node_input_audio_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':InputAudio'
+        node.tag_node_input_audio_value_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':InputAudioValue'
 
         node.tag_node_output_audio_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudio'
         node.tag_node_output_audio_value_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudioValue'
@@ -127,6 +130,16 @@ class FactoryNode:
                         'image_select:' + str(node_id), ),
                 )
 
+            # Audio input (to accept audio spectrograms as images)
+            with dpg.node_attribute(
+                    tag=node.tag_node_input_audio_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_input_audio_value_name,
+                    default_value='Input Audio Spectrogram',
+                )
+
             with dpg.node_attribute(
                     tag=node.tag_node_output01_name,
                     attribute_type=dpg.mvNode_Attr_Output,
@@ -180,17 +193,34 @@ class ImageNode(Node):
         small_window_w = self._opencv_setting_dict['input_window_width']
         small_window_h = self._opencv_setting_dict['input_window_height']
 
+        # Initialize node_audio_dict if not provided
+        if node_audio_dict is None:
+            node_audio_dict = {}
 
-        image_path = self._image_filepath.get(str(node_id), None)
-        prev_image_path = self._prev_image_filepath.get(str(node_id), None)
-        if prev_image_path != image_path:
-            self._image[str(node_id)] = cv2.imread(image_path)
-            self._prev_image_filepath[str(node_id)] = image_path
+        # Check for audio input connection (to treat spectrogram as image)
+        audio_frame = None
+        for connection_info in connection_list:
+            connection_type = connection_info.split(':')[2]
+            if connection_type == self.TYPE_AUDIO:
+                connection_info_audio = connection_info.split(':')[:2]
+                connection_info_audio = ':'.join(connection_info_audio)
+                audio_frame = node_audio_dict.get(connection_info_audio, None)
+                break
 
+        # If audio spectrogram is connected, use it as the image
+        if audio_frame is not None:
+            frame = audio_frame
+        else:
+            # Otherwise, use the selected image file
+            image_path = self._image_filepath.get(str(node_id), None)
+            prev_image_path = self._prev_image_filepath.get(str(node_id), None)
+            if prev_image_path != image_path:
+                self._image[str(node_id)] = cv2.imread(image_path)
+                self._prev_image_filepath[str(node_id)] = image_path
 
-        frame = self._image.get(str(node_id), None)
+            frame = self._image.get(str(node_id), None)
 
-
+        # Update the display
         if frame is not None:
             texture = self.convert_cv_to_dpg(
                 frame,
@@ -199,7 +229,7 @@ class ImageNode(Node):
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return frame, None
+        return {"image": frame, "audio": None, "json": None}
 
     def close(self, node_id):
         pass
