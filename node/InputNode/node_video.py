@@ -500,7 +500,8 @@ class VideoNode(Node):
         # Update spectrogram display if toggle is enabled
         tag_node_spectrogram_toggle = tag_node_name + ':SpectrogramToggle'
         tag_node_spectrogram_value = tag_node_name + ':SpectrogramValue'
-@@ -505,9 +6,9 @@ def update(
+        
+        if dpg.does_item_exist(tag_node_spectrogram_toggle):
             show_spectrogram = dpg_get_value(tag_node_spectrogram_toggle)
             if show_spectrogram and str(node_id) in self._spectrogram_array:
                 # Get the original spectrogram array
@@ -510,7 +511,17 @@ class VideoNode(Node):
                 if str(node_id) in self._spectrogram_meta and video_capture is not None:
                     meta = self._spectrogram_meta[str(node_id)]
                     fps = meta['fps']
-@@ -525,59 +26,47 @@ def update(
+                    sr = meta['sr']
+                    hop_length = meta['hop_length']
+                    
+                    # Get current frame position
+                    current_frame = self._frame_count.get(str(node_id), 0)
+                    
+                    # Calculate current time in seconds
+                    current_time = current_frame / fps if fps > 0 else 0
+                    
+                    # Calculate spectrogram column position
+                    # Each spectrogram column represents hop_length samples
                     current_sample = int(current_time * sr)
                     spectrogram_col = int(current_sample / hop_length)
 
@@ -520,27 +531,6 @@ class VideoNode(Node):
                         cv2.line(spectrogram_bgr, 
                                 (spectrogram_col, 0), 
                                 (spectrogram_col, spectrogram_bgr.shape[0] - 1), 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
                                 (0, 255, 255), 2)
                 
                 # Convert to DPG texture format and update
