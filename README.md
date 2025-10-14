@@ -493,7 +493,9 @@ class MyNode(EnhancedNode):
 
 Comprehensive guides explaining how the Video Node synchronizes audio spectrograms with video playback:
 
-- **[📖 Documentation Guide](VIDEO_AUDIO_SYNC_DOCUMENTATION_GUIDE.md)** - Start here! Navigate all documentation 🎯
+- **[📑 Documentation Index](VIDEO_AUDIO_SYNC_INDEX.md)** - Complete index of all documentation (START HERE!) 🌟
+- **[📖 Documentation Guide](VIDEO_AUDIO_SYNC_DOCUMENTATION_GUIDE.md)** - Navigate all documentation 🎯
+- **[📄 Simple Summary](VIDEO_AUDIO_SYNC_SIMPLE_SUMMARY.md)** - One-page visual overview 🎨
 - **[Quick Reference](VIDEO_AUDIO_SYNC_QUICK_REFERENCE.md)** - Quick overview and key formulas ⚡
 - **[Video-Audio Synchronization Explained](VIDEO_AUDIO_SYNCHRONIZATION_EXPLAINED.md)** - Complete technical explanation in English
 - **[Synchronisation Vidéo-Audio Expliquée](SYNCHRONISATION_VIDEO_AUDIO_EXPLIQUEE.md)** - Explication complète en français
