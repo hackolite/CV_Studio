@@ -503,8 +503,43 @@ class VideoNode(Node):
         
         if dpg.does_item_exist(tag_node_spectrogram_toggle):
             show_spectrogram = dpg_get_value(tag_node_spectrogram_toggle)
-            if show_spectrogram and str(node_id) in self._spectrogram_texture:
-                dpg_set_value(tag_node_spectrogram_value, self._spectrogram_texture[str(node_id)])
+            if show_spectrogram and str(node_id) in self._spectrogram_array:
+                # Get the original spectrogram array
+                spectrogram_bgr = self._spectrogram_array[str(node_id)].copy()
+                
+                # Calculate current playback position and draw indicator
+                if str(node_id) in self._spectrogram_meta and video_capture is not None:
+                    meta = self._spectrogram_meta[str(node_id)]
+                    fps = meta['fps']
+                    sr = meta['sr']
+                    hop_length = meta['hop_length']
+                    
+                    # Get current frame position
+                    current_frame = self._frame_count.get(str(node_id), 0)
+                    
+                    # Calculate current time in seconds
+                    current_time = current_frame / fps if fps > 0 else 0
+                    
+                    # Calculate spectrogram column position
+                    # Each spectrogram column represents hop_length samples
+                    current_sample = int(current_time * sr)
+                    spectrogram_col = int(current_sample / hop_length)
+                    
+                    # Draw yellow vertical line at current position
+                    if 0 <= spectrogram_col < spectrogram_bgr.shape[1]:
+                        # Yellow in BGR is (0, 255, 255)
+                        cv2.line(spectrogram_bgr, 
+                                (spectrogram_col, 0), 
+                                (spectrogram_col, spectrogram_bgr.shape[0] - 1), 
+                                (0, 255, 255), 2)
+                
+                # Convert to DPG texture format and update
+                texture = self.convert_cv_to_dpg(
+                    spectrogram_bgr,
+                    small_window_w,
+                    small_window_h
+                )
+                dpg_set_value(tag_node_spectrogram_value, texture)
         
         return {"image":frame, "json" : None}
 
