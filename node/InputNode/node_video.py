@@ -326,8 +326,6 @@ class VideoNode(Node):
                 n_fft=2048,
                 hop_length=512,
                 n_mels=128,
-                fmin=None,
-                fmax=None,
                 power=2.0
             )
             
