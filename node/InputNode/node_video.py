@@ -79,11 +79,11 @@ class FactoryNode:
         use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
 
-        black_image = np.zeros((node._small_window_w, node._small_window_h, 3))
+        black_image = np.zeros((small_window_h, small_window_w, 3))
         black_texture = node.convert_cv_to_dpg(
             black_image,
-            node._small_window_w,
-            node._small_window_h,
+            small_window_w,
+            small_window_h,
         )
 
         
