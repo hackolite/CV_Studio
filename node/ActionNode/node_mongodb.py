@@ -12,12 +12,12 @@ from datetime import datetime
 import pytz  # Optional but recommended for UTC timezone handling
 
 
-uri = "mongodb+srv://affluence:@cluster0.nn3l2bm.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+#uri = "mongodb+srv://affluence:@cluster0.nn3l2bm.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 
 # Database connection
-client = MongoClient(uri)
-db = client["AFFLUENCE"]
-collection = db["affluence_phili"]
+#client = MongoClient(uri)
+#db = client["AFFLUENCE"]
+#collection = db["affluence_phili"]
 
 
 
