@@ -265,7 +265,7 @@ class YoutubeNode(Node):
         return {"image": frame, "json": None}   
 
     
-    def update(self, node_id, connection_list, node_image_dict, node_result_dict):
+    def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
       """Updates the video stream image."""
       tag_node_name = f"{node_id}:{self.node_tag}"
       output_value01_tag = f"{tag_node_name}:{self.TYPE_IMAGE}:Output01Value"
@@ -298,7 +298,7 @@ class YoutubeNode(Node):
         else:
             print("No valid frame")
 
-      return {"image": getattr(self, "_last_frame", None), "json": None}
+      return {"image": getattr(self, "_last_frame", None), "json": None, "audio": None}
     
     
     def close(self, node_id):

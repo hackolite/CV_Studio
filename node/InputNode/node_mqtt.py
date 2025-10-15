@@ -111,8 +111,8 @@ class MQTTNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
         self.node_tag = 'Mongodb'
         self._last_update_time = 0
 
-    def update(self, node_id, connection_list, node_image_dict, node_result_dict):
-        return None, None
+    def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
+        return {"image": None, "json": None, "audio": None}
 
 
     def close(self, node_id):
