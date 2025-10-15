@@ -253,7 +253,7 @@ class Node(Node):
 
 
 
-    def update(self, node_id, connection_list, node_image_dict, node_result_dict,):
+    def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict,):
             data = {}
             try:
                 
@@ -362,7 +362,8 @@ class Node(Node):
                     dpg_set_value(tag_node_output_image, texture)
 
                 data["image"] = frame
-                data["json"] = result 
+                data["json"] = result
+                data["audio"] = None
                 return data
             except Exception as e:
                     logger.error(f"Error in object detection: {e}", exc_info=True)

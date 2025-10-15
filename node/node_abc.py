@@ -33,6 +33,7 @@ class DpgNodeABC(metaclass=ABCMeta):
         connection_list,
         node_image_dict,
         node_result_dict,
+        node_audio_dict,
     ):
         pass
 

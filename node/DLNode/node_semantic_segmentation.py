@@ -233,6 +233,7 @@ class Node(Node):
         connection_list,
         node_image_dict,
         node_result_dict,
+        node_audio_dict,
     ):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
@@ -328,7 +329,7 @@ class Node(Node):
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return frame, result
+        return {"image": frame, "json": result, "audio": None}
 
     def close(self, node_id):
         pass
