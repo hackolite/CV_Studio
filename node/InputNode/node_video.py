@@ -709,7 +709,7 @@ class VideoNode(Node):
                 )
                 dpg_set_value(tag_node_spectrogram_value, texture)
 
-        return {"image": frame, "json": None}
+        return {"image": frame, "json": None, "audio": spectrogram_bgr}
 
     def close(self, node_id):
         pass
