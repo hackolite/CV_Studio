@@ -251,7 +251,7 @@ class Node(Node):
                 connection_info_src = ':'.join(connection_info_src)
 
         # 画像取得
-        frame = node_image_dict.get(connection_info_src, None)
+        frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict=None)
 
         # CPU/GPU選択状態取得
         provider = 'CPU'
