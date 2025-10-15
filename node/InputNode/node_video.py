@@ -513,6 +513,7 @@ class VideoNode(Node):
         connection_list,
         node_image_dict,
         node_result_dict,
+        node_audio_dict,
     ):
         tag_node_name = str(node_id) + ":" + self.node_tag
         tag_node_input02_value_name = (

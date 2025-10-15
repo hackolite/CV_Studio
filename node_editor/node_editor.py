@@ -11,7 +11,7 @@ from collections import OrderedDict
 from importlib import import_module
 
 import dearpygui.dearpygui as dpg
-from  node.node_factory import NodeFactory
+from node.node_factory import NodeFactory
 import time
 from .style import STYLE
 from src.utils.logging import get_logger
@@ -22,23 +22,35 @@ logger = get_logger(__name__)
 
 
 def node_style(module_name):
-        tuple_style  = STYLE[module_name]["style"][0]
-        with dpg.theme() as custom_theme:
-            with dpg.theme_component(dpg.mvNode):
-                # Jaune plein pour la barre de titre
-                dpg.add_theme_color(dpg.mvNodeCol_TitleBar, tuple_style , category=dpg.mvThemeCat_Nodes)
-                dpg.add_theme_color(dpg.mvNodeCol_TitleBarHovered, tuple_style , category=dpg.mvThemeCat_Nodes)
-                dpg.add_theme_color(dpg.mvNodeCol_TitleBarSelected, tuple_style , category=dpg.mvThemeCat_Nodes)
-                # Texte en noir
-                dpg.add_theme_color(dpg.mvThemeCol_Text, (0, 0, 0, 255), category=dpg.mvThemeCat_Core)
-        return custom_theme
+    tuple_style = STYLE[module_name]["style"][0]
+    with dpg.theme() as custom_theme:
+        with dpg.theme_component(dpg.mvNode):
+            # Jaune plein pour la barre de titre
+            dpg.add_theme_color(
+                dpg.mvNodeCol_TitleBar, tuple_style, category=dpg.mvThemeCat_Nodes
+            )
+            dpg.add_theme_color(
+                dpg.mvNodeCol_TitleBarHovered,
+                tuple_style,
+                category=dpg.mvThemeCat_Nodes,
+            )
+            dpg.add_theme_color(
+                dpg.mvNodeCol_TitleBarSelected,
+                tuple_style,
+                category=dpg.mvThemeCat_Nodes,
+            )
+            # Texte en noir
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Text, (0, 0, 0, 255), category=dpg.mvThemeCat_Core
+            )
+    return custom_theme
 
 
 class DpgNodeEditor(object):
-    _ver = '0.0.1'
+    _ver = "0.0.1"
 
-    _node_editor_tag = 'NodeEditor'
-    _node_editor_label = 'NodeEditor'
+    _node_editor_tag = "NodeEditor"
+    _node_editor_label = "NodeEditor"
 
     _node_id = 0
     _node_instance_list = {}
@@ -59,16 +71,15 @@ class DpgNodeEditor(object):
         height=None,
         pos=[0, 0],
         opencv_setting_dict=None,
-        node_dir='node',
+        node_dir="node",
         menu_dict=None,
         use_debug_print=False,
     ):
-
         self._node_id = 0
 
-        self._node_factory_list = {}   #NodeFactorylist (objects), factory list
-        self._node_instances_list = {} #NodeInstanceList (objects), instances list
-        self._node_list = []           #NodeList
+        self._node_factory_list = {}  # NodeFactorylist (objects), factory list
+        self._node_instances_list = {}  # NodeInstanceList (objects), instances list
+        self._node_list = []  # NodeList
         self._node_link_list = []
         self._node_connection_dict = OrderedDict([])
         self._use_debug_print = use_debug_print
@@ -79,151 +90,143 @@ class DpgNodeEditor(object):
         self.window = None
 
         if menu_dict is None:
-            menu_dict = OrderedDict({
-                'Input Node': 'input_node',
-                'Process Node': 'process_node',
-                'Output Node': 'output_node'
-            })
-
+            menu_dict = OrderedDict(
+                {
+                    "Input Node": "input_node",
+                    "Process Node": "process_node",
+                    "Output Node": "output_node",
+                }
+            )
 
         datetime_now = datetime.datetime.now()
         with dpg.file_dialog(
-                directory_selector=False,
-                show=False,
-                modal=True,
-                height=int(height / 2),
-                default_filename=datetime_now.strftime('%Y%m%d'),
-                callback=self._callback_file_export,
-                id='file_export',
+            directory_selector=False,
+            show=False,
+            modal=True,
+            height=int(height / 2),
+            default_filename=datetime_now.strftime("%Y%m%d"),
+            callback=self._callback_file_export,
+            id="file_export",
         ):
-            dpg.add_file_extension('.json')
-            dpg.add_file_extension('', color=(150, 255, 150, 255))
+            dpg.add_file_extension(".json")
+            dpg.add_file_extension("", color=(150, 255, 150, 255))
 
         with dpg.file_dialog(
-                directory_selector=False,
-                show=False,
-                modal=True,
-                height=int(height / 2),
-                callback=self._callback_file_import,
-                id='file_import',
+            directory_selector=False,
+            show=False,
+            modal=True,
+            height=int(height / 2),
+            callback=self._callback_file_import,
+            id="file_import",
         ):
-            dpg.add_file_extension('.json')
-            dpg.add_file_extension('', color=(150, 255, 150, 255))
-
+            dpg.add_file_extension(".json")
+            dpg.add_file_extension("", color=(150, 255, 150, 255))
 
         with dpg.window(
-                tag=self._node_editor_tag + 'Window',
-                label=self._node_editor_label,
-                width=width,
-                height=height,
-                pos=pos,
-                menubar=True,
-                on_close=self._callback_close_window,
+            tag=self._node_editor_tag + "Window",
+            label=self._node_editor_label,
+            width=width,
+            height=height,
+            pos=pos,
+            menubar=True,
+            on_close=self._callback_close_window,
         ) as window:
-
-            with dpg.menu_bar(label='MenuBar'):
+            with dpg.menu_bar(label="MenuBar"):
                 # Export/Import
-                with dpg.menu(label='File'):
+                with dpg.menu(label="File"):
                     dpg.add_menu_item(
-                        tag='Menu_File_Export',
-                        label='Export',
+                        tag="Menu_File_Export",
+                        label="Export",
                         callback=self._callback_file_export_menu,
-                        user_data='Menu_File_Export',
+                        user_data="Menu_File_Export",
                     )
                     dpg.add_menu_item(
-                        tag='Menu_File_Import',
-                        label='Import',
+                        tag="Menu_File_Import",
+                        label="Import",
                         callback=self._callback_file_import_menu,
-                        user_data='Menu_File_Import',
+                        user_data="Menu_File_Import",
                     )
 
-
-                #print(menu_dict.items())
+                # print(menu_dict.items())
 
                 for menu_info in menu_dict.items():
                     menu_label = menu_info[0]
                     logger.debug(f"Creating menu: {menu_label}")
                     with dpg.menu(label=menu_label):
-
                         node_sources_path = os.path.join(
                             node_dir,
                             menu_info[1],
-                            '*.py',
+                            "*.py",
                         )
 
                         node_sources = glob(node_sources_path)
-                        #print(node_sources)
+                        # print(node_sources)
 
                         for node_source in node_sources:
-                             
                             import_path = os.path.splitext(
-                                os.path.normpath(node_source))[0]
-                            if platform.system() == 'Windows':
-                                import_path = import_path.replace('\\', '.')
+                                os.path.normpath(node_source)
+                            )[0]
+                            if platform.system() == "Windows":
+                                import_path = import_path.replace("\\", ".")
                             else:
-                                import_path = import_path.replace('/', '.')
+                                import_path = import_path.replace("/", ".")
 
-                            import_path = import_path.split('.')
-                            import_path = '.'.join(import_path[-3:])
+                            import_path = import_path.split(".")
+                            import_path = ".".join(import_path[-3:])
 
-                            if import_path.endswith('__init__'):
+                            if import_path.endswith("__init__"):
                                 continue
 
                             module = import_module(import_path)
                             factorynode = module.FactoryNode()
-                            #print("Factory Instance :", factorynode.node_tag)
+                            # print("Factory Instance :", factorynode.node_tag)
                             dpg.add_menu_item(
-                                tag='Menu_' + factorynode.node_tag,
+                                tag="Menu_" + factorynode.node_tag,
                                 label=factorynode.node_label,
                                 callback=self._callback_add_node,
                                 user_data=factorynode.node_tag,
                             )
 
-
                             factorynode.style = node_style(menu_label)
                             self._node_factory_list[factorynode.node_tag] = factorynode
 
-
             with dpg.node_editor(
-                    tag=self._node_editor_tag,
-                    callback=self._callback_link,
-                    minimap=True,
-                    minimap_location=dpg.mvNodeMiniMap_Location_BottomRight,
+                tag=self._node_editor_tag,
+                callback=self._callback_link,
+                minimap=True,
+                minimap_location=dpg.mvNodeMiniMap_Location_BottomRight,
             ):
                 pass
 
-
             with dpg.window(
-                    label='Delete Files',
-                    modal=True,
-                    show=False,
-                    id='modal_file_import',
-                    no_title_bar=True,
-                    pos=[52, 52],
+                label="Delete Files",
+                modal=True,
+                show=False,
+                id="modal_file_import",
+                no_title_bar=True,
+                pos=[52, 52],
             ):
                 dpg.add_text(
-                    'Sorry. In the current implementation, \nfile import works only before adding a node.',
+                    "Sorry. In the current implementation, \nfile import works only before adding a node.",
                 )
                 dpg.add_separator()
                 with dpg.group(horizontal=True):
                     dpg.add_button(
-                        label='OK',
+                        label="OK",
                         width=375,
                         callback=lambda: dpg.configure_item(
-                            'modal_file_import',
+                            "modal_file_import",
                             show=False,
                         ),
                     )
 
-
             with dpg.handler_registry():
-                dpg.add_mouse_click_handler(
-                    callback=self._callback_save_last_pos)
+                dpg.add_mouse_click_handler(callback=self._callback_save_last_pos)
                 dpg.add_key_press_handler(
                     dpg.mvKey_Delete,
                     callback=self._callback_mv_key_del,
                 )
-            self.window = window  
+            self.window = window
 
     def get_node_list(self):
         return self._node_list
@@ -231,14 +234,11 @@ class DpgNodeEditor(object):
     def get_sorted_node_connection(self):
         return self._node_connection_dict
 
-
     def get_node_instances(self, node_name):
         return self._node_instances_list.get(node_name, None)
 
-
     def get_node_factory(self, node_name):
         return self._node_factory_list.get(node_name, None)
-
 
     def set_terminate_flag(self, flag=True):
         self._terminate_flag = flag
@@ -251,10 +251,10 @@ class DpgNodeEditor(object):
         logger.debug(f"Adding node with ID: {self._node_id}")
         factorynode = self._node_factory_list[user_data]
         last_pos = [0, 0]
-        
+
         if self._last_pos is not None:
             last_pos = [self._last_pos[0] + 30, self._last_pos[1] + 30]
-        
+
         node = factorynode.add_node(
             self._node_editor_tag,
             self._node_id,
@@ -267,29 +267,37 @@ class DpgNodeEditor(object):
         self._node_list.append(node.tag_node_name)
 
         if self._use_debug_print:
-            logger.debug('_callback_add_node details:')
-            logger.debug(f'    Node ID         : {self._node_id}')
-            logger.debug(f'    sender          : {sender}')
-            logger.debug(f'    data            : {data}')
-            logger.debug(f'    user_data       : {user_data}')
+            logger.debug("_callback_add_node details:")
+            logger.debug(f"    Node ID         : {self._node_id}")
+            logger.debug(f"    sender          : {sender}")
+            logger.debug(f"    data            : {data}")
+            logger.debug(f"    user_data       : {user_data}")
             logger.debug(f"    self._node_list : {', '.join(self._node_list)}")
-    
 
     def _callback_link(self, sender, data):
         logger.debug("Link callback triggered")
         source = dpg.get_item_alias(data[0])
         destination = dpg.get_item_alias(data[1])
-        source_type = source.split(':')[2]
-        destination_type = destination.split(':')[2]
+        source_type = source.split(":")[2]
+        destination_type = destination.split(":")[2]
         logger.debug(f"Linking {source_type} -> {destination_type}")
-        if source_type == destination_type:
 
+        # ✨ Permettre AUDIO → IMAGE et IMAGE → IMAGE
+        connection_allowed = False
+
+        if source_type == destination_type:
+            # Connexion normale (même type)
+            connection_allowed = True
+        elif source_type == "AUDIO" and destination_type == "IMAGE":
+            # Connexion spéciale : spectrogramme AUDIO → input IMAGE
+            connection_allowed = True
+            logger.info(f"Allowing AUDIO->IMAGE connection (spectrogram)")
+
+        if connection_allowed:
             if len(self._node_link_list) == 0:
                 dpg.add_node_link(source, destination, parent=sender)
                 self._node_link_list.append([source, destination])
-
             else:
-
                 duplicate_flag = False
                 for node_link in self._node_link_list:
                     if destination == node_link[1]:
@@ -298,20 +306,10 @@ class DpgNodeEditor(object):
                     dpg.add_node_link(source, destination, parent=sender)
                     self._node_link_list.append([source, destination])
 
-
         self._node_connection_dict = self._sort_node_graph(
             self._node_list,
             self._node_link_list,
         )
-
-        if self._use_debug_print:
-            logger.debug('_callback_link details:')
-            logger.debug(f'    sender                     : {sender}')
-            logger.debug(f'    data                       : {data}')
-            logger.debug(f'    self._node_list            : {self._node_list}')
-            logger.debug(f'    self._node_link_list       : {self._node_link_list}')
-            logger.debug(f'    self._node_connection_dict : {self._node_connection_dict}')
-
 
     def _callback_close_window(self, sender):
         dpg.delete_item(sender)
@@ -323,17 +321,17 @@ class DpgNodeEditor(object):
         for node_link_info in node_link_list:
             source = dpg.get_item_alias(node_link_info[0])
             destination = dpg.get_item_alias(node_link_info[1])
-            source_id = int(source.split(':')[0])
-            destination_id = int(destination.split(':')[0])
+            source_id = int(source.split(":")[0])
+            destination_id = int(destination.split(":")[0])
 
             if destination_id not in node_id_dict:
                 node_id_dict[destination_id] = [source_id]
             else:
                 node_id_dict[destination_id].append(source_id)
 
-            split_destination = destination.split(':')
+            split_destination = destination.split(":")
 
-            node_name = split_destination[0] + ':' + split_destination[1]
+            node_name = split_destination[0] + ":" + split_destination[1]
             if node_name not in node_connection_dict:
                 node_connection_dict[node_name] = [[source, destination]]
             else:
@@ -348,19 +346,22 @@ class DpgNodeEditor(object):
             for check_id in node_id_list[index][1]:
                 for check_index in range(index + 1, len(node_id_list)):
                     if node_id_list[check_index][0] == check_id:
-                        node_id_list[check_index], node_id_list[
-                            index] = node_id_list[index], node_id_list[
-                                check_index]
-                        node_connection_list[
-                            check_index], node_connection_list[
-                                index] = node_connection_list[
-                                    index], node_connection_list[check_index]
+                        node_id_list[check_index], node_id_list[index] = (
+                            node_id_list[index],
+                            node_id_list[check_index],
+                        )
+                        (
+                            node_connection_list[check_index],
+                            node_connection_list[index],
+                        ) = (
+                            node_connection_list[index],
+                            node_connection_list[check_index],
+                        )
 
                         swap_flag = True
                         break
             if not swap_flag:
                 index += 1
-
 
         index = 0
         unfinded_id_dict = {}
@@ -375,7 +376,7 @@ class DpgNodeEditor(object):
                     check_index += 1
                 if not find_flag:
                     for index, node_id_name in enumerate(node_list):
-                        node_id, node_name = node_id_name.split(':')
+                        node_id, node_name = node_id_name.split(":")
                         if node_id == check_id:
                             unfinded_id_dict[check_id] = node_id_name
                             break
@@ -390,51 +391,47 @@ class DpgNodeEditor(object):
     def _callback_file_export(self, sender, data):
         setting_dict = {}
 
-        setting_dict['node_list'] = self._node_list
-        setting_dict['link_list'] = self._node_link_list
-
+        setting_dict["node_list"] = self._node_list
+        setting_dict["link_list"] = self._node_link_list
 
         for node_id_name in self._node_list:
-            node_id, node_name = node_id_name.split(':')
+            node_id, node_name = node_id_name.split(":")
             node = self._node_instance_list[node_name]
 
             setting = node.get_setting_dict(node_id)
 
             setting_dict[node_id_name] = {
-                'id': str(node_id),
-                'name': str(node_name),
-                'setting': setting
+                "id": str(node_id),
+                "name": str(node_name),
+                "setting": setting,
             }
 
-
-        with open(data['file_path_name'], 'w') as fp:
+        with open(data["file_path_name"], "w") as fp:
             json.dump(setting_dict, fp, indent=4)
 
         if self._use_debug_print:
-            logger.debug('_callback_file_export details:')
-            logger.debug(f'    sender          : {sender}')
-            logger.debug(f'    data            : {data}')
-            logger.debug(f'    setting_dict    : {setting_dict}')
+            logger.debug("_callback_file_export details:")
+            logger.debug(f"    sender          : {sender}")
+            logger.debug(f"    data            : {data}")
+            logger.debug(f"    setting_dict    : {setting_dict}")
 
     def _callback_file_export_menu(self):
-        dpg.show_item('file_export')
+        dpg.show_item("file_export")
 
     def _callback_file_import_menu(self):
         if self._node_id == 0:
-            dpg.show_item('file_import')
+            dpg.show_item("file_import")
         else:
-            dpg.configure_item('modal_file_import', show=True)
+            dpg.configure_item("modal_file_import", show=True)
 
     def _callback_file_import(self, sender, data):
-        if data['file_name'] != '.':
-
+        if data["file_name"] != ".":
             setting_dict = None
-            with open(data['file_path_name']) as fp:
+            with open(data["file_path_name"]) as fp:
                 setting_dict = json.load(fp)
 
-
-            for node_id_name in setting_dict['node_list']:
-                node_id, node_name = node_id_name.split(':')
+            for node_id_name in setting_dict["node_list"]:
+                node_id, node_name = node_id_name.split(":")
                 node = self._node_instance_list[node_name]
 
                 node_id = int(node_id)
@@ -442,19 +439,16 @@ class DpgNodeEditor(object):
                 if node_id > self._node_id:
                     self._node_id = node_id
 
-
                 node = self._node_instance_list[node_name]
 
-
-                ver = setting_dict[node_id_name]['setting']['ver']
+                ver = setting_dict[node_id_name]["setting"]["ver"]
                 if ver != node._ver:
-                    warning_node_name = setting_dict[node_id_name]['name']
+                    warning_node_name = setting_dict[node_id_name]["name"]
                     logger.warning(f"Node {warning_node_name} version mismatch:")
                     logger.warning(f"  Load Version: {ver}")
                     logger.warning(f"  Code Version: {node._ver}")
 
-
-                pos = setting_dict[node_id_name]['setting']['pos']
+                pos = setting_dict[node_id_name]["setting"]["pos"]
                 node.add_node(
                     self._node_editor_tag,
                     node_id,
@@ -462,16 +456,13 @@ class DpgNodeEditor(object):
                     opencv_setting_dict=self._opencv_setting_dict,
                 )
 
-
                 node.set_setting_dict(
                     node_id,
-                    setting_dict[node_id_name]['setting'],
+                    setting_dict[node_id_name]["setting"],
                 )
 
-
-            self._node_list = setting_dict['node_list']
-            self._node_link_list = setting_dict['link_list']
-
+            self._node_list = setting_dict["node_list"]
+            self._node_link_list = setting_dict["link_list"]
 
             for node_link in self._node_link_list:
                 dpg.add_node_link(
@@ -480,33 +471,31 @@ class DpgNodeEditor(object):
                     parent=self._node_editor_tag,
                 )
 
-
             self._node_connection_dict = self._sort_node_graph(
                 self._node_list,
                 self._node_link_list,
             )
 
         if self._use_debug_print:
-            logger.debug('_callback_file_import details:')
-            logger.debug(f'    sender          : {sender}')
-            logger.debug(f'    data            : {data}')
-            logger.debug(f'    setting_dict    : {setting_dict}')
+            logger.debug("_callback_file_import details:")
+            logger.debug(f"    sender          : {sender}")
+            logger.debug(f"    data            : {data}")
+            logger.debug(f"    setting_dict    : {setting_dict}")
 
     def _callback_save_last_pos(self):
         if len(dpg.get_selected_nodes(self._node_editor_tag)) > 0:
             self._last_pos = dpg.get_item_pos(
-                dpg.get_selected_nodes(self._node_editor_tag)[0])
+                dpg.get_selected_nodes(self._node_editor_tag)[0]
+            )
 
     def _callback_mv_key_del(self):
         if len(dpg.get_selected_nodes(self._node_editor_tag)) > 0:
-
             item_id = dpg.get_selected_nodes(self._node_editor_tag)[0]
 
             node_id_name = dpg.get_item_alias(item_id)
-            node_id, node_name = node_id_name.split(':')
+            node_id, node_name = node_id_name.split(":")
 
-            if node_name != 'ExecPythonCode':
-
+            if node_name != "ExecPythonCode":
                 node_instance = self.get_node_instances(node_id_name)
                 node_instance.close(node_id)
 
@@ -514,28 +503,36 @@ class DpgNodeEditor(object):
 
                 copy_node_link_list = copy.deepcopy(self._node_link_list)
                 for link_info in copy_node_link_list:
-                    source_node = link_info[0].split(':')[:2]
-                    source_node = ':'.join(source_node)
-                    destination_node = link_info[1].split(':')[:2]
-                    destination_node = ':'.join(destination_node)
+                    source_node = link_info[0].split(":")[:2]
+                    source_node = ":".join(source_node)
+                    destination_node = link_info[1].split(":")[:2]
+                    destination_node = ":".join(destination_node)
 
                     if source_node == node_id_name or destination_node == node_id_name:
                         self._node_link_list.remove(link_info)
-
 
                 self._node_connection_dict = self._sort_node_graph(
                     self._node_list,
                     self._node_link_list,
                 )
 
-
                 dpg.delete_item(item_id)
 
         if len(dpg.get_selected_links(self._node_editor_tag)) > 0:
-            self._node_link_list.remove([
-                dpg.get_item_alias(dpg.get_item_configuration(dpg.get_selected_links(self._node_editor_tag)[0])['attr_1']),
-                dpg.get_item_alias(dpg.get_item_configuration(dpg.get_selected_links(self._node_editor_tag)[0])['attr_2'])
-            ])
+            self._node_link_list.remove(
+                [
+                    dpg.get_item_alias(
+                        dpg.get_item_configuration(
+                            dpg.get_selected_links(self._node_editor_tag)[0]
+                        )["attr_1"]
+                    ),
+                    dpg.get_item_alias(
+                        dpg.get_item_configuration(
+                            dpg.get_selected_links(self._node_editor_tag)[0]
+                        )["attr_2"]
+                    ),
+                ]
+            )
 
             self._node_connection_dict = self._sort_node_graph(
                 self._node_list,
@@ -545,8 +542,9 @@ class DpgNodeEditor(object):
             dpg.delete_item(dpg.get_selected_links(self._node_editor_tag)[0])
 
         if self._use_debug_print:
-            logger.debug('_callback_mv_key_del details:')
-            logger.debug(f'    self._node_list            : {self._node_list}')
-            logger.debug(f'    self._node_link_list       : {self._node_link_list}')
-            logger.debug(f'    self._node_connection_dict : {self._node_connection_dict}')
-
+            logger.debug("_callback_mv_key_del details:")
+            logger.debug(f"    self._node_list            : {self._node_list}")
+            logger.debug(f"    self._node_link_list       : {self._node_link_list}")
+            logger.debug(
+                f"    self._node_connection_dict : {self._node_connection_dict}"
+            )
