@@ -98,28 +98,38 @@ class Node:
         return texture_data
 
     def get_input_frame(self, connection_list, node_image_dict, node_audio_dict=None):
-        frame = None
+        """
+        Récupère une frame depuis une connexion IMAGE ou AUDIO.
+        """
         connection_info_src = ""
+        connection_type_found = None
+
         for connection_info in connection_list:
             connection_type = connection_info[0].split(":")[2]
-            print(connection_type)
+            print(f"Connection type detected: {connection_type}")
 
-            if connection_type in [self.TYPE_AUDIO]:
+            # ✅ Accepter IMAGE et AUDIO
+            if connection_type in [self.TYPE_IMAGE, self.TYPE_AUDIO]:
                 connection_info_src = ":".join(connection_info[0].split(":")[:2])
-                print(connection_info_src)
-                frame = node_audio_dict.get(connection_info_src, None)
+                connection_type_found = connection_type
+                print(
+                    f"Connection source: {connection_info_src}, type: {connection_type_found}"
+                )
+                break
 
-            elif connection_type in [self.TYPE_IMAGE]:
-                frame = node_image_dict.get(connection_info_src, None)
-
-            else:
-                frame = None
-        # return frame
         if not connection_info_src:
             return None
-        # frame = node_image_dict.get(connection_info_src, None)
-        if frame is None and node_audio_dict is not None:
-            return frame
+
+        # ✅ Chercher dans le bon dictionnaire selon le type
+        frame = None
+        if connection_type_found == self.TYPE_IMAGE:
+            frame = node_image_dict.get(connection_info_src, None)
+        elif connection_type_found == self.TYPE_AUDIO:
+            # ✅ Le spectrogramme est dans node_audio_dict !
+            if node_audio_dict is not None:
+                frame = node_audio_dict.get(connection_info_src, None)
+
+        return frame
 
     def get_setting_dict(self, node_id):
         self.tag_node_name = f"{node_id}:{self.node_tag}"
