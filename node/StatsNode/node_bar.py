@@ -238,7 +238,7 @@ class StatNode(Node):
 
     
     # Méthode update() modifiée pour votre classe Node
-    def update(self, node_id, connection_list, node_image_dict, node_result_dict):
+    def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
         """
         Remplacez votre méthode update() par celle-ci
         """
@@ -279,7 +279,7 @@ class StatNode(Node):
 
                 print(f"Image updated at {time.strftime('%H:%M:%S')}") 
     
-        return {"image": frame, "json": None}
+        return {"image": frame, "json": None, "audio": None}
 
     def close(self, node_id):
         pass

@@ -218,6 +218,7 @@ class RtspNode(Node):
         connection_list,
         node_image_dict,
         node_result_dict,
+        node_audio_dict,
     ):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value01_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input01Value'
@@ -264,7 +265,7 @@ class RtspNode(Node):
             if rtsp_capture is not None:
                 ret, frame = rtsp_capture.read()
                 if not ret:
-                    return None, None
+                    return {"image": None, "json": None, "audio": None}
 
 
         if rtsp_url != '' and use_pref_counter:
@@ -282,7 +283,7 @@ class RtspNode(Node):
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return frame, None
+        return {"image": frame, "json": None, "audio": None}
 
     def close(self, node_id):
         # multiprocessing
