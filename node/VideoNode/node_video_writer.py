@@ -123,6 +123,7 @@ class VideoWriterNode(Node):
         connection_list,
         node_image_dict,
         node_result_dict,
+        node_audio_dict,
     ):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01Value'
@@ -185,7 +186,7 @@ class VideoWriterNode(Node):
         else:
             self._prev_frame_flag = False
 
-        return {"image":frame, "json":None}
+        return {"image":frame, "json":None, "audio":None}
 
     def close(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag

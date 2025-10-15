@@ -131,6 +131,7 @@ class CaptureNode(Node):
         connection_list,
         node_image_dict,
         node_result_dict,
+        node_audio_dict,
     ):
         tag_node_name = str(node_id) + ':' + self.node_tag
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
@@ -183,7 +184,7 @@ class CaptureNode(Node):
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return {"image":frame, "json":None}
+        return {"image":frame, "json":None, "audio":None}
 
     def close(self, node_id):
         if self._request is not None:

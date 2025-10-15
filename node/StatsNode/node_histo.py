@@ -105,7 +105,7 @@ class HistoNode(Node):
         dpg.configure_item(self.tag_plot_container, width=self.small_window_w, height=self.small_window_h)
         dpg.set_item_pos(self.tag_node_name, [0, 0])
 
-    def update(self, node_id, connection_list, node_image_dict, node_result_dict):
+    def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
         self.tag_node_name = f"{node_id}:{self.node_tag}"
         self.tag_node_input01_value_name = f"{self.tag_node_name}:{self.TYPE_JSON}:Input01Value"
         self.tag_line_b = f"{self.tag_node_input01_value_name}:line_b"
@@ -136,7 +136,7 @@ class HistoNode(Node):
                 x_data = list(range(3600))
                 dpg.set_value(self.tag_line_b, [x_data, y_data])
 
-        return {"image": None, "json": None}
+        return {"image": None, "json": None, "audio": None}
 
     def close(self, node_id):
         pass
