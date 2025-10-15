@@ -80,6 +80,13 @@ class FactoryNode:
             node.tag_node_name + ":" + node.TYPE_TIME_MS + ":Output02Value"
         )
 
+        node.tag_node_output03_name = (
+            node.tag_node_name + ":" + node.TYPE_AUDIO + ":Output03"
+        )
+        node.tag_node_output03_value_name = (
+            node.tag_node_name + ":" + node.TYPE_AUDIO + ":Output03Value"
+        )
+
         node.tag_node_button_name = (
             node.tag_node_name + ":" + node.TYPE_TEXT + ":Button"
         )
@@ -109,8 +116,8 @@ class FactoryNode:
         )
 
         # Spectrogram tags
-        node.tag_node_spectrogram_name = node.tag_node_name + ":Spectrogram"
-        node.tag_node_spectrogram_value_name = node.tag_node_name + ":SpectrogramValue"
+        # node.tag_node_spectrogram_name = node.tag_node_name + ":Spectrogram"
+        # node.tag_node_spectrogram_value_name = node.tag_node_name + ":SpectrogramValue"
         node.tag_node_spectrogram_toggle_name = (
             node.tag_node_name + ":SpectrogramToggle"
         )
@@ -140,7 +147,7 @@ class FactoryNode:
                 small_window_w,
                 small_window_h,
                 black_texture,
-                tag=node.tag_node_spectrogram_value_name,
+                tag=node.tag_node_output03_value_name,
                 format=dpg.mvFormat_Float_rgb,
             )
 
@@ -194,7 +201,7 @@ class FactoryNode:
 
             # Spectrogram toggle
             with dpg.node_attribute(
-                tag=node.tag_node_spectrogram_name,
+                tag=node.tag_node_output03_name,
                 attribute_type=dpg.mvNode_Attr_Output,
             ):
                 dpg.add_checkbox(
@@ -202,7 +209,7 @@ class FactoryNode:
                     tag=node.tag_node_spectrogram_toggle_name,
                     default_value=False,
                 )
-                dpg.add_image(node.tag_node_spectrogram_value_name)
+                dpg.add_image(node.tag_node_output03_value_name)
 
             with dpg.node_attribute(
                 tag=node.tag_node_input02_name,
@@ -471,8 +478,8 @@ class VideoNode(Node):
             # Immediately update the DPG texture
             tag_node_name = str(node_id) + ":" + self.node_tag
             tag_node_spectrogram_value = tag_node_name + ":SpectrogramValue"
-            if dpg.does_item_exist(tag_node_spectrogram_value):
-                dpg_set_value(tag_node_spectrogram_value, texture)
+            if dpg.does_item_exist(self.tag_node_output03_name):
+                dpg_set_value(self.tag_node_output03_value_name, texture)
 
             # Store metadata for future audio sync
             video_capture = self._video_capture.get(node_id, None)
@@ -563,6 +570,7 @@ class VideoNode(Node):
             start_time = time.monotonic()
 
         frame = None
+        spectrogram_bgr = None
         if video_capture is not None:
             # Check frame timing for playback speed control
             current_time = time.time()
@@ -621,7 +629,7 @@ class VideoNode(Node):
 
         # Update spectrogram display if toggle is enabled
         tag_node_spectrogram_toggle = tag_node_name + ":SpectrogramToggle"
-        tag_node_spectrogram_value = tag_node_name + ":SpectrogramValue"
+        # tag_node_spectrogram_value = tag_node_name + ":SpectrogramValue"
 
         if dpg.does_item_exist(tag_node_spectrogram_toggle):
             show_spectrogram = dpg_get_value(tag_node_spectrogram_toggle)
@@ -707,7 +715,7 @@ class VideoNode(Node):
                 texture = self.convert_cv_to_dpg(
                     spectrogram_bgr, small_window_w, small_window_h
                 )
-                dpg_set_value(tag_node_spectrogram_value, texture)
+                dpg_set_value(self.tag_node_output03_value_name, texture)
 
         return {"image": frame, "json": None, "audio": spectrogram_bgr}
 
