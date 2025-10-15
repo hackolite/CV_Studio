@@ -267,7 +267,6 @@ class Node(Node):
                 use_gpu = self._opencv_setting_dict['use_gpu']
 
 
-                connection_info_src = ''
                 for connection_info in connection_list:
                     connection_type = connection_info[0].split(':')[2]
                     if connection_type == self.TYPE_FLOAT:
@@ -278,14 +277,8 @@ class Node(Node):
                         input_value = max([self._min_val, input_value])
                         input_value = min([self._max_val, input_value])
                         dpg_set_value(destination_tag, input_value)
-                    
-                    if connection_type == self.TYPE_IMAGE:
-                        connection_info_src = connection_info[0]
-                        connection_info_src = connection_info_src.split(':')[:2]
-                        connection_info_src = ':'.join(connection_info_src)
-                        logger.debug(f"Image connection: {node_id}, {self.tag_node_name}, {connection_info_src}")
 
-                frame = node_image_dict.get(connection_info_src, None)
+                frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict=None)
                 if frame is not None:
                     logger.debug(f"Frame shape: {frame.shape}")
 

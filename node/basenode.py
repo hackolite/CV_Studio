@@ -110,6 +110,21 @@ class Node:
         return texture_data
 
 
+    def get_input_frame(self, connection_list, node_image_dict, node_audio_dict=None):
+        connection_info_src = ''
+        for connection_info in connection_list:
+            connection_type = connection_info[0].split(':')[2]
+            if connection_type in [self.TYPE_IMAGE, self.TYPE_AUDIO]:
+                connection_info_src = ':'.join(connection_info[0].split(':')[:2])
+                break
+        if not connection_info_src:
+            return None
+        frame = node_image_dict.get(connection_info_src, None)
+        if frame is None and node_audio_dict is not None:
+            frame = node_audio_dict.get(connection_info_src, None)
+        return frame
+
+
 
     def get_setting_dict(self, node_id):
         self.tag_node_name = f"{node_id}:{self.node_tag}"
