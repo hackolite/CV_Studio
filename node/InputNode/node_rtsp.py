@@ -265,7 +265,7 @@ class RtspNode(Node):
             if rtsp_capture is not None:
                 ret, frame = rtsp_capture.read()
                 if not ret:
-                    return None, None
+                    return {"image": None, "json": None, "audio": None}
 
 
         if rtsp_url != '' and use_pref_counter:

@@ -337,7 +337,7 @@ class Node(Node):
                 ret, frame = youtube_capture.read()
 
             if not ret:
-                return None, None
+                return {"image": None, "json": None, "audio": None}
 
             self._prev_read_time[youtube_url] = start_time
 

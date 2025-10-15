@@ -94,8 +94,8 @@ class MQTTNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
         self.node_label = 'Mqtt'
         self.node_tag = 'Mqtt'
 
-    def update(self, node_id, connection_list, node_image_dict, node_result_dict):
-        return None, None
+    def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
+        return {"image": None, "json": None, "audio": None}
 
 
     def close(self, node_id):
