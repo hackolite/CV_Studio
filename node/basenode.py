@@ -272,11 +272,11 @@ class Node:
             debug_image = cv2.putText(
                 debug_image,
                 text,
-                (15, 30 + (index * 35)),
+                (15, 25 + (index * 20)),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                1.2,
+                0.6,
                 (0, 255, 0),
-                thickness=3,
+                thickness=2,
             )
 
         return debug_image
