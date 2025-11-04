@@ -129,7 +129,8 @@ class Node(Node):
                     'This node draw \nthe following information.\n- Classification\n- Object Detection\n- Semantic Segmentation\n- Pose Estimation\n- Face Detection',
                 )
 
-        return tag_node_name
+        self.tag_node_name = tag_node_name
+        return self
 
     def update(
         self,
