@@ -138,7 +138,7 @@ class Node(Node):
         for connection_info in connection_list:
             pass
 
-        frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict=None)
+        frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
 
 
         if frame is not None and use_pref_counter:
