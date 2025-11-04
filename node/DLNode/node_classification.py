@@ -30,14 +30,105 @@ class FactoryNode:
     
     def add_node(self, parent, node_id, pos=[0, 0], callback=None, opencv_setting_dict=None):
         """Adds a node to the processing graph."""
-        node_instance = Node()
-        return node_instance.add_node(
-            parent=parent,
-            node_id=node_id,
-            pos=pos,
-            opencv_setting_dict=opencv_setting_dict,
-            callback=callback,
+        node = Node()
+        
+        # タグ名
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        tag_node_input01_name = tag_node_name + ':' + node.TYPE_IMAGE + ':Input01'
+        tag_node_input01_value_name = tag_node_name + ':' + node.TYPE_IMAGE + ':Input01Value'
+        tag_node_input02_name = tag_node_name + ':' + node.TYPE_TEXT + ':Input02'
+        tag_node_input02_value_name = tag_node_name + ':' + node.TYPE_TEXT + ':Input02Value'
+        tag_node_output01_name = tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
+        tag_node_output01_value_name = tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
+        tag_node_output02_name = tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
+        tag_node_output02_value_name = tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02Value'
+
+        tag_provider_select_name = tag_node_name + ':' + node.TYPE_TEXT + ':Provider'
+        tag_provider_select_value_name = tag_node_name + ':' + node.TYPE_IMAGE + ':ProviderValue'
+
+        # OpenCV向け設定
+        node._opencv_setting_dict = opencv_setting_dict
+        small_window_w = node._opencv_setting_dict['process_width']
+        small_window_h = node._opencv_setting_dict['process_height']
+        use_pref_counter = node._opencv_setting_dict['use_pref_counter']
+        use_gpu = node._opencv_setting_dict['use_gpu']
+
+        # 初期化用黒画像
+        black_image = np.zeros((small_window_w, small_window_h, 3))
+        black_texture = node.convert_cv_to_dpg(
+            black_image,
+            small_window_w,
+            small_window_h,
         )
+
+        # テクスチャ登録
+        with dpg.texture_registry(show=False):
+            dpg.add_raw_texture(
+                small_window_w,
+                small_window_h,
+                black_texture,
+                tag=tag_node_output01_value_name,
+                format=dpg.mvFormat_Float_rgb,
+            )
+
+        # ノード
+        with dpg.node(
+                tag=tag_node_name,
+                parent=parent,
+                label=self.node_label,
+                pos=pos,
+        ):
+            # 入力端子
+            with dpg.node_attribute(
+                    tag=tag_node_input01_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_text(
+                    tag=tag_node_input01_value_name,
+                    default_value='Input BGR image',
+                )
+            # 画像
+            with dpg.node_attribute(
+                    tag=tag_node_output01_name,
+                    attribute_type=dpg.mvNode_Attr_Output,
+            ):
+                dpg.add_image(tag_node_output01_value_name)
+            # 使用アルゴリズム
+            with dpg.node_attribute(
+                    tag=tag_node_input02_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    list(node._model_class.keys()),
+                    default_value=list(node._model_class.keys())[0],
+                    width=small_window_w,
+                    tag=tag_node_input02_value_name,
+                )
+            if use_gpu:
+                # CPU/GPU切り替え
+                with dpg.node_attribute(
+                        tag=tag_provider_select_name,
+                        attribute_type=dpg.mvNode_Attr_Static,
+                ):
+                    dpg.add_radio_button(
+                        ("CPU", "GPU"),
+                        tag=tag_provider_select_value_name,
+                        default_value='CPU',
+                        horizontal=True,
+                    )
+            # 処理時間
+            if use_pref_counter:
+                with dpg.node_attribute(
+                        tag=tag_node_output02_name,
+                        attribute_type=dpg.mvNode_Attr_Output,
+                ):
+                    dpg.add_text(
+                        tag=tag_node_output02_value_name,
+                        default_value='elapsed time(ms)',
+                    )
+
+        node.tag_node_name = tag_node_name
+        return node
 
 
 
