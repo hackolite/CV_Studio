@@ -5,6 +5,7 @@ import numpy as np
 import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
+from node_editor import node_resizer
 
 from node.node_abc import DpgNodeABC
 #from node_editor.util import convert_cv_to_dpg
@@ -126,6 +127,18 @@ class FactoryNode:
                     callback=lambda: dpg.show_item(
                         'image_select:' + str(node_id), ),
                 )
+                
+                # Add size selector
+                with dpg.group(horizontal=True):
+                    dpg.add_text("Size:")
+                    node.tag_node_size_selector = node.tag_node_name + ':SizeSelector'
+                    dpg.add_combo(
+                        items=node_resizer.SIZE_PRESET_NAMES,
+                        default_value="Small",
+                        tag=node.tag_node_size_selector,
+                        width=100,
+                        callback=lambda: node.resize_node(node_id),
+                    )
 
             with dpg.node_attribute(
                     tag=node.tag_node_output01_name,
@@ -150,7 +163,7 @@ class FactoryNode:
 
 
 class ImageNode(Node):
-    _ver = '0.0.1'
+    _ver = '0.0.2'  # Bumped version for resize feature
 
     node_label = 'Image'
     node_tag = 'Image'
@@ -160,11 +173,50 @@ class ImageNode(Node):
     _image = {}
     _image_filepath = {}
     _prev_image_filepath = {}
+    _node_sizes = {}  # Store node sizes {node_id: (width, height)}
 
     def __init__(self):
         super().__init__()  # Call parent constructor
         self.node_label = 'Image'
         self.node_tag = 'Image'
+    
+    def resize_node(self, node_id):
+        """Callback when node size is changed"""
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        size_selector_tag = tag_node_name + ':SizeSelector'
+        
+        # Get selected size
+        size_name = dpg_get_value(size_selector_tag)
+        width, height = node_resizer.get_size_from_preset(size_name)
+        
+        # Store the new size
+        self._node_sizes[str(node_id)] = (width, height)
+        
+        # Update texture size
+        output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
+        
+        # Create new blank texture with new size
+        black_image = np.zeros((width, height, 3))
+        black_texture = self.convert_cv_to_dpg(black_image, width, height)
+        
+        # Delete old texture and create new one
+        if dpg.does_item_exist(output_value01_tag):
+            dpg.delete_item(output_value01_tag)
+        
+        with dpg.texture_registry(show=False):
+            dpg.add_raw_texture(
+                width,
+                height,
+                black_texture,
+                tag=output_value01_tag,
+                format=dpg.mvFormat_Float_rgb,
+            )
+        
+        # Force update if we have an image loaded
+        if str(node_id) in self._image and self._image[str(node_id)] is not None:
+            frame = self._image[str(node_id)]
+            texture = self.convert_cv_to_dpg(frame, width, height)
+            dpg_set_value(output_value01_tag, texture)
 
     def update(
         self,
@@ -177,8 +229,12 @@ class ImageNode(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
 
-        small_window_w = self._opencv_setting_dict['input_window_width']
-        small_window_h = self._opencv_setting_dict['input_window_height']
+        # Get size from stored sizes, or use defaults
+        if str(node_id) in self._node_sizes:
+            small_window_w, small_window_h = self._node_sizes[str(node_id)]
+        else:
+            small_window_w = self._opencv_setting_dict['input_window_width']
+            small_window_h = self._opencv_setting_dict['input_window_height']
 
 
         image_path = self._image_filepath.get(str(node_id), None)
@@ -206,17 +262,37 @@ class ImageNode(Node):
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
+        size_selector_tag = tag_node_name + ':SizeSelector'
 
         pos = dpg.get_item_pos(tag_node_name)
 
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
+        
+        # Save the selected size
+        if dpg.does_item_exist(size_selector_tag):
+            setting_dict['size_preset'] = dpg_get_value(size_selector_tag)
+        
+        # Save the actual size if stored
+        if str(node_id) in self._node_sizes:
+            setting_dict['node_size'] = self._node_sizes[str(node_id)]
 
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
-        pass
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        size_selector_tag = tag_node_name + ':SizeSelector'
+        
+        # Restore size preset if saved
+        if 'size_preset' in setting_dict and dpg.does_item_exist(size_selector_tag):
+            dpg_set_value(size_selector_tag, setting_dict['size_preset'])
+        
+        # Restore node size if saved
+        if 'node_size' in setting_dict:
+            self._node_sizes[str(node_id)] = setting_dict['node_size']
+            # Trigger resize to update the texture
+            self.resize_node(node_id)
 
     def _callback_file_select(self, sender, data):
         if data['file_name'] != '.':

@@ -59,9 +59,31 @@ class Node:
         self._small_window_h = self._opencv_setting_dict.get("process_height", 480)
         self.use_pref_counter = self._opencv_setting_dict.get("use_pref_counter", False)
         self.use_gpu = self._opencv_setting_dict.get("use_gpu", False)
+        
+        # Node size multiplier for resizable nodes
+        self._size_multiplier = 1.0
+        self._size_multipliers = {}  # Store per-node multipliers
 
     def generate_id(self):
         return str(uuid.uuid4())
+    
+    def get_node_width(self, node_id):
+        """Get the current width for this node instance"""
+        multiplier = self._size_multipliers.get(str(node_id), 1.0)
+        return int(self._small_window_w * multiplier)
+    
+    def get_node_height(self, node_id):
+        """Get the current height for this node instance"""
+        multiplier = self._size_multipliers.get(str(node_id), 1.0)
+        return int(self._small_window_h * multiplier)
+    
+    def set_node_size_multiplier(self, node_id, multiplier):
+        """Set the size multiplier for this node instance"""
+        self._size_multipliers[str(node_id)] = float(multiplier)
+    
+    def get_node_size_multiplier(self, node_id):
+        """Get the size multiplier for this node instance"""
+        return self._size_multipliers.get(str(node_id), 1.0)
 
     def generate_tags(self, connection_dict):
         tags = {}
