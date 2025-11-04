@@ -10,17 +10,11 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
-#from node_editor.util import convert_cv_to_dpg
 
 from node.DLNode.classification.MobileNetV3.mobilenet_v3 import MobileNetV3
 from node.DLNode.classification.EfficientNetB0.efficientnet import EfficientNetB0
 
 from node.DLNode.classification.imagenet_class_names import imagenet_class_names
-
-#from node.draw_node.draw_util.draw_util import (
-#    draw_classification_info,
-#    draw_classification_with_od_info,
-#)
 
 from node.basenode import Node
 
@@ -36,37 +30,14 @@ class FactoryNode:
     
     def add_node(self, parent, node_id, pos=[0, 0], callback=None, opencv_setting_dict=None):
         """Adds a node to the processing graph."""
-        
-        # Generate tags for Node and its attributes
-        node = Node()
-
-        node.tag_node_name = f"{node_id}:{node.node_tag}"
-        tag_node_output01_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01"
-        tag_node_output01_value_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01Value"
-
-        # Initialize video stream
-        node.cap = get_light_live_stream_url(VIDEO_ID)
-        node.last_frame_time = None
-        node.frame_time = 1.0 / 32  # 32 FPS for smooth playback
-        node.small_window_w, node.small_window_h = 600, 400  # Display size
-
-        # Black image for startup
-        black_image = np.zeros((nodesmall_window_w, node.small_window_h, 3))
-        black_texture = node.convert_cv_to_dpg(black_image, node.small_window_w, node.small_window_h)
-
-        # Create texture to display image
-        with dpg.texture_registry(show=False):
-            dpg.add_raw_texture(
-                node.small_window_w, node.small_window_h, black_texture,
-                tag=tag_node_output01_value_name, format=dpg.mvFormat_Float_rgb
-            )
-
-        # Create node in the GUI
-        with dpg.node(tag=tag_node_name, parent=parent, label=node.node_label, pos=pos):
-            with dpg.node_attribute(tag=tag_node_output01_name, attribute_type=dpg.mvNode_Attr_Output):
-                dpg.add_image(tag_node_output01_value_name)
-
-        return node
+        node_instance = Node()
+        return node_instance.add_node(
+            parent=parent,
+            node_id=node_id,
+            pos=pos,
+            opencv_setting_dict=opencv_setting_dict,
+            callback=callback,
+        )
 
 
 
@@ -136,7 +107,7 @@ class Node(Node):
 
         # 初期化用黒画像
         black_image = np.zeros((small_window_w, small_window_h, 3))
-        black_texture = convert_cv_to_dpg(
+        black_texture = self.convert_cv_to_dpg(
             black_image,
             small_window_w,
             small_window_h,
@@ -350,7 +321,7 @@ class Node(Node):
         if frame is not None:
             debug_frame = copy.deepcopy(frame)
             if result['use_object_detection']:
-                debug_frame = draw_classification_with_od_info(
+                debug_frame = self.draw_classification_with_od_info(
                     debug_frame,
                     class_id_list,
                     score_list,
@@ -362,14 +333,14 @@ class Node(Node):
                     od_score_th,
                 )
             else:
-                debug_frame = draw_classification_info(
+                debug_frame = self.draw_classification_info(
                     debug_frame,
                     class_ids,
                     class_scores,
                     class_name_dict,
                 )
 
-            texture = convert_cv_to_dpg(
+            texture = self.convert_cv_to_dpg(
                 debug_frame,
                 small_window_w,
                 small_window_h,
