@@ -55,6 +55,10 @@ class FactoryNode:
         node._opencv_setting_dict = opencv_setting_dict
         node.small_window_w = node._opencv_setting_dict['input_window_width']
         node.small_window_h = node._opencv_setting_dict['input_window_height']
+        
+        # Initialize size for this node instance
+        node._node_widths[str(node_id)] = node.small_window_w
+        node._node_heights[str(node_id)] = node.small_window_h
 
 
         black_image = np.zeros((node.small_window_w, node.small_window_h, 3))
@@ -107,6 +111,13 @@ class FactoryNode:
             dpg.bind_item_theme(btn, yellow_button_theme)
             return btn  
         
+        # Callback for resizing
+        def resize_callback(sender, app_data, user_data):
+            nid = user_data
+            width = dpg.get_value(f"width_slider:{nid}")
+            height = dpg.get_value(f"height_slider:{nid}")
+            node._node_widths[str(nid)] = width
+            node._node_heights[str(nid)] = height
         
         
         with dpg.node(
@@ -125,6 +136,33 @@ class FactoryNode:
                     width=node.small_window_w,
                     callback=lambda: dpg.show_item(
                         'image_select:' + str(node_id), ),
+                )
+            
+            # Add resize controls
+            with dpg.node_attribute(
+                    tag=node.tag_node_name + ':ResizeControls',
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_text("Resize:")
+                dpg.add_slider_int(
+                    tag=f"width_slider:{node_id}",
+                    label="Width",
+                    default_value=node.small_window_w,
+                    min_value=80,
+                    max_value=800,
+                    width=node.small_window_w - 60,
+                    callback=resize_callback,
+                    user_data=node_id,
+                )
+                dpg.add_slider_int(
+                    tag=f"height_slider:{node_id}",
+                    label="Height",
+                    default_value=node.small_window_h,
+                    min_value=60,
+                    max_value=600,
+                    width=node.small_window_w - 60,
+                    callback=resize_callback,
+                    user_data=node_id,
                 )
 
             with dpg.node_attribute(
@@ -160,6 +198,10 @@ class ImageNode(Node):
     _image = {}
     _image_filepath = {}
     _prev_image_filepath = {}
+    _node_widths = {}  # Store width for each node instance
+    _node_heights = {}  # Store height for each node instance
+    _prev_node_widths = {}  # Track previous width to detect changes
+    _prev_node_heights = {}  # Track previous height to detect changes
 
     def __init__(self):
         super().__init__()  # Call parent constructor
@@ -177,9 +219,14 @@ class ImageNode(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
 
-        small_window_w = self._opencv_setting_dict['input_window_width']
-        small_window_h = self._opencv_setting_dict['input_window_height']
-
+        # Get dynamic sizes from sliders
+        small_window_w = self._node_widths.get(str(node_id), self._opencv_setting_dict['input_window_width'])
+        small_window_h = self._node_heights.get(str(node_id), self._opencv_setting_dict['input_window_height'])
+        
+        # Check if size changed
+        prev_w = self._prev_node_widths.get(str(node_id), small_window_w)
+        prev_h = self._prev_node_heights.get(str(node_id), small_window_h)
+        size_changed = (prev_w != small_window_w or prev_h != small_window_h)
 
         image_path = self._image_filepath.get(str(node_id), None)
         prev_image_path = self._prev_image_filepath.get(str(node_id), None)
@@ -192,6 +239,30 @@ class ImageNode(Node):
 
 
         if frame is not None:
+            # Recreate texture if size changed
+            if size_changed:
+                if dpg.does_item_exist(output_value01_tag):
+                    dpg.delete_item(output_value01_tag)
+                
+                black_image = np.zeros((small_window_h, small_window_w, 3))
+                black_texture = self.convert_cv_to_dpg(
+                    black_image,
+                    small_window_w,
+                    small_window_h,
+                )
+                with dpg.texture_registry(show=False):
+                    dpg.add_raw_texture(
+                        small_window_w,
+                        small_window_h,
+                        black_texture,
+                        tag=output_value01_tag,
+                        format=dpg.mvFormat_Float_rgb,
+                    )
+                
+                # Update previous size
+                self._prev_node_widths[str(node_id)] = small_window_w
+                self._prev_node_heights[str(node_id)] = small_window_h
+            
             texture = self.convert_cv_to_dpg(
                 frame,
                 small_window_w,
