@@ -174,12 +174,12 @@ class Node(Node):
 
             elif connection_type == self.TYPE_AUDIO:
                 frame = self.get_input_frame(
-                    connection_list, node_image_dict, node_audio_dict=node_audio_dict
+                    connection_list, node_image_dict, node_audio_dict
                 )
 
             else:
                 frame = self.get_input_frame(
-                    connection_list, node_image_dict, node_audio_dict=node_audio_dict
+                    connection_list, node_image_dict, node_audio_dict
                 )
 
         beta = int(dpg_get_value(input_value02_tag))
