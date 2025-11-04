@@ -148,7 +148,8 @@ class Node(Node):
                     horizontal=True,
                 )
 
-        return tag_node_name
+        self.tag_node_name = tag_node_name
+        return self
 
     def update(
         self,
