@@ -179,7 +179,7 @@ class Node(Node):
 
             else:
                 frame = self.get_input_frame(
-                    connection_list, node_image_dict, node_audio_dict=None
+                    connection_list, node_image_dict, node_audio_dict=node_audio_dict
                 )
 
         beta = int(dpg_get_value(input_value02_tag))

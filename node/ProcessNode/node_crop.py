@@ -232,7 +232,7 @@ class Node(Node):
                     input_value = min([self._max_max_val, input_value])
                 dpg_set_value(destination_tag, input_value)
 
-        frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict=None)
+        frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
 
 
         min_x = float(dpg_get_value(input_value02_tag))

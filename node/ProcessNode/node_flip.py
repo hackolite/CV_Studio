@@ -180,7 +180,7 @@ class Node(Node):
         for connection_info in connection_list:
             pass
 
-        frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict=None)
+        frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
 
 
         hflip_flag = dpg_get_value(tag_node_input02_value_name)
