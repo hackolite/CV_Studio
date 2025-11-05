@@ -30,6 +30,8 @@ def test_classification_node_accepts_audio_dict():
     sys.modules['node.DLNode.classification.MobileNetV3.mobilenet_v3'] = mock.MagicMock()
     sys.modules['node.DLNode.classification.EfficientNetB0'] = mock.MagicMock()
     sys.modules['node.DLNode.classification.EfficientNetB0.efficientnet'] = mock.MagicMock()
+    sys.modules['node.DLNode.classification.ResNet50'] = mock.MagicMock()
+    sys.modules['node.DLNode.classification.ResNet50.resnet50'] = mock.MagicMock()
     sys.modules['node.DLNode.classification.imagenet_class_names'] = mock.MagicMock()
     
     from node.DLNode.node_classification import Node as ClassificationNode
@@ -60,6 +62,7 @@ def test_classification_node_calls_get_input_frame_correctly():
     # Mock the classification modules
     mock_mobilenet = mock.MagicMock()
     mock_efficientnet = mock.MagicMock()
+    mock_resnet50 = mock.MagicMock()
     mock_imagenet_names = ['class1', 'class2']
     
     sys.modules['node.DLNode.classification'] = mock.MagicMock()
@@ -69,6 +72,9 @@ def test_classification_node_calls_get_input_frame_correctly():
     sys.modules['node.DLNode.classification.EfficientNetB0'] = mock.MagicMock()
     sys.modules['node.DLNode.classification.EfficientNetB0.efficientnet'] = mock.MagicMock()
     sys.modules['node.DLNode.classification.EfficientNetB0.efficientnet'].EfficientNetB0 = mock_efficientnet
+    sys.modules['node.DLNode.classification.ResNet50'] = mock.MagicMock()
+    sys.modules['node.DLNode.classification.ResNet50.resnet50'] = mock.MagicMock()
+    sys.modules['node.DLNode.classification.ResNet50.resnet50'].ResNet50 = mock_resnet50
     sys.modules['node.DLNode.classification.imagenet_class_names'] = mock.MagicMock()
     sys.modules['node.DLNode.classification.imagenet_class_names'].imagenet_class_names = mock_imagenet_names
     
