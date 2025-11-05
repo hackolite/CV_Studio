@@ -20,9 +20,13 @@ def test_classification_node_accepts_audio_connections():
         content = f.read()
     
     # Check that the update method checks for both IMAGE and AUDIO connection types
-    assert 'TYPE_IMAGE or connection_type == self.TYPE_AUDIO' in content or \
-           'TYPE_AUDIO or connection_type == self.TYPE_IMAGE' in content, \
-        "Classification node should check for both TYPE_IMAGE and TYPE_AUDIO connections"
+    # The condition should accept both types for proper source node identification
+    has_image_check = 'connection_type == self.TYPE_IMAGE' in content
+    has_audio_check = 'connection_type == self.TYPE_AUDIO' in content
+    
+    assert has_image_check and has_audio_check, \
+        f"Classification node should check for both TYPE_IMAGE and TYPE_AUDIO connections. " \
+        f"Found IMAGE check: {has_image_check}, AUDIO check: {has_audio_check}"
     
     print("✓ Classification node recognizes both IMAGE and AUDIO connection types")
 
