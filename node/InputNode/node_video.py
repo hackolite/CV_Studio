@@ -351,13 +351,13 @@ def fourier_transformation(sig, frameSize, overlapFac=0.5, window=np.hanning):
     return np.fft.rfft(frames)
 
 
-def make_logscale(spec, sr=44100, factor=20.):
+def make_logscale(spec, sr=22050, factor=20.):
     """
     Apply logarithmic scaling to frequency bins for better low-frequency resolution.
     
     Args:
         spec: Spectrogram array (time x frequency)
-        sr: Sample rate
+        sr: Sample rate (default 22050 to match audio loading)
         factor: Scaling factor (higher = more emphasis on low frequencies)
     
     Returns:
@@ -368,7 +368,8 @@ def make_logscale(spec, sr=44100, factor=20.):
     scale *= (freqbins-1)/max(scale)
     scale = np.unique(np.round(scale))
 
-    newspec = np.complex128(np.zeros([timebins, len(scale)]))
+    # Use same dtype as input for memory efficiency
+    newspec = np.zeros([timebins, len(scale)], dtype=spec.dtype)
     for i in range(len(scale)):
         start = int(scale[i])
         end = int(scale[i+1]) if i < len(scale)-1 else freqbins
@@ -490,7 +491,7 @@ class VideoNode(Node):
             s = fourier_transformation(y, binsize, overlapFac=0.5, window=np.hanning)
             
             # Apply logarithmic frequency scaling
-            sshow, freq = make_logscale(s, factor=1.0, sr=sr)
+            sshow, freq = make_logscale(spec=s, sr=sr, factor=1.0)
             
             # Convert to dB scale: 20*log10(abs/reference)
             ims = 20. * np.log10(np.abs(sshow) / 10e-6)
@@ -500,7 +501,7 @@ class VideoNode(Node):
 
             # Apply colormap - use matplotlib.colormaps instead of deprecated get_cmap
             if hasattr(matplotlib, 'colormaps'):
-                cmap = matplotlib.colormaps.get_cmap("magma")
+                cmap = matplotlib.colormaps['magma']
             else:
                 cmap = matplotlib.cm.get_cmap("magma")
             
