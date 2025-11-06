@@ -22,7 +22,9 @@ from node.InputNode.spectrogram_utils import apply_colormap_to_spectrogram
 # Minimum amplitude threshold to prevent log10(0) which causes -inf values
 SPECTROGRAM_EPSILON = 1e-10
 # Default colormap for spectrograms (configurable)
-DEFAULT_SPECTROGRAM_COLORMAP = 'INFERNO'
+# Use 'GRAYSCALE' for audio classification models that expect single-channel input
+# Use color names like 'INFERNO', 'VIRIDIS', 'JET', etc. for visualization
+DEFAULT_SPECTROGRAM_COLORMAP = 'GRAYSCALE'
 
 
 class FactoryNode:
@@ -434,7 +436,8 @@ class VideoNode(Node):
         self._spectrogram_meta = {}
         
         # Spectrogram colormap configuration
-        # Can be changed to 'VIRIDIS', 'JET', 'MAGMA', 'PLASMA', etc.
+        # Can be changed to 'GRAYSCALE' for audio classification (recommended for ESC-50 models)
+        # Or use color names like 'VIRIDIS', 'JET', 'MAGMA', 'PLASMA', 'INFERNO' for visualization
         self._spectrogram_colormap = DEFAULT_SPECTROGRAM_COLORMAP
 
     # def convert_cv_to_dpg(self, cv_img, w, h):
@@ -517,18 +520,30 @@ class VideoNode(Node):
             # Transpose first to get frequency on vertical axis (time x freq -> freq x time)
             ims_transposed = np.transpose(ims, (1, 0))
             
-            # Apply colormap to get RGB image
-            S_rgb = apply_colormap_to_spectrogram(
-                ims_transposed, 
-                method='cv2', 
-                cmap=self._spectrogram_colormap
-            )
-            
-            # Flip vertically so low frequencies are at bottom
-            S_rgb = np.flipud(S_rgb)
+            # Check if grayscale mode is requested (for audio classification models)
+            if self._spectrogram_colormap == 'GRAYSCALE':
+                # Normalize to 0-255 range for grayscale
+                ims_norm = cv2.normalize(ims_transposed, None, 0, 255, cv2.NORM_MINMAX)
+                ims_gray = np.clip(ims_norm, 0, 255).astype(np.uint8)
+                
+                # Flip vertically so low frequencies are at bottom
+                ims_gray = np.flipud(ims_gray)
+                
+                # Convert grayscale to BGR (3 channels with same value) for compatibility
+                S_bgr = cv2.cvtColor(ims_gray, cv2.COLOR_GRAY2BGR)
+            else:
+                # Apply colormap to get RGB image
+                S_rgb = apply_colormap_to_spectrogram(
+                    ims_transposed, 
+                    method='cv2', 
+                    cmap=self._spectrogram_colormap
+                )
+                
+                # Flip vertically so low frequencies are at bottom
+                S_rgb = np.flipud(S_rgb)
 
-            # Convert to BGR for OpenCV/DPG compatibility
-            S_bgr = cv2.cvtColor(S_rgb, cv2.COLOR_RGB2BGR)
+                # Convert to BGR for OpenCV/DPG compatibility
+                S_bgr = cv2.cvtColor(S_rgb, cv2.COLOR_RGB2BGR)
 
             # Store the spectrogram array
             self._spectrogram_array[node_id] = S_bgr
