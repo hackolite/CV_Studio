@@ -40,6 +40,7 @@ class ResNet50(object):
             dsize=(self.input_shape[1], self.input_shape[0]),
         )
         input_image = cv.cvtColor(input_image, cv.COLOR_BGR2RGB)
+        input_image = input_image.transpose(2, 0, 1)  # HWC to CHW
         input_image = np.expand_dims(input_image, axis=0).astype('float32')
 
         # Inference
