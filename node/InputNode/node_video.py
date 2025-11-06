@@ -499,15 +499,16 @@ class VideoNode(Node):
             
             # Convert to dB scale: 20*log10(abs/reference)
             # Add epsilon to avoid log10(0) which causes -inf
+            # Reference: 10e-6 = 1e-5 (10 micropascals approximation)
             sshow_safe = np.maximum(np.abs(sshow), SPECTROGRAM_EPSILON)
-            ims = 20. * np.log10(sshow_safe / 1e-6)
+            ims = 20. * np.log10(sshow_safe / 10e-6)
 
             # Normalize to 0-1 range safely
             # Handle case where all values might be the same or contain non-finite values
             if np.isfinite(ims).any():
                 valid_mask = np.isfinite(ims)
-                valid_min = ims[valid_mask].min() if valid_mask.any() else 0.0
-                valid_max = ims[valid_mask].max() if valid_mask.any() else 1.0
+                valid_min = ims[valid_mask].min()
+                valid_max = ims[valid_mask].max()
                 value_range = valid_max - valid_min
                 
                 if value_range > 1e-6:

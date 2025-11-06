@@ -78,7 +78,8 @@ def test_spectrogram_no_warnings_normal_audio():
         node = VideoNode()
         node_id = 'test_node_normal'
         
-        # Mock convert_cv_to_dpg to avoid numpy 2.0 compatibility issue
+        # Mock convert_cv_to_dpg to avoid DearPyGUI dependency and potential 
+        # numpy array flattening issues in the texture conversion process
         with patch.object(node, 'convert_cv_to_dpg', return_value=np.zeros(100)):
             # Capture warnings
             with warnings.catch_warnings(record=True) as w:
@@ -126,7 +127,8 @@ def test_spectrogram_no_warnings_silent_audio():
         node = VideoNode()
         node_id = 'test_node_silent'
         
-        # Mock convert_cv_to_dpg
+        # Mock convert_cv_to_dpg to avoid DearPyGUI dependency and potential 
+        # numpy array flattening issues in the texture conversion process
         with patch.object(node, 'convert_cv_to_dpg', return_value=np.zeros(100)):
             # Capture warnings
             with warnings.catch_warnings(record=True) as w:
@@ -174,7 +176,8 @@ def test_spectrogram_no_warnings_very_quiet_audio():
         node = VideoNode()
         node_id = 'test_node_quiet'
         
-        # Mock convert_cv_to_dpg
+        # Mock convert_cv_to_dpg to avoid DearPyGUI dependency and potential 
+        # numpy array flattening issues in the texture conversion process
         with patch.object(node, 'convert_cv_to_dpg', return_value=np.zeros(100)):
             # Capture warnings
             with warnings.catch_warnings(record=True) as w:
@@ -222,7 +225,8 @@ def test_spectrogram_valid_output_range():
         node = VideoNode()
         node_id = 'test_node_range'
         
-        # Mock convert_cv_to_dpg
+        # Mock convert_cv_to_dpg to avoid DearPyGUI dependency and potential 
+        # numpy array flattening issues in the texture conversion process
         with patch.object(node, 'convert_cv_to_dpg', return_value=np.zeros(100)):
             # Call _prepare_spectrogram
             node._prepare_spectrogram(node_id, audio_file, fmin=None, fmax=None)
