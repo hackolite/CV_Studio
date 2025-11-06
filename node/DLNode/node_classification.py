@@ -329,9 +329,9 @@ class Node(Node):
 
         # 描画
         if frame is not None:
-            # Resize frame first to node display size, then copy for drawing
+            # Resize frame first to node display size
+            # cv2.resize returns a new array, so no need to deepcopy
             debug_frame = cv2.resize(frame, (small_window_w, small_window_h), interpolation=cv2.INTER_AREA)
-            debug_frame = copy.deepcopy(debug_frame)
             
             # Draw labels on the resized frame so text size is linked to node frame size
             if result['use_object_detection']:
