@@ -5,6 +5,7 @@ import time
 import os
 
 import numpy as np
+import cv2
 import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
@@ -350,9 +351,9 @@ class Node(Node):
                 
                 debug_frame = self.draw_classification_with_od_info(
                     debug_frame,
-                    class_id_list,
-                    score_list,
-                    class_name_dict,
+                    result['class_ids'],
+                    result['class_scores'],
+                    result['class_names'],
                     scaled_od_bboxes,
                     result['od_scores'],
                     result['od_class_ids'],
