@@ -4,7 +4,7 @@ import numpy as np
 import onnxruntime
 
 
-class MobileNetV3(object):
+class YoloCls(object):
 
     def __init__(
         self,
@@ -20,7 +20,7 @@ class MobileNetV3(object):
             'CPUExecutionProvider',
         ],
     ):
-
+        # モデル読み込み
         self.onnx_session = onnxruntime.InferenceSession(
             model_path,
             providers=providers,
@@ -30,16 +30,17 @@ class MobileNetV3(object):
         self.input_name = self.input_detail.name
         self.output_name = self.onnx_session.get_outputs()[0].name
 
-
+        # 各種設定
         self.input_shape = input_size
 
     def __call__(self, image, top_k=5):
-        # Pre process:Resize, BGR->RGB, Transpose, float32 cast
+        # Pre process: Resize, BGR->RGB, HWC->CHW transpose, add batch dim, float32 cast
         input_image = cv.resize(
             image,
             dsize=(self.input_shape[1], self.input_shape[0]),
         )
         input_image = cv.cvtColor(input_image, cv.COLOR_BGR2RGB)
+        input_image = input_image.transpose(2, 0, 1)  # HWC to CHW for NCHW format
         input_image = np.expand_dims(input_image, axis=0).astype('float32')
 
         # Inference
@@ -60,7 +61,7 @@ if __name__ == '__main__':
 
     # Load model
     model_path = 'model/son.onnx'
-    model = MobileNetV3(model_path)
+    model = YoloCls(model_path)
 
     while True:
         # Capture read
@@ -76,7 +77,7 @@ if __name__ == '__main__':
         key = cv.waitKey(1)
         if key == 27:  # ESC
             break
-        cv.imshow('MobileNetV3 Input', frame)
+        cv.imshow('YoloCls Input', frame)
 
     cap.release()
     cv.destroyAllWindows()
