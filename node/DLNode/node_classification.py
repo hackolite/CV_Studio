@@ -15,9 +15,17 @@ from node.DLNode.classification.MobileNetV3.mobilenet_v3 import MobileNetV3
 from node.DLNode.classification.EfficientNetB0.efficientnet import EfficientNetB0
 from node.DLNode.classification.ResNet50.resnet50 import ResNet50
 
-# Import YoloCls using importlib due to hyphenated directory name
-import importlib
-_yolo_cls_module = importlib.import_module('node.DLNode.classification.Yolo-cls')
+# Import YoloCls using importlib.util due to hyphenated directory name
+import importlib.util
+_yolo_cls_init_path = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    'classification', 'Yolo-cls', '__init__.py'
+)
+_yolo_cls_spec = importlib.util.spec_from_file_location(
+    'yolo_cls_init_module', _yolo_cls_init_path
+)
+_yolo_cls_module = importlib.util.module_from_spec(_yolo_cls_spec)
+_yolo_cls_spec.loader.exec_module(_yolo_cls_module)
 YoloCls = _yolo_cls_module.YoloCls
 
 from node.DLNode.classification.imagenet_class_names import imagenet_class_names
