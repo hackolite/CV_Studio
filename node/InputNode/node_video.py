@@ -17,6 +17,10 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node
 
+# Spectrogram processing constants
+# Minimum amplitude threshold to prevent log10(0) which causes -inf values
+SPECTROGRAM_EPSILON = 1e-10
+
 
 class FactoryNode:
     node_label = "Video"
@@ -495,8 +499,7 @@ class VideoNode(Node):
             
             # Convert to dB scale: 20*log10(abs/reference)
             # Add epsilon to avoid log10(0) which causes -inf
-            epsilon = 1e-10
-            sshow_safe = np.maximum(np.abs(sshow), epsilon)
+            sshow_safe = np.maximum(np.abs(sshow), SPECTROGRAM_EPSILON)
             ims = 20. * np.log10(sshow_safe / 1e-6)
 
             # Normalize to 0-1 range safely
