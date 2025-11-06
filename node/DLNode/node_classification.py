@@ -328,14 +328,32 @@ class Node(Node):
 
         # 描画
         if frame is not None:
-            debug_frame = copy.deepcopy(frame)
+            # Resize frame first to node display size
+            debug_frame = cv2.resize(copy.deepcopy(frame), (small_window_w, small_window_h), interpolation=cv2.INTER_AREA)
+            
+            # Draw labels on the resized frame so text size is linked to node frame size
             if result['use_object_detection']:
+                # Scale bounding boxes to match resized frame
+                frame_h, frame_w = frame.shape[:2]
+                scale_x = small_window_w / frame_w
+                scale_y = small_window_h / frame_h
+                scaled_od_bboxes = []
+                for bbox in od_bboxes:
+                    x1, y1, x2, y2 = bbox
+                    scaled_bbox = [
+                        int(x1 * scale_x),
+                        int(y1 * scale_y),
+                        int(x2 * scale_x),
+                        int(y2 * scale_y)
+                    ]
+                    scaled_od_bboxes.append(scaled_bbox)
+                
                 debug_frame = self.draw_classification_with_od_info(
                     debug_frame,
                     class_id_list,
                     score_list,
                     class_name_dict,
-                    od_bboxes,
+                    scaled_od_bboxes,
                     od_scores,
                     od_class_ids,
                     od_class_names,
