@@ -746,8 +746,26 @@ class VideoNode(Node):
 
                     # Calculate the indicator position within the window
                     indicator_col = spectrogram_col - start_col
+                    
+                    # Extract a smaller analysis window (1/10 of the full window width)
+                    # centered on the current playback position for efficient audio classification
+                    # IMPORTANT: Extract BEFORE drawing the yellow line to avoid including it in analysis
+                    analysis_window_width = max(1, window_width // 10)
+                    analysis_half_window = analysis_window_width // 2
+                    
+                    # Calculate analysis window boundaries within the display window
+                    analysis_start = max(0, indicator_col - analysis_half_window)
+                    analysis_end = min(spectrogram_window.shape[1], analysis_start + analysis_window_width)
+                    
+                    # Adjust start if we're at the end
+                    if analysis_end == spectrogram_window.shape[1]:
+                        analysis_start = max(0, analysis_end - analysis_window_width)
+                    
+                    # Extract the analysis window (a small slice of the display window)
+                    # Do this BEFORE drawing the yellow indicator line
+                    spectrogram_analysis = spectrogram_window[:, analysis_start:analysis_end].copy()
 
-                    # Draw yellow vertical line at current position within the window
+                    # Draw yellow vertical line at current position within the window (for display only)
                     if 0 <= indicator_col < spectrogram_window.shape[1]:
                         # Yellow in BGR is (0, 255, 255)
                         cv2.line(
@@ -780,22 +798,6 @@ class VideoNode(Node):
                             )
 
                     spectrogram_bgr = spectrogram_window
-                    
-                    # Extract a smaller analysis window (1/10 of the full window width)
-                    # centered on the current playback position for efficient audio classification
-                    analysis_window_width = max(1, window_width // 10)
-                    analysis_half_window = analysis_window_width // 2
-                    
-                    # Calculate analysis window boundaries within the display window
-                    analysis_start = max(0, indicator_col - analysis_half_window)
-                    analysis_end = min(spectrogram_window.shape[1], analysis_start + analysis_window_width)
-                    
-                    # Adjust start if we're at the end
-                    if analysis_end == spectrogram_window.shape[1]:
-                        analysis_start = max(0, analysis_end - analysis_window_width)
-                    
-                    # Extract the analysis window (a small slice of the display window)
-                    spectrogram_analysis = spectrogram_window[:, analysis_start:analysis_end].copy()
                 else:
                     # No metadata available, show the entire spectrogram (fallback)
                     spectrogram_bgr = full_spectrogram.copy()
