@@ -44,8 +44,10 @@ def test_resnet50_preprocessing_shape():
 
 def test_resnet50_code_has_transpose():
     """Test that the ResNet50 code includes the transpose operation"""
-    resnet_file = os.path.join(os.path.dirname(__file__), '..', 
-                                'node', 'DLNode', 'classification', 'ResNet50', 'resnet50.py')
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(test_dir)
+    resnet_file = os.path.join(project_root, 'node', 'DLNode', 'classification', 
+                                'ResNet50', 'resnet50.py')
     
     with open(resnet_file, 'r') as f:
         content = f.read()
@@ -68,13 +70,16 @@ def test_resnet50_code_has_transpose():
 
 def test_other_models_dont_have_transpose():
     """Test that other models (MobileNet, EfficientNet) don't have transpose"""
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(test_dir)
+    
     models_to_check = [
         ('node/DLNode/classification/MobileNetV3/mobilenet_v3.py', 'MobileNetV3'),
         ('node/DLNode/classification/EfficientNetB0/efficientnet.py', 'EfficientNet'),
     ]
     
     for model_path, model_name in models_to_check:
-        full_path = os.path.join(os.path.dirname(__file__), '..', model_path)
+        full_path = os.path.join(project_root, model_path)
         
         if os.path.exists(full_path):
             with open(full_path, 'r') as f:
