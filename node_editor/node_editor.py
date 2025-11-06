@@ -177,18 +177,23 @@ class DpgNodeEditor(object):
                             if import_path.endswith("__init__"):
                                 continue
 
-                            module = import_module(import_path)
-                            factorynode = module.FactoryNode()
-                            # print("Factory Instance :", factorynode.node_tag)
-                            dpg.add_menu_item(
-                                tag="Menu_" + factorynode.node_tag,
-                                label=factorynode.node_label,
-                                callback=self._callback_add_node,
-                                user_data=factorynode.node_tag,
-                            )
+                            try:
+                                module = import_module(import_path)
+                                factorynode = module.FactoryNode()
+                                # print("Factory Instance :", factorynode.node_tag)
+                                dpg.add_menu_item(
+                                    tag="Menu_" + factorynode.node_tag,
+                                    label=factorynode.node_label,
+                                    callback=self._callback_add_node,
+                                    user_data=factorynode.node_tag,
+                                )
 
-                            factorynode.style = node_style(menu_label)
-                            self._node_factory_list[factorynode.node_tag] = factorynode
+                                factorynode.style = node_style(menu_label)
+                                self._node_factory_list[factorynode.node_tag] = factorynode
+                            except AttributeError:
+                                # Skip files without FactoryNode class (utility modules)
+                                logger.debug(f"Skipping {import_path}: no FactoryNode attribute")
+                                continue
 
             with dpg.node_editor(
                 tag=self._node_editor_tag,
