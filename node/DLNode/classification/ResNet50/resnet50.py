@@ -34,12 +34,13 @@ class ResNet50(object):
         self.input_shape = input_size
 
     def __call__(self, image, top_k=5):
-        # Pre process:Resize, BGR->RGB, Transpose, float32 cast
+        # Pre process: Resize, BGR->RGB, HWC->CHW transpose, add batch dim, float32 cast
         input_image = cv.resize(
             image,
             dsize=(self.input_shape[1], self.input_shape[0]),
         )
         input_image = cv.cvtColor(input_image, cv.COLOR_BGR2RGB)
+        input_image = input_image.transpose(2, 0, 1)  # HWC to CHW for NCHW format
         input_image = np.expand_dims(input_image, axis=0).astype('float32')
 
         # Inference
