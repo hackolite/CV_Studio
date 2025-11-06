@@ -338,7 +338,7 @@ class Node(Node):
                 scale_x = small_window_w / frame_w
                 scale_y = small_window_h / frame_h
                 scaled_od_bboxes = []
-                for bbox in od_bboxes:
+                for bbox in result['od_bboxes']:
                     x1, y1, x2, y2 = bbox
                     scaled_bbox = [
                         int(x1 * scale_x),
@@ -354,10 +354,10 @@ class Node(Node):
                     score_list,
                     class_name_dict,
                     scaled_od_bboxes,
-                    od_scores,
-                    od_class_ids,
-                    od_class_names,
-                    od_score_th,
+                    result['od_scores'],
+                    result['od_class_ids'],
+                    result['od_class_names'],
+                    result['od_score_th'],
                 )
             else:
                 debug_frame = self.draw_classification_info(
