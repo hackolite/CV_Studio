@@ -90,8 +90,8 @@ def test_yolo_cls_class_is_imported():
     print(f"✓ YoloCls class is properly imported: {YoloClsClass}")
 
 
-def test_yolo_cls_uses_imagenet_classes():
-    """Test that Yolo-cls uses ImageNet class names"""
+def test_yolo_cls_uses_esc50_classes():
+    """Test that Yolo-cls uses ESC-50 class names"""
     setup_mocks()
     
     # Import the classification node module
@@ -100,19 +100,30 @@ def test_yolo_cls_uses_imagenet_classes():
     # Get the Node class
     Node = node_classification.Node
     
-    # Check that Yolo-cls uses imagenet_class_names
-    # (same as other models like ResNet50, MobileNetV3, etc.)
+    # Check that Yolo-cls uses esc50_class_names
+    # (different from other models like ResNet50, MobileNetV3, etc. which use ImageNet)
     assert 'Yolo-cls' in Node._model_class_name_dict, \
         "Yolo-cls should have class names defined"
     
-    # Compare with ResNet50 to ensure consistency
+    # Get the class names for Yolo-cls and ResNet50
     yolo_cls_names = Node._model_class_name_dict['Yolo-cls']
     resnet50_names = Node._model_class_name_dict['ResNet50']
     
-    assert yolo_cls_names == resnet50_names, \
-        "Yolo-cls should use the same class names as ResNet50 (ImageNet classes)"
+    # Yolo-cls should NOT use ImageNet classes (it uses ESC-50)
+    assert yolo_cls_names != resnet50_names, \
+        "Yolo-cls should NOT use the same class names as ResNet50 (should use ESC-50, not ImageNet)"
     
-    print("✓ Yolo-cls uses ImageNet class names")
+    # Verify that Yolo-cls has 50 classes (ESC-50 dataset)
+    assert len(yolo_cls_names) == 50, \
+        f"Yolo-cls should have 50 classes (ESC-50), got {len(yolo_cls_names)}"
+    
+    # Verify some expected ESC-50 class names
+    expected_classes = ["Dog", "Cat", "Rain", "Crying baby", "Helicopter"]
+    for class_id, class_name in yolo_cls_names.items():
+        if class_name in expected_classes:
+            print(f"  Found expected ESC-50 class: {class_id} -> {class_name}")
+    
+    print("✓ Yolo-cls uses ESC-50 class names (50 audio classes)")
 
 
 def test_model_list_includes_yolo_cls():
@@ -149,7 +160,7 @@ if __name__ == '__main__':
         test_yolo_cls_is_registered()
         test_yolo_cls_model_path_exists()
         test_yolo_cls_class_is_imported()
-        test_yolo_cls_uses_imagenet_classes()
+        test_yolo_cls_uses_esc50_classes()
         test_model_list_includes_yolo_cls()
         
         print("\n" + "="*60)
@@ -159,7 +170,7 @@ if __name__ == '__main__':
         print("- Yolo-cls is registered in all model dictionaries")
         print("- Model file exists at the correct path")
         print("- YoloCls class is properly imported")
-        print("- Uses ImageNet class names")
+        print("- Uses ESC-50 class names (50 audio classes)")
         print("- Appears in the UI model dropdown list")
     except AssertionError as e:
         print(f"\n✗ Test failed: {e}")
