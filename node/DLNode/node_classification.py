@@ -29,7 +29,6 @@ _yolo_cls_spec.loader.exec_module(_yolo_cls_module)
 YoloCls = _yolo_cls_module.YoloCls
 
 from node.DLNode.classification.imagenet_class_names import imagenet_class_names
-from node.DLNode.classification.esc50_class_names import esc50_class_names
 
 from node.basenode import Node
 
@@ -181,7 +180,7 @@ class Node(Node):
         'MobileNetV3 Large': imagenet_class_names,
         'EfficientNet B0': imagenet_class_names,
         'ResNet50': imagenet_class_names,
-        'Yolo-cls': esc50_class_names,
+        'Yolo-cls': imagenet_class_names,
     }
 
     _model_instance = {}
