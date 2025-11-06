@@ -754,11 +754,16 @@ class VideoNode(Node):
                     analysis_half_window = analysis_window_width // 2
                     
                     # Calculate analysis window boundaries within the display window
-                    analysis_start = max(0, indicator_col - analysis_half_window)
-                    analysis_end = min(spectrogram_window.shape[1], analysis_start + analysis_window_width)
+                    # Center on indicator position
+                    analysis_start = indicator_col - analysis_half_window
+                    analysis_end = analysis_start + analysis_window_width
                     
-                    # Adjust start if we're at the end
-                    if analysis_end == spectrogram_window.shape[1]:
+                    # Adjust boundaries if they exceed window bounds
+                    if analysis_start < 0:
+                        analysis_start = 0
+                        analysis_end = min(spectrogram_window.shape[1], analysis_window_width)
+                    elif analysis_end > spectrogram_window.shape[1]:
+                        analysis_end = spectrogram_window.shape[1]
                         analysis_start = max(0, analysis_end - analysis_window_width)
                     
                     # Extract the analysis window (a small slice of the display window)
@@ -804,8 +809,19 @@ class VideoNode(Node):
                     # For analysis, use a slice from the middle (1/10 of width)
                     analysis_window_width = max(1, full_spectrogram.shape[1] // 10)
                     mid_col = full_spectrogram.shape[1] // 2
-                    analysis_start = max(0, mid_col - analysis_window_width // 2)
-                    analysis_end = min(full_spectrogram.shape[1], analysis_start + analysis_window_width)
+                    
+                    # Calculate window boundaries
+                    analysis_start = mid_col - analysis_window_width // 2
+                    analysis_end = analysis_start + analysis_window_width
+                    
+                    # Adjust boundaries if they exceed spectrogram bounds
+                    if analysis_start < 0:
+                        analysis_start = 0
+                        analysis_end = min(full_spectrogram.shape[1], analysis_window_width)
+                    elif analysis_end > full_spectrogram.shape[1]:
+                        analysis_end = full_spectrogram.shape[1]
+                        analysis_start = max(0, analysis_end - analysis_window_width)
+                    
                     spectrogram_analysis = full_spectrogram[:, analysis_start:analysis_end].copy()
 
                 # Convert to DPG texture format and update (for display)
