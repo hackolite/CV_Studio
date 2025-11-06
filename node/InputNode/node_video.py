@@ -17,6 +17,10 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node
 
+# Spectrogram processing constants
+# Minimum amplitude threshold to prevent log10(0) which causes -inf values
+SPECTROGRAM_EPSILON = 1e-10
+
 
 class FactoryNode:
     node_label = "Video"
@@ -494,10 +498,30 @@ class VideoNode(Node):
             sshow, freq = make_logscale(spec=s, sr=sr, factor=1.0)
             
             # Convert to dB scale: 20*log10(abs/reference)
-            ims = 20. * np.log10(np.abs(sshow) / 10e-6)
+            # Add epsilon to avoid log10(0) which causes -inf
+            # Reference: 10e-6 = 1e-5 (10 micropascals approximation)
+            sshow_safe = np.maximum(np.abs(sshow), SPECTROGRAM_EPSILON)
+            ims = 20. * np.log10(sshow_safe / 10e-6)
 
-            # Normalize to 0-1 range
-            ims_normalized = (ims - ims.min()) / (ims.max() - ims.min() + 1e-6)
+            # Normalize to 0-1 range safely
+            # Handle case where all values might be the same or contain non-finite values
+            if np.isfinite(ims).any():
+                valid_mask = np.isfinite(ims)
+                valid_min = ims[valid_mask].min()
+                valid_max = ims[valid_mask].max()
+                value_range = valid_max - valid_min
+                
+                if value_range > 1e-6:
+                    ims_normalized = np.clip((ims - valid_min) / value_range, 0.0, 1.0)
+                else:
+                    # All valid values are the same, use middle gray
+                    ims_normalized = np.full_like(ims, 0.5, dtype=np.float64)
+                
+                # Replace any non-finite values with 0
+                ims_normalized[~np.isfinite(ims_normalized)] = 0.0
+            else:
+                # All values are non-finite, use zeros
+                ims_normalized = np.zeros_like(ims, dtype=np.float64)
 
             # Apply colormap - use matplotlib.colormaps instead of deprecated get_cmap
             if hasattr(matplotlib, 'colormaps'):
