@@ -3,9 +3,11 @@
 import time
 import cv2
 import numpy as np
+from numpy.lib import stride_tricks
 import dearpygui.dearpygui as dpg
 import librosa
 import matplotlib.cm
+import matplotlib
 import subprocess
 import tempfile
 import os
@@ -322,6 +324,63 @@ class FactoryNode:
         return node
 
 
+def fourier_transformation(sig, frameSize, overlapFac=0.5, window=np.hanning):
+    """
+    Perform Short-Time Fourier Transform with windowing and overlap.
+    
+    Args:
+        sig: Input signal
+        frameSize: Size of each frame (window)
+        overlapFac: Overlap factor (0.5 = 50% overlap)
+        window: Window function to apply
+    
+    Returns:
+        STFT matrix (complex values)
+    """
+    win = window(frameSize)
+    hopSize = int(frameSize - np.floor(overlapFac * frameSize))
+    samples = np.append(np.zeros(int(np.floor(frameSize/2.0))), sig)
+    cols = np.ceil((len(samples) - frameSize) / float(hopSize)) + 1
+    samples = np.append(samples, np.zeros(frameSize))
+    frames = stride_tricks.as_strided(
+        samples,
+        shape=(int(cols), frameSize),
+        strides=(samples.strides[0]*hopSize, samples.strides[0])
+    ).copy()
+    frames *= win
+    return np.fft.rfft(frames)
+
+
+def make_logscale(spec, sr=44100, factor=20.):
+    """
+    Apply logarithmic scaling to frequency bins for better low-frequency resolution.
+    
+    Args:
+        spec: Spectrogram array (time x frequency)
+        sr: Sample rate
+        factor: Scaling factor (higher = more emphasis on low frequencies)
+    
+    Returns:
+        (newspec, freqs): Rescaled spectrogram and corresponding frequencies
+    """
+    timebins, freqbins = np.shape(spec)
+    scale = np.linspace(0, 1, freqbins) ** factor
+    scale *= (freqbins-1)/max(scale)
+    scale = np.unique(np.round(scale))
+
+    newspec = np.complex128(np.zeros([timebins, len(scale)]))
+    for i in range(len(scale)):
+        start = int(scale[i])
+        end = int(scale[i+1]) if i < len(scale)-1 else freqbins
+        newspec[:, i] = np.sum(spec[:, start:end], axis=1)
+
+    allfreqs = np.abs(np.fft.fftfreq(freqbins*2, 1./sr)[:freqbins+1])
+    freqs = [np.mean(allfreqs[int(scale[i]):int(scale[i+1])])
+             if i < len(scale)-1 else np.mean(allfreqs[int(scale[i]):])
+             for i in range(len(scale))]
+    return newspec, freqs
+
+
 class VideoNode(Node):
     _ver = "0.0.1"
 
@@ -371,13 +430,13 @@ class VideoNode(Node):
 
     def _prepare_spectrogram(self, node_id, movie_path, fmin=None, fmax=None):
         """
-        Extract audio and compute mel-spectrogram from video file.
+        Extract audio and compute spectrogram from video file using STFT with logarithmic scaling.
 
         Args:
             node_id: Node identifier
             movie_path: Path to video file
-            fmin: Minimum frequency for mel filter bank (Hz). If None, uses librosa default.
-            fmax: Maximum frequency for mel filter bank (Hz). If None, uses librosa default.
+            fmin: Minimum frequency for display (Hz). If None, uses 0 Hz.
+            fmax: Maximum frequency for display (Hz). If None, uses Nyquist frequency.
         """
         if not movie_path or not os.path.exists(movie_path):
             print(f"Video file not found: {movie_path}")
@@ -423,43 +482,36 @@ class VideoNode(Node):
                     if os.path.exists(tmp_audio_path):
                         os.unlink(tmp_audio_path)
 
-            # Build mel-spectrogram kwargs, only including fmin/fmax if not None
-            mel_kwargs = {
-                "y": y,
-                "sr": sr,
-                "n_fft": 2048,
-                "hop_length": 512,
-                "n_mels": 128,
-                "power": 2.0,
-            }
-            # Only add fmin/fmax if they are not None to avoid TypeError
-            if fmin is not None:
-                mel_kwargs["fmin"] = fmin
-            if fmax is not None:
-                mel_kwargs["fmax"] = fmax
-
-            # Compute mel-spectrogram
-            try:
-                S = librosa.feature.melspectrogram(**mel_kwargs)
-            except Exception as e:
-                print(
-                    f"Error computing mel-spectrogram with fmin={fmin}, fmax={fmax}: {e}"
-                )
-                raise
-
-            # Convert to dB scale
-            S_db = librosa.power_to_db(S, ref=np.max)
+            # Compute STFT using the new approach
+            binsize = 2**10  # 1024 samples
+            hop_length = binsize // 2  # 50% overlap
+            
+            # Perform Fourier transformation with windowing
+            s = fourier_transformation(y, binsize, overlapFac=0.5, window=np.hanning)
+            
+            # Apply logarithmic frequency scaling
+            sshow, freq = make_logscale(s, factor=1.0, sr=sr)
+            
+            # Convert to dB scale: 20*log10(abs/reference)
+            ims = 20. * np.log10(np.abs(sshow) / 10e-6)
 
             # Normalize to 0-1 range
-            S_normalized = (S_db - S_db.min()) / (S_db.max() - S_db.min() + 1e-6)
+            ims_normalized = (ims - ims.min()) / (ims.max() - ims.min() + 1e-6)
 
-            # Apply colormap (magma)
-            cmap = matplotlib.cm.get_cmap("magma")
-            S_colored = cmap(S_normalized)
+            # Apply colormap - use matplotlib.colormaps instead of deprecated get_cmap
+            if hasattr(matplotlib, 'colormaps'):
+                cmap = matplotlib.colormaps.get_cmap("magma")
+            else:
+                cmap = matplotlib.cm.get_cmap("magma")
+            
+            S_colored = cmap(ims_normalized)
 
             # Convert to 8-bit RGB (remove alpha channel)
             S_rgb = (S_colored[:, :, :3] * 255).astype(np.uint8)
 
+            # Transpose to get frequency on vertical axis (transpose before flip)
+            S_rgb = np.transpose(S_rgb, (1, 0, 2))
+            
             # Flip vertically so low frequencies are at bottom
             S_rgb = np.flipud(S_rgb)
 
@@ -475,12 +527,6 @@ class VideoNode(Node):
             )
             self._spectrogram_texture[node_id] = texture
 
-            # Immediately update the DPG texture
-            tag_node_name = str(node_id) + ":" + self.node_tag
-            tag_node_spectrogram_value = tag_node_name + ":SpectrogramValue"
-            if dpg.does_item_exist(self.tag_node_output03_name):
-                dpg_set_value(self.tag_node_output03_value_name, texture)
-
             # Store metadata for future audio sync
             video_capture = self._video_capture.get(node_id, None)
             fps = 30.0  # default
@@ -492,7 +538,7 @@ class VideoNode(Node):
             self._spectrogram_meta[node_id] = {
                 "y": y,
                 "sr": sr,
-                "hop_length": 512,
+                "hop_length": hop_length,
                 "fps": fps,
             }
 
