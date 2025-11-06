@@ -1,0 +1,30 @@
+# Audio Diagnostic Agent Configuration
+# Example configuration file for audio diagnostics
+
+# Output directory for reports and spectrograms
+output_dir: reports
+
+# Number of top predictions to include in the report
+topk: 5
+
+# Spectrogram parameters
+n_fft: 2048          # FFT window size
+hop_length: 512      # Number of samples between successive frames
+n_mels: 128          # Number of Mel frequency bands
+fmin: 0.0            # Minimum frequency (Hz)
+fmax: null           # Maximum frequency (Hz) - null means sr/2
+
+# Frequency band definitions for common sounds (Hz)
+# Format: [min_frequency, max_frequency]
+frequency_bands:
+  bark: [150, 2000]      # Dog bark typical range
+  snore: [50, 300]       # Snoring typical range
+  chirp: [2000, 8000]    # Bird chirp range
+  low_freq: [0, 500]     # Low frequency range
+  mid_freq: [500, 2000]  # Mid frequency range
+  high_freq: [2000, 8000] # High frequency range
+
+# Suspicion thresholds
+thresholds:
+  energy_diff_threshold: 10.0  # dB difference threshold for energy variation
+  sample_rate_mismatch: true   # Flag sample rate mismatches

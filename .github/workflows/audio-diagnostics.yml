@@ -1,0 +1,164 @@
+name: Audio Diagnostics CI
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'scripts/audio_diagnostic_agent.py'
+      - 'scripts/utils_audio.py'
+      - 'tests/test_audio_agent.py'
+      - '.github/workflows/audio-diagnostics.yml'
+      - 'requirements-dev.txt'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'scripts/audio_diagnostic_agent.py'
+      - 'scripts/utils_audio.py'
+      - 'tests/test_audio_agent.py'
+      - '.github/workflows/audio-diagnostics.yml'
+      - 'requirements-dev.txt'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Audio Agent Tests
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg libsndfile1
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-cov
+        if [ -f requirements-dev.txt ]; then
+          pip install -r requirements-dev.txt
+        fi
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+        fi
+    
+    - name: Run unit tests
+      run: |
+        cd tests
+        python -m pytest test_audio_agent.py -v --cov=../scripts --cov-report=term-missing
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      if: matrix.python-version == '3.11'
+      with:
+        files: ./coverage.xml
+        flags: audio-agent
+        name: audio-agent-coverage
+      continue-on-error: true
+
+  smoke-test:
+    name: Smoke Test with Sample Audio
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg libsndfile1
+        python -m pip install --upgrade pip
+        if [ -f requirements-dev.txt ]; then
+          pip install -r requirements-dev.txt
+        fi
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+        fi
+    
+    - name: Create sample audio/video file
+      run: |
+        # Create a short test video with audio using ffmpeg
+        ffmpeg -f lavfi -i "sine=frequency=440:duration=2" -f lavfi -i "color=c=black:s=320x240:d=2" \
+          -c:v libx264 -c:a aac -shortest test_video.mp4
+    
+    - name: Run audio diagnostic agent (smoke test)
+      run: |
+        cd scripts
+        python audio_diagnostic_agent.py --input ../test_video.mp4 --outdir ../reports --topk 3
+    
+    - name: Check output files
+      run: |
+        # Verify that report files were created
+        if [ ! -d "reports" ]; then
+          echo "Error: reports directory not created"
+          exit 1
+        fi
+        
+        # Check for JSON report
+        report_count=$(find reports -name "report_*.json" | wc -l)
+        if [ $report_count -eq 0 ]; then
+          echo "Error: No report JSON files created"
+          exit 1
+        fi
+        
+        # Check for spectrogram PNG
+        spec_count=$(find reports -name "*_spectrogram.png" | wc -l)
+        if [ $spec_count -eq 0 ]; then
+          echo "Warning: No spectrogram PNG files created"
+        fi
+        
+        echo "Smoke test passed! Found $report_count report(s) and $spec_count spectrogram(s)"
+    
+    - name: Upload smoke test artifacts
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: smoke-test-results
+        path: |
+          reports/
+          test_video.mp4
+        retention-days: 7
+
+  lint:
+    name: Lint Python Code
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install linting tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 pylint
+    
+    - name: Run flake8
+      run: |
+        # Stop the build if there are Python syntax errors or undefined names
+        flake8 scripts/audio_diagnostic_agent.py scripts/utils_audio.py --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Exit-zero treats all errors as warnings
+        flake8 scripts/audio_diagnostic_agent.py scripts/utils_audio.py --count --exit-zero --max-complexity=15 --max-line-length=120 --statistics
+      continue-on-error: true

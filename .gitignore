@@ -139,3 +139,7 @@ main_win64.spec
 icon.ico
 dist
 build
+
+# Audio diagnostic agent outputs
+reports/
+*.wav

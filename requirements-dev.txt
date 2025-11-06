@@ -1,0 +1,18 @@
+# Development dependencies for audio diagnostic agent
+# Python 3.8+ compatible
+
+# Audio processing
+librosa>=0.10.0
+soundfile>=0.12.0
+matplotlib>=3.5.0
+
+# Configuration
+pyyaml>=6.0
+
+# Testing
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# Code quality (optional)
+flake8>=6.0.0
+pylint>=2.15.0
