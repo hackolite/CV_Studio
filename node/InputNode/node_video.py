@@ -774,7 +774,7 @@ class VideoNode(Node):
                     # Green in BGR is (0, 255, 0)
                     start_cursor_col = 0
                     end_cursor_col = spectrogram_window.shape[1] - 1
-                    
+
                     # Draw start boundary cursor (left edge)
                     cv2.line(
                         spectrogram_window,
@@ -783,7 +783,7 @@ class VideoNode(Node):
                         (0, 255, 0),
                         2,
                     )
-                    
+
                     # Draw end boundary cursor (right edge)
                     cv2.line(
                         spectrogram_window,
