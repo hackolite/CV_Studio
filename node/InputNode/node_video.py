@@ -812,6 +812,9 @@ class VideoNode(Node):
                 )
                 dpg_set_value(self.tag_node_output03_value_name, texture)
 
+        # Return the video frame and spectrogram analysis window
+        # Note: spectrogram_analysis will be None if toggle is disabled or no spectrogram exists
+        # This is handled properly by classification nodes which check for None
         return {"image": frame, "json": None, "audio": spectrogram_analysis}
 
     def close(self, node_id):
