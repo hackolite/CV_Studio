@@ -67,7 +67,7 @@ def test_prepare_spectrogram_defaults():
         y = node._spectrogram_meta[node_id]['y']
         sr = node._spectrogram_meta[node_id]['sr']
         assert len(y) > 0, "Audio signal should not be empty"
-        assert sr == 22050, "Sample rate should be 22050"
+        assert sr == 22050, "Sample rate should match the test file (22050)"
         
         print("✓ test_prepare_spectrogram_defaults passed")
         
@@ -105,7 +105,7 @@ def test_prepare_spectrogram_with_fmin_fmax():
         y = node._spectrogram_meta[node_id]['y']
         sr = node._spectrogram_meta[node_id]['sr']
         assert len(y) > 0, "Audio signal should not be empty"
-        assert sr == 22050, "Sample rate should be 22050"
+        assert sr == 22050, "Sample rate should match the test file (22050)"
         
         print("✓ test_prepare_spectrogram_with_fmin_fmax passed")
         

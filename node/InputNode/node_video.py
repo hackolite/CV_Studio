@@ -358,13 +358,13 @@ def fourier_transformation(sig, frameSize, overlapFac=0.5, window=np.hanning):
     return np.fft.rfft(frames)
 
 
-def make_logscale(spec, sr=22050, factor=20.):
+def make_logscale(spec, sr=44100, factor=20.):
     """
     Apply logarithmic scaling to frequency bins for better low-frequency resolution.
     
     Args:
         spec: Spectrogram array (time x frequency)
-        sr: Sample rate (default 22050 to match audio loading)
+        sr: Sample rate (default 44100 Hz, standard audio sample rate)
         factor: Scaling factor (higher = more emphasis on low frequencies)
     
     Returns:
@@ -456,8 +456,10 @@ class VideoNode(Node):
 
         try:
             # Try to load audio directly from video file
+            # Use sr=None to preserve original sample rate (as in the working notebook)
+            # Use mono=True to ensure consistent mono audio processing
             try:
-                y, sr = librosa.load(movie_path, sr=22050)
+                y, sr = librosa.load(movie_path, sr=None, mono=True)
             except Exception as e:
                 print(f"Direct audio load failed, trying ffmpeg extraction: {e}")
                 # Fallback: extract audio via ffmpeg
@@ -468,7 +470,8 @@ class VideoNode(Node):
 
                 try:
                     # Extract audio using ffmpeg
-                    subprocess.run(
+                    # Use 44100 Hz (standard sample rate) instead of 22050
+                    result = subprocess.run(
                         [
                             "ffmpeg",
                             "-i",
@@ -477,7 +480,7 @@ class VideoNode(Node):
                             "-acodec",
                             "pcm_s16le",
                             "-ar",
-                            "22050",
+                            "44100",
                             "-ac",
                             "1",
                             "-y",
@@ -485,14 +488,32 @@ class VideoNode(Node):
                         ],
                         check=True,
                         capture_output=True,
+                        text=True,
                     )
 
-                    # Load extracted audio
-                    y, sr = librosa.load(tmp_audio_path, sr=22050)
+                    # Load extracted audio, preserving the sample rate
+                    y, sr = librosa.load(tmp_audio_path, sr=None, mono=True)
+                except subprocess.CalledProcessError as ffmpeg_error:
+                    print(f"FFmpeg extraction failed: {ffmpeg_error.stderr}")
+                    # Check if the video has no audio stream
+                    if "does not contain any stream" in ffmpeg_error.stderr or "Stream map" in ffmpeg_error.stderr:
+                        print(f"Video file {movie_path} appears to have no audio stream")
+                    raise RuntimeError(f"No audio could be extracted from video: {movie_path}")
                 finally:
                     # Clean up temp file
                     if os.path.exists(tmp_audio_path):
                         os.unlink(tmp_audio_path)
+
+            # Check if audio data was successfully loaded
+            if y is None or len(y) == 0:
+                print(f"Warning: No audio data loaded from {movie_path}")
+                return
+            
+            if sr is None or sr <= 0:
+                print(f"Warning: Invalid sample rate {sr} for {movie_path}")
+                return
+            
+            print(f"Successfully loaded audio: {len(y)} samples at {sr} Hz")
 
             # Compute STFT using the new approach
             binsize = 2**10  # 1024 samples
