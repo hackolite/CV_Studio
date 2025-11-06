@@ -24,6 +24,9 @@ jobs:
     name: Run Audio Agent Tests
     runs-on: ubuntu-latest
     
+    permissions:
+      contents: read
+    
     strategy:
       matrix:
         python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
@@ -71,6 +74,9 @@ jobs:
     name: Smoke Test with Sample Audio
     runs-on: ubuntu-latest
     needs: test
+    
+    permissions:
+      contents: read
     
     steps:
     - name: Checkout repository
@@ -140,6 +146,9 @@ jobs:
   lint:
     name: Lint Python Code
     runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
     
     steps:
     - name: Checkout repository
