@@ -746,17 +746,6 @@ class VideoNode(Node):
                     # Calculate the indicator position within the window
                     indicator_col = spectrogram_col - start_col
 
-                    # Draw yellow vertical line at current position within the window
-                    if 0 <= indicator_col < spectrogram_window.shape[1]:
-                        # Yellow in BGR is (0, 255, 255)
-                        cv2.line(
-                            spectrogram_window,
-                            (indicator_col, 0),
-                            (indicator_col, spectrogram_window.shape[0] - 1),
-                            (0, 255, 255),
-                            2,
-                        )
-
                     # If window is smaller than expected (at start or end), pad with black
                     if spectrogram_window.shape[1] < window_width:
                         pad_width = window_width - spectrogram_window.shape[1]
@@ -777,6 +766,43 @@ class VideoNode(Node):
                             spectrogram_window = np.hstack(
                                 [padding, spectrogram_window]
                             )
+                            # Adjust indicator position after left padding
+                            indicator_col += pad_width
+
+                    # Draw boundary cursors (green) at start and end of the window
+                    # These show the full window (including padding) being sent to classification
+                    # Green in BGR is (0, 255, 0)
+                    start_cursor_col = 0
+                    end_cursor_col = spectrogram_window.shape[1] - 1
+                    
+                    # Draw start boundary cursor (left edge)
+                    cv2.line(
+                        spectrogram_window,
+                        (start_cursor_col, 0),
+                        (start_cursor_col, spectrogram_window.shape[0] - 1),
+                        (0, 255, 0),
+                        2,
+                    )
+                    
+                    # Draw end boundary cursor (right edge)
+                    cv2.line(
+                        spectrogram_window,
+                        (end_cursor_col, 0),
+                        (end_cursor_col, spectrogram_window.shape[0] - 1),
+                        (0, 255, 0),
+                        2,
+                    )
+
+                    # Draw yellow vertical line at current position within the window (middle cursor)
+                    if 0 <= indicator_col < spectrogram_window.shape[1]:
+                        # Yellow in BGR is (0, 255, 255)
+                        cv2.line(
+                            spectrogram_window,
+                            (indicator_col, 0),
+                            (indicator_col, spectrogram_window.shape[0] - 1),
+                            (0, 255, 255),
+                            2,
+                        )
 
                     spectrogram_bgr = spectrogram_window
                 else:
