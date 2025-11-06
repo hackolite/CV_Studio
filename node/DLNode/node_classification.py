@@ -362,9 +362,9 @@ class Node(Node):
             else:
                 debug_frame = self.draw_classification_info(
                     debug_frame,
-                    class_ids,
-                    class_scores,
-                    class_name_dict,
+                    result['class_ids'],
+                    result['class_scores'],
+                    result['class_names'],
                 )
 
             texture = self.convert_cv_to_dpg(
