@@ -11,8 +11,8 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 
-def test_yolo_cls_is_registered():
-    """Test that Yolo-cls is available in the classification node model dictionaries"""
+def setup_mocks():
+    """Setup common mocks for all tests"""
     import unittest.mock as mock
     
     # Mock all dependencies
@@ -21,6 +21,11 @@ def test_yolo_cls_is_registered():
     sys.modules['dearpygui'] = mock.MagicMock()
     sys.modules['dearpygui.dearpygui'] = mock.MagicMock()
     sys.modules['onnxruntime'] = mock.MagicMock()
+
+
+def test_yolo_cls_is_registered():
+    """Test that Yolo-cls is available in the classification node model dictionaries"""
+    setup_mocks()
     
     # Import the classification node module
     from node.DLNode import node_classification
@@ -43,14 +48,7 @@ def test_yolo_cls_is_registered():
 
 def test_yolo_cls_model_path_exists():
     """Test that the Yolo-cls model file exists at the configured path"""
-    import unittest.mock as mock
-    
-    # Mock all dependencies
-    sys.modules['numpy'] = mock.MagicMock()
-    sys.modules['cv2'] = mock.MagicMock()
-    sys.modules['dearpygui'] = mock.MagicMock()
-    sys.modules['dearpygui.dearpygui'] = mock.MagicMock()
-    sys.modules['onnxruntime'] = mock.MagicMock()
+    setup_mocks()
     
     # Import the classification node module
     from node.DLNode import node_classification
@@ -74,14 +72,7 @@ def test_yolo_cls_model_path_exists():
 
 def test_yolo_cls_class_is_imported():
     """Test that the YoloCls class is properly imported"""
-    import unittest.mock as mock
-    
-    # Mock all dependencies
-    sys.modules['numpy'] = mock.MagicMock()
-    sys.modules['cv2'] = mock.MagicMock()
-    sys.modules['dearpygui'] = mock.MagicMock()
-    sys.modules['dearpygui.dearpygui'] = mock.MagicMock()
-    sys.modules['onnxruntime'] = mock.MagicMock()
+    setup_mocks()
     
     # Import the classification node module
     from node.DLNode import node_classification
@@ -101,14 +92,7 @@ def test_yolo_cls_class_is_imported():
 
 def test_yolo_cls_uses_imagenet_classes():
     """Test that Yolo-cls uses ImageNet class names"""
-    import unittest.mock as mock
-    
-    # Mock all dependencies
-    sys.modules['numpy'] = mock.MagicMock()
-    sys.modules['cv2'] = mock.MagicMock()
-    sys.modules['dearpygui'] = mock.MagicMock()
-    sys.modules['dearpygui.dearpygui'] = mock.MagicMock()
-    sys.modules['onnxruntime'] = mock.MagicMock()
+    setup_mocks()
     
     # Import the classification node module
     from node.DLNode import node_classification
@@ -133,14 +117,7 @@ def test_yolo_cls_uses_imagenet_classes():
 
 def test_model_list_includes_yolo_cls():
     """Test that Yolo-cls appears in the model list that will be shown in the UI"""
-    import unittest.mock as mock
-    
-    # Mock all dependencies
-    sys.modules['numpy'] = mock.MagicMock()
-    sys.modules['cv2'] = mock.MagicMock()
-    sys.modules['dearpygui'] = mock.MagicMock()
-    sys.modules['dearpygui.dearpygui'] = mock.MagicMock()
-    sys.modules['onnxruntime'] = mock.MagicMock()
+    setup_mocks()
     
     # Import the classification node module
     from node.DLNode import node_classification

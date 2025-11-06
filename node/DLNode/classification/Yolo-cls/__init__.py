@@ -8,4 +8,3 @@ _yolo_cls_module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_yolo_cls_module)
 
 YoloCls = _yolo_cls_module.YoloCls
-
