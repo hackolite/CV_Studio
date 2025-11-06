@@ -10,6 +10,7 @@ import pytest
 import numpy as np
 import tempfile
 import json
+import soundfile as sf
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -69,7 +70,6 @@ def test_compute_mel_spectrogram_with_synthetic_audio():
     
     try:
         # Generate a simple sine wave
-        import soundfile as sf
         sample_rate = 22050
         duration = 1.0
         frequency = 440.0
@@ -203,7 +203,6 @@ def test_spectrogram_parameters():
         temp_wav = f.name
     
     try:
-        import soundfile as sf
         sample_rate = 16000
         duration = 0.5
         frequency = 1000.0

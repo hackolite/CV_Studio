@@ -73,7 +73,7 @@ def extract_audio_wav(video_path: str, output_wav_path: str, sample_rate: Option
             output_wav_path
         ])
         
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         
         if result.returncode == 0 and os.path.exists(output_wav_path):
             return True
