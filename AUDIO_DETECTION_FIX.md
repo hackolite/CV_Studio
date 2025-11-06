@@ -35,7 +35,7 @@ y, sr = librosa.load(movie_path, sr=None, mono=True)
 - Follows the pattern from the working notebook
 
 ### 2. Updated FFmpeg Extraction
-Changed the FFmpeg extraction sample rate from 22050 to 44100 Hz and added `text=True` for better error messages:
+Changed the FFmpeg extraction sample rate from 22050 to 44100 Hz and ensured consistency:
 
 ```python
 # Use 44100 Hz (standard sample rate) instead of 22050
@@ -46,19 +46,33 @@ result = subprocess.run(
     capture_output=True,
     text=True,  # Added for readable error messages
 )
+
+# Load extracted audio with sr=44100 to match FFmpeg extraction rate
+y, sr = librosa.load(tmp_audio_path, sr=44100, mono=True)
 ```
 
+**Why**: When FFmpeg is used as a fallback (when direct librosa load fails), we now:
+- Extract at 44100 Hz (standard rate)
+- Load with the same rate for consistency
+- Use text=True for better error messages
+
 ### 3. Enhanced Error Handling
-Added specific error handling for FFmpeg failures:
+Added specific error handling for FFmpeg failures with proper null checks:
 
 ```python
 except subprocess.CalledProcessError as ffmpeg_error:
-    print(f"FFmpeg extraction failed: {ffmpeg_error.stderr}")
+    error_msg = ffmpeg_error.stderr if ffmpeg_error.stderr else str(ffmpeg_error)
+    print(f"FFmpeg extraction failed: {error_msg}")
     # Check if the video has no audio stream
-    if "does not contain any stream" in ffmpeg_error.stderr or "Stream map" in ffmpeg_error.stderr:
+    if error_msg and ("does not contain any stream" in error_msg or "Stream map" in error_msg):
         print(f"Video file {movie_path} appears to have no audio stream")
     raise RuntimeError(f"No audio could be extracted from video: {movie_path}")
 ```
+
+**Why**: 
+- Safely accesses stderr (may be None)
+- Provides clear error messages when videos lack audio streams
+- Prevents AttributeError exceptions
 
 ### 4. Added Audio Data Validation
 Added checks to ensure audio was loaded correctly:

@@ -491,12 +491,13 @@ class VideoNode(Node):
                         text=True,
                     )
 
-                    # Load extracted audio, preserving the sample rate
-                    y, sr = librosa.load(tmp_audio_path, sr=None, mono=True)
+                    # Load extracted audio with sr=44100 to match FFmpeg extraction rate
+                    y, sr = librosa.load(tmp_audio_path, sr=44100, mono=True)
                 except subprocess.CalledProcessError as ffmpeg_error:
-                    print(f"FFmpeg extraction failed: {ffmpeg_error.stderr}")
+                    error_msg = ffmpeg_error.stderr if ffmpeg_error.stderr else str(ffmpeg_error)
+                    print(f"FFmpeg extraction failed: {error_msg}")
                     # Check if the video has no audio stream
-                    if "does not contain any stream" in ffmpeg_error.stderr or "Stream map" in ffmpeg_error.stderr:
+                    if error_msg and ("does not contain any stream" in error_msg or "Stream map" in error_msg):
                         print(f"Video file {movie_path} appears to have no audio stream")
                     raise RuntimeError(f"No audio could be extracted from video: {movie_path}")
                 finally:
