@@ -643,6 +643,7 @@ class VideoNode(Node):
 
         frame = None
         spectrogram_bgr = None
+        spectrogram_analysis = None
         if video_capture is not None:
             # Check frame timing for playback speed control
             current_time = time.time()
@@ -779,17 +780,39 @@ class VideoNode(Node):
                             )
 
                     spectrogram_bgr = spectrogram_window
+                    
+                    # Extract a smaller analysis window (1/10 of the full window width)
+                    # centered on the current playback position for efficient audio classification
+                    analysis_window_width = max(1, window_width // 10)
+                    analysis_half_window = analysis_window_width // 2
+                    
+                    # Calculate analysis window boundaries within the display window
+                    analysis_start = max(0, indicator_col - analysis_half_window)
+                    analysis_end = min(spectrogram_window.shape[1], analysis_start + analysis_window_width)
+                    
+                    # Adjust start if we're at the end
+                    if analysis_end == spectrogram_window.shape[1]:
+                        analysis_start = max(0, analysis_end - analysis_window_width)
+                    
+                    # Extract the analysis window (a small slice of the display window)
+                    spectrogram_analysis = spectrogram_window[:, analysis_start:analysis_end].copy()
                 else:
                     # No metadata available, show the entire spectrogram (fallback)
                     spectrogram_bgr = full_spectrogram.copy()
+                    # For analysis, use a slice from the middle (1/10 of width)
+                    analysis_window_width = max(1, full_spectrogram.shape[1] // 10)
+                    mid_col = full_spectrogram.shape[1] // 2
+                    analysis_start = max(0, mid_col - analysis_window_width // 2)
+                    analysis_end = min(full_spectrogram.shape[1], analysis_start + analysis_window_width)
+                    spectrogram_analysis = full_spectrogram[:, analysis_start:analysis_end].copy()
 
-                # Convert to DPG texture format and update
+                # Convert to DPG texture format and update (for display)
                 texture = self.convert_cv_to_dpg(
                     spectrogram_bgr, small_window_w, small_window_h
                 )
                 dpg_set_value(self.tag_node_output03_value_name, texture)
 
-        return {"image": frame, "json": None, "audio": spectrogram_bgr}
+        return {"image": frame, "json": None, "audio": spectrogram_analysis}
 
     def close(self, node_id):
         pass

@@ -28,19 +28,20 @@ def main():
     print("1. VIDEO NODE (node_video.py)")
     print("   └─> Reads video file with audio track")
     print("   └─> Generates mel-spectrogram from audio")
-    print("   └─> Returns: {'image': frame, 'audio': spectrogram_bgr}")
+    print("   └─> Extracts analysis window (~1/10 width) for efficient classification")
+    print("   └─> Returns: {'image': frame, 'audio': spectrogram_analysis}")
     print()
     
     print("2. CONNECTION TYPE")
     print("   └─> AUDIO type connection (TYPE_AUDIO)")
-    print("   └─> Carries spectrogram as BGR image")
+    print("   └─> Carries small spectrogram analysis window as BGR image")
     print("   └─> Stored in node_audio_dict")
     print()
     
     print("3. CLASSIFICATION NODE (node_classification.py)")
     print("   └─> Accepts both IMAGE and AUDIO connections")
     print("   └─> Calls get_input_frame(connection_list, node_image_dict, node_audio_dict)")
-    print("   └─> Retrieves spectrogram from node_audio_dict")
+    print("   └─> Retrieves spectrogram analysis window from node_audio_dict")
     print()
     
     print("4. RESNET50 MODEL (resnet50.py)")

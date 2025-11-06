@@ -69,13 +69,33 @@ def test_video_node_outputs_spectrogram_via_audio_key():
     with open(file_path, 'r') as f:
         content = f.read()
     
-    # Check that video node returns audio key with spectrogram
-    assert '"audio": spectrogram_bgr' in content, \
-        "Video node should output spectrogram via 'audio' key"
+    # Check that video node returns audio key with spectrogram (analysis window)
+    assert '"audio": spectrogram_analysis' in content, \
+        "Video node should output spectrogram analysis window via 'audio' key"
     assert 'TYPE_AUDIO' in content, \
         "Video node should have AUDIO output type defined"
+    assert 'spectrogram_analysis' in content, \
+        "Video node should create spectrogram_analysis for efficient classification"
     
     print("✓ Video node outputs spectrogram via 'audio' key")
+
+
+def test_analysis_window_size():
+    """Test that the analysis window is approximately 1/10 of the display window"""
+    
+    file_path = os.path.join(os.path.dirname(__file__), '..', 'node/InputNode/node_video.py')
+    with open(file_path, 'r') as f:
+        content = f.read()
+    
+    # Check that analysis window width is calculated as 1/10 of window width
+    assert 'window_width // 10' in content, \
+        "Analysis window should be approximately 1/10 of display window width"
+    assert 'analysis_window_width' in content, \
+        "Should define analysis_window_width variable"
+    assert 'spectrogram_analysis' in content, \
+        "Should extract spectrogram_analysis window"
+    
+    print("✓ Analysis window is correctly sized at ~1/10 of display window")
 
 
 def test_integration_flow():
@@ -101,6 +121,7 @@ if __name__ == '__main__':
         test_basenode_get_input_frame_supports_audio()
         test_resnet50_can_process_bgr_images()
         test_video_node_outputs_spectrogram_via_audio_key()
+        test_analysis_window_size()
         test_integration_flow()
         
         print("\n" + "="*70)
@@ -110,6 +131,7 @@ if __name__ == '__main__':
         print("  ✓ Accept spectrogram images from audio/sound type connections")
         print("  ✓ Process spectrograms just like regular BGR images")
         print("  ✓ Work seamlessly with video node's audio output")
+        print("  ✓ Analyze only ~1/10 of spectrogram for efficient classification")
         
     except AssertionError as e:
         print(f"\n✗ Test failed: {e}")
