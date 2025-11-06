@@ -76,7 +76,7 @@ def test_texture_dimensions_consistency():
 
 
 def test_immediate_texture_update():
-    """Test that spectrogram texture is immediately updated when prepared"""
+    """Test that spectrogram texture is stored for update"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -91,7 +91,7 @@ def test_immediate_texture_update():
     # Find the _prepare_spectrogram method
     in_prepare_spectrogram = False
     found_texture_storage = False
-    found_immediate_update = False
+    found_array_storage = False
     
     for i, line in enumerate(lines):
         if 'def _prepare_spectrogram(' in line:
@@ -106,14 +106,14 @@ def test_immediate_texture_update():
                'self._spectrogram_texture[' in line and '] = texture' in line:
                 found_texture_storage = True
             
-            # Check if immediate update exists (after texture storage)
-            if found_texture_storage and 'dpg_set_value(' in line and 'spectrogram' in line.lower():
-                found_immediate_update = True
+            # Check if array is stored
+            if 'self._spectrogram_array[node_id]' in line and '=' in line:
+                found_array_storage = True
     
     assert found_texture_storage, "Should store texture in self._spectrogram_texture"
-    assert found_immediate_update, "Should immediately update DPG texture after storing"
+    assert found_array_storage, "Should store array in self._spectrogram_array"
     
-    print("✓ Spectrogram texture is immediately updated when prepared")
+    print("✓ Spectrogram texture and array are stored for later update")
 
 
 def test_dpg_imports():

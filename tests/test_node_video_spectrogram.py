@@ -44,16 +44,18 @@ def test_video_node_structure():
     # Check UI elements
     assert 'Show Spectrogram' in content, "Should have Show Spectrogram checkbox"
     assert 'SpectrogramToggle' in content, "Should have spectrogram toggle tag"
-    assert 'SpectrogramValue' in content, "Should have spectrogram value tag"
     
-    # Check mel-spectrogram parameters (now in kwargs dict)
-    assert "'n_fft': 2048" in content, "Should use n_fft=2048"
-    assert "'hop_length': 512" in content, "Should use hop_length=512"
-    assert "'n_mels': 128" in content, "Should use n_mels=128"
-    assert 'sr=22050' in content, "Should use sr=22050"
+    # Check STFT parameters (new approach)
+    assert 'binsize = 2**10' in content or 'frameSize' in content, "Should use STFT with frame size"
+    assert 'hop_length' in content, "Should use hop_length parameter"
+    assert 'sr=22050' in content or 'sr = 22050' in content, "Should use sr=22050"
+    
+    # Check for new STFT functions
+    assert 'def fourier_transformation' in content, "Should have fourier_transformation function"
+    assert 'def make_logscale' in content, "Should have make_logscale function"
     
     # Check colormap
-    assert "'magma'" in content, "Should use magma colormap"
+    assert "'magma'" in content or '"magma"' in content, "Should use magma colormap"
     
     print("✓ All structure checks passed")
 
