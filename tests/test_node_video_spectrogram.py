@@ -54,8 +54,9 @@ def test_video_node_structure():
     assert 'def fourier_transformation' in content, "Should have fourier_transformation function"
     assert 'def make_logscale' in content, "Should have make_logscale function"
     
-    # Check colormap
-    assert "'magma'" in content or '"magma"' in content, "Should use magma colormap"
+    # Check colormap - now uses configurable colormap via utility function
+    assert 'apply_colormap_to_spectrogram' in content, "Should use apply_colormap_to_spectrogram function"
+    assert 'SPECTROGRAM_COLORMAP' in content, "Should have configurable colormap constant"
     
     print("✓ All structure checks passed")
 
