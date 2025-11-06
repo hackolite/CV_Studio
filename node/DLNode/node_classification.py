@@ -15,6 +15,11 @@ from node.DLNode.classification.MobileNetV3.mobilenet_v3 import MobileNetV3
 from node.DLNode.classification.EfficientNetB0.efficientnet import EfficientNetB0
 from node.DLNode.classification.ResNet50.resnet50 import ResNet50
 
+# Import YoloCls using importlib due to hyphenated directory name
+import importlib
+_yolo_cls_module = importlib.import_module('node.DLNode.classification.Yolo-cls')
+YoloCls = _yolo_cls_module.YoloCls
+
 from node.DLNode.classification.imagenet_class_names import imagenet_class_names
 
 from node.basenode import Node
@@ -147,6 +152,7 @@ class Node(Node):
         'MobileNetV3 Large': MobileNetV3,
         'EfficientNet B0': EfficientNetB0,
         'ResNet50': ResNet50,
+        'Yolo-cls': YoloCls,
     }
     _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/classification/'
     _model_path_setting = {
@@ -158,12 +164,15 @@ class Node(Node):
         _model_base_path + 'EfficientNetB0/model/EfficientNetB0.onnx',
         'ResNet50':
         _model_base_path + 'ResNet50/model/ResNet50.onnx',
+        'Yolo-cls':
+        _model_base_path + 'Yolo-cls/model/son.onnx',
     }
     _model_class_name_dict = {
         'MobileNetV3 Small': imagenet_class_names,
         'MobileNetV3 Large': imagenet_class_names,
         'EfficientNet B0': imagenet_class_names,
         'ResNet50': imagenet_class_names,
+        'Yolo-cls': imagenet_class_names,
     }
 
     _model_instance = {}
