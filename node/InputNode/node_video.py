@@ -460,6 +460,12 @@ class VideoNode(Node):
             # Use mono=True to ensure consistent mono audio processing
             try:
                 y, sr = librosa.load(movie_path, sr=None, mono=True)
+                
+                # Validate that the preserved sample rate is within reasonable bounds
+                # Typical audio sample rates range from 8 kHz (telephone) to 192 kHz (high-res audio)
+                if sr < 8000 or sr > 192000:
+                    print(f"Warning: Unusual sample rate {sr} Hz detected, resampling to 44100 Hz")
+                    y, sr = librosa.load(movie_path, sr=44100, mono=True)
             except Exception as e:
                 print(f"Direct audio load failed, trying ffmpeg extraction: {e}")
                 # Fallback: extract audio via ffmpeg
@@ -497,6 +503,7 @@ class VideoNode(Node):
                     error_msg = ffmpeg_error.stderr if ffmpeg_error.stderr else str(ffmpeg_error)
                     print(f"FFmpeg extraction failed: {error_msg}")
                     # Check if the video has no audio stream
+                    # Note: These error messages are based on FFmpeg output and may vary by version
                     if error_msg and ("does not contain any stream" in error_msg or "Stream map" in error_msg):
                         print(f"Video file {movie_path} appears to have no audio stream")
                     raise RuntimeError(f"No audio could be extracted from video: {movie_path}")
