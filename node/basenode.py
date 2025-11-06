@@ -100,6 +100,7 @@ class Node:
     def get_input_frame(self, connection_list, node_image_dict, node_audio_dict=None):
         """
         Récupère une frame depuis une connexion IMAGE ou AUDIO.
+        Returns: (frame, metadata) tuple where metadata is None for images or dict for audio
         """
         connection_info_src = ""
         connection_type_found = None
@@ -118,18 +119,25 @@ class Node:
                 break
 
         if not connection_info_src:
-            return None
+            return None, None
 
         # ✅ Chercher dans le bon dictionnaire selon le type
         frame = None
+        metadata = None
         if connection_type_found == self.TYPE_IMAGE:
             frame = node_image_dict.get(connection_info_src, None)
         elif connection_type_found == self.TYPE_AUDIO:
             # ✅ Le spectrogramme est dans node_audio_dict !
             if node_audio_dict is not None:
-                frame = node_audio_dict.get(connection_info_src, None)
+                audio_data = node_audio_dict.get(connection_info_src, None)
+                # Handle tuple format (spectrogram, frame_width)
+                if isinstance(audio_data, tuple) and len(audio_data) == 2:
+                    frame, frame_width = audio_data
+                    metadata = {"frame_width": frame_width}
+                else:
+                    frame = audio_data
 
-        return frame
+        return frame, metadata
 
     def get_setting_dict(self, node_id):
         self.tag_node_name = f"{node_id}:{self.node_tag}"

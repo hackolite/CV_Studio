@@ -72,6 +72,13 @@ class FactoryNode:
             node.tag_node_name + ":" + node.TYPE_FLOAT + ":Input05Value"
         )
 
+        node.tag_node_input06_name = (
+            node.tag_node_name + ":" + node.TYPE_INT + ":Input06"
+        )
+        node.tag_node_input06_value_name = (
+            node.tag_node_name + ":" + node.TYPE_INT + ":Input06Value"
+        )
+
         node.tag_node_output01_name = (
             node.tag_node_name + ":" + node.TYPE_IMAGE + ":Output01"
         )
@@ -268,6 +275,21 @@ class FactoryNode:
                     default_value=1.0,
                     min_value=0.25,
                     max_value=4.0,
+                    callback=None,
+                )
+
+            # Frame slider for spectrogram window size
+            with dpg.node_attribute(
+                tag=node.tag_node_input06_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_int(
+                    tag=node.tag_node_input06_value_name,
+                    label="Frame Width",
+                    width=node._small_window_w - 80,
+                    default_value=small_window_w,
+                    min_value=60,
+                    max_value=small_window_w,
                     callback=None,
                 )
 
@@ -599,6 +621,9 @@ class VideoNode(Node):
         tag_node_input05_value_name = (
             tag_node_name + ":" + self.TYPE_FLOAT + ":Input05Value"
         )
+        tag_node_input06_value_name = (
+            tag_node_name + ":" + self.TYPE_INT + ":Input06Value"
+        )
 
         output_value01_tag = tag_node_name + ":" + self.TYPE_IMAGE + ":Output01Value"
         tag_node_output_image = tag_node_name + ":" + self.TYPE_IMAGE + ":Output01Value"
@@ -637,6 +662,7 @@ class VideoNode(Node):
         skip_rate = int(dpg_get_value(tag_node_input03_value_name))
         target_fps = int(dpg_get_value(tag_node_input04_value_name))
         playback_speed = float(dpg_get_value(tag_node_input05_value_name))
+        frame_width = int(dpg_get_value(tag_node_input06_value_name))
 
         if video_capture is not None and use_pref_counter:
             start_time = time.monotonic()
@@ -728,8 +754,8 @@ class VideoNode(Node):
                     spectrogram_col = int(current_sample / hop_length)
 
                     # Extract a sliding window around the current position
-                    # Window width matches the display width for 1:1 pixel mapping
-                    window_width = small_window_w
+                    # Use frame_width slider value instead of full window width
+                    window_width = frame_width
                     half_window = window_width // 2
 
                     # Calculate window boundaries
@@ -815,7 +841,14 @@ class VideoNode(Node):
                 )
                 dpg_set_value(self.tag_node_output03_value_name, texture)
 
-        return {"image": frame, "json": None, "audio": spectrogram_bgr}
+        # Prepare audio dict with spectrogram and metadata
+        audio_data = spectrogram_bgr
+        if audio_data is not None:
+            # Add frame_width metadata for classification node
+            # We'll pass it as a tuple: (spectrogram, frame_width)
+            audio_data = (spectrogram_bgr, frame_width)
+
+        return {"image": frame, "json": None, "audio": audio_data}
 
     def close(self, node_id):
         pass
@@ -834,6 +867,9 @@ class VideoNode(Node):
         tag_node_input05_value_name = (
             tag_node_name + ":" + self.TYPE_FLOAT + ":Input05Value"
         )
+        tag_node_input06_value_name = (
+            tag_node_name + ":" + self.TYPE_INT + ":Input06Value"
+        )
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -841,6 +877,7 @@ class VideoNode(Node):
         skip_rate = int(dpg_get_value(tag_node_input03_value_name))
         target_fps = int(dpg_get_value(tag_node_input04_value_name))
         playback_speed = float(dpg_get_value(tag_node_input05_value_name))
+        frame_width = int(dpg_get_value(tag_node_input06_value_name))
 
         setting_dict = {}
         setting_dict["ver"] = self._ver
@@ -849,6 +886,7 @@ class VideoNode(Node):
         setting_dict[tag_node_input03_value_name] = skip_rate
         setting_dict[tag_node_input04_value_name] = target_fps
         setting_dict[tag_node_input05_value_name] = playback_speed
+        setting_dict[tag_node_input06_value_name] = frame_width
 
         return setting_dict
 
@@ -866,16 +904,21 @@ class VideoNode(Node):
         tag_node_input05_value_name = (
             tag_node_name + ":" + self.TYPE_FLOAT + ":Input05Value"
         )
+        tag_node_input06_value_name = (
+            tag_node_name + ":" + self.TYPE_INT + ":Input06Value"
+        )
 
         loop_flag = setting_dict[tag_node_input02_value_name]
         skip_rate = int(setting_dict[tag_node_input03_value_name])
         target_fps = int(setting_dict.get(tag_node_input04_value_name, 24))
         playback_speed = float(setting_dict.get(tag_node_input05_value_name, 1.0))
+        frame_width = int(setting_dict.get(tag_node_input06_value_name, 240))
 
         dpg_set_value(tag_node_input02_value_name, loop_flag)
         dpg_set_value(tag_node_input03_value_name, skip_rate)
         dpg_set_value(tag_node_input04_value_name, target_fps)
         dpg_set_value(tag_node_input05_value_name, playback_speed)
+        dpg_set_value(tag_node_input06_value_name, frame_width)
 
     def _callback_file_select(self, sender, data):
         if data["file_name"] != ".":

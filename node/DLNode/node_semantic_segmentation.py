@@ -263,7 +263,7 @@ class Node(Node):
                 dpg_set_value(destination_tag, input_value)
 
         # 画像取得
-        frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
+        frame, _ = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
 
         # スコア閾値
         score_th = round(float(dpg_get_value(input_value03_tag)), 3)

@@ -204,7 +204,7 @@ class Node(Node):
                 input_value = min([self._max_val, input_value])
                 dpg_set_value(destination_tag, input_value)
 
-        frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
+        frame, _ = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
 
 
         provider = 'CPU'

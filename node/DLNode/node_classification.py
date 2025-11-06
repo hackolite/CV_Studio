@@ -232,7 +232,12 @@ class Node(Node):
                 connection_info_src = ':'.join(connection_info_src)
 
         # 画像取得
-        frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
+        frame, audio_metadata = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
+        
+        # Extract frame_width from metadata if available (for yolo-cls)
+        frame_width = None
+        if audio_metadata is not None and 'frame_width' in audio_metadata:
+            frame_width = audio_metadata['frame_width']
 
         # CPU/GPU選択状態取得
         provider = 'CPU'
@@ -312,8 +317,19 @@ class Node(Node):
                 result['od_class_names'] = od_class_names
                 result['od_score_th'] = od_score_th
             else:
+                # Prepare frame for inference
+                inference_frame = frame
+                
+                # For yolo-cls with spectrogram: resize based on frame_width if provided
+                if model_name == 'Yolo-cls' and frame_width is not None:
+                    import cv2
+                    # Resize spectrogram width to match the frame_width slider
+                    # Keep the same height
+                    h = frame.shape[0]
+                    inference_frame = cv2.resize(frame, (frame_width, h), interpolation=cv2.INTER_AREA)
+                
                 class_scores, class_ids = self._model_instance[
-                    model_name_with_provider](frame)
+                    model_name_with_provider](inference_frame)
                 result['use_object_detection'] = False
                 result['class_ids'] = class_ids.tolist()
                 result['class_scores'] = class_scores.tolist()
