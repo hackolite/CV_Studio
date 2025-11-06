@@ -29,7 +29,8 @@ def test_video_node_has_frame_slider():
     sys.modules['matplotlib.cm'] = mock.MagicMock()
     
     # Read the source code
-    with open('node/InputNode/node_video.py', 'r') as f:
+    video_node_path = os.path.join(os.path.dirname(__file__), '..', 'node', 'InputNode', 'node_video.py')
+    with open(video_node_path, 'r') as f:
         content = f.read()
     
     # Check that Input06 is defined
@@ -40,15 +41,16 @@ def test_video_node_has_frame_slider():
         "Video node should have tag_node_input06_value_name for frame slider"
     
     # Check that the slider is added with correct label
-    assert 'label="Frame Width"' in content, \
-        "Frame slider should have 'Frame Width' label"
+    assert 'label="Frame Width (px)"' in content, \
+        "Frame slider should have 'Frame Width (px)' label"
     
     print("✓ Video node has frame slider UI element (Input06)")
 
 
 def test_frame_slider_in_settings():
     """Test that frame slider value is saved/loaded in settings"""
-    with open('node/InputNode/node_video.py', 'r') as f:
+    video_node_path = os.path.join(os.path.dirname(__file__), '..', 'node', 'InputNode', 'node_video.py')
+    with open(video_node_path, 'r') as f:
         content = f.read()
     
     # Check that frame_width is in get_setting_dict
@@ -67,7 +69,8 @@ def test_frame_slider_in_settings():
 
 def test_frame_width_passed_in_audio_metadata():
     """Test that frame_width is passed through audio metadata"""
-    with open('node/InputNode/node_video.py', 'r') as f:
+    video_node_path = os.path.join(os.path.dirname(__file__), '..', 'node', 'InputNode', 'node_video.py')
+    with open(video_node_path, 'r') as f:
         content = f.read()
     
     # Check that frame_width is used in spectrogram windowing
@@ -83,7 +86,8 @@ def test_frame_width_passed_in_audio_metadata():
 
 def test_get_input_frame_returns_metadata():
     """Test that get_input_frame returns (frame, metadata) tuple"""
-    with open('node/basenode.py', 'r') as f:
+    basenode_path = os.path.join(os.path.dirname(__file__), '..', 'node', 'basenode.py')
+    with open(basenode_path, 'r') as f:
         content = f.read()
     
     # Check that get_input_frame returns tuple
@@ -108,7 +112,8 @@ def test_get_input_frame_returns_metadata():
 
 def test_classification_node_uses_frame_width():
     """Test that classification node uses frame_width for yolo-cls"""
-    with open('node/DLNode/node_classification.py', 'r') as f:
+    classification_path = os.path.join(os.path.dirname(__file__), '..', 'node', 'DLNode', 'node_classification.py')
+    with open(classification_path, 'r') as f:
         content = f.read()
     
     # Check that classification node gets metadata from get_input_frame
@@ -143,7 +148,8 @@ def test_backward_compatibility():
     ]
     
     for node_file in test_nodes:
-        with open(node_file, 'r') as f:
+        file_path = os.path.join(os.path.dirname(__file__), '..', node_file)
+        with open(file_path, 'r') as f:
             content = f.read()
         
         # Check that nodes unpack the tuple correctly (discarding metadata)
@@ -157,7 +163,8 @@ def test_backward_compatibility():
 
 def test_frame_slider_range():
     """Test that frame slider has appropriate min/max values"""
-    with open('node/InputNode/node_video.py', 'r') as f:
+    video_node_path = os.path.join(os.path.dirname(__file__), '..', 'node', 'InputNode', 'node_video.py')
+    with open(video_node_path, 'r') as f:
         content = f.read()
     
     # Check slider range

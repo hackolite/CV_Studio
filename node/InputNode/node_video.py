@@ -285,7 +285,7 @@ class FactoryNode:
             ):
                 dpg.add_slider_int(
                     tag=node.tag_node_input06_value_name,
-                    label="Frame Width",
+                    label="Frame Width (px)",
                     width=node._small_window_w - 80,
                     default_value=small_window_w,
                     min_value=60,

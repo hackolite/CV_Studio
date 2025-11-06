@@ -5,6 +5,7 @@ import time
 import os
 
 import numpy as np
+import cv2
 import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
@@ -322,7 +323,6 @@ class Node(Node):
                 
                 # For yolo-cls with spectrogram: resize based on frame_width if provided
                 if model_name == 'Yolo-cls' and frame_width is not None:
-                    import cv2
                     # Resize spectrogram width to match the frame_width slider
                     # Keep the same height
                     h = frame.shape[0]
