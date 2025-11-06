@@ -24,7 +24,7 @@ from node.InputNode.spectrogram_utils import (
 )
 
 
-def generate_test_spectrogram(height=256, width=512):
+def generate_test_spectrogram(height=256, width=512, seed=42):
     """
     Generate a synthetic 2D spectrogram for testing.
     Creates a gradient pattern with some frequency bands.
@@ -32,10 +32,14 @@ def generate_test_spectrogram(height=256, width=512):
     Args:
         height: Height of the spectrogram (frequency bins)
         width: Width of the spectrogram (time frames)
+        seed: Random seed for reproducibility
     
     Returns:
         np.ndarray: 2D array representing a spectrogram
     """
+    # Set random seed for reproducibility
+    np.random.seed(seed)
+    
     # Create a gradient pattern
     x = np.linspace(0, 1, width)
     y = np.linspace(0, 1, height)
@@ -66,7 +70,6 @@ def test_apply_colormap_cv2_basic():
     assert not np.all(result[..., 0] == result[..., 1]), "Red and Green channels should differ"
     assert not np.all(result[..., 1] == result[..., 2]), "Green and Blue channels should differ"
     
-    print("✓ test_apply_colormap_cv2_basic passed")
 
 
 def test_apply_colormap_cv2_different_colormaps():
@@ -85,7 +88,6 @@ def test_apply_colormap_cv2_different_colormaps():
         assert result.shape == (64, 128, 3), f"Output shape should be (64, 128, 3) for colormap {cmap}"
         assert result.dtype == np.uint8, f"Output dtype should be uint8 for colormap {cmap}"
     
-    print("✓ test_apply_colormap_cv2_different_colormaps passed")
 
 
 def test_apply_colormap_mpl_basic():
@@ -103,7 +105,6 @@ def test_apply_colormap_mpl_basic():
     # Verify that channels are not identical (should be colored, not grayscale)
     assert not np.all(result[..., 0] == result[..., 1]), "Red and Green channels should differ"
     
-    print("✓ test_apply_colormap_mpl_basic passed")
 
 
 def test_apply_colormap_mpl_different_colormaps():
@@ -117,7 +118,6 @@ def test_apply_colormap_mpl_different_colormaps():
         assert result.shape == (64, 128, 3), f"Output shape should be (64, 128, 3) for colormap {cmap}"
         assert result.dtype == np.uint8, f"Output dtype should be uint8 for colormap {cmap}"
     
-    print("✓ test_apply_colormap_mpl_different_colormaps passed")
 
 
 def test_apply_colormap_wrapper_cv2():
@@ -130,7 +130,6 @@ def test_apply_colormap_wrapper_cv2():
         assert result.shape == (100, 200, 3), f"Output shape should be (100, 200, 3) for {cmap_name}"
         assert result.dtype == np.uint8, f"Output dtype should be uint8 for {cmap_name}"
     
-    print("✓ test_apply_colormap_wrapper_cv2 passed")
 
 
 def test_apply_colormap_wrapper_mpl():
@@ -143,7 +142,6 @@ def test_apply_colormap_wrapper_mpl():
         assert result.shape == (100, 200, 3), f"Output shape should be (100, 200, 3) for {cmap_name}"
         assert result.dtype == np.uint8, f"Output dtype should be uint8 for {cmap_name}"
     
-    print("✓ test_apply_colormap_wrapper_mpl passed")
 
 
 def test_edge_case_uniform_values():
@@ -159,7 +157,6 @@ def test_edge_case_uniform_values():
     assert result_cv2.dtype == np.uint8, "CV2 result should be uint8"
     assert result_mpl.dtype == np.uint8, "MPL result should be uint8"
     
-    print("✓ test_edge_case_uniform_values passed")
 
 
 def test_edge_case_nan_values():
@@ -175,7 +172,6 @@ def test_edge_case_nan_values():
     assert result_mpl.dtype == np.uint8, "Result should be uint8"
     assert np.all(np.isfinite(result_mpl)), "Result should not contain NaN or Inf"
     
-    print("✓ test_edge_case_nan_values passed")
 
 
 def test_invalid_input_dimensions():
@@ -190,7 +186,6 @@ def test_invalid_input_dimensions():
     with pytest.raises(ValueError):
         apply_colormap_cv2(arr_3d)
     
-    print("✓ test_invalid_input_dimensions passed")
 
 
 def test_save_colormap_example():
@@ -229,7 +224,6 @@ def test_save_colormap_example():
         
         print(f"  Saved example: {output_path}")
     
-    print("✓ test_save_colormap_example passed")
 
 
 def test_channels_not_identical():
@@ -259,22 +253,3 @@ def test_channels_not_identical():
     # For colored images, most pixels should have different channel values
     total_pixels = r_channel.size
     assert r_g_diff > total_pixels * 0.5, "More than 50% of pixels should differ in R-G channels"
-    
-    print("✓ test_channels_not_identical passed")
-
-
-if __name__ == '__main__':
-    # Run all tests
-    test_apply_colormap_cv2_basic()
-    test_apply_colormap_cv2_different_colormaps()
-    test_apply_colormap_mpl_basic()
-    test_apply_colormap_mpl_different_colormaps()
-    test_apply_colormap_wrapper_cv2()
-    test_apply_colormap_wrapper_mpl()
-    test_edge_case_uniform_values()
-    test_edge_case_nan_values()
-    test_invalid_input_dimensions()
-    test_save_colormap_example()
-    test_channels_not_identical()
-    
-    print("\n✓ All spectrogram colormap tests passed!")

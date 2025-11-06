@@ -122,8 +122,9 @@ def apply_colormap_to_spectrogram(arr2d, method='cv2', cmap='INFERNO'):
         if hasattr(cv2, colormap_attr):
             cv_colormap = getattr(cv2, colormap_attr)
         else:
-            # Default to INFERNO if colormap not found
-            print(f"Warning: Colormap '{cmap}' not found, using INFERNO as fallback")
+            # Default to INFERNO if colormap not found (use logging instead of print)
+            import warnings
+            warnings.warn(f"Colormap '{cmap}' not found, using INFERNO as fallback", UserWarning)
             cv_colormap = cv2.COLORMAP_INFERNO
         
         return apply_colormap_cv2(arr2d, colormap=cv_colormap)
