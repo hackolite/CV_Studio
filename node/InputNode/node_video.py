@@ -691,6 +691,64 @@ class VideoNode(Node):
         chunk_index = max(0, min(chunk_index, len(self._spectrogram_chunks[node_id]) - 1))
         
         return self._spectrogram_chunks[node_id][chunk_index]
+    
+    def _add_playback_cursor_to_spectrogram(self, spectrogram_bgr, node_id, frame_number):
+        """
+        Add a yellow vertical cursor to the spectrogram showing current playback position.
+        
+        Args:
+            spectrogram_bgr: Spectrogram image (BGR format)
+            node_id: Node identifier
+            frame_number: Current frame number
+            
+        Returns:
+            Spectrogram with yellow cursor overlay
+        """
+        if node_id not in self._chunk_metadata:
+            return spectrogram_bgr
+        
+        # Make a copy to avoid modifying the original
+        spectrogram_with_cursor = spectrogram_bgr.copy()
+        
+        metadata = self._chunk_metadata[node_id]
+        fps = metadata['fps']
+        chunk_duration = metadata['chunk_duration']
+        step_duration = metadata['step_duration']
+        
+        # Calculate current time from frame number
+        current_time = frame_number / fps if fps > 0 else 0
+        
+        # Calculate chunk index and time within chunk
+        chunk_index = int(current_time / step_duration)
+        chunk_start_time = chunk_index * step_duration
+        time_within_chunk = current_time - chunk_start_time
+        
+        # Calculate cursor position as a fraction of chunk duration
+        # The spectrogram represents chunk_duration seconds of audio
+        cursor_position_ratio = time_within_chunk / chunk_duration if chunk_duration > 0 else 0
+        
+        # Clamp to valid range [0, 1]
+        cursor_position_ratio = max(0.0, min(1.0, cursor_position_ratio))
+        
+        # Calculate pixel position (cursor x-coordinate)
+        height, width = spectrogram_with_cursor.shape[:2]
+        cursor_x = int(cursor_position_ratio * width)
+        
+        # Draw yellow vertical line (BGR format: yellow is (0, 255, 255))
+        # Draw a thicker line (3 pixels) for better visibility
+        line_thickness = 3
+        for offset in range(-line_thickness // 2, line_thickness // 2 + 1):
+            x_pos = cursor_x + offset
+            if 0 <= x_pos < width:
+                cv2.line(
+                    spectrogram_with_cursor,
+                    (x_pos, 0),
+                    (x_pos, height - 1),
+                    (0, 255, 255),  # Yellow in BGR
+                    1
+                )
+        
+        return spectrogram_with_cursor
 
 
 
@@ -837,9 +895,14 @@ class VideoNode(Node):
                 spectrogram_bgr = self._get_spectrogram_for_frame(str(node_id), current_frame_num)
                 
                 if spectrogram_bgr is not None:
+                    # Add yellow cursor to show current playback position
+                    spectrogram_with_cursor = self._add_playback_cursor_to_spectrogram(
+                        spectrogram_bgr, str(node_id), current_frame_num
+                    )
+                    
                     # Convert to DPG texture format and update
                     texture = self.convert_cv_to_dpg(
-                        spectrogram_bgr, small_window_w, small_window_h
+                        spectrogram_with_cursor, small_window_w, small_window_h
                     )
                     dpg_set_value(self.tag_node_output03_value_name, texture)
 
