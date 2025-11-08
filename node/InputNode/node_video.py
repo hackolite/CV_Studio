@@ -582,6 +582,47 @@ class VideoNode(Node):
             
             print(f"✅ Audio extracted (SR: {sr} Hz, Duration: {len(y)/sr:.2f}s)")
             
+            # Step 2.5: Save extracted audio as MP3 file
+            try:
+                # Create audio filename based on video path
+                video_dir = os.path.dirname(movie_path)
+                video_basename = os.path.splitext(os.path.basename(movie_path))[0]
+                audio_mp3_path = os.path.join(video_dir, f"{video_basename}_audio.mp3")
+                
+                # Use ffmpeg to convert the audio array to MP3
+                # First save as temporary WAV, then convert to MP3
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
+                    tmp_wav_path = tmp_wav.name
+                    sf.write(tmp_wav_path, y, sr)
+                
+                try:
+                    # Convert WAV to MP3 using ffmpeg
+                    subprocess.run(
+                        [
+                            "ffmpeg",
+                            "-i", tmp_wav_path,
+                            "-codec:a", "libmp3lame",
+                            "-qscale:a", "2",  # High quality MP3
+                            "-y", audio_mp3_path,
+                        ],
+                        check=True,
+                        capture_output=True,
+                    )
+                    print(f"💾 Audio saved as MP3: {audio_mp3_path}")
+                except subprocess.CalledProcessError as e:
+                    print(f"⚠️ Failed to convert to MP3, saving as WAV instead: {e}")
+                    # Fallback: keep the WAV file
+                    audio_wav_path = os.path.join(video_dir, f"{video_basename}_audio.wav")
+                    sf.write(audio_wav_path, y, sr)
+                    print(f"💾 Audio saved as WAV: {audio_wav_path}")
+                finally:
+                    # Clean up temporary WAV file
+                    if os.path.exists(tmp_wav_path):
+                        os.unlink(tmp_wav_path)
+                        
+            except Exception as e:
+                print(f"⚠️ Failed to save audio file: {e}")
+            
             # Step 3: Chunk audio with sliding window
             print(f"✂️ Chunking audio (chunk: {chunk_duration}s, step: {step_duration}s)...")
             chunk_samples = int(chunk_duration * sr)
@@ -695,8 +736,10 @@ class VideoNode(Node):
     def _add_playback_cursor_to_spectrogram(self, spectrogram_bgr, node_id, frame_number):
         """
         Add a yellow vertical cursor to the spectrogram showing current playback position.
-        On the first frame, the cursor moves. After that, the cursor stays fixed at 1/3 of the width
-        and the spectrogram scrolls to the left.
+        The cursor behavior has three phases:
+        1. Initial phase (first 1/3): cursor moves from left (0) to 1/3 of width
+        2. Middle phase (middle portion): cursor stays fixed at 1/3, spectrogram scrolls left
+        3. Final phase (last chunk): cursor moves from 1/3 to the end (right edge)
         
         Args:
             spectrogram_bgr: Spectrogram image (BGR format)
@@ -713,6 +756,7 @@ class VideoNode(Node):
         fps = metadata['fps']
         chunk_duration = metadata['chunk_duration']
         step_duration = metadata['step_duration']
+        num_chunks = metadata['num_chunks']
         
         # Calculate current time from frame number
         current_time = frame_number / fps if fps > 0 else 0
@@ -731,17 +775,26 @@ class VideoNode(Node):
         
         height, width = spectrogram_bgr.shape[:2]
         
-        # Fixed cursor position at 1/3 of the width (after the first portion)
+        # Fixed cursor position at 1/3 of the width (for middle phase)
         fixed_cursor_x = width // 3
         
-        # For the first portion (up to 1/3 of the spectrogram), cursor moves
-        # After that, cursor stays fixed and spectrogram scrolls
+        # Check if we're in the last chunk (final phase)
+        is_last_chunk = chunk_index >= num_chunks - 1
+        
+        # Three-phase cursor behavior
         if cursor_position_ratio <= 1.0 / 3.0:
-            # First portion: cursor moves from 0 to width/3
+            # Phase 1: First portion - cursor moves from 0 to width/3
             cursor_x = int(cursor_position_ratio * width)
             spectrogram_with_cursor = spectrogram_bgr.copy()
+        elif is_last_chunk:
+            # Phase 3: Last chunk - cursor moves from width/3 to end
+            # Map cursor_position_ratio from [0, 1] to [1/3, 1] of width
+            # When cursor_position_ratio is 0, cursor is at 1/3
+            # When cursor_position_ratio is 1, cursor is at width-1 (end)
+            cursor_x = int(fixed_cursor_x + cursor_position_ratio * (width - fixed_cursor_x - 1))
+            spectrogram_with_cursor = spectrogram_bgr.copy()
         else:
-            # After first portion: cursor stays at width/3, spectrogram scrolls left
+            # Phase 2: Middle portion - cursor stays at width/3, spectrogram scrolls left
             # Calculate how much to scroll based on progress beyond 1/3
             scroll_ratio = (cursor_position_ratio - 1.0 / 3.0) / (2.0 / 3.0)  # Progress in remaining 2/3
             scroll_pixels = int(scroll_ratio * (width - fixed_cursor_x))
