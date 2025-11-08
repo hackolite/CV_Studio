@@ -76,7 +76,7 @@ def test_texture_dimensions_consistency():
 
 
 def test_immediate_texture_update():
-    """Test that spectrogram texture is stored for update"""
+    """Test that spectrogram data is stored for update (new architecture)"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -88,32 +88,31 @@ def test_immediate_texture_update():
         content = f.read()
         lines = content.split('\n')
     
-    # Find the _prepare_spectrogram method
-    in_prepare_spectrogram = False
-    found_texture_storage = False
-    found_array_storage = False
+    # In the new architecture, _preprocess_video stores spectrogram chunks
+    in_preprocess_video = False
+    found_chunks_storage = False
+    found_metadata_storage = False
     
     for i, line in enumerate(lines):
-        if 'def _prepare_spectrogram(' in line:
-            in_prepare_spectrogram = True
-        elif in_prepare_spectrogram and 'def ' in line and 'def _prepare_spectrogram' not in line:
+        if 'def _preprocess_video(' in line:
+            in_preprocess_video = True
+        elif in_preprocess_video and 'def ' in line and 'def _preprocess_video' not in line:
             # Reached another method
-            in_prepare_spectrogram = False
+            in_preprocess_video = False
             
-        if in_prepare_spectrogram:
-            # Check if texture is stored
-            if 'self._spectrogram_texture[node_id] = texture' in line or \
-               'self._spectrogram_texture[' in line and '] = texture' in line:
-                found_texture_storage = True
+        if in_preprocess_video:
+            # Check if spectrogram chunks are stored
+            if 'self._spectrogram_chunks[node_id]' in line and '=' in line:
+                found_chunks_storage = True
             
-            # Check if array is stored
-            if 'self._spectrogram_array[node_id]' in line and '=' in line:
-                found_array_storage = True
+            # Check if metadata is stored
+            if 'self._chunk_metadata[node_id]' in line and '=' in line:
+                found_metadata_storage = True
     
-    assert found_texture_storage, "Should store texture in self._spectrogram_texture"
-    assert found_array_storage, "Should store array in self._spectrogram_array"
+    assert found_chunks_storage, "Should store chunks in self._spectrogram_chunks"
+    assert found_metadata_storage, "Should store metadata in self._chunk_metadata"
     
-    print("✓ Spectrogram texture and array are stored for later update")
+    print("✓ Spectrogram chunks and metadata are stored for later update")
 
 
 def test_dpg_imports():
