@@ -41,7 +41,7 @@ class YoloCls(object):
         )
         input_image = cv.cvtColor(input_image, cv.COLOR_BGR2RGB)
         input_image = input_image.transpose(2, 0, 1)  # HWC to CHW for NCHW format
-        input_image = np.expand_dims(input_image, axis=0).astype('float32')
+        input_image = np.expand_dims(input_image, axis=0).astype('float32') / 255.0
 
         # Inference
         input_name = self.onnx_session.get_inputs()[0].name
