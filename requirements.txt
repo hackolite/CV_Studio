@@ -13,3 +13,5 @@ pymongo
 librosa
 matplotlib
 soundfile
+scipy
+pandas
