@@ -737,9 +737,9 @@ class VideoNode(Node):
         """
         Add a yellow vertical cursor to the spectrogram showing current playback position.
         The cursor behavior has three phases:
-        1. Initial phase (first 1/3): cursor moves from left (0) to 1/3 of width
-        2. Middle phase (middle portion): cursor stays fixed at 1/3, spectrogram scrolls left
-        3. Final phase (last chunk): cursor moves from 1/3 to the end (right edge)
+        1. Initial phase (first 1/3 of video): cursor moves from left (0) to 1/3 of width
+        2. Middle phase (middle portion of video): cursor stays fixed at 1/3, spectrogram scrolls left
+        3. Final phase (last 1/3 of video): cursor moves from 1/3 to the end (right edge)
         
         Args:
             spectrogram_bgr: Spectrogram image (BGR format)
@@ -756,21 +756,25 @@ class VideoNode(Node):
         fps = metadata['fps']
         chunk_duration = metadata['chunk_duration']
         step_duration = metadata['step_duration']
-        num_chunks = metadata['num_chunks']
+        num_frames = metadata['num_frames']
         
         # Calculate current time from frame number
         current_time = frame_number / fps if fps > 0 else 0
         
-        # Calculate chunk index and time within chunk
+        # Calculate total video duration
+        total_duration = num_frames / fps if fps > 0 else 0
+        
+        # Calculate overall progress through the entire video (0.0 to 1.0)
+        video_progress = current_time / total_duration if total_duration > 0 else 0
+        video_progress = max(0.0, min(1.0, video_progress))
+        
+        # Calculate chunk index and time within chunk (for spectrogram scrolling in middle phase)
         chunk_index = int(current_time / step_duration)
         chunk_start_time = chunk_index * step_duration
         time_within_chunk = current_time - chunk_start_time
         
         # Calculate cursor position as a fraction of chunk duration
-        # The spectrogram represents chunk_duration seconds of audio
         cursor_position_ratio = time_within_chunk / chunk_duration if chunk_duration > 0 else 0
-        
-        # Clamp to valid range [0, 1]
         cursor_position_ratio = max(0.0, min(1.0, cursor_position_ratio))
         
         height, width = spectrogram_bgr.shape[:2]
@@ -778,36 +782,39 @@ class VideoNode(Node):
         # Fixed cursor position at 1/3 of the width (for middle phase)
         fixed_cursor_x = width // 3
         
-        # Check if we're in the last chunk (final phase)
-        is_last_chunk = chunk_index >= num_chunks - 1
-        
-        # Three-phase cursor behavior
-        if cursor_position_ratio <= 1.0 / 3.0:
-            # Phase 1: First portion - cursor moves from 0 to width/3
-            cursor_x = int(cursor_position_ratio * width)
+        # Three-phase cursor behavior based on overall video progress
+        if video_progress <= 1.0 / 3.0:
+            # Phase 1: First 1/3 of video - cursor moves from 0 to width/3
+            cursor_x = int(video_progress * 3.0 * fixed_cursor_x)  # Maps [0, 1/3] to [0, width/3]
             spectrogram_with_cursor = spectrogram_bgr.copy()
-        elif is_last_chunk:
-            # Phase 3: Last chunk - cursor moves from width/3 to end
-            # Map cursor_position_ratio from [0, 1] to [1/3, 1] of width
-            # When cursor_position_ratio is 0, cursor is at 1/3
-            # When cursor_position_ratio is 1, cursor is at width-1 (end)
-            cursor_x = int(fixed_cursor_x + cursor_position_ratio * (width - fixed_cursor_x - 1))
+        elif video_progress >= 2.0 / 3.0:
+            # Phase 3: Last 1/3 of video - cursor moves from width/3 to end
+            # Map video_progress from [2/3, 1] to cursor position [width/3, width-1]
+            phase3_progress = (video_progress - 2.0/3.0) / (1.0/3.0)  # Maps [2/3, 1] to [0, 1]
+            cursor_x = int(fixed_cursor_x + phase3_progress * (width - fixed_cursor_x - 1))
             spectrogram_with_cursor = spectrogram_bgr.copy()
         else:
-            # Phase 2: Middle portion - cursor stays at width/3, spectrogram scrolls left
-            # Calculate how much to scroll based on progress beyond 1/3
-            scroll_ratio = (cursor_position_ratio - 1.0 / 3.0) / (2.0 / 3.0)  # Progress in remaining 2/3
-            scroll_pixels = int(scroll_ratio * (width - fixed_cursor_x))
+            # Phase 2: Middle 1/3 of video - cursor stays at width/3, spectrogram scrolls left
+            # Use cursor_position_ratio for scrolling within the current chunk
+            if cursor_position_ratio <= 1.0 / 3.0:
+                # Within first 1/3 of chunk, cursor moves
+                cursor_x = int(cursor_position_ratio * width)
+            else:
+                # After first 1/3 of chunk, scroll the spectrogram
+                scroll_ratio = (cursor_position_ratio - 1.0 / 3.0) / (2.0 / 3.0)
+                scroll_pixels = int(scroll_ratio * (width - fixed_cursor_x))
+                
+                # Scroll the spectrogram to the left
+                spectrogram_with_cursor = np.zeros_like(spectrogram_bgr)
+                if scroll_pixels < width:
+                    spectrogram_with_cursor[:, :width - scroll_pixels] = spectrogram_bgr[:, scroll_pixels:]
+                    spectrogram_with_cursor[:, width - scroll_pixels:] = spectrogram_bgr[:, -1:]
+                
+                cursor_x = fixed_cursor_x
             
-            # Scroll the spectrogram to the left
-            spectrogram_with_cursor = np.zeros_like(spectrogram_bgr)
-            if scroll_pixels < width:
-                # Copy the scrolled portion
-                spectrogram_with_cursor[:, :width - scroll_pixels] = spectrogram_bgr[:, scroll_pixels:]
-                # Fill the right side with black or edge values
-                spectrogram_with_cursor[:, width - scroll_pixels:] = spectrogram_bgr[:, -1:]
-            
-            cursor_x = fixed_cursor_x
+            # If we didn't scroll, just copy
+            if cursor_position_ratio <= 1.0 / 3.0:
+                spectrogram_with_cursor = spectrogram_bgr.copy()
         
         # Draw yellow vertical line (BGR format: yellow is (0, 255, 255))
         # Draw a thicker line (3 pixels) for better visibility
