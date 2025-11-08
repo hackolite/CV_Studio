@@ -343,7 +343,7 @@ import numpy as np
 import soundfile as sf
 import librosa
 
-def chunk_audio_wav_or_mp3(input_audio, output_folder, chunk_duration=5.0, step_duration=0.25):
+def chunk_audio_wav_or_mp3(input_audio, output_folder, chunk_duration=5.0, step_duration=1.0):
     os.makedirs(output_folder, exist_ok=True)
 
     print(f"📥 Chargement : {input_audio}")
@@ -503,7 +503,7 @@ class VideoNode(Node):
         self._spectrogram_chunks = {}  # Store pre-computed spectrograms per chunk
         self._chunk_metadata = {}  # Metadata for chunk-to-frame mapping
 
-    def _preprocess_video(self, node_id, movie_path, chunk_duration=5.0, step_duration=0.25):
+    def _preprocess_video(self, node_id, movie_path, chunk_duration=5.0, step_duration=1.0):
         """
         Pre-process video by extracting all frames and generating spectrograms for audio chunks.
         
@@ -518,7 +518,7 @@ class VideoNode(Node):
             node_id: Node identifier
             movie_path: Path to video file
             chunk_duration: Duration of each audio chunk in seconds (default: 5.0)
-            step_duration: Step size between chunks in seconds (default: 0.25)
+            step_duration: Step size between chunks in seconds (default: 1.0)
         """
         if not movie_path or not os.path.exists(movie_path):
             print(f"Video file not found: {movie_path}")

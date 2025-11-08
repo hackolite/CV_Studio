@@ -47,7 +47,7 @@ def test_preprocess_video_method():
     
     # Check parameters
     assert "chunk_duration=5.0" in content, "Should have chunk_duration parameter with default 5.0"
-    assert "step_duration=0.25" in content, "Should have step_duration parameter with default 0.25"
+    assert "step_duration=1.0" in content, "Should have step_duration parameter with default 1.0"
     
     # Check it extracts frames
     assert "cv2.VideoCapture" in content, "Should use cv2.VideoCapture to extract frames"
