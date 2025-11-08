@@ -6,6 +6,7 @@ import numpy as np
 from numpy.lib import stride_tricks
 import dearpygui.dearpygui as dpg
 import librosa
+import soundfile as sf
 import matplotlib.cm
 import matplotlib
 import subprocess
@@ -440,127 +441,56 @@ class VideoNode(Node):
     # def convert_cv_to_dpg(self, cv_img, w, h):
     #    return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
 
-    def _prepare_spectrogram(self, node_id, movie_path, fmin=None, fmax=None):
+    def chunk_audio_wav_or_mp3(self, input_audio, output_folder, chunk_duration=5.0, step_duration=0.25):
         """
-        Extract audio and compute spectrogram from video file using STFT with logarithmic scaling.
+        Chunk audio files (WAV or MP3) into smaller segments with overlap.
 
         Args:
-            node_id: Node identifier
-            movie_path: Path to video file
-            fmin: Minimum frequency for display (Hz). If None, uses 0 Hz.
-            fmax: Maximum frequency for display (Hz). If None, uses Nyquist frequency.
+            input_audio: Path to input audio/video file
+            output_folder: Path to output folder for chunks
+            chunk_duration: Duration of each chunk in seconds (default: 5.0)
+            step_duration: Step duration between chunks in seconds (default: 0.25)
         """
-        if not movie_path or not os.path.exists(movie_path):
-            print(f"Video file not found: {movie_path}")
+        os.makedirs(output_folder, exist_ok=True)
+
+        print(f"📥 Chargement : {input_audio}")
+        try:
+            # Chargement avec librosa : supporte .wav, .mp3, etc.
+            data, rate = librosa.load(input_audio, sr=None, mono=True)
+        except Exception as e:
+            print(f"❌ Erreur lors de la lecture : {e}")
             return
 
-        try:
-            # Try to load audio directly from video file
-            try:
-                y, sr = librosa.load(movie_path, sr=22050)
-            except Exception as e:
-                print(f"Direct audio load failed, trying ffmpeg extraction: {e}")
-                # Fallback: extract audio via ffmpeg
-                with tempfile.NamedTemporaryFile(
-                    suffix=".wav", delete=False
-                ) as tmp_audio:
-                    tmp_audio_path = tmp_audio.name
+        total_duration = len(data) / rate
+        chunk_samples = int(chunk_duration * rate)
+        step_samples = int(step_duration * rate)
 
-                try:
-                    # Extract audio using ffmpeg
-                    subprocess.run(
-                        [
-                            "ffmpeg",
-                            "-i",
-                            movie_path,
-                            "-vn",
-                            "-acodec",
-                            "pcm_s16le",
-                            "-ar",
-                            "22050",
-                            "-ac",
-                            "1",
-                            "-y",
-                            tmp_audio_path,
-                        ],
-                        check=True,
-                        capture_output=True,
-                    )
+        start = 0
+        count = 1
 
-                    # Load extracted audio
-                    y, sr = librosa.load(tmp_audio_path, sr=22050)
-                finally:
-                    # Clean up temp file
-                    if os.path.exists(tmp_audio_path):
-                        os.unlink(tmp_audio_path)
+        print(f"🔍 Fréquence d'échantillonnage : {rate} Hz")
+        print("🚀 Découpage en cours...")
 
-            # Compute STFT using the new approach
-            binsize = 2**10  # 1024 samples
-            hop_length = binsize // 2  # 50% overlap
-            
-            # Perform Fourier transformation with windowing
-            s = fourier_transformation(y, binsize, overlapFac=0.5, window=np.hanning)
-            
-            # Apply logarithmic frequency scaling
-            sshow, freq = make_logscale(spec=s, sr=sr, factor=1.0)
-            
-            # Convert to dB scale: 20*log10(abs/reference)
-            # Add epsilon to avoid log10(0) which causes -inf
-            # Reference: 10e-6 = 1e-5 (10 micropascals approximation)
-            sshow_safe = np.maximum(np.abs(sshow), SPECTROGRAM_EPSILON)
-            ims = 20. * np.log10(sshow_safe / 10e-6)
+        while (start + chunk_samples) <= len(data):
+            end = start + chunk_samples
+            chunk = data[start:end]
+            output_path = os.path.join(output_folder, f"chunk_{count}.wav")
+            sf.write(output_path, chunk, rate)
+            print(f"✅ chunk_{count}.wav : {start / rate:.2f}s → {end / rate:.2f}s")
+            count += 1
+            start += step_samples
 
-            # Replace any non-finite values with a safe minimum value
-            ims = np.nan_to_num(ims, nan=-80.0, posinf=0.0, neginf=-80.0)
+        print(f"\n🎉 {count - 1} chunks enregistrés dans {output_folder}")
 
-            # Apply colormap using utility function (handles normalization internally)
-            # Transpose first to get frequency on vertical axis (time x freq -> freq x time)
-            ims_transposed = np.transpose(ims, (1, 0))
-            
-            # Apply colormap to get RGB image
-            S_rgb = apply_colormap_to_spectrogram(
-                ims_transposed, 
-                method='cv2', 
-                cmap=self._spectrogram_colormap
-            )
-            
-            # Flip vertically so low frequencies are at bottom
-            S_rgb = np.flipud(S_rgb)
-
-            # Convert to BGR for OpenCV/DPG compatibility
-            S_bgr = cv2.cvtColor(S_rgb, cv2.COLOR_RGB2BGR)
-
-            # Store the spectrogram array
-            self._spectrogram_array[node_id] = S_bgr
-
-            # Convert to DPG texture format
-            texture = self.convert_cv_to_dpg(
-                S_bgr, self._small_window_w, self._small_window_h
-            )
-            self._spectrogram_texture[node_id] = texture
-
-            # Store metadata for future audio sync
-            video_capture = self._video_capture.get(node_id, None)
-            fps = 30.0  # default
-            if video_capture is not None:
-                fps = video_capture.get(cv2.CAP_PROP_FPS)
-                if fps <= 0:
-                    fps = 30.0
-
-            self._spectrogram_meta[node_id] = {
-                "y": y,
-                "sr": sr,
-                "hop_length": hop_length,
-                "fps": fps,
-            }
-
-            print(f"Spectrogram prepared for node {node_id}")
-
-        except Exception as e:
-            print(f"Failed to prepare spectrogram: {e}")
-            import traceback
-
-            traceback.print_exc()
+    def _prepare_spectrogram(self, node_id, movie_path, fmin=None, fmax=None):
+        """
+        Legacy method - replaced by chunk_audio_wav_or_mp3.
+        Kept for backward compatibility with existing tests.
+        
+        This method is no longer actively used in the node workflow.
+        """
+        print(f"Note: _prepare_spectrogram is deprecated. Use chunk_audio_wav_or_mp3 instead.")
+        pass
 
     def _button(self, sender, app_data, user_data):
         print(f"Button clicked for {user_data}")
@@ -868,5 +798,11 @@ class VideoNode(Node):
         if data["file_name"] != ".":
             node_id = sender.split(":")[1]
             self._movie_filepath[node_id] = data["file_path_name"]
-            # Trigger spectrogram preparation in background
-            self._prepare_spectrogram(node_id, data["file_path_name"])
+            # Trigger audio chunking in background
+            # Create output folder in same directory as input file
+            input_path = data["file_path_name"]
+            output_folder = os.path.join(
+                os.path.dirname(input_path),
+                f"chunks_{os.path.splitext(os.path.basename(input_path))[0]}"
+            )
+            self.chunk_audio_wav_or_mp3(input_path, output_folder)

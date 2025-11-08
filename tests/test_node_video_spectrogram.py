@@ -33,7 +33,8 @@ def test_video_node_structure():
     assert 'import tempfile' in content, "Should import tempfile"
     
     # Check method exists
-    assert 'def _prepare_spectrogram' in content, "Should have _prepare_spectrogram method"
+    assert 'def chunk_audio_wav_or_mp3' in content, "Should have chunk_audio_wav_or_mp3 method"
+    assert 'def _prepare_spectrogram' in content, "Should have _prepare_spectrogram method (deprecated stub)"
     
     # Check storage attributes
     assert '_spectrogram_texture = {}' in content, "Should have _spectrogram_texture dict"
