@@ -76,7 +76,7 @@ def test_texture_dimensions_consistency():
 
 
 def test_immediate_texture_update():
-    """Test that spectrogram texture is stored for update"""
+    """Test that _prepare_spectrogram is deprecated and replaced by chunk_audio_wav_or_mp3"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -90,8 +90,7 @@ def test_immediate_texture_update():
     
     # Find the _prepare_spectrogram method
     in_prepare_spectrogram = False
-    found_texture_storage = False
-    found_array_storage = False
+    found_deprecated_marker = False
     
     for i, line in enumerate(lines):
         if 'def _prepare_spectrogram(' in line:
@@ -101,19 +100,18 @@ def test_immediate_texture_update():
             in_prepare_spectrogram = False
             
         if in_prepare_spectrogram:
-            # Check if texture is stored
-            if 'self._spectrogram_texture[node_id] = texture' in line or \
-               'self._spectrogram_texture[' in line and '] = texture' in line:
-                found_texture_storage = True
-            
-            # Check if array is stored
-            if 'self._spectrogram_array[node_id]' in line and '=' in line:
-                found_array_storage = True
+            # Check if method is marked as deprecated/legacy
+            if 'deprecated' in line.lower() or 'legacy' in line.lower() or 'replaced' in line.lower():
+                found_deprecated_marker = True
     
-    assert found_texture_storage, "Should store texture in self._spectrogram_texture"
-    assert found_array_storage, "Should store array in self._spectrogram_array"
+    # The method should be marked as deprecated since it's replaced by chunk_audio_wav_or_mp3
+    assert found_deprecated_marker, "_prepare_spectrogram should be marked as deprecated/legacy"
     
-    print("✓ Spectrogram texture and array are stored for later update")
+    # Verify the replacement method exists
+    assert 'def chunk_audio_wav_or_mp3' in content, "Should have chunk_audio_wav_or_mp3 as replacement"
+    
+    print("✓ _prepare_spectrogram is properly deprecated and replaced by chunk_audio_wav_or_mp3")
+
 
 
 def test_dpg_imports():
