@@ -332,14 +332,9 @@ class FactoryNode:
 
 
 import os
-import pandas as pd
 import scipy.io.wavfile as wav
 import numpy as np
 import matplotlib.pyplot as plt
-
-
-import os
-import numpy as np
 import soundfile as sf
 import librosa
 
@@ -447,28 +442,6 @@ def fourier_transformation(sig, frameSize, overlapFac=0.5, window=np.hanning):
 
     return np.fft.rfft(frames)    
 
-# Charger le CSV
-esc50_df = pd.read_csv('/content/ESC-50-master/meta/esc50.csv')
-
-# Créer les dossiers
-spectrogram_root = '/content/ESC-50-master/spectrogram'
-os.makedirs(spectrogram_root, exist_ok=True)
-
-for cat in esc50_df['category'].unique():
-    os.makedirs(os.path.join(spectrogram_root, cat), exist_ok=True)
-
-# Générer tous les spectrogrammes
-for i, row in esc50_df.iterrows():
-    filename = row['filename']
-    category = row['category']
-    audio_path = os.path.join('/content/ESC-50-master/audio', filename)
-    save_path = os.path.join(spectrogram_root, category, filename.replace('.wav', '.jpg'))
-
-    try:
-        plot_spectrogram(audio_path, plotpath=save_path)
-    except Exception as e:
-        print(f"Erreur avec {filename}: {e}")
-
 class VideoNode(Node):
     _ver = "0.0.1"
 
@@ -519,43 +492,6 @@ class VideoNode(Node):
 
     # def convert_cv_to_dpg(self, cv_img, w, h):
     #    return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
-
-
-
-	def chunk_audio_wav_or_mp3(input_audio, output_folder, chunk_duration=5.0, step_duration=0.25):
-		os.makedirs(output_folder, exist_ok=True)
-
-		print(f"📥 Chargement : {input_audio}")
-		try:
-			# Chargement avec librosa : supporte .wav, .mp3, etc.
-			data, rate = librosa.load(input_audio, sr=None, mono=True)
-		except Exception as e:
-			print(f"❌ Erreur lors de la lecture : {e}")
-			return
-
-		total_duration = len(data) / rate
-		chunk_samples = int(chunk_duration * rate)
-		step_samples = int(step_duration * rate)
-
-		start = 0
-		count = 1
-
-		print(f"🔍 Fréquence d'échantillonnage : {rate} Hz")
-		print("🚀 Découpage en cours...")
-
-		while (start + chunk_samples) <= len(data):
-			end = start + chunk_samples
-			chunk = data[start:end]
-			output_path = os.path.join(output_folder, f"chunk_{count}.wav")
-			sf.write(output_path, chunk, rate)
-			print(f"✅ chunk_{count}.wav : {start / rate:.2f}s → {end / rate:.2f}s")
-			count += 1
-			start += step_samples
-
-		print(f"\n🎉 {count - 1} chunks enregistrés dans {output_folder}")
-
-
-
 
 
     def _prepare_spectrogram(self, node_id, movie_path, fmin=None, fmax=None):
