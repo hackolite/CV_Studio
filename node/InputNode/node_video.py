@@ -444,124 +444,98 @@ class VideoNode(Node):
 
     def _prepare_spectrogram(self, node_id, movie_path, fmin=None, fmax=None):
         """
-        Extract audio and compute spectrogram from video file using STFT with logarithmic scaling.
-
-        Args:
-            node_id: Node identifier
-            movie_path: Path to video file
-            fmin: Minimum frequency for display (Hz). If None, uses 0 Hz.
-            fmax: Maximum frequency for display (Hz). If None, uses Nyquist frequency.
+        Extract audio and compute spectrogram EXACTLY like training code.
+        Uses matplotlib to generate the same visual output.
         """
         if not movie_path or not os.path.exists(movie_path):
             print(f"Video file not found: {movie_path}")
             return
 
         try:
-            # Try to load audio directly from video file
+            # Extract audio using ffmpeg
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio:
+                tmp_audio_path = tmp_audio.name
+
             try:
-                y, sr = librosa.load(movie_path, sr=22050)
-            except Exception as e:
-                print(f"Direct audio load failed, trying ffmpeg extraction: {e}")
-                # Fallback: extract audio via ffmpeg
-                with tempfile.NamedTemporaryFile(
-                    suffix=".wav", delete=False
-                ) as tmp_audio:
-                    tmp_audio_path = tmp_audio.name
+                subprocess.run([
+                    "ffmpeg", "-i", movie_path,
+                    "-vn", "-acodec", "pcm_s16le",
+                    "-y", tmp_audio_path,
+                ], check=True, capture_output=True, stderr=subprocess.DEVNULL)
 
-                try:
-                    # Extract audio using ffmpeg
-                    subprocess.run(
-                        [
-                            "ffmpeg",
-                            "-i",
-                            movie_path,
-                            "-vn",
-                            "-acodec",
-                            "pcm_s16le",
-                            "-ar",
-                            "22050",
-                            "-ac",
-                            "1",
-                            "-y",
-                            tmp_audio_path,
-                        ],
-                        check=True,
-                        capture_output=True,
-                    )
-
-                    # Load extracted audio
-                    y, sr = librosa.load(tmp_audio_path, sr=22050)
-                finally:
-                    # Clean up temp file
-                    if os.path.exists(tmp_audio_path):
-                        os.unlink(tmp_audio_path)
-
-            # Compute STFT using the new approach
-            binsize = 2**10  # 1024 samples
-            hop_length = binsize // 2  # 50% overlap
-            
-            # Perform Fourier transformation with windowing
-            s = fourier_transformation(y, binsize, overlapFac=0.5, window=np.hanning)
-            
-            # Apply logarithmic frequency scaling
-            sshow, freq = make_logscale(spec=s, sr=sr, factor=1.0)
-            
-            # Convert to dB scale: 20*log10(abs/reference)
-            # Add epsilon to avoid log10(0) which causes -inf
-            # Reference: 10e-6 = 1e-5 (10 micropascals approximation)
-            sshow_safe = np.maximum(np.abs(sshow), SPECTROGRAM_EPSILON)
-            ims = 20. * np.log10(sshow_safe / 10e-6)
-
-            # Replace any non-finite values with a safe minimum value
-            ims = np.nan_to_num(ims, nan=-80.0, posinf=0.0, neginf=-80.0)
-
-            # Apply colormap using utility function (handles normalization internally)
-            # Transpose first to get frequency on vertical axis (time x freq -> freq x time)
-            ims_transposed = np.transpose(ims, (1, 0))
-            
-            # Apply colormap to get RGB image
-            S_rgb = apply_colormap_to_spectrogram(
-                ims_transposed, 
-                method='cv2', 
-                cmap=self._spectrogram_colormap
-            )
-            
-            # Flip vertically so low frequencies are at bottom
-            S_rgb = np.flipud(S_rgb)
-
-            # Convert to BGR for OpenCV/DPG compatibility
-            S_bgr = cv2.cvtColor(S_rgb, cv2.COLOR_RGB2BGR)
+                # Read audio with scipy (SAME as training code) - preserves native sample rate
+                import scipy.io.wavfile as wav
+                samplerate, samples = wav.read(tmp_audio_path)
+                
+                # STFT parameters (SAME as training)
+                binsize = 2**10
+                
+                # Compute STFT (SAME as training)
+                s = fourier_transformation(samples, binsize)
+                sshow, freq = make_logscale(s, factor=1.0, sr=samplerate)
+                ims = 20. * np.log10(np.abs(sshow) / 10e-6)
+                
+                # Create matplotlib figure (SAME as training)
+                import matplotlib
+                matplotlib.use('Agg')  # Non-interactive backend
+                import matplotlib.pyplot as plt
+                
+                timebins, freqbins = np.shape(ims)
+                
+                # Same figure size and colormap as training
+                fig = plt.figure(figsize=(15, 7.5))
+                plt.imshow(np.transpose(ims), origin="lower", aspect="auto", 
+                          cmap="jet", interpolation="none")
+                
+                # Same axes as training
+                xlocs = np.float32(np.linspace(0, timebins-1, 5))
+                plt.xticks(xlocs, ["%.02f" % l for l in 
+                                  ((xlocs*len(samples)/timebins)+(0.5*binsize))/samplerate])
+                ylocs = np.int16(np.round(np.linspace(0, freqbins-1, 10)))
+                plt.yticks(ylocs, ["%.02f" % freq[i] for i in ylocs])
+                
+                # Save to temporary file
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
+                    tmp_img_path = tmp_img.name
+                
+                plt.savefig(tmp_img_path, bbox_inches="tight")
+                plt.close(fig)
+                
+                # Read the generated image
+                S_bgr = cv2.imread(tmp_img_path)
+                
+                # Clean up temp image
+                os.unlink(tmp_img_path)
+                
+            finally:
+                # Clean up temp audio
+                if os.path.exists(tmp_audio_path):
+                    os.unlink(tmp_audio_path)
 
             # Store the spectrogram array
             self._spectrogram_array[node_id] = S_bgr
 
-            # Convert to DPG texture format
-            texture = self.convert_cv_to_dpg(
-                S_bgr, self._small_window_w, self._small_window_h
-            )
-            self._spectrogram_texture[node_id] = texture
-
-            # Store metadata for future audio sync
+            # Get video metadata
             video_capture = self._video_capture.get(node_id, None)
-            fps = 30.0  # default
+            fps = 30.0
             if video_capture is not None:
                 fps = video_capture.get(cv2.CAP_PROP_FPS)
                 if fps <= 0:
                     fps = 30.0
 
+            # Store metadata for audio sync
             self._spectrogram_meta[node_id] = {
-                "y": y,
-                "sr": sr,
-                "hop_length": hop_length,
+                "y": samples,
+                "sr": samplerate,
+                "hop_length": binsize // 2,
                 "fps": fps,
             }
 
-            print(f"Spectrogram prepared for node {node_id}")
+            print(f"Spectrogram prepared for node {node_id} (sr={samplerate}Hz)")
 
         except Exception as e:
             print(f"Failed to prepare spectrogram: {e}")
             import traceback
-
             traceback.print_exc()
 
     def _button(self, sender, app_data, user_data):
@@ -729,99 +703,49 @@ class VideoNode(Node):
                     fps = meta["fps"]
                     sr = meta["sr"]
                     hop_length = meta["hop_length"]
-
-                    # Get current frame position
+                    
+                    # Get current frame
                     current_frame = self._frame_count.get(str(node_id), 0)
-
-                    # Calculate current time in seconds
+                    
+                    # Calculate current TIME in seconds
                     current_time = current_frame / fps if fps > 0 else 0
-
-                    # Calculate spectrogram column position
-                    # Each spectrogram column represents hop_length samples
-                    current_sample = int(current_time * sr)
-                    spectrogram_col = int(current_sample / hop_length)
-
-                    # Extract a sliding window around the current position
-                    # Window width matches the display width for 1:1 pixel mapping
-                    window_width = small_window_w
-                    half_window = window_width // 2
-
-                    # Calculate window boundaries
-                    start_col = max(0, spectrogram_col - half_window)
-                    end_col = min(full_spectrogram.shape[1], start_col + window_width)
-
-                    # Adjust start if we're at the end of the spectrogram
-                    if end_col == full_spectrogram.shape[1]:
-                        start_col = max(0, end_col - window_width)
-
-                    # Extract the window
-                    spectrogram_window = full_spectrogram[:, start_col:end_col].copy()
-
-                    # Calculate the indicator position within the window
-                    indicator_col = spectrogram_col - start_col
-
-                    # If window is smaller than expected (at start or end), pad with black
-                    if spectrogram_window.shape[1] < window_width:
-                        pad_width = window_width - spectrogram_window.shape[1]
-                        # Pad on the right if we're at the start, on the left if at the end
-                        if start_col == 0:
-                            padding = np.zeros(
-                                (spectrogram_window.shape[0], pad_width, 3),
-                                dtype=np.uint8,
-                            )
-                            spectrogram_window = np.hstack(
-                                [spectrogram_window, padding]
-                            )
-                        else:
-                            padding = np.zeros(
-                                (spectrogram_window.shape[0], pad_width, 3),
-                                dtype=np.uint8,
-                            )
-                            spectrogram_window = np.hstack(
-                                [padding, spectrogram_window]
-                            )
-                            # Adjust indicator position after left padding
-                            indicator_col += pad_width
-
-                    # Draw boundary cursors (green) at start and end of the window
-                    # These show the full window (including padding) being sent to classification
-                    # Green in BGR is (0, 255, 0)
-                    start_cursor_col = 0
-                    end_cursor_col = spectrogram_window.shape[1] - 1
-
-                    # Draw start boundary cursor (left edge)
-                    cv2.line(
-                        spectrogram_window,
-                        (start_cursor_col, 0),
-                        (start_cursor_col, spectrogram_window.shape[0] - 1),
-                        (0, 255, 0),
-                        2,
-                    )
-
-                    # Draw end boundary cursor (right edge)
-                    cv2.line(
-                        spectrogram_window,
-                        (end_cursor_col, 0),
-                        (end_cursor_col, spectrogram_window.shape[0] - 1),
-                        (0, 255, 0),
-                        2,
-                    )
-
-                    # Draw yellow vertical line at current position within the window (middle cursor)
-                    if 0 <= indicator_col < spectrogram_window.shape[1]:
-                        # Yellow in BGR is (0, 255, 255)
-                        cv2.line(
-                            spectrogram_window,
-                            (indicator_col, 0),
-                            (indicator_col, spectrogram_window.shape[0] - 1),
-                            (0, 255, 255),
-                            2,
-                        )
-
-                    spectrogram_bgr = spectrogram_window
+                    
+                    # Calculate which 5-second CHUNK we're in (like training code)
+                    # chunk_duration = 5.0 seconds
+                    # step_duration = 0.25 seconds
+                    chunk_index = int(current_time / 0.25)  # Chunk every 0.25s
+                    chunk_start_time = chunk_index * 0.25
+                    chunk_end_time = chunk_start_time + 5.0
+                    
+                    # Convert to spectrogram columns
+                    start_sample = int(chunk_start_time * sr)
+                    end_sample = int(chunk_end_time * sr)
+                    
+                    start_col = int(start_sample / hop_length)
+                    end_col = int(end_sample / hop_length)
+                    
+                    # Extract chunk window
+                    start_col = max(0, start_col)
+                    end_col = min(full_spectrogram.shape[1], end_col)
+                    
+                    spectrogram_chunk = full_spectrogram[:, start_col:end_col].copy()
+                    
+                    # Resize to 640x640 (same as training imgsz=640)
+                    spectrogram_chunk = cv2.resize(spectrogram_chunk, (640, 640), 
+                                                  interpolation=cv2.INTER_AREA)
+                    
+                    # Draw indicator at current position
+                    relative_time = current_time - chunk_start_time
+                    indicator_x = int((relative_time / 5.0) * 640)
+                    if 0 <= indicator_x < 640:
+                        cv2.line(spectrogram_chunk, (indicator_x, 0), 
+                                (indicator_x, 639), (0, 255, 255), 2)
+                    
+                    spectrogram_bgr = spectrogram_chunk
                 else:
-                    # No metadata available, show the entire spectrogram (fallback)
-                    spectrogram_bgr = full_spectrogram.copy()
+                    # Fallback: show entire spectrogram
+                    spectrogram_bgr = cv2.resize(full_spectrogram, (640, 640), 
+                                                interpolation=cv2.INTER_AREA)
 
                 # Convert to DPG texture format and update
                 texture = self.convert_cv_to_dpg(
