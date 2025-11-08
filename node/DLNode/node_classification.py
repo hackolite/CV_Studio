@@ -390,25 +390,29 @@ class Node(Node):
     ):
         """
         Override base class method to add color differentiation based on ranking.
-        Position 1 (highest score): Red
-        Position 2: Green
-        Position 3: Blue
+        Position 1 (index 0, highest score): Red
+        Position 2 (index 1): Yellow
+        Position 3 (index 2): Blue
+        Position 4 (index 3): Violet
+        Position 5 (index 4): Magenta
         """
         debug_image = copy.deepcopy(image)
         
-        # Define colors for top 3 positions (BGR format)
+        # Define colors for top 5 positions (BGR format)
         rank_colors = [
-            (0, 0, 255),    # Position 1: Red (highest score)
-            (0, 255, 0),    # Position 2: Green
-            (255, 0, 0),    # Position 3: Blue
+            (0, 0, 255),      # Position 1 (index 0): Red (highest score)
+            (0, 255, 255),    # Position 2 (index 1): Yellow
+            (255, 0, 0),      # Position 3 (index 2): Blue
+            (255, 0, 128),    # Position 4 (index 3): Violet (purple-ish)
+            (255, 0, 255),    # Position 5 (index 4): Magenta
         ]
         
         for index, (class_score, class_id) in enumerate(zip(class_scores, class_ids)):
             score = "%.2f" % class_score
             text = "%s:%s(%s)" % (str(class_id), str(class_names[int(class_id)]), score)
             
-            # Select color based on position (1, 2, 3)
-            # Use default green for positions beyond 3
+            # Select color based on position (1, 2, 3, 4, 5)
+            # Use default green for positions beyond 5
             if index < len(rank_colors):
                 color = rank_colors[index]
             else:

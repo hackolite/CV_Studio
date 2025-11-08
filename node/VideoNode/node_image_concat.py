@@ -168,6 +168,63 @@ class Node(Node):
     def __init__(self):
         pass
 
+    def draw_classification_info(
+        self,
+        image,
+        class_ids,
+        class_scores,
+        class_names,
+    ):
+        """
+        Override base class method to display classification results
+        bigger and at the bottom left of the image.
+        """
+        debug_image = copy.deepcopy(image)
+        height, width = debug_image.shape[:2]
+        
+        # Define colors for top 5 positions (BGR format) - matching node_classification.py
+        rank_colors = [
+            (0, 0, 255),      # Position 1 (index 0): Red (highest score)
+            (0, 255, 255),    # Position 2 (index 1): Yellow
+            (255, 0, 0),      # Position 3 (index 2): Blue
+            (255, 0, 128),    # Position 4 (index 3): Violet
+            (255, 0, 255),    # Position 5 (index 4): Magenta
+        ]
+        
+        # Larger font size and thicker text
+        font_scale = 1.0  # Increased from 0.6
+        thickness = 3     # Increased from 2
+        line_spacing = 35  # Increased from 20 for bigger text
+        
+        # Calculate starting position from bottom
+        num_lines = len(class_ids)
+        start_y = height - 15 - (num_lines - 1) * line_spacing
+        
+        for index, (class_score, class_id) in enumerate(zip(class_scores, class_ids)):
+            score = "%.2f" % class_score
+            text = "%s:%s(%s)" % (str(class_id), str(class_names[int(class_id)]), score)
+            
+            # Select color based on position
+            if index < len(rank_colors):
+                color = rank_colors[index]
+            else:
+                color = (0, 255, 0)  # Default green for lower rankings
+            
+            # Position at bottom left
+            y_position = start_y + (index * line_spacing)
+            
+            debug_image = cv2.putText(
+                debug_image,
+                text,
+                (15, y_position),  # Bottom left position (x=15 for margin)
+                cv2.FONT_HERSHEY_SIMPLEX,
+                font_scale,
+                color,
+                thickness=thickness,
+            )
+
+        return debug_image
+
 
     def create_image_dict(
             self,
