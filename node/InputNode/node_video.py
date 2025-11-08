@@ -411,6 +411,8 @@ class VideoNode(Node):
     _prev_movie_filepath = {}
     _frame_count = {}
     _last_frame_time = {}
+    _current_block = {}  # Track current 5-second block for each node
+    _block_start_frame = {}  # Starting frame of current block
 
     _min_val = 1
     _max_val = 10
@@ -616,6 +618,8 @@ class VideoNode(Node):
             self._prev_movie_filepath[str(node_id)] = movie_path
             self._frame_count[str(node_id)] = 0
             self._last_frame_time[str(node_id)] = None
+            self._current_block[str(node_id)] = 0
+            self._block_start_frame[str(node_id)] = 0
 
         video_capture = self._video_capture.get(str(node_id), None)
 
@@ -656,6 +660,8 @@ class VideoNode(Node):
                         if loop_flag:
                             video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
                             self._frame_count[str(node_id)] = 0
+                            self._current_block[str(node_id)] = 0
+                            self._block_start_frame[str(node_id)] = 0
                             _, frame = video_capture.read()
                         else:
                             video_capture.release()
@@ -672,6 +678,23 @@ class VideoNode(Node):
 
                 # Record the time when we successfully read a frame
                 self._last_frame_time[str(node_id)] = current_time
+                
+                # Update 5-second block tracking
+                # Calculate which 5-second block we're in based on frame count and FPS
+                if video_capture is not None:
+                    fps = video_capture.get(cv2.CAP_PROP_FPS)
+                    if fps > 0:
+                        current_frame = self._frame_count[str(node_id)]
+                        frames_per_5s = int(fps * 5)  # Number of frames in 5 seconds
+                        current_block = current_frame // frames_per_5s
+                        
+                        # Check if we've moved to a new block
+                        prev_block = self._current_block.get(str(node_id), 0)
+                        if current_block != prev_block:
+                            self._current_block[str(node_id)] = current_block
+                            self._block_start_frame[str(node_id)] = current_frame
+                            print(f"Node {node_id}: Starting 5-second block {current_block} at frame {current_frame}")
+
 
         if video_capture is not None and use_pref_counter:
             elapsed_time = time.monotonic() - start_time
@@ -679,6 +702,10 @@ class VideoNode(Node):
             dpg_set_value(output_value02_tag, str(elapsed_time).zfill(4) + "ms")
 
         if frame is not None:
+            # Resize frame to 224x224 for compatibility with DL models
+            # This is the frame that will be passed to downstream nodes
+            frame = cv2.resize(frame, (224, 224), interpolation=cv2.INTER_AREA)
+            
             texture = self.convert_cv_to_dpg(
                 frame,
                 small_window_w,
