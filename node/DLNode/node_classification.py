@@ -232,8 +232,8 @@ class Node(Node):
                 src_node_name = connection_info_src[1]
                 connection_info_src = ':'.join(connection_info_src)
 
-        # 画像取得
-        frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
+        # 画像取得 (Get input image - can be from video frame, spectrogram, or static image)
+        input_image = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
 
         # CPU/GPU選択状態取得
         provider = 'CPU'
@@ -250,7 +250,7 @@ class Node(Node):
         model_name_with_provider = model_name + '_' + provider
 
         # モデル取得
-        if frame is not None:
+        if input_image is not None:
             if model_name_with_provider not in self._model_instance:
                 if provider == 'CPU':
                     providers = ['CPUExecutionProvider']
@@ -264,16 +264,16 @@ class Node(Node):
                         model_name_with_provider] = model_class(model_path)
 
         # 計測開始
-        if frame is not None and use_pref_counter:
+        if input_image is not None and use_pref_counter:
             start_time = time.monotonic()
 
         # 接続元がObjectDetectionノードの場合、各バウンディングボックスに対して推論
         result = {}
-        frame_list, class_id_list, score_list = [], [], []
+        image_list, class_id_list, score_list = [], [], []
         od_target_bboxes = []
         od_target_scores = []
         od_target_class_ids = []
-        if frame is not None:
+        if input_image is not None:
             if src_node_name == 'ObjectDetection':
                 # 物体検出情報取得
                 node_result = node_result_dict.get(connection_info_src, [])
@@ -292,15 +292,15 @@ class Node(Node):
                     if od_score_th > od_score:
                         continue
 
-                    frame_list.append(copy.deepcopy(frame[y1:y2, x1:x2]))
+                    image_list.append(copy.deepcopy(input_image[y1:y2, x1:x2]))
                     od_target_bboxes.append([x1, y1, x2, y2])
                     od_target_scores.append(od_score)
                     od_target_class_ids.append(od_class_id)
 
                 # 各バウンディングボックスに対しClassification推論
-                for temp_frame in frame_list:
+                for cropped_image in image_list:
                     class_scores, class_ids = self._model_instance[
-                        model_name_with_provider](temp_frame)
+                        model_name_with_provider](cropped_image)
                     score_list.append(class_scores[0])
                     class_id_list.append(class_ids[0])
                 result['use_object_detection'] = True
@@ -314,31 +314,31 @@ class Node(Node):
                 result['od_score_th'] = od_score_th
             else:
                 class_scores, class_ids = self._model_instance[
-                    model_name_with_provider](frame)
+                    model_name_with_provider](input_image)
                 result['use_object_detection'] = False
                 result['class_ids'] = class_ids.tolist()
                 result['class_scores'] = class_scores.tolist()
                 result['class_names'] = class_name_dict
 
         # 計測終了
-        if frame is not None and use_pref_counter:
+        if input_image is not None and use_pref_counter:
             elapsed_time = time.monotonic() - start_time
             elapsed_time = int(elapsed_time * 1000)
             dpg_set_value(output_value02_tag,
                           str(elapsed_time).zfill(4) + 'ms')
 
         # 描画
-        if frame is not None:
-            # Resize frame first to node display size
+        if input_image is not None:
+            # Resize image to node display size
             # cv2.resize returns a new array, so no need to deepcopy
-            debug_frame = cv2.resize(frame, (small_window_w, small_window_h), interpolation=cv2.INTER_AREA)
+            debug_image = cv2.resize(input_image, (small_window_w, small_window_h), interpolation=cv2.INTER_AREA)
             
-            # Draw labels on the resized frame so text size is linked to node frame size
+            # Draw labels on the resized image
             if result['use_object_detection']:
-                # Scale bounding boxes to match resized frame
-                frame_h, frame_w = frame.shape[:2]
-                scale_x = small_window_w / frame_w
-                scale_y = small_window_h / frame_h
+                # Scale bounding boxes to match resized image
+                image_h, image_w = input_image.shape[:2]
+                scale_x = small_window_w / image_w
+                scale_y = small_window_h / image_h
                 scaled_od_bboxes = []
                 for bbox in result['od_bboxes']:
                     x1, y1, x2, y2 = bbox
@@ -350,8 +350,8 @@ class Node(Node):
                     ]
                     scaled_od_bboxes.append(scaled_bbox)
                 
-                debug_frame = self.draw_classification_with_od_info(
-                    debug_frame,
+                debug_image = self.draw_classification_with_od_info(
+                    debug_image,
                     result['class_ids'],
                     result['class_scores'],
                     result['class_names'],
@@ -362,21 +362,21 @@ class Node(Node):
                     result['od_score_th'],
                 )
             else:
-                debug_frame = self.draw_classification_info(
-                    debug_frame,
+                debug_image = self.draw_classification_info(
+                    debug_image,
                     result['class_ids'],
                     result['class_scores'],
                     result['class_names'],
                 )
 
             texture = self.convert_cv_to_dpg(
-                debug_frame,
+                debug_image,
                 small_window_w,
                 small_window_h,
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return {"image": frame, "json": result, "audio": None}
+        return {"image": input_image, "json": result, "audio": None}
 
     def close(self, node_id):
         pass
