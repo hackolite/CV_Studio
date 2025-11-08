@@ -447,27 +447,7 @@ def fourier_transformation(sig, frameSize, overlapFac=0.5, window=np.hanning):
 
     return np.fft.rfft(frames)    
 
-# Charger le CSV
-esc50_df = pd.read_csv('/content/ESC-50-master/meta/esc50.csv')
 
-# Créer les dossiers
-spectrogram_root = '/content/ESC-50-master/spectrogram'
-os.makedirs(spectrogram_root, exist_ok=True)
-
-for cat in esc50_df['category'].unique():
-    os.makedirs(os.path.join(spectrogram_root, cat), exist_ok=True)
-
-# Générer tous les spectrogrammes
-for i, row in esc50_df.iterrows():
-    filename = row['filename']
-    category = row['category']
-    audio_path = os.path.join('/content/ESC-50-master/audio', filename)
-    save_path = os.path.join(spectrogram_root, category, filename.replace('.wav', '.jpg'))
-
-    try:
-        plot_spectrogram(audio_path, plotpath=save_path)
-    except Exception as e:
-        print(f"Erreur avec {filename}: {e}")
 
 class VideoNode(Node):
     _ver = "0.0.1"
@@ -517,50 +497,11 @@ class VideoNode(Node):
         # Can be changed to 'VIRIDIS', 'JET', 'MAGMA', 'PLASMA', etc.
         self._spectrogram_colormap = DEFAULT_SPECTROGRAM_COLORMAP
 
-    # def convert_cv_to_dpg(self, cv_img, w, h):
-    #    return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
-
-
-
-	def chunk_audio_wav_or_mp3(input_audio, output_folder, chunk_duration=5.0, step_duration=0.25):
-		os.makedirs(output_folder, exist_ok=True)
-
-		print(f"📥 Chargement : {input_audio}")
-		try:
-			# Chargement avec librosa : supporte .wav, .mp3, etc.
-			data, rate = librosa.load(input_audio, sr=None, mono=True)
-		except Exception as e:
-			print(f"❌ Erreur lors de la lecture : {e}")
-			return
-
-		total_duration = len(data) / rate
-		chunk_samples = int(chunk_duration * rate)
-		step_samples = int(step_duration * rate)
-
-		start = 0
-		count = 1
-
-		print(f"🔍 Fréquence d'échantillonnage : {rate} Hz")
-		print("🚀 Découpage en cours...")
-
-		while (start + chunk_samples) <= len(data):
-			end = start + chunk_samples
-			chunk = data[start:end]
-			output_path = os.path.join(output_folder, f"chunk_{count}.wav")
-			sf.write(output_path, chunk, rate)
-			print(f"✅ chunk_{count}.wav : {start / rate:.2f}s → {end / rate:.2f}s")
-			count += 1
-			start += step_samples
-
-		print(f"\n🎉 {count - 1} chunks enregistrés dans {output_folder}")
-
-
-
-
 
     def _prepare_spectrogram(self, node_id, movie_path, fmin=None, fmax=None):
         """
-        Extract audio and compute spectrogram from video file using STFT with logarithmic scaling.
+        Extract audio and compute spectrogram from video file using the working methods:
+        fourier_transformation and make_logscale.
 
         Args:
             node_id: Node identifier
@@ -572,59 +513,54 @@ class VideoNode(Node):
             print(f"Video file not found: {movie_path}")
             return
 
+        tmp_audio_path = None
         try:
-            # Try to load audio directly from video file
-            try:
-                y, sr = librosa.load(movie_path, sr=None)
-            except Exception as e:
-                print(f"Direct audio load failed, trying ffmpeg extraction: {e}")
-                # Fallback: extract audio via ffmpeg
-                with tempfile.NamedTemporaryFile(
-                    suffix=".wav", delete=False
-                ) as tmp_audio:
-                    tmp_audio_path = tmp_audio.name
+            # Sample rate for audio extraction
+            sr=22050
+            
+            # Extract audio from video to a temporary WAV file using ffmpeg
+            # This allows us to use scipy.io.wavfile.read() like plot_spectrogram does
+            with tempfile.NamedTemporaryFile(
+                suffix=".wav", delete=False
+            ) as tmp_audio:
+                tmp_audio_path = tmp_audio.name
 
-                try:
-                    # Extract audio using ffmpeg
-                    subprocess.run(
-                        [
-                            "ffmpeg",
-                            "-i",
-                            movie_path,
-                            "-vn",
-                            "-acodec",
-                            "pcm_s16le",
-                            "-ar",
-                            "22050",
-                            "-ac",
-                            "1",
-                            "-y",
-                            tmp_audio_path,
-                        ],
-                        check=True,
-                        capture_output=True,
-                    )
+            # Extract audio using ffmpeg (convert to WAV format)
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-i",
+                    movie_path,
+                    "-vn",
+                    "-acodec",
+                    "pcm_s16le",
+                    "-ar",
+                    str(sr),
+                    "-ac",
+                    "1",
+                    "-y",
+                    tmp_audio_path,
+                ],
+                check=True,
+                capture_output=True,
+            )
 
-                    # Load extracted audio
-                    y, sr = librosa.load(tmp_audio_path, sr=22050)
-                finally:
-                    # Clean up temp file
-                    if os.path.exists(tmp_audio_path):
-                        os.unlink(tmp_audio_path)
-
-            # Compute STFT using the new approach
+            # Now use the same approach as plot_spectrogram:
+            # Read WAV file using scipy
+            import scipy.io.wavfile as wav
+            samplerate, samples = wav.read(tmp_audio_path)
+            
+            # Parameters matching plot_spectrogram
             binsize = 2**10  # 1024 samples
-            hop_length = binsize // 2  # 50% overlap
             
-            # Perform Fourier transformation with windowing
-            s = fourier_transformation(y, binsize, overlapFac=0.5, window=np.hanning)
+            # Perform Fourier transformation using the working method
+            s = fourier_transformation(samples, binsize)
             
-            # Apply logarithmic frequency scaling
-            sshow, freq = make_logscale(spec=s, sr=sr, factor=1.0)
+            # Apply logarithmic frequency scaling using the working method
+            sshow, freq = make_logscale(s, factor=1.0, sr=samplerate)
             
             # Convert to dB scale: 20*log10(abs/reference)
             # Add epsilon to avoid log10(0) which causes -inf
-            # Reference: 10e-6 = 1e-5 (10 micropascals approximation)
             sshow_safe = np.maximum(np.abs(sshow), SPECTROGRAM_EPSILON)
             ims = 20. * np.log10(sshow_safe / 10e-6)
 
@@ -657,6 +593,9 @@ class VideoNode(Node):
             )
             self._spectrogram_texture[node_id] = texture
 
+            # Calculate hop_length for metadata
+            hop_length = binsize // 2  # 50% overlap (default in fourier_transformation)
+
             # Store metadata for future audio sync
             video_capture = self._video_capture.get(node_id, None)
             fps = 30.0  # default
@@ -666,8 +605,8 @@ class VideoNode(Node):
                     fps = 30.0
 
             self._spectrogram_meta[node_id] = {
-                "y": y,
-                "sr": sr,
+                "y": samples,
+                "sr": samplerate,
                 "hop_length": hop_length,
                 "fps": fps,
             }
@@ -677,8 +616,14 @@ class VideoNode(Node):
         except Exception as e:
             print(f"Failed to prepare spectrogram: {e}")
             import traceback
-
             traceback.print_exc()
+        finally:
+            # Clean up temp file
+            if tmp_audio_path and os.path.exists(tmp_audio_path):
+                try:
+                    os.unlink(tmp_audio_path)
+                except Exception as e:
+                    print(f"Warning: Could not delete temporary file {tmp_audio_path}: {e}")
 
     def _button(self, sender, app_data, user_data):
         print(f"Button clicked for {user_data}")
