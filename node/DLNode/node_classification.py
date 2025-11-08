@@ -380,6 +380,51 @@ class Node(Node):
 
     def close(self, node_id):
         pass
+    
+    def draw_classification_info(
+        self,
+        image,
+        class_ids,
+        class_scores,
+        class_names,
+    ):
+        """
+        Override base class method to add color differentiation based on ranking.
+        Position 1 (highest score): Red
+        Position 2: Green
+        Position 3: Blue
+        """
+        debug_image = copy.deepcopy(image)
+        
+        # Define colors for top 3 positions (BGR format)
+        rank_colors = [
+            (0, 0, 255),    # Position 1: Red (highest score)
+            (0, 255, 0),    # Position 2: Green
+            (255, 0, 0),    # Position 3: Blue
+        ]
+        
+        for index, (class_score, class_id) in enumerate(zip(class_scores, class_ids)):
+            score = "%.2f" % class_score
+            text = "%s:%s(%s)" % (str(class_id), str(class_names[int(class_id)]), score)
+            
+            # Select color based on position (1, 2, 3)
+            # Use default green for positions beyond 3
+            if index < len(rank_colors):
+                color = rank_colors[index]
+            else:
+                color = (0, 255, 0)  # Default green for lower rankings
+            
+            debug_image = cv2.putText(
+                debug_image,
+                text,
+                (15, 25 + (index * 20)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                color,
+                thickness=2,
+            )
+
+        return debug_image
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
