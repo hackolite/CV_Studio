@@ -582,6 +582,47 @@ class VideoNode(Node):
             
             print(f"✅ Audio extracted (SR: {sr} Hz, Duration: {len(y)/sr:.2f}s)")
             
+            # Step 2.5: Save extracted audio as MP3 file
+            try:
+                # Create audio filename based on video path
+                video_dir = os.path.dirname(movie_path)
+                video_basename = os.path.splitext(os.path.basename(movie_path))[0]
+                audio_mp3_path = os.path.join(video_dir, f"{video_basename}_audio.mp3")
+                
+                # Use ffmpeg to convert the audio array to MP3
+                # First save as temporary WAV, then convert to MP3
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
+                    tmp_wav_path = tmp_wav.name
+                    sf.write(tmp_wav_path, y, sr)
+                
+                try:
+                    # Convert WAV to MP3 using ffmpeg
+                    subprocess.run(
+                        [
+                            "ffmpeg",
+                            "-i", tmp_wav_path,
+                            "-codec:a", "libmp3lame",
+                            "-qscale:a", "2",  # High quality MP3
+                            "-y", audio_mp3_path,
+                        ],
+                        check=True,
+                        capture_output=True,
+                    )
+                    print(f"💾 Audio saved as MP3: {audio_mp3_path}")
+                except subprocess.CalledProcessError as e:
+                    print(f"⚠️ Failed to convert to MP3, saving as WAV instead: {e}")
+                    # Fallback: keep the WAV file
+                    audio_wav_path = os.path.join(video_dir, f"{video_basename}_audio.wav")
+                    sf.write(audio_wav_path, y, sr)
+                    print(f"💾 Audio saved as WAV: {audio_wav_path}")
+                finally:
+                    # Clean up temporary WAV file
+                    if os.path.exists(tmp_wav_path):
+                        os.unlink(tmp_wav_path)
+                        
+            except Exception as e:
+                print(f"⚠️ Failed to save audio file: {e}")
+            
             # Step 3: Chunk audio with sliding window
             print(f"✂️ Chunking audio (chunk: {chunk_duration}s, step: {step_duration}s)...")
             chunk_samples = int(chunk_duration * sr)
@@ -695,8 +736,10 @@ class VideoNode(Node):
     def _add_playback_cursor_to_spectrogram(self, spectrogram_bgr, node_id, frame_number):
         """
         Add a yellow vertical cursor to the spectrogram showing current playback position.
-        On the first frame, the cursor moves. After that, the cursor stays fixed at 1/3 of the width
-        and the spectrogram scrolls to the left.
+        The cursor behavior has three phases:
+        1. Initial phase (first 1/3 of video): cursor moves from left (0) to 1/3 of width
+        2. Middle phase (middle portion of video): cursor stays fixed at 1/3, spectrogram scrolls left
+        3. Final phase (last 1/3 of video): cursor moves from 1/3 to the end (right edge)
         
         Args:
             spectrogram_bgr: Spectrogram image (BGR format)
@@ -713,48 +756,65 @@ class VideoNode(Node):
         fps = metadata['fps']
         chunk_duration = metadata['chunk_duration']
         step_duration = metadata['step_duration']
+        num_frames = metadata['num_frames']
         
         # Calculate current time from frame number
         current_time = frame_number / fps if fps > 0 else 0
         
-        # Calculate chunk index and time within chunk
+        # Calculate total video duration
+        total_duration = num_frames / fps if fps > 0 else 0
+        
+        # Calculate overall progress through the entire video (0.0 to 1.0)
+        video_progress = current_time / total_duration if total_duration > 0 else 0
+        video_progress = max(0.0, min(1.0, video_progress))
+        
+        # Calculate chunk index and time within chunk (for spectrogram scrolling in middle phase)
         chunk_index = int(current_time / step_duration)
         chunk_start_time = chunk_index * step_duration
         time_within_chunk = current_time - chunk_start_time
         
         # Calculate cursor position as a fraction of chunk duration
-        # The spectrogram represents chunk_duration seconds of audio
         cursor_position_ratio = time_within_chunk / chunk_duration if chunk_duration > 0 else 0
-        
-        # Clamp to valid range [0, 1]
         cursor_position_ratio = max(0.0, min(1.0, cursor_position_ratio))
         
         height, width = spectrogram_bgr.shape[:2]
         
-        # Fixed cursor position at 1/3 of the width (after the first portion)
+        # Fixed cursor position at 1/3 of the width (for middle phase)
         fixed_cursor_x = width // 3
         
-        # For the first portion (up to 1/3 of the spectrogram), cursor moves
-        # After that, cursor stays fixed and spectrogram scrolls
-        if cursor_position_ratio <= 1.0 / 3.0:
-            # First portion: cursor moves from 0 to width/3
-            cursor_x = int(cursor_position_ratio * width)
+        # Three-phase cursor behavior based on overall video progress
+        if video_progress <= 1.0 / 3.0:
+            # Phase 1: First 1/3 of video - cursor moves from 0 to width/3
+            cursor_x = int(video_progress * 3.0 * fixed_cursor_x)  # Maps [0, 1/3] to [0, width/3]
+            spectrogram_with_cursor = spectrogram_bgr.copy()
+        elif video_progress >= 2.0 / 3.0:
+            # Phase 3: Last 1/3 of video - cursor moves from width/3 to end
+            # Map video_progress from [2/3, 1] to cursor position [width/3, width-1]
+            phase3_progress = (video_progress - 2.0/3.0) / (1.0/3.0)  # Maps [2/3, 1] to [0, 1]
+            cursor_x = int(fixed_cursor_x + phase3_progress * (width - fixed_cursor_x - 1))
             spectrogram_with_cursor = spectrogram_bgr.copy()
         else:
-            # After first portion: cursor stays at width/3, spectrogram scrolls left
-            # Calculate how much to scroll based on progress beyond 1/3
-            scroll_ratio = (cursor_position_ratio - 1.0 / 3.0) / (2.0 / 3.0)  # Progress in remaining 2/3
-            scroll_pixels = int(scroll_ratio * (width - fixed_cursor_x))
+            # Phase 2: Middle 1/3 of video - cursor stays at width/3, spectrogram scrolls left
+            # Use cursor_position_ratio for scrolling within the current chunk
+            if cursor_position_ratio <= 1.0 / 3.0:
+                # Within first 1/3 of chunk, cursor moves
+                cursor_x = int(cursor_position_ratio * width)
+            else:
+                # After first 1/3 of chunk, scroll the spectrogram
+                scroll_ratio = (cursor_position_ratio - 1.0 / 3.0) / (2.0 / 3.0)
+                scroll_pixels = int(scroll_ratio * (width - fixed_cursor_x))
+                
+                # Scroll the spectrogram to the left
+                spectrogram_with_cursor = np.zeros_like(spectrogram_bgr)
+                if scroll_pixels < width:
+                    spectrogram_with_cursor[:, :width - scroll_pixels] = spectrogram_bgr[:, scroll_pixels:]
+                    spectrogram_with_cursor[:, width - scroll_pixels:] = spectrogram_bgr[:, -1:]
+                
+                cursor_x = fixed_cursor_x
             
-            # Scroll the spectrogram to the left
-            spectrogram_with_cursor = np.zeros_like(spectrogram_bgr)
-            if scroll_pixels < width:
-                # Copy the scrolled portion
-                spectrogram_with_cursor[:, :width - scroll_pixels] = spectrogram_bgr[:, scroll_pixels:]
-                # Fill the right side with black or edge values
-                spectrogram_with_cursor[:, width - scroll_pixels:] = spectrogram_bgr[:, -1:]
-            
-            cursor_x = fixed_cursor_x
+            # If we didn't scroll, just copy
+            if cursor_position_ratio <= 1.0 / 3.0:
+                spectrogram_with_cursor = spectrogram_bgr.copy()
         
         # Draw yellow vertical line (BGR format: yellow is (0, 255, 255))
         # Draw a thicker line (3 pixels) for better visibility
