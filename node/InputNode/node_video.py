@@ -636,10 +636,10 @@ class VideoNode(Node):
                 )
                 
                 # Flip vertically and convert to BGR
-                S_rgb = np.flipud(S_rgb)
-                S_bgr = cv2.cvtColor(S_rgb, cv2.COLOR_RGB2BGR)
+                #S_rgb = np.flipud(S_rgb)
+                #S_bgr = cv2.cvtColor(S_rgb, cv2.COLOR_RGB2BGR)
                 
-                spectrogram_chunks.append(S_bgr)
+                spectrogram_chunks.append(S_rgb)
             
             self._spectrogram_chunks[node_id] = spectrogram_chunks
             print(f"✅ Pre-computed {len(spectrogram_chunks)} spectrograms")
