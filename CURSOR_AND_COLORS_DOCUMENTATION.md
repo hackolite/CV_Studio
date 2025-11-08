@@ -4,16 +4,31 @@ This document describes the features added to CV Studio for enhanced visual feed
 
 ## Features
 
-### 1. Scrolling Spectrogram with Fixed Cursor (node_video.py)
+### 1. Scrolling Spectrogram with Three-Phase Cursor (node_video.py)
 
-A yellow vertical cursor is displayed on the spectrogram to show the current playback position. The cursor moves during the first portion of playback, then stays fixed while the spectrogram scrolls to the left.
+A yellow vertical cursor is displayed on the spectrogram to show the current playback position. The cursor uses a three-phase behavior to provide clear visual feedback throughout the entire video playback.
 
 #### How It Works
 
-- **Initial Cursor Movement**: During the first third of the spectrogram, the cursor moves from left to right (0 to width/3)
-- **Fixed Cursor with Scrolling**: After the first third, the cursor stays fixed at 1/3 of the width and the spectrogram scrolls to the left
-- **Accurate Synchronization**: The cursor position and scrolling are calculated based on:
-  - Current video frame number
+The cursor behavior has been updated to use **overall video progress** instead of chunk-based progress, ensuring the cursor always reaches the end of the spectrogram when the video completes.
+
+**Three Phases:**
+
+- **Phase 1 - Initial Movement (First 1/3 of video)**: Cursor moves from left (0) to 1/3 of width
+  - Based on overall video progress: `video_progress = current_frame / total_frames`
+  - When video is 0-33% complete, cursor smoothly moves from 0 to width/3
+  
+- **Phase 2 - Middle Scrolling (Middle 1/3 of video)**: Cursor behavior within chunks
+  - When video is 33-67% complete, uses chunk-based scrolling
+  - Cursor can move within chunks and spectrogram scrolls to show progression
+  
+- **Phase 3 - Final Movement (Last 1/3 of video)**: Cursor moves from 1/3 to the end
+  - **NEW**: When video is 67-100% complete, cursor moves from width/3 to right edge
+  - At 100% completion, cursor reaches ~99% of width (near right edge)
+  - Makes it visually clear when the video playback is complete ✅
+
+**Accurate Synchronization**: The cursor position is calculated based on:
+  - Current video frame number and total frame count
   - Video FPS (frames per second)
   - Audio chunk duration and step duration
   - Spectrogram chunk being displayed
@@ -26,37 +41,45 @@ The cursor and scrolling are managed by the `_add_playback_cursor_to_spectrogram
 def _add_playback_cursor_to_spectrogram(self, spectrogram_bgr, node_id, frame_number):
     """
     Add a yellow vertical cursor to the spectrogram showing current playback position.
-    On the first frame, the cursor moves. After that, the cursor stays fixed at 1/3 of the width
-    and the spectrogram scrolls to the left.
+    The cursor behavior has three phases:
+    1. Initial phase (first 1/3 of video): cursor moves from left (0) to 1/3 of width
+    2. Middle phase (middle 1/3 of video): cursor stays fixed at 1/3, spectrogram scrolls left
+    3. Final phase (last 1/3 of video): cursor moves from 1/3 to the end (right edge)
     """
 ```
 
-**Cursor and Scrolling Characteristics:**
+**Cursor Characteristics:**
 - **Color**: Yellow (BGR: 0, 255, 255)
 - **Thickness**: 3 pixels for better visibility
-- **Fixed Position**: 1/3 of the spectrogram width (after initial movement)
-- **Scrolling**: Spectrogram content shifts left while cursor remains stationary
+- **Fixed Position**: 1/3 of the spectrogram width (during middle phase)
+- **Scrolling**: Spectrogram content shifts left while cursor remains stationary (middle phase)
 - **Position Calculation**:
-  1. Calculate current time from frame number: `current_time = frame_number / fps`
-  2. Determine which audio chunk is displayed: `chunk_index = int(current_time / step_duration)`
-  3. Calculate position within that chunk: `time_within_chunk = current_time - chunk_start_time`
-  4. For first 1/3: cursor moves proportionally
-  5. After 1/3: cursor fixed, spectrogram scrolls left
+  1. Calculate overall video progress: `video_progress = (frame_number / fps) / total_duration`
+  2. Phase 1 (0-33%): cursor moves from 0 to width/3
+  3. Phase 2 (33-67%): chunk-based scrolling behavior
+  4. Phase 3 (67-100%): cursor moves from width/3 to width (end)
 
 **Visual Example:**
 ```
-Initial Phase (first 1/3):
+Phase 1 - Initial Movement (0-33% of video):
 ┌────────────────────────────────┐
 │  Frequency                     │
-│    ▓▓▓▓|▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓    │ <- Cursor moves right
+│    ▓▓▓▓|▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓    │ <- Cursor moves right (0 to 1/3)
 │    ▓▓▓▓|▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓    │
 └────────────────────────────────┘
 
-After 1/3 (scrolling phase):
+Phase 2 - Middle Scrolling (33-67% of video):
 ┌────────────────────────────────┐
 │  Frequency                     │
 │    ▓▓▓▓▓▓▓▓|▓▓▓▓▓▓▓▓▓▓        │ <- Cursor stays at 1/3
 │    ▓▓▓▓▓▓▓▓|▓▓▓▓▓▓▓▓▓▓        │    Spectrogram scrolls ←
+└────────────────────────────────┘
+
+Phase 3 - Final Movement (67-100% of video):
+┌────────────────────────────────┐
+│  Frequency                     │
+│    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓| │ <- Cursor moves to end ✅
+│    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓| │    (1/3 to 100%)
 └────────────────────────────────┘
 ```
 
@@ -156,15 +179,74 @@ def draw_classification_info(self, image, class_ids, class_scores, class_names):
      ↑ Bottom left positioning
 ```
 
+### 4. Audio Storage Feature (node_video.py)
+
+When a video is loaded and preprocessed, the audio track is automatically extracted and saved as a separate file for reuse.
+
+#### How It Works
+
+During video preprocessing in the `_preprocess_video()` method:
+
+1. **Audio Extraction**: Audio is extracted from the video using librosa
+2. **MP3 Conversion**: The extracted audio is converted to MP3 format using ffmpeg
+3. **File Storage**: The MP3 file is saved in the same directory as the video with suffix `_audio.mp3`
+4. **Fallback**: If MP3 conversion fails, a WAV file is saved instead
+
+#### Saved File Format
+
+**Primary format: MP3**
+- Filename: `{video_name}_audio.mp3`
+- Codec: libmp3lame (high quality)
+- Quality: qscale 2 (high quality setting)
+- Location: Same folder as the source video
+
+**Fallback format: WAV**
+- Filename: `{video_name}_audio.wav`
+- Used when ffmpeg MP3 encoding is unavailable
+- Preserves original sample rate and audio data
+
+#### Benefits
+
+- **Reusability**: Audio file can be used by other applications without re-extraction
+- **Performance**: Avoids repeated audio extraction from video
+- **Convenience**: Stored alongside video for easy access
+- **Quality**: High-quality MP3 encoding preserves audio fidelity
+
+#### Example
+
+When loading a video file:
+```
+Video: /path/to/videos/my_video.mp4
+Audio saved as: /path/to/videos/my_video_audio.mp3
+```
+
+Console output during preprocessing:
+```
+🎵 Extracting audio...
+✅ Audio extracted (SR: 22050 Hz, Duration: 30.5s)
+💾 Audio saved as MP3: /path/to/videos/my_video_audio.mp3
+```
+
 ## Usage
 
-### Enabling the Scrolling Spectrogram
+### Enabling the Three-Phase Cursor Spectrogram
 
 1. Add a **Video** node to your graph
 2. Load a video file with audio
 3. Enable the "Show Spectrogram" checkbox
 4. Play the video
-5. The yellow cursor will move initially, then stay fixed while the spectrogram scrolls
+5. Observe the cursor behavior:
+   - **Phase 1 (0-33%)**: Cursor moves from left to 1/3 position
+   - **Phase 2 (33-67%)**: Cursor fixed at 1/3, spectrogram scrolls
+   - **Phase 3 (67-100%)**: Cursor moves from 1/3 to end, clearly showing completion ✅
+
+### Accessing Saved Audio Files
+
+1. Load a video file in the Video node
+2. The audio is automatically extracted and saved during preprocessing
+3. Check the same folder as your video file
+4. Look for `{video_name}_audio.mp3` or `{video_name}_audio.wav`
+5. The audio file can be used in other applications or nodes
 
 ### Viewing Color-Coded Classifications
 
@@ -183,7 +265,8 @@ def draw_classification_info(self, image, class_ids, class_scores, class_names):
 
 ### Performance
 
-- **Scrolling Spectrogram**: Minimal performance impact (simple array operations and line drawing)
+- **Three-Phase Cursor**: Minimal performance impact (simple array operations and line drawing)
+- **Audio Storage**: One-time cost during video preprocessing, no runtime impact
 - **Classification Colors**: No performance impact (only changes text color, not computation)
 - **Concat Display**: Negligible impact (same rendering, just different position and scale)
 
@@ -192,6 +275,7 @@ def draw_classification_info(self, image, class_ids, class_scores, class_names):
 - All features are **backward compatible**
 - No changes required to existing graphs or configurations
 - Works with all existing input sources and models
+- Audio files are created automatically without affecting existing functionality
 
 ### Thread Safety
 
@@ -202,7 +286,12 @@ All features operate on the main update thread and are thread-safe within the CV
 ### Modified Files
 
 1. **`/node/InputNode/node_video.py`**
-   - Modified: `_add_playback_cursor_to_spectrogram()` method to implement scrolling behavior
+   - Modified: `_add_playback_cursor_to_spectrogram()` method to implement three-phase cursor behavior
+     - Added video progress calculation based on total frames
+     - Added Phase 3 logic for final 1/3 of video (cursor moves to end)
+   - Modified: `_preprocess_video()` method to add audio storage
+     - Saves extracted audio as MP3 (primary) or WAV (fallback)
+     - Files saved in same directory as source video
    - Modified: `update()` method to call cursor rendering
 
 2. **`/node/DLNode/node_classification.py`**
@@ -213,10 +302,11 @@ All features operate on the main update thread and are thread-safe within the CV
 
 ### Testing
 
-A comprehensive test file validates all features:
+Test scripts validate the features:
+- **Custom test script**: Validates three-phase cursor behavior and end-of-video progression
 - **`/tests/test_cursor_and_colors.py`**: Validates cursor, scrolling, and color features
 
-Run the test with:
+Run tests with:
 ```bash
 python tests/test_cursor_and_colors.py
 ```
@@ -247,16 +337,18 @@ Potential improvements for future versions:
 
 ## Examples
 
-### Example 1: Audio Classification with Scrolling Spectrogram
+### Example 1: Audio Classification with Three-Phase Cursor
 
 1. Load a video with audio content
 2. Connect Video node → Classification (Yolo-cls) node
 3. Enable spectrogram display
-4. Observe:
-   - Yellow cursor initially moving, then staying fixed at 1/3 width
-   - Spectrogram scrolling to the left during playback
+4. Observe the three-phase cursor behavior:
+   - **Phase 1 (0-33%)**: Yellow cursor moves from left to 1/3 position
+   - **Phase 2 (33-67%)**: Cursor fixed at 1/3, spectrogram scrolls left
+   - **Phase 3 (67-100%)**: Cursor moves from 1/3 to right edge, showing clear completion ✅
    - Classification results in rank-based colors (red, yellow, blue, violet, magenta)
    - Real-time synchronization between audio and visual feedback
+5. Check the video folder for the saved audio file (`{video_name}_audio.mp3`)
 
 ### Example 2: Multi-View Classification Comparison
 
@@ -278,13 +370,28 @@ Potential improvements for future versions:
 
 ## Troubleshooting
 
-**Q: The cursor doesn't stay fixed**
-- A: Make sure you're past the first 1/3 of the chunk duration
-- A: Verify the video has proper FPS metadata
+**Q: The cursor doesn't reach the end of the spectrogram**
+- A: This is now fixed! The cursor will reach ~99% at video completion (Phase 3)
+- A: Verify the video has proper FPS metadata and frame count
+
+**Q: The cursor stays fixed in the middle**
+- A: This is expected during Phase 2 (middle 33-67% of video)
+- A: The cursor will start moving again in Phase 3 (last 33% of video)
 
 **Q: Spectrogram doesn't scroll**
-- A: This is normal during the first 1/3 of playback
+- A: This is normal during Phase 1 (first 33%) and Phase 3 (last 33%)
+- A: Scrolling only occurs during Phase 2 (middle 33-67% of video)
 - A: Ensure the video is playing (not paused)
+
+**Q: Audio file not created**
+- A: Check console output for preprocessing errors
+- A: Ensure ffmpeg is installed for MP3 conversion
+- A: Check write permissions in the video directory
+- A: A WAV file should be created if MP3 conversion fails
+
+**Q: Audio file location**
+- A: Audio is saved in the same folder as the source video
+- A: Look for `{video_name}_audio.mp3` or `{video_name}_audio.wav`
 
 **Q: Classification colors don't appear correctly**
 - A: Verify you have at least 5 classification results for all colors
