@@ -41,17 +41,25 @@ class YoloCls(object):
         )
         input_image = cv.cvtColor(input_image, cv.COLOR_BGR2RGB)
         input_image = input_image.transpose(2, 0, 1)  # HWC to CHW for NCHW format
-        input_image = np.expand_dims(input_image, axis=0).astype('float32')
+        input_image = np.expand_dims(input_image, axis=0).astype('float32') / 255
 
         # Inference
         input_name = self.onnx_session.get_inputs()[0].name
         result = self.onnx_session.run(None, {input_name: input_image})
 
-        # sort result
-        result = np.array(result).squeeze()
-        result_sorted_index = np.argsort(result)[::-1][:top_k]
-        class_scores = result[result_sorted_index]
-        class_ids = result_sorted_index
+        # Vérifier la sortie
+        result = np.array(result[0]).squeeze()  # <-- correction parenthèse
+        result = result.flatten()  # s'assurer que c'est un vecteur 1D
+
+        # Top-k
+        top_k = min(top_k, len(result))
+        sorted_idx = np.argsort(result)[::-1][:top_k]
+        class_scores = result[sorted_idx]
+        class_ids = sorted_idx
+
+        # Affichage debug
+        for i in range(top_k):
+            print(f"Classe {class_ids[i]} - Score {class_scores[i]:.4f}")
 
         return class_scores, class_ids
 

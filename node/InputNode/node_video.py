@@ -22,7 +22,7 @@ from node.InputNode.spectrogram_utils import apply_colormap_to_spectrogram
 # Minimum amplitude threshold to prevent log10(0) which causes -inf values
 SPECTROGRAM_EPSILON = 1e-10
 # Default colormap for spectrograms (configurable)
-DEFAULT_SPECTROGRAM_COLORMAP = 'INFERNO'
+DEFAULT_SPECTROGRAM_COLORMAP = 'JET'
 
 
 class FactoryNode:
@@ -331,63 +331,143 @@ class FactoryNode:
         return node
 
 
-def fourier_transformation(sig, frameSize, overlapFac=0.5, window=np.hanning):
-    """
-    Perform Short-Time Fourier Transform with windowing and overlap.
-    
-    Args:
-        sig: Input signal
-        frameSize: Size of each frame (window)
-        overlapFac: Overlap factor (0.5 = 50% overlap)
-        window: Window function to apply
-    
-    Returns:
-        STFT matrix (complex values)
-    """
-    win = window(frameSize)
-    hopSize = int(frameSize - np.floor(overlapFac * frameSize))
-    samples = np.append(np.zeros(int(np.floor(frameSize/2.0))), sig)
-    cols = np.ceil((len(samples) - frameSize) / float(hopSize)) + 1
-    samples = np.append(samples, np.zeros(frameSize))
-    frames = stride_tricks.as_strided(
-        samples,
-        shape=(int(cols), frameSize),
-        strides=(samples.strides[0]*hopSize, samples.strides[0])
-    ).copy()
-    frames *= win
-    return np.fft.rfft(frames)
+import os
+import pandas as pd
+import scipy.io.wavfile as wav
+import numpy as np
+import matplotlib.pyplot as plt
 
 
-def make_logscale(spec, sr=22050, factor=20.):
-    """
-    Apply logarithmic scaling to frequency bins for better low-frequency resolution.
-    
-    Args:
-        spec: Spectrogram array (time x frequency)
-        sr: Sample rate (default 22050 to match audio loading)
-        factor: Scaling factor (higher = more emphasis on low frequencies)
-    
-    Returns:
-        (newspec, freqs): Rescaled spectrogram and corresponding frequencies
-    """
+import os
+import numpy as np
+import soundfile as sf
+import librosa
+
+def chunk_audio_wav_or_mp3(input_audio, output_folder, chunk_duration=5.0, step_duration=0.25):
+    os.makedirs(output_folder, exist_ok=True)
+
+    print(f"📥 Chargement : {input_audio}")
+    try:
+        # Chargement avec librosa : supporte .wav, .mp3, etc.
+        data, rate = librosa.load(input_audio, sr=None, mono=True)
+    except Exception as e:
+        print(f"❌ Erreur lors de la lecture : {e}")
+        return
+
+    total_duration = len(data) / rate
+    chunk_samples = int(chunk_duration * rate)
+    step_samples = int(step_duration * rate)
+
+    start = 0
+    count = 1
+
+    print(f"🔍 Fréquence d'échantillonnage : {rate} Hz")
+    print("🚀 Découpage en cours...")
+
+    while (start + chunk_samples) <= len(data):
+        end = start + chunk_samples
+        chunk = data[start:end]
+        output_path = os.path.join(output_folder, f"chunk_{count}.wav")
+        sf.write(output_path, chunk, rate)
+        print(f"✅ chunk_{count}.wav : {start / rate:.2f}s → {end / rate:.2f}s")
+        count += 1
+        start += step_samples
+
+    print(f"\n🎉 {count - 1} chunks enregistrés dans {output_folder}")
+
+
+
+
+
+# Ta fonction plot_spectrogram
+def plot_spectrogram(location, plotpath=None, binsize=2**10, colormap="jet"):
+    samplerate, samples = wav.read(location)
+    s = fourier_transformation(samples, binsize)
+    sshow, freq = make_logscale(s, factor=1.0, sr=samplerate)
+    ims = 20.*np.log10(np.abs(sshow)/10e-6) # amplitude to decibel
+
+    timebins, freqbins = np.shape(ims)
+    #print("timebins:", timebins, "freqbins:", freqbins)
+
+    plt.figure(figsize=(15, 7.5))
+    plt.imshow(np.transpose(ims), origin="lower", aspect="auto", cmap=colormap, interpolation="none")
+    xlocs = np.float32(np.linspace(0, timebins-1, 5))
+    plt.xticks(xlocs, ["%.02f" % l for l in ((xlocs*len(samples)/timebins)+(0.5*binsize))/samplerate])
+    ylocs = np.int16(np.round(np.linspace(0, freqbins-1, 10)))
+    plt.yticks(ylocs, ["%.02f" % freq[i] for i in ylocs])
+
+    if plotpath:
+        plt.savefig(plotpath, bbox_inches="tight")
+    else:
+        plt.show()
+    plt.clf()
+
+    return ims
+
+
+def make_logscale(spec, sr=44100, factor=20.):
     timebins, freqbins = np.shape(spec)
+
     scale = np.linspace(0, 1, freqbins) ** factor
     scale *= (freqbins-1)/max(scale)
     scale = np.unique(np.round(scale))
 
-    # Use same dtype as input for memory efficiency
-    newspec = np.zeros([timebins, len(scale)], dtype=spec.dtype)
-    for i in range(len(scale)):
-        start = int(scale[i])
-        end = int(scale[i+1]) if i < len(scale)-1 else freqbins
-        newspec[:, i] = np.sum(spec[:, start:end], axis=1)
+    # create spectrogram with new freq bins
+    newspec = np.complex128(np.zeros([timebins, len(scale)]))
+    for i in range(0, len(scale)):
+        if i == len(scale)-1:
+            newspec[:,i] = np.sum(spec[:,int(scale[i]):], axis=1)
+        else:
+            newspec[:,i] = np.sum(spec[:,int(scale[i]):int(scale[i+1])], axis=1)
 
+    # list center freq of bins
     allfreqs = np.abs(np.fft.fftfreq(freqbins*2, 1./sr)[:freqbins+1])
-    freqs = [np.mean(allfreqs[int(scale[i]):int(scale[i+1])])
-             if i < len(scale)-1 else np.mean(allfreqs[int(scale[i]):])
-             for i in range(len(scale))]
-    return newspec, freqs
+    freqs = []
+    for i in range(0, len(scale)):
+        if i == len(scale)-1:
+            freqs += [np.mean(allfreqs[int(scale[i]):])]
+        else:
+            freqs += [np.mean(allfreqs[int(scale[i]):int(scale[i+1])])]
 
+    return newspec, freqs
+    
+def fourier_transformation(sig, frameSize, overlapFac=0.5, window=np.hanning):
+    win = window(frameSize)
+    hopSize = int(frameSize - np.floor(overlapFac * frameSize))
+
+    # zeros at beginning (thus center of 1st window should be for sample nr. 0)
+    samples = np.append(np.zeros(int(np.floor(frameSize/2.0))), sig)
+    # cols for windowing
+    cols = np.ceil( (len(samples) - frameSize) / float(hopSize)) + 1
+    # zeros at end (thus samples can be fully covered by frames)
+    samples = np.append(samples, np.zeros(frameSize))
+
+    frames = stride_tricks.as_strided(samples, shape=(int(cols), frameSize), strides=(samples.strides[0]*hopSize, samples.strides[0])).copy()
+    frames *= win
+
+    return np.fft.rfft(frames)    
+
+# Charger le CSV
+esc50_df = pd.read_csv('/content/ESC-50-master/meta/esc50.csv')
+
+# Créer les dossiers
+spectrogram_root = '/content/ESC-50-master/spectrogram'
+os.makedirs(spectrogram_root, exist_ok=True)
+
+for cat in esc50_df['category'].unique():
+    os.makedirs(os.path.join(spectrogram_root, cat), exist_ok=True)
+
+# Générer tous les spectrogrammes
+for i, row in esc50_df.iterrows():
+    filename = row['filename']
+    category = row['category']
+    audio_path = os.path.join('/content/ESC-50-master/audio', filename)
+    save_path = os.path.join(spectrogram_root, category, filename.replace('.wav', '.jpg'))
+
+    try:
+        plot_spectrogram(audio_path, plotpath=save_path)
+    except Exception as e:
+        print(f"Erreur avec {filename}: {e}")
 
 class VideoNode(Node):
     _ver = "0.0.1"
@@ -440,6 +520,44 @@ class VideoNode(Node):
     # def convert_cv_to_dpg(self, cv_img, w, h):
     #    return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
 
+
+
+	def chunk_audio_wav_or_mp3(input_audio, output_folder, chunk_duration=5.0, step_duration=0.25):
+		os.makedirs(output_folder, exist_ok=True)
+
+		print(f"📥 Chargement : {input_audio}")
+		try:
+			# Chargement avec librosa : supporte .wav, .mp3, etc.
+			data, rate = librosa.load(input_audio, sr=None, mono=True)
+		except Exception as e:
+			print(f"❌ Erreur lors de la lecture : {e}")
+			return
+
+		total_duration = len(data) / rate
+		chunk_samples = int(chunk_duration * rate)
+		step_samples = int(step_duration * rate)
+
+		start = 0
+		count = 1
+
+		print(f"🔍 Fréquence d'échantillonnage : {rate} Hz")
+		print("🚀 Découpage en cours...")
+
+		while (start + chunk_samples) <= len(data):
+			end = start + chunk_samples
+			chunk = data[start:end]
+			output_path = os.path.join(output_folder, f"chunk_{count}.wav")
+			sf.write(output_path, chunk, rate)
+			print(f"✅ chunk_{count}.wav : {start / rate:.2f}s → {end / rate:.2f}s")
+			count += 1
+			start += step_samples
+
+		print(f"\n🎉 {count - 1} chunks enregistrés dans {output_folder}")
+
+
+
+
+
     def _prepare_spectrogram(self, node_id, movie_path, fmin=None, fmax=None):
         """
         Extract audio and compute spectrogram from video file using STFT with logarithmic scaling.
@@ -457,7 +575,7 @@ class VideoNode(Node):
         try:
             # Try to load audio directly from video file
             try:
-                y, sr = librosa.load(movie_path, sr=22050)
+                y, sr = librosa.load(movie_path, sr=None)
             except Exception as e:
                 print(f"Direct audio load failed, trying ffmpeg extraction: {e}")
                 # Fallback: extract audio via ffmpeg
