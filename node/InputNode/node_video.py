@@ -503,7 +503,7 @@ class VideoNode(Node):
         self._spectrogram_chunks = {}  # Store pre-computed spectrograms per chunk
         self._chunk_metadata = {}  # Metadata for chunk-to-frame mapping
 
-    def _preprocess_video(self, node_id, movie_path, chunk_duration=5.0, step_duration=1.0):
+    def _preprocess_video(self, node_id, movie_path, chunk_duration=10.0, step_duration=1.0):
         """
         Pre-process video by extracting all frames and generating spectrograms for audio chunks.
         
@@ -517,7 +517,7 @@ class VideoNode(Node):
         Args:
             node_id: Node identifier
             movie_path: Path to video file
-            chunk_duration: Duration of each audio chunk in seconds (default: 5.0)
+            chunk_duration: Duration of each audio chunk in seconds (default: 10.0)
             step_duration: Step size between chunks in seconds (default: 1.0)
         """
         if not movie_path or not os.path.exists(movie_path):
@@ -665,14 +665,14 @@ class VideoNode(Node):
     
     def _get_spectrogram_for_frame(self, node_id, frame_number):
         """
-        Get the pre-computed spectrogram for a specific frame number.
+        Get the pre-computed spectrogram for a specific frame number with a cursor indicator.
         
         Args:
             node_id: Node identifier
             frame_number: Current frame number
             
         Returns:
-            Pre-computed spectrogram (BGR image) or None if not available
+            Pre-computed spectrogram (BGR image) with cursor overlay or None if not available
         """
         if node_id not in self._chunk_metadata or node_id not in self._spectrogram_chunks:
             return None
@@ -680,6 +680,7 @@ class VideoNode(Node):
         metadata = self._chunk_metadata[node_id]
         fps = metadata['fps']
         step_duration = metadata['step_duration']
+        chunk_duration = metadata['chunk_duration']
         
         # Calculate current time from frame number
         current_time = frame_number / fps if fps > 0 else 0
@@ -690,7 +691,40 @@ class VideoNode(Node):
         # Clamp to valid range
         chunk_index = max(0, min(chunk_index, len(self._spectrogram_chunks[node_id]) - 1))
         
-        return self._spectrogram_chunks[node_id][chunk_index]
+        # Get the base spectrogram for this chunk
+        base_spectrogram = self._spectrogram_chunks[node_id][chunk_index]
+        
+        # Create a copy to draw the cursor on (don't modify the cached version)
+        spectrogram_with_cursor = base_spectrogram.copy()
+        
+        # Calculate the position within the current chunk
+        chunk_start_time = chunk_index * step_duration
+        time_within_chunk = current_time - chunk_start_time
+        
+        # Normalize position within chunk (0.0 to 1.0)
+        # Clamp to chunk_duration to handle edge cases
+        time_within_chunk = max(0, min(time_within_chunk, chunk_duration))
+        position_ratio = time_within_chunk / chunk_duration if chunk_duration > 0 else 0
+        
+        # Calculate cursor X position in pixels
+        spectrogram_width = spectrogram_with_cursor.shape[1]
+        cursor_x = int(position_ratio * spectrogram_width)
+        cursor_x = max(0, min(cursor_x, spectrogram_width - 1))
+        
+        # Draw a vertical line as cursor (bright green for visibility)
+        # Draw a thicker line (3 pixels wide) for better visibility
+        cursor_color = (0, 255, 0)  # Bright green in BGR
+        line_thickness = 2
+        
+        cv2.line(
+            spectrogram_with_cursor,
+            (cursor_x, 0),
+            (cursor_x, spectrogram_with_cursor.shape[0]),
+            cursor_color,
+            line_thickness
+        )
+        
+        return spectrogram_with_cursor
 
 
 
