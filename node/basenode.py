@@ -99,7 +99,8 @@ class Node:
 
     def get_input_frame(self, connection_list, node_image_dict, node_audio_dict=None):
         """
-        Récupère une frame depuis une connexion IMAGE ou AUDIO.
+        Retrieves an image from an IMAGE or AUDIO connection.
+        The image can be a video frame, a spectrogram, or a static image.
         """
         connection_info_src = ""
         connection_type_found = None
@@ -108,7 +109,7 @@ class Node:
             connection_type = connection_info[0].split(":")[2]
             print(f"Connection type detected: {connection_type}")
 
-            # ✅ Accepter IMAGE et AUDIO
+            # Accept both IMAGE and AUDIO connections
             if connection_type in [self.TYPE_IMAGE, self.TYPE_AUDIO]:
                 connection_info_src = ":".join(connection_info[0].split(":")[:2])
                 connection_type_found = connection_type
@@ -120,16 +121,16 @@ class Node:
         if not connection_info_src:
             return None
 
-        # ✅ Chercher dans le bon dictionnaire selon le type
-        frame = None
+        # Retrieve from the appropriate dictionary based on connection type
+        image = None
         if connection_type_found == self.TYPE_IMAGE:
-            frame = node_image_dict.get(connection_info_src, None)
+            image = node_image_dict.get(connection_info_src, None)
         elif connection_type_found == self.TYPE_AUDIO:
-            # ✅ Le spectrogramme est dans node_audio_dict !
+            # Spectrogram is stored in node_audio_dict
             if node_audio_dict is not None:
-                frame = node_audio_dict.get(connection_info_src, None)
+                image = node_audio_dict.get(connection_info_src, None)
 
-        return frame
+        return image
 
     def get_setting_dict(self, node_id):
         self.tag_node_name = f"{node_id}:{self.node_tag}"
