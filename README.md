@@ -38,6 +38,9 @@ dearpygui       1.11.0 or later
 mediapipe       0.8.10 or later  ※ Required for MediaPipe nodes
 protobuf        3.20.0 or later  ※ Required for MediaPipe nodes
 filterpy        1.4.5 or later   ※ Required for MOT (Multi-Object Tracking) nodes
+librosa                          ※ Required for audio spectrogram processing
+matplotlib                       ※ Required for spectrogram visualization
+soundfile                        ※ Required for audio file I/O
 ```
 
 ## 🚀 Installation
@@ -500,6 +503,17 @@ Comprehensive guides explaining how the Video Node synchronizes audio spectrogra
 - **[Video-Audio Synchronization Explained](VIDEO_AUDIO_SYNCHRONIZATION_EXPLAINED.md)** - Complete technical explanation in English
 - **[Synchronisation Vidéo-Audio Expliquée](SYNCHRONISATION_VIDEO_AUDIO_EXPLIQUEE.md)** - Explication complète en français
 - **[Visual Sync Diagrams](VISUAL_SYNC_DIAGRAMS.md)** - Visual diagrams and flowcharts
+
+#### Audio Spectrogram Processing Documentation
+
+Complete guide for audio classification workflows using spectrograms:
+
+- **[🎵 Audio Spectrogram Guide](AUDIO_SPECTROGRAM_GUIDE.md)** - Complete guide for audio processing workflows 🔊
+  - Audio chunking with sliding windows
+  - Spectrogram generation and batch processing
+  - Video creation from spectrogram sequences
+  - Image annotation with YOLO classification results
+  - Full workflow examples for ESC-50 and custom datasets
 
 ## 🧪 Testing
 
