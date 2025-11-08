@@ -461,7 +461,7 @@ class VideoNode(Node):
                     "ffmpeg", "-i", movie_path,
                     "-vn", "-acodec", "pcm_s16le",
                     "-y", tmp_audio_path,
-                ], check=True, capture_output=True, stderr=subprocess.DEVNULL)
+                ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
                 # Read audio with scipy (SAME as training code) - preserves native sample rate
                 import scipy.io.wavfile as wav
