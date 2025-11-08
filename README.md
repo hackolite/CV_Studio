@@ -377,6 +377,36 @@ For video batch processing:
 3. Configure output settings in `setting.json`
 4. Process multiple videos by changing the input file
 
+#### Audio/Video to Spectrogram Conversion
+
+Convert audio or video files to spectrogram images for audio classification tasks:
+
+**Simple Batch Processing (ESC-50 style):**
+```python
+from simple_video_to_spectrogram import process_video_chunks_to_spectrograms
+
+# Process dataset with CSV metadata
+process_video_chunks_to_spectrograms(
+    csv_path='metadata/dataset.csv',
+    audio_root='audio/',
+    spectrogram_root='spectrograms/'
+)
+```
+
+**Command-Line Tool:**
+```bash
+# Single file
+python video_to_spectrogram.py --mode single --input video.mp4 --output spec.jpg
+
+# Batch processing
+python video_to_spectrogram.py --mode batch \
+    --csv metadata.csv \
+    --audio-dir ./audio \
+    --output-dir ./spectrograms
+```
+
+See [VIDEO_TO_SPECTROGRAM_README.md](VIDEO_TO_SPECTROGRAM_README.md) for complete documentation.
+
 #### Integration with External Systems
 
 CV Studio supports integration with external systems:
@@ -500,6 +530,15 @@ Comprehensive guides explaining how the Video Node synchronizes audio spectrogra
 - **[Video-Audio Synchronization Explained](VIDEO_AUDIO_SYNCHRONIZATION_EXPLAINED.md)** - Complete technical explanation in English
 - **[Synchronisation Vidéo-Audio Expliquée](SYNCHRONISATION_VIDEO_AUDIO_EXPLIQUEE.md)** - Explication complète en français
 - **[Visual Sync Diagrams](VISUAL_SYNC_DIAGRAMS.md)** - Visual diagrams and flowcharts
+
+#### Video to Spectrogram Conversion
+
+Standalone utilities for batch converting video/audio files to spectrogram images:
+
+- **[📄 Video to Spectrogram Guide](VIDEO_TO_SPECTROGRAM_README.md)** - Complete guide for batch processing audio/video to spectrograms
+- **Scripts:**
+  - `simple_video_to_spectrogram.py` - Simple batch processor following ESC-50 pattern
+  - `video_to_spectrogram.py` - Full-featured CLI tool with video support
 
 ## 🧪 Testing
 
