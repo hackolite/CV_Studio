@@ -695,6 +695,8 @@ class VideoNode(Node):
     def _add_playback_cursor_to_spectrogram(self, spectrogram_bgr, node_id, frame_number):
         """
         Add a yellow vertical cursor to the spectrogram showing current playback position.
+        On the first frame, the cursor moves. After that, the cursor stays fixed at 1/3 of the width
+        and the spectrogram scrolls to the left.
         
         Args:
             spectrogram_bgr: Spectrogram image (BGR format)
@@ -702,13 +704,10 @@ class VideoNode(Node):
             frame_number: Current frame number
             
         Returns:
-            Spectrogram with yellow cursor overlay
+            Spectrogram with yellow cursor overlay (scrolled if needed)
         """
         if node_id not in self._chunk_metadata:
             return spectrogram_bgr
-        
-        # Make a copy to avoid modifying the original
-        spectrogram_with_cursor = spectrogram_bgr.copy()
         
         metadata = self._chunk_metadata[node_id]
         fps = metadata['fps']
@@ -730,9 +729,32 @@ class VideoNode(Node):
         # Clamp to valid range [0, 1]
         cursor_position_ratio = max(0.0, min(1.0, cursor_position_ratio))
         
-        # Calculate pixel position (cursor x-coordinate)
-        height, width = spectrogram_with_cursor.shape[:2]
-        cursor_x = int(cursor_position_ratio * width)
+        height, width = spectrogram_bgr.shape[:2]
+        
+        # Fixed cursor position at 1/3 of the width (after the first portion)
+        fixed_cursor_x = width // 3
+        
+        # For the first portion (up to 1/3 of the spectrogram), cursor moves
+        # After that, cursor stays fixed and spectrogram scrolls
+        if cursor_position_ratio <= 1.0 / 3.0:
+            # First portion: cursor moves from 0 to width/3
+            cursor_x = int(cursor_position_ratio * width)
+            spectrogram_with_cursor = spectrogram_bgr.copy()
+        else:
+            # After first portion: cursor stays at width/3, spectrogram scrolls left
+            # Calculate how much to scroll based on progress beyond 1/3
+            scroll_ratio = (cursor_position_ratio - 1.0 / 3.0) / (2.0 / 3.0)  # Progress in remaining 2/3
+            scroll_pixels = int(scroll_ratio * (width - fixed_cursor_x))
+            
+            # Scroll the spectrogram to the left
+            spectrogram_with_cursor = np.zeros_like(spectrogram_bgr)
+            if scroll_pixels < width:
+                # Copy the scrolled portion
+                spectrogram_with_cursor[:, :width - scroll_pixels] = spectrogram_bgr[:, scroll_pixels:]
+                # Fill the right side with black or edge values
+                spectrogram_with_cursor[:, width - scroll_pixels:] = spectrogram_bgr[:, -1:]
+            
+            cursor_x = fixed_cursor_x
         
         # Draw yellow vertical line (BGR format: yellow is (0, 255, 255))
         # Draw a thicker line (3 pixels) for better visibility

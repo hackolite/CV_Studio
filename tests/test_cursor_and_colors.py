@@ -63,14 +63,21 @@ def test_classification_colors_method_exists():
     assert "(0, 0, 255)" in content, \
         "Should have red color for position 1"
     
-    # Check for green color (BGR: 0, 255, 0) - Position 2
-    # This is checked multiple times, so just verify it exists
-    assert "(0, 255, 0)" in content, \
-        "Should have green color for position 2"
+    # Check for yellow color (BGR: 0, 255, 255) - Position 2
+    assert "(0, 255, 255)" in content, \
+        "Should have yellow color for position 2"
     
     # Check for blue color (BGR: 255, 0, 0) - Position 3
     assert "(255, 0, 0)" in content, \
         "Should have blue color for position 3"
+    
+    # Check for violet color (BGR: 255, 0, 128) - Position 4
+    assert "(255, 0, 128)" in content, \
+        "Should have violet color for position 4"
+    
+    # Check for magenta color (BGR: 255, 0, 255) - Position 5
+    assert "(255, 0, 255)" in content, \
+        "Should have magenta color for position 5"
     
     print("✓ Classification color method exists with correct color definitions")
 
@@ -172,11 +179,14 @@ if __name__ == '__main__':
         print("All tests passed! ✓")
         print("="*60)
         print("\nImplemented features:")
-        print("1. Yellow cursor on spectrogram showing playback position")
+        print("1. Yellow cursor on spectrogram - stays fixed after first frame while spectrogram scrolls")
         print("2. Color-coded classification rankings:")
         print("   - Position 1 (highest): Red")
-        print("   - Position 2: Green")
+        print("   - Position 2: Yellow")
         print("   - Position 3: Blue")
+        print("   - Position 4: Violet")
+        print("   - Position 5: Magenta")
+        print("3. Classification results in concat node: bigger and at bottom left")
     except AssertionError as e:
         print(f"\n✗ Test failed: {e}")
         sys.exit(1)
