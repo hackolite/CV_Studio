@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Tests for spectrogram scrolling window functionality"""
+"""Tests for simplified spectrogram display functionality"""
 
 import sys
 import os
@@ -10,8 +10,8 @@ import ast
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def test_sliding_window_extraction():
-    """Test that sliding window extraction code is present"""
+def test_simplified_spectrogram_display():
+    """Test that simplified spectrogram display code is present"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -22,18 +22,15 @@ def test_sliding_window_extraction():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Check for sliding window implementation
-    assert "window_width" in content, "Should define window_width"
-    assert "half_window" in content, "Should calculate half_window"
-    assert "start_col" in content, "Should calculate start_col"
-    assert "end_col" in content, "Should calculate end_col"
-    assert "spectrogram_window" in content, "Should extract spectrogram_window"
+    # Check for simplified implementation
+    assert "self._spectrogram_array[str(node_id)]" in content, "Should access spectrogram array"
+    assert "spectrogram_bgr" in content, "Should use spectrogram_bgr variable"
     
-    print("✓ Sliding window extraction code is present")
+    print("✓ Simplified spectrogram display code is present")
 
 
-def test_window_centered_on_playback():
-    """Test that the window is centered around current playback position"""
+def test_no_complex_playback_logic():
+    """Test that complex playback window extraction logic has been removed"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -42,15 +39,18 @@ def test_window_centered_on_playback():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Check that window is centered around spectrogram_col
-    assert "spectrogram_col - half_window" in content, "Should center window around current position"
-    assert "start_col + window_width" in content, "Should calculate end based on start and width"
+    # Check that complex playback logic has been removed
+    assert "spectrogram_window = full_spectrogram[:, start_col:end_col].copy()" not in content, \
+        "Should not have complex window extraction"
+    assert "half_window" not in content, "Should not calculate half_window"
+    assert "indicator_col = spectrogram_col - start_col" not in content, \
+        "Should not calculate indicator relative to window"
     
-    print("✓ Window is centered on playback position")
+    print("✓ Complex playback logic has been removed")
 
 
-def test_indicator_position_in_window():
-    """Test that the indicator position is calculated relative to the window"""
+def test_spectrogram_toggle_exists():
+    """Test that spectrogram toggle functionality is preserved"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -59,15 +59,15 @@ def test_indicator_position_in_window():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Check that indicator position is relative to window start
-    assert "indicator_col" in content, "Should calculate indicator_col"
-    assert "spectrogram_col - start_col" in content, "Should calculate indicator relative to window"
+    # Check that toggle functionality is still present
+    assert "tag_node_spectrogram_toggle" in content, "Should have spectrogram toggle tag"
+    assert "show_spectrogram" in content, "Should check show_spectrogram flag"
     
-    print("✓ Indicator position is calculated relative to window")
+    print("✓ Spectrogram toggle functionality is preserved")
 
 
-def test_boundary_handling():
-    """Test that boundaries are properly handled"""
+def test_texture_update_present():
+    """Test that texture update code is present"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -76,15 +76,15 @@ def test_boundary_handling():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Check for boundary handling
-    assert "max(0," in content, "Should handle start boundary"
-    assert "min(full_spectrogram.shape[1]" in content, "Should handle end boundary"
+    # Check for texture update
+    assert "convert_cv_to_dpg" in content, "Should convert to DPG format"
+    assert "dpg_set_value" in content, "Should update texture value"
     
-    print("✓ Boundary handling is present")
+    print("✓ Texture update code is present")
 
 
-def test_padding_for_edges():
-    """Test that padding is applied when window is at edges"""
+def test_no_indicator_lines():
+    """Test that indicator line drawing has been removed"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -92,30 +92,25 @@ def test_padding_for_edges():
     
     with open(video_node_path, 'r') as f:
         content = f.read()
+        
+    # Count occurrences of cv2.line in the spectrogram section
+    # (There might be cv2.line elsewhere in the file for other purposes)
+    # We're specifically checking that the yellow/green indicator lines are gone
+    lines = content.split('\n')
+    in_spectrogram_section = False
+    cv2_line_count = 0
     
-    # Check for padding logic
-    assert "pad_width" in content, "Should calculate pad_width"
-    assert "np.zeros" in content and "padding" in content, "Should create padding"
-    assert "np.hstack" in content, "Should concatenate padding with window"
+    for line in lines:
+        if 'Update spectrogram display' in line:
+            in_spectrogram_section = True
+        elif 'def close' in line or 'def get_setting_dict' in line:
+            in_spectrogram_section = False
+        elif in_spectrogram_section and 'cv2.line' in line:
+            cv2_line_count += 1
     
-    print("✓ Padding logic is present for edge cases")
-
-
-def test_yellow_line_still_present():
-    """Test that the yellow indicator line is still drawn"""
-    video_node_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        'node', 'InputNode', 'node_video.py'
-    )
+    assert cv2_line_count == 0, "Should not have indicator line drawing in spectrogram section"
     
-    with open(video_node_path, 'r') as f:
-        content = f.read()
-    
-    # Check that yellow line is still present
-    assert "cv2.line" in content, "Should still draw indicator line"
-    assert "(0, 255, 255)" in content, "Should still use yellow color"
-    
-    print("✓ Yellow indicator line is still present")
+    print("✓ Indicator line drawing has been removed")
 
 
 def test_python_syntax_valid():
@@ -136,11 +131,10 @@ def test_python_syntax_valid():
 
 
 if __name__ == '__main__':
-    test_sliding_window_extraction()
-    test_window_centered_on_playback()
-    test_indicator_position_in_window()
-    test_boundary_handling()
-    test_padding_for_edges()
-    test_yellow_line_still_present()
+    test_simplified_spectrogram_display()
+    test_no_complex_playback_logic()
+    test_spectrogram_toggle_exists()
+    test_texture_update_present()
+    test_no_indicator_lines()
     test_python_syntax_valid()
-    print("\n✓ All spectrogram scrolling tests passed successfully!")
+    print("\n✓ All simplified spectrogram tests passed successfully!")

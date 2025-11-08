@@ -751,113 +751,12 @@ class VideoNode(Node):
 
         # Update spectrogram display if toggle is enabled
         tag_node_spectrogram_toggle = tag_node_name + ":SpectrogramToggle"
-        # tag_node_spectrogram_value = tag_node_name + ":SpectrogramValue"
 
         if dpg.does_item_exist(tag_node_spectrogram_toggle):
             show_spectrogram = dpg_get_value(tag_node_spectrogram_toggle)
             if show_spectrogram and str(node_id) in self._spectrogram_array:
-                # Get the original spectrogram array
-                full_spectrogram = self._spectrogram_array[str(node_id)]
-
-                # Calculate current playback position
-                if str(node_id) in self._spectrogram_meta and video_capture is not None:
-                    meta = self._spectrogram_meta[str(node_id)]
-                    fps = meta["fps"]
-                    sr = meta["sr"]
-                    hop_length = meta["hop_length"]
-
-                    # Get current frame position
-                    current_frame = self._frame_count.get(str(node_id), 0)
-
-                    # Calculate current time in seconds
-                    current_time = current_frame / fps if fps > 0 else 0
-
-                    # Calculate spectrogram column position
-                    # Each spectrogram column represents hop_length samples
-                    current_sample = int(current_time * sr)
-                    spectrogram_col = int(current_sample / hop_length)
-
-                    # Extract a sliding window around the current position
-                    # Window width matches the display width for 1:1 pixel mapping
-                    window_width = small_window_w
-                    half_window = window_width // 2
-
-                    # Calculate window boundaries
-                    start_col = max(0, spectrogram_col - half_window)
-                    end_col = min(full_spectrogram.shape[1], start_col + window_width)
-
-                    # Adjust start if we're at the end of the spectrogram
-                    if end_col == full_spectrogram.shape[1]:
-                        start_col = max(0, end_col - window_width)
-
-                    # Extract the window
-                    spectrogram_window = full_spectrogram[:, start_col:end_col].copy()
-
-                    # Calculate the indicator position within the window
-                    indicator_col = spectrogram_col - start_col
-
-                    # If window is smaller than expected (at start or end), pad with black
-                    if spectrogram_window.shape[1] < window_width:
-                        pad_width = window_width - spectrogram_window.shape[1]
-                        # Pad on the right if we're at the start, on the left if at the end
-                        if start_col == 0:
-                            padding = np.zeros(
-                                (spectrogram_window.shape[0], pad_width, 3),
-                                dtype=np.uint8,
-                            )
-                            spectrogram_window = np.hstack(
-                                [spectrogram_window, padding]
-                            )
-                        else:
-                            padding = np.zeros(
-                                (spectrogram_window.shape[0], pad_width, 3),
-                                dtype=np.uint8,
-                            )
-                            spectrogram_window = np.hstack(
-                                [padding, spectrogram_window]
-                            )
-                            # Adjust indicator position after left padding
-                            indicator_col += pad_width
-
-                    # Draw boundary cursors (green) at start and end of the window
-                    # These show the full window (including padding) being sent to classification
-                    # Green in BGR is (0, 255, 0)
-                    start_cursor_col = 0
-                    end_cursor_col = spectrogram_window.shape[1] - 1
-
-                    # Draw start boundary cursor (left edge)
-                    cv2.line(
-                        spectrogram_window,
-                        (start_cursor_col, 0),
-                        (start_cursor_col, spectrogram_window.shape[0] - 1),
-                        (0, 255, 0),
-                        2,
-                    )
-
-                    # Draw end boundary cursor (right edge)
-                    cv2.line(
-                        spectrogram_window,
-                        (end_cursor_col, 0),
-                        (end_cursor_col, spectrogram_window.shape[0] - 1),
-                        (0, 255, 0),
-                        2,
-                    )
-
-                    # Draw yellow vertical line at current position within the window (middle cursor)
-                    if 0 <= indicator_col < spectrogram_window.shape[1]:
-                        # Yellow in BGR is (0, 255, 255)
-                        cv2.line(
-                            spectrogram_window,
-                            (indicator_col, 0),
-                            (indicator_col, spectrogram_window.shape[0] - 1),
-                            (0, 255, 255),
-                            2,
-                        )
-
-                    spectrogram_bgr = spectrogram_window
-                else:
-                    # No metadata available, show the entire spectrogram (fallback)
-                    spectrogram_bgr = full_spectrogram.copy()
+                # Use the spectrogram directly from the chunk/texture
+                spectrogram_bgr = self._spectrogram_array[str(node_id)].copy()
 
                 # Convert to DPG texture format and update
                 texture = self.convert_cv_to_dpg(
