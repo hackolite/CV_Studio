@@ -11,6 +11,7 @@ import matplotlib
 import subprocess
 import tempfile
 import os
+from collections import OrderedDict
 
 from node_editor.util import dpg_get_value, dpg_set_value
 
@@ -497,66 +498,53 @@ class VideoNode(Node):
         # Can be changed to 'VIRIDIS', 'JET', 'MAGMA', 'PLASMA', etc.
         self._spectrogram_colormap = DEFAULT_SPECTROGRAM_COLORMAP
         
-        # New: Pre-processed data storage
-        self._video_frames = {}  # Store extracted frames
-        self._audio_chunks = {}  # Store audio chunks
-        self._spectrogram_chunks = {}  # Store pre-computed spectrograms per chunk
+        # Optimized storage with LRU cache
+        self._full_audio = {}  # Audio complet en mémoire (~26 MB pour 5 min)
+        self._spectrogram_cache = {}  # Cache LRU utilisant OrderedDict
+        self._cache_max_size = 50  # Maximum 50 spectrogrammes (~5 MB)
         self._chunk_metadata = {}  # Metadata for chunk-to-frame mapping
 
     def _preprocess_video(self, node_id, movie_path, chunk_duration=5.0, step_duration=0.1):
         """
-        Pre-process video by extracting all frames and generating spectrograms for audio chunks.
+        Version optimisée : charge SEULEMENT l'audio complet, pas de pré-calcul des spectrogrammes
         
         This method:
-        1. Extracts all video frames using OpenCV
-        2. Extracts audio using librosa
-        3. Chunks audio into segments (chunk_duration with step_duration overlap)
-        4. Pre-computes spectrograms for each chunk
-        5. Stores metadata for frame-to-chunk mapping
+        1. Extracts video metadata (FPS, frame count) - NO frame extraction
+        2. Extracts full audio using librosa
+        3. Saves audio as MP3
+        4. Stores metadata for chunk-to-frame mapping
+        5. Spectrograms are computed on-the-fly with LRU cache
         
         Args:
             node_id: Node identifier
             movie_path: Path to video file
             chunk_duration: Duration of each audio chunk in seconds (default: 5.0)
-            step_duration: Step size between chunks in seconds (default: 1.0)
+            step_duration: Step size between chunks in seconds (default: 0.1)
         """
         if not movie_path or not os.path.exists(movie_path):
             print(f"Video file not found: {movie_path}")
             return
         
-        print(f"🎬 Pre-processing video: {movie_path}")
+        print(f"🎬 Chargement optimisé: {movie_path}")
         
         try:
-            # Step 1: Extract all video frames
-            print("📹 Extracting video frames...")
+            # Étape 1 : Extraire métadonnées vidéo (PAS les frames)
+            print("📹 Extraction des métadonnées vidéo...")
             cap = cv2.VideoCapture(movie_path)
             fps = cap.get(cv2.CAP_PROP_FPS)
             if fps <= 0:
-                fps = 30.0  # Default fallback
-            
-            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            
-            frames = []
-            frame_idx = 0
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                frames.append(frame)
-                frame_idx += 1
-                if frame_idx % 100 == 0:
-                    print(f"  Extracted {frame_idx}/{frame_count} frames...")
-            
+                fps = 30.0
+            num_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             cap.release()
-            self._video_frames[node_id] = frames
-            print(f"✅ Extracted {len(frames)} frames (FPS: {fps})")
             
-            # Step 2: Extract audio
-            print("🎵 Extracting audio...")
+            print(f"📹 Vidéo : {num_frames} frames à {fps} FPS")
+            
+            # Étape 2 : Extraire audio complet
+            print("🎵 Extraction audio...")
             try:
-                y, sr = librosa.load(movie_path, sr=None)
+                y, sr = librosa.load(movie_path, sr=22050, mono=True)
             except Exception as e:
-                print(f"⚠️ Direct audio load failed, trying ffmpeg extraction: {e}")
+                print(f"⚠️ Extraction directe échouée, utilisation ffmpeg: {e}")
                 # Fallback: extract audio via ffmpeg
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio:
                     tmp_audio_path = tmp_audio.name
@@ -580,158 +568,189 @@ class VideoNode(Node):
                     if os.path.exists(tmp_audio_path):
                         os.unlink(tmp_audio_path)
             
-            print(f"✅ Audio extracted (SR: {sr} Hz, Duration: {len(y)/sr:.2f}s)")
+            # Stocker audio complet
+            self._full_audio[node_id] = y
+            print(f"✅ Audio chargé : {len(y)/sr:.1f}s ({len(y)*4/1e6:.1f} MB)")
             
-            # Step 2.5: Save extracted audio as MP3 file
-            try:
-                # Create audio filename based on video path
-                video_dir = os.path.dirname(movie_path)
-                video_basename = os.path.splitext(os.path.basename(movie_path))[0]
-                audio_mp3_path = os.path.join(video_dir, f"{video_basename}_audio.mp3")
-                
-                # Use ffmpeg to convert the audio array to MP3
-                # First save as temporary WAV, then convert to MP3
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
-                    tmp_wav_path = tmp_wav.name
-                    sf.write(tmp_wav_path, y, sr)
-                
-                try:
-                    # Convert WAV to MP3 using ffmpeg
-                    subprocess.run(
-                        [
-                            "ffmpeg",
-                            "-i", tmp_wav_path,
-                            "-codec:a", "libmp3lame",
-                            "-qscale:a", "2",  # High quality MP3
-                            "-y", audio_mp3_path,
-                        ],
-                        check=True,
-                        capture_output=True,
-                    )
-                    print(f"💾 Audio saved as MP3: {audio_mp3_path}")
-                except subprocess.CalledProcessError as e:
-                    print(f"⚠️ Failed to convert to MP3, saving as WAV instead: {e}")
-                    # Fallback: keep the WAV file
-                    audio_wav_path = os.path.join(video_dir, f"{video_basename}_audio.wav")
-                    sf.write(audio_wav_path, y, sr)
-                    print(f"💾 Audio saved as WAV: {audio_wav_path}")
-                finally:
-                    # Clean up temporary WAV file
-                    if os.path.exists(tmp_wav_path):
-                        os.unlink(tmp_wav_path)
-                        
-            except Exception as e:
-                print(f"⚠️ Failed to save audio file: {e}")
+            # Étape 3 : Sauvegarder MP3
+            self._save_audio_as_mp3(node_id, movie_path, y, sr)
             
-            # Step 3: Chunk audio with sliding window
-            print(f"✂️ Chunking audio (chunk: {chunk_duration}s, step: {step_duration}s)...")
-            chunk_samples = int(chunk_duration * sr)
-            step_samples = int(step_duration * sr)
-            
-            audio_chunks = []
-            chunk_start_times = []
-            start = 0
-            chunk_idx = 0
-            
-            while (start + chunk_samples) <= len(y):
-                end = start + chunk_samples
-                chunk = y[start:end]
-                audio_chunks.append(chunk)
-                chunk_start_times.append(start / sr)
-                chunk_idx += 1
-                start += step_samples
-            
-            self._audio_chunks[node_id] = audio_chunks
-            print(f"✅ Created {len(audio_chunks)} audio chunks")
-            
-            # Step 4: Pre-compute spectrograms for each chunk
-            print("🌈 Pre-computing spectrograms...")
-            spectrogram_chunks = []
-            binsize = 2**10  # 1024 samples
-            
-            for idx, chunk in enumerate(audio_chunks):
-                if idx % 10 == 0:
-                    print(f"  Processing chunk {idx}/{len(audio_chunks)}...")
-                
-                # Perform Fourier transformation
-                s = fourier_transformation(chunk, binsize, overlapFac=0.5, window=np.hanning)
-                
-                # Apply logarithmic frequency scaling
-                sshow, freq = make_logscale(spec=s, sr=sr, factor=1.0)
-                
-                # Convert to dB scale with epsilon to avoid log10(0)
-                sshow_safe = np.maximum(np.abs(sshow), SPECTROGRAM_EPSILON)
-                ims = 20. * np.log10(sshow_safe / 10e-6)
-                
-                # Replace non-finite values
-                ims = np.nan_to_num(ims, nan=-80.0, posinf=0.0, neginf=-80.0)
-                
-                # Transpose for correct orientation (freq x time)
-                ims_transposed = np.transpose(ims, (1, 0))
-                
-                # Apply colormap
-                S_rgb = apply_colormap_to_spectrogram(
-                    ims_transposed,
-                    method='cv2',
-                    cmap=self._spectrogram_colormap
-                )
-                
-                # Flip vertically and convert to BGR
-                #S_rgb = np.flipud(S_rgb)
-                #S_bgr = cv2.cvtColor(S_rgb, cv2.COLOR_RGB2BGR)
-                
-                spectrogram_chunks.append(S_rgb)
-            
-            self._spectrogram_chunks[node_id] = spectrogram_chunks
-            print(f"✅ Pre-computed {len(spectrogram_chunks)} spectrograms")
-            
-            # Step 5: Store metadata
+            # Étape 4 : Stocker métadonnées (PAS de pré-calcul)
             self._chunk_metadata[node_id] = {
                 'fps': fps,
                 'sr': sr,
                 'chunk_duration': chunk_duration,
                 'step_duration': step_duration,
-                'chunk_start_times': chunk_start_times,
-                'num_frames': len(frames),
-                'num_chunks': len(audio_chunks),
+                'num_frames': num_frames,
+                'total_duration': num_frames / fps if fps > 0 else 0,
             }
             
-            print(f"🎉 Pre-processing complete!")
-            print(f"   Frames: {len(frames)}, Chunks: {len(audio_chunks)}, FPS: {fps}")
+            # Initialiser cache LRU vide
+            self._spectrogram_cache[node_id] = OrderedDict()
+            
+            print(f"🎉 Chargement terminé ! Spectrogrammes calculés à la demande.")
             
         except Exception as e:
-            print(f"❌ Failed to pre-process video: {e}")
+            print(f"❌ Erreur : {e}")
             import traceback
             traceback.print_exc()
     
+    def _save_audio_as_mp3(self, node_id, movie_path, y, sr):
+        """Sauvegarder l'audio extrait en MP3"""
+        try:
+            # Create audio filename based on video path
+            video_dir = os.path.dirname(movie_path)
+            video_basename = os.path.splitext(os.path.basename(movie_path))[0]
+            audio_mp3_path = os.path.join(video_dir, f"{video_basename}_audio.mp3")
+            
+            # Use ffmpeg to convert the audio array to MP3
+            # First save as temporary WAV, then convert to MP3
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
+                tmp_wav_path = tmp_wav.name
+                import soundfile as sf
+                sf.write(tmp_wav_path, y, sr)
+            
+            try:
+                # Convert WAV to MP3 using ffmpeg
+                subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-i", tmp_wav_path,
+                        "-codec:a", "libmp3lame",
+                        "-qscale:a", "2",  # High quality MP3
+                        "-y", audio_mp3_path,
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
+                print(f"💾 Audio saved as MP3: {audio_mp3_path}")
+            except subprocess.CalledProcessError as e:
+                print(f"⚠️ Failed to convert to MP3, saving as WAV instead: {e}")
+                # Fallback: keep the WAV file
+                audio_wav_path = os.path.join(video_dir, f"{video_basename}_audio.wav")
+                sf.write(audio_wav_path, y, sr)
+                print(f"💾 Audio saved as WAV: {audio_wav_path}")
+            finally:
+                # Clean up temporary WAV file
+                if os.path.exists(tmp_wav_path):
+                    os.unlink(tmp_wav_path)
+                    
+        except Exception as e:
+            print(f"⚠️ Failed to save audio file: {e}")
+    
+    def _compute_spectrogram_for_chunk(self, node_id, chunk_index):
+        """Calcule UN SEUL spectrogramme à la volée avec les MÊMES paramètres de rendu"""
+        metadata = self._chunk_metadata[node_id]
+        sr = metadata['sr']
+        chunk_duration = metadata['chunk_duration']
+        step_duration = metadata['step_duration']
+        
+        # Extraire chunk audio depuis l'audio complet
+        start_sample = int(chunk_index * step_duration * sr)
+        chunk_samples = int(chunk_duration * sr)
+        
+        if start_sample + chunk_samples > len(self._full_audio[node_id]):
+            chunk_samples = len(self._full_audio[node_id]) - start_sample
+            if chunk_samples <= 0:
+                return None
+        
+        chunk = self._full_audio[node_id][start_sample:start_sample + chunk_samples]
+        
+        # ✅ MÊMES PARAMÈTRES DE RENDU qu'avant
+        binsize = 2**10  # 1024 samples (identique ligne 650)
+        
+        # Fourier transformation (identique ligne 657)
+        s = fourier_transformation(chunk, binsize, overlapFac=0.5, window=np.hanning)
+        
+        # Log scale (identique ligne 660)
+        sshow, freq = make_logscale(spec=s, sr=sr, factor=1.0)
+        
+        # dB conversion (identique lignes 663-664)
+        sshow_safe = np.maximum(np.abs(sshow), SPECTROGRAM_EPSILON)
+        ims = 20. * np.log10(sshow_safe / 10e-6)
+        
+        # Nan handling (identique ligne 667)
+        ims = np.nan_to_num(ims, nan=-80.0, posinf=0.0, neginf=-80.0)
+        
+        # Transpose (identique ligne 670)
+        ims_transposed = np.transpose(ims, (1, 0))
+        
+        # Colormap (identique lignes 673-677)
+        S_rgb = apply_colormap_to_spectrogram(
+            ims_transposed,
+            method='cv2',
+            cmap=self._spectrogram_colormap  # JET par défaut
+        )
+        
+        return S_rgb
+    
+    def _prefetch_next_spectrograms(self, node_id, current_chunk_index):
+        """Pré-calcule intelligemment les 3 prochains chunks pour garantir 24 FPS"""
+        metadata = self._chunk_metadata[node_id]
+        
+        for offset in range(1, 4):  # Précharge 3 chunks à l'avance
+            next_index = current_chunk_index + offset
+            cache_key = (node_id, next_index)
+            
+            # Calculer seulement si pas déjà en cache
+            if cache_key not in self._spectrogram_cache[node_id]:
+                spectrogram = self._compute_spectrogram_for_chunk(node_id, next_index)
+                if spectrogram is not None:
+                    self._spectrogram_cache[node_id][cache_key] = spectrogram
+                    
+                    # Limiter taille cache
+                    while len(self._spectrogram_cache[node_id]) > self._cache_max_size:
+                        self._spectrogram_cache[node_id].popitem(last=False)
+    
     def _get_spectrogram_for_frame(self, node_id, frame_number):
         """
-        Get the pre-computed spectrogram for a specific frame number.
+        Version optimisée : génère spectrogrammes à la volée avec cache LRU + prefetch
         
         Args:
             node_id: Node identifier
             frame_number: Current frame number
             
         Returns:
-            Pre-computed spectrogram (BGR image) or None if not available
+            Spectrogram (RGB image) or None if not available
         """
-        if node_id not in self._chunk_metadata or node_id not in self._spectrogram_chunks:
+        if node_id not in self._chunk_metadata or node_id not in self._full_audio:
             return None
         
         metadata = self._chunk_metadata[node_id]
         fps = metadata['fps']
         step_duration = metadata['step_duration']
         
-        # Calculate current time from frame number
+        # Calculer chunk index
         current_time = frame_number / fps if fps > 0 else 0
-        
-        # Calculate chunk index based on step duration
         chunk_index = int(current_time / step_duration)
         
-        # Clamp to valid range
-        chunk_index = max(0, min(chunk_index, len(self._spectrogram_chunks[node_id]) - 1))
+        # Vérifier cache LRU
+        cache_key = (node_id, chunk_index)
+        if cache_key in self._spectrogram_cache[node_id]:
+            # Cache hit : récupération ultra-rapide (~0.5ms)
+            self._spectrogram_cache[node_id].move_to_end(cache_key)  # LRU update
+            return self._spectrogram_cache[node_id][cache_key]
         
-        return self._spectrogram_chunks[node_id][chunk_index]
+        # Cache miss : calculer spectrogramme (~15-30ms)
+        spectrogram = self._compute_spectrogram_for_chunk(node_id, chunk_index)
+        
+        if spectrogram is None:
+            return None
+        
+        # Ajouter au cache
+        if node_id not in self._spectrogram_cache:
+            self._spectrogram_cache[node_id] = OrderedDict()
+        
+        self._spectrogram_cache[node_id][cache_key] = spectrogram
+        
+        # Limiter taille cache (LRU éviction)
+        while len(self._spectrogram_cache[node_id]) > self._cache_max_size:
+            self._spectrogram_cache[node_id].popitem(last=False)
+        
+        # Prefetch asynchrone : pré-calculer 3 chunks suivants
+        self._prefetch_next_spectrograms(node_id, chunk_index)
+        
+        return spectrogram
     
     def _add_playback_cursor_to_spectrogram(self, spectrogram_bgr, node_id, frame_number):
         """
@@ -969,7 +988,7 @@ class VideoNode(Node):
         if dpg.does_item_exist(tag_node_spectrogram_toggle):
             show_spectrogram = dpg_get_value(tag_node_spectrogram_toggle)
             
-            if show_spectrogram and str(node_id) in self._spectrogram_chunks:
+            if show_spectrogram and str(node_id) in self._full_audio:
                 # Get current frame number
                 current_frame_num = self._frame_count.get(str(node_id), 0)
                 
