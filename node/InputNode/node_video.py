@@ -503,7 +503,7 @@ class VideoNode(Node):
         self._spectrogram_chunks = {}  # Store pre-computed spectrograms per chunk
         self._chunk_metadata = {}  # Metadata for chunk-to-frame mapping
 
-    def _preprocess_video(self, node_id, movie_path, chunk_duration=5.0, step_duration=1.0):
+    def _preprocess_video(self, node_id, movie_path, chunk_duration=5.0, step_duration=0.1):
         """
         Pre-process video by extracting all frames and generating spectrograms for audio chunks.
         
