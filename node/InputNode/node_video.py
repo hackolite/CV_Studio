@@ -1,5 +1,18 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+"""
+Video Node with Spectrogram Support
+
+This module supports two spectrogram generation modes:
+1. 'precompute' mode (default): All spectrograms are pre-computed during video preprocessing.
+   This provides fast playback but requires more memory and initial processing time.
+2. 'jit' (just-in-time) mode: Spectrograms are generated on-the-fly for each frame.
+   This reduces memory usage and initial preprocessing time, but may impact playback performance.
+
+The mode can be switched by setting self._spectrogram_mode to either 'precompute' or 'jit'.
+Both modes maintain the same spectrogram quality and use the same processing pipeline
+(fourier_transformation, make_logscale, apply_colormap_to_spectrogram).
+"""
 import time
 import cv2
 import numpy as np
@@ -497,11 +510,17 @@ class VideoNode(Node):
         # Can be changed to 'VIRIDIS', 'JET', 'MAGMA', 'PLASMA', etc.
         self._spectrogram_colormap = DEFAULT_SPECTROGRAM_COLORMAP
         
+        # Spectrogram mode: 'precompute' (default) or 'jit' (just-in-time)
+        # 'precompute': Pre-compute all spectrograms during preprocessing (faster playback, more memory)
+        # 'jit': Generate spectrograms on-the-fly for each frame (less memory, slower playback)
+        self._spectrogram_mode = 'precompute'
+        
         # New: Pre-processed data storage
         self._video_frames = {}  # Store extracted frames
         self._audio_chunks = {}  # Store audio chunks
         self._spectrogram_chunks = {}  # Store pre-computed spectrograms per chunk
         self._chunk_metadata = {}  # Metadata for chunk-to-frame mapping
+        self._audio_y = {}  # Store full audio signal for JIT spectrogram generation
 
     def _preprocess_video(self, node_id, movie_path, chunk_duration=5.0, step_duration=0.1):
         """
@@ -581,6 +600,9 @@ class VideoNode(Node):
                         os.unlink(tmp_audio_path)
             
             print(f"✅ Audio extracted (SR: {sr} Hz, Duration: {len(y)/sr:.2f}s)")
+            
+            # Store full audio signal for JIT spectrogram generation
+            self._audio_y[node_id] = y
             
             # Step 2.5: Save extracted audio as MP3 file
             try:
@@ -704,9 +726,111 @@ class VideoNode(Node):
             import traceback
             traceback.print_exc()
     
+    def _get_audio_chunk_for_frame(self, node_id, frame_number):
+        """
+        Extract the audio chunk corresponding to a specific video frame.
+        
+        This method calculates which segment of the audio signal should be used
+        to generate a spectrogram for the given frame, based on the video's FPS
+        and the configured chunk duration.
+        
+        Args:
+            node_id: Node identifier
+            frame_number: Current frame number (0-indexed)
+            
+        Returns:
+            Audio chunk (numpy array) or None if audio is not available
+            
+        Handles edge cases:
+        - If the calculated chunk extends beyond the audio duration, it's truncated
+        - If frame_number is negative or audio is not available, returns None
+        - Minimum chunk size is enforced to ensure valid spectrogram generation
+        """
+        if node_id not in self._audio_y or node_id not in self._chunk_metadata:
+            return None
+        
+        if frame_number < 0:
+            return None
+        
+        y = self._audio_y[node_id]
+        metadata = self._chunk_metadata[node_id]
+        fps = metadata['fps']
+        sr = metadata['sr']
+        chunk_duration = metadata['chunk_duration']
+        step_duration = metadata['step_duration']
+        
+        # Calculate current time from frame number
+        current_time = frame_number / fps if fps > 0 else 0
+        
+        # Calculate chunk start time based on step duration
+        chunk_index = int(current_time / step_duration)
+        chunk_start_time = chunk_index * step_duration
+        
+        # Convert to samples
+        start_sample = int(chunk_start_time * sr)
+        chunk_samples = int(chunk_duration * sr)
+        end_sample = start_sample + chunk_samples
+        
+        # Handle overflow: truncate if beyond audio length
+        if start_sample >= len(y):
+            # Use the last valid chunk
+            start_sample = max(0, len(y) - chunk_samples)
+            end_sample = len(y)
+        elif end_sample > len(y):
+            # Truncate to available samples
+            end_sample = len(y)
+        
+        # Extract chunk
+        audio_chunk = y[start_sample:end_sample]
+        
+        # Ensure minimum chunk size for valid spectrogram
+        min_samples = 512  # Minimum for meaningful spectrogram
+        if len(audio_chunk) < min_samples:
+            # Pad with zeros if too short
+            audio_chunk = np.pad(audio_chunk, (0, min_samples - len(audio_chunk)), mode='constant')
+        
+        return audio_chunk
+    
     def _get_spectrogram_for_frame(self, node_id, frame_number):
         """
-        Get the pre-computed spectrogram for a specific frame number.
+        Get the spectrogram for a specific frame number.
+        
+        This method supports two modes:
+        1. 'precompute' mode: Returns the pre-computed spectrogram from cache
+        2. 'jit' mode: Generates the spectrogram on-the-fly for the current frame
+        
+        Both modes use the same processing pipeline (fourier_transformation, make_logscale,
+        apply_colormap_to_spectrogram) to ensure identical spectrogram quality.
+        
+        Args:
+            node_id: Node identifier
+            frame_number: Current frame number (0-indexed)
+            
+        Returns:
+            Spectrogram (RGB/BGR image) or None if not available
+            
+        Example behavior:
+            # Precompute mode (default):
+            >>> node._spectrogram_mode = 'precompute'
+            >>> spec = node._get_spectrogram_for_frame('node_1', 100)
+            # Returns pre-computed spectrogram from cache (fast, more memory)
+            
+            # JIT mode:
+            >>> node._spectrogram_mode = 'jit'
+            >>> spec = node._get_spectrogram_for_frame('node_1', 100)
+            # Generates spectrogram on-the-fly (slower, less memory)
+            # Both return the same spectrogram for the same frame
+        """
+        if self._spectrogram_mode == 'jit':
+            # JIT mode: Generate spectrogram on-the-fly
+            return self._generate_spectrogram_jit(node_id, frame_number)
+        else:
+            # Precompute mode: Return pre-computed spectrogram (existing behavior)
+            return self._get_precomputed_spectrogram(node_id, frame_number)
+    
+    def _get_precomputed_spectrogram(self, node_id, frame_number):
+        """
+        Get the pre-computed spectrogram for a specific frame number (legacy behavior).
         
         Args:
             node_id: Node identifier
@@ -732,6 +856,62 @@ class VideoNode(Node):
         chunk_index = max(0, min(chunk_index, len(self._spectrogram_chunks[node_id]) - 1))
         
         return self._spectrogram_chunks[node_id][chunk_index]
+    
+    def _generate_spectrogram_jit(self, node_id, frame_number):
+        """
+        Generate spectrogram on-the-fly (just-in-time) for a specific frame.
+        
+        This method extracts the audio chunk for the current frame and generates
+        the spectrogram using the same pipeline as pre-compute mode.
+        
+        Args:
+            node_id: Node identifier
+            frame_number: Current frame number
+            
+        Returns:
+            Generated spectrogram (RGB image) or None if not available
+        """
+        if node_id not in self._chunk_metadata:
+            return None
+        
+        # Get audio chunk for this frame
+        audio_chunk = self._get_audio_chunk_for_frame(node_id, frame_number)
+        if audio_chunk is None:
+            return None
+        
+        metadata = self._chunk_metadata[node_id]
+        sr = metadata['sr']
+        binsize = 2**10  # 1024 samples
+        
+        try:
+            # Perform Fourier transformation
+            s = fourier_transformation(audio_chunk, binsize, overlapFac=0.5, window=np.hanning)
+            
+            # Apply logarithmic frequency scaling
+            sshow, freq = make_logscale(spec=s, sr=sr, factor=1.0)
+            
+            # Convert to dB scale with epsilon to avoid log10(0)
+            sshow_safe = np.maximum(np.abs(sshow), SPECTROGRAM_EPSILON)
+            ims = 20. * np.log10(sshow_safe / 10e-6)
+            
+            # Replace non-finite values
+            ims = np.nan_to_num(ims, nan=-80.0, posinf=0.0, neginf=-80.0)
+            
+            # Transpose for correct orientation (freq x time)
+            ims_transposed = np.transpose(ims, (1, 0))
+            
+            # Apply colormap
+            S_rgb = apply_colormap_to_spectrogram(
+                ims_transposed,
+                method='cv2',
+                cmap=self._spectrogram_colormap
+            )
+            
+            return S_rgb
+            
+        except Exception as e:
+            print(f"⚠️ Failed to generate JIT spectrogram: {e}")
+            return None
     
     def _add_playback_cursor_to_spectrogram(self, spectrogram_bgr, node_id, frame_number):
         """
