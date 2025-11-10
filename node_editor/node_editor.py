@@ -163,6 +163,11 @@ class DpgNodeEditor(object):
                         # print(node_sources)
 
                         for node_source in node_sources:
+                            # Skip files starting with underscore (disabled nodes)
+                            basename = os.path.basename(node_source)
+                            if basename.startswith("_"):
+                                continue
+                                
                             import_path = os.path.splitext(
                                 os.path.normpath(node_source)
                             )[0]

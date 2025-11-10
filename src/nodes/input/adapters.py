@@ -18,14 +18,15 @@ try:
     from node.InputNode.node_video import Node as VideoInputNode, FactoryNode as VideoInputFactory
     from node.InputNode.node_webcam import Node as WebcamInputNode, FactoryNode as WebcamInputFactory
     from node.InputNode.node_api import ApiNode, FactoryNode as ApiInputFactory
-    from node.InputNode.node_float import Node as FloatInputNode, FactoryNode as FloatInputFactory
+    # Float node has been removed from the dropdown menu
+    # from node.InputNode.node_float import Node as FloatInputNode, FactoryNode as FloatInputFactory
     
     __all__ = [
         'ImageInputNode', 'ImageInputFactory',
         'VideoInputNode', 'VideoInputFactory',
         'WebcamInputNode', 'WebcamInputFactory',
         'ApiNode', 'ApiInputFactory',
-        'FloatInputNode', 'FloatInputFactory',
+        # 'FloatInputNode', 'FloatInputFactory',
     ]
 except ImportError as e:
     # If old modules can't be imported, log a warning
