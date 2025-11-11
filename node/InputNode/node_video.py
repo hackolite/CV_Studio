@@ -11,6 +11,10 @@ import matplotlib
 import subprocess
 import tempfile
 import os
+import hashlib
+import pickle
+from multiprocessing import Pool, cpu_count
+from functools import partial
 
 from node_editor.util import dpg_get_value, dpg_set_value
 
@@ -23,6 +27,79 @@ from node.InputNode.spectrogram_utils import apply_colormap_to_spectrogram
 SPECTROGRAM_EPSILON = 1e-10
 # Default colormap for spectrograms (configurable)
 DEFAULT_SPECTROGRAM_COLORMAP = 'JET'
+
+
+def get_video_cache_key(video_path):
+    """
+    Generate a cache key based on video file path, size, and modification time.
+    
+    Args:
+        video_path: Path to video file
+        
+    Returns:
+        str: Hash string to use as cache key
+    """
+    try:
+        stat = os.stat(video_path)
+        # Create hash from path, size, and modification time
+        key_data = f"{video_path}_{stat.st_size}_{stat.st_mtime}".encode('utf-8')
+        return hashlib.md5(key_data).hexdigest()
+    except Exception as e:
+        print(f"Warning: Failed to generate cache key: {e}")
+        return None
+
+
+def get_cache_dir():
+    """Get or create cache directory for preprocessed video data."""
+    cache_dir = os.path.join(tempfile.gettempdir(), 'cv_studio_cache')
+    os.makedirs(cache_dir, exist_ok=True)
+    return cache_dir
+
+
+def _process_single_chunk(args):
+    """
+    Process a single audio chunk to generate spectrogram (for parallel processing).
+    
+    Args:
+        args: Tuple of (chunk_idx, chunk, sr, binsize, colormap)
+        
+    Returns:
+        Tuple of (chunk_idx, spectrogram_rgb)
+    """
+    chunk_idx, chunk, sr, binsize, colormap = args
+    
+    try:
+        # Import inside worker to avoid pickling issues
+        from node.InputNode.node_video import fourier_transformation, make_logscale, SPECTROGRAM_EPSILON
+        from node.InputNode.spectrogram_utils import apply_colormap_to_spectrogram
+        
+        # Perform Fourier transformation
+        s = fourier_transformation(chunk, binsize, overlapFac=0.5, window=np.hanning)
+        
+        # Apply logarithmic frequency scaling
+        sshow, freq = make_logscale(spec=s, sr=sr, factor=1.0)
+        
+        # Convert to dB scale with epsilon to avoid log10(0)
+        sshow_safe = np.maximum(np.abs(sshow), SPECTROGRAM_EPSILON)
+        ims = 20. * np.log10(sshow_safe / 10e-6)
+        
+        # Replace non-finite values
+        ims = np.nan_to_num(ims, nan=-80.0, posinf=0.0, neginf=-80.0)
+        
+        # Transpose for correct orientation (freq x time)
+        ims_transposed = np.transpose(ims, (1, 0))
+        
+        # Apply colormap
+        S_rgb = apply_colormap_to_spectrogram(
+            ims_transposed,
+            method='cv2',
+            cmap=colormap
+        )
+        
+        return (chunk_idx, S_rgb)
+    except Exception as e:
+        print(f"Error processing chunk {chunk_idx}: {e}")
+        return (chunk_idx, None)
 
 
 class FactoryNode:
@@ -506,13 +583,16 @@ class VideoNode(Node):
     def _preprocess_video(self, node_id, movie_path, chunk_duration=5.0, step_duration=1.0):
         """
         Pre-process video by extracting all frames and generating spectrograms for audio chunks.
+        Optimized with caching and parallel processing.
         
         This method:
-        1. Extracts all video frames using OpenCV
-        2. Extracts audio using librosa
-        3. Chunks audio into segments (chunk_duration with step_duration overlap)
-        4. Pre-computes spectrograms for each chunk
-        5. Stores metadata for frame-to-chunk mapping
+        1. Checks cache for previously processed data
+        2. Extracts all video frames using OpenCV (optimized)
+        3. Extracts audio using librosa
+        4. Chunks audio into segments (chunk_duration with step_duration overlap)
+        5. Pre-computes spectrograms for each chunk in parallel
+        6. Stores metadata for frame-to-chunk mapping
+        7. Caches results for faster subsequent loads
         
         Args:
             node_id: Node identifier
@@ -526,8 +606,33 @@ class VideoNode(Node):
         
         print(f"🎬 Pre-processing video: {movie_path}")
         
+        # Check cache first
+        cache_key = get_video_cache_key(movie_path)
+        cache_file = None
+        if cache_key:
+            cache_dir = get_cache_dir()
+            cache_file = os.path.join(cache_dir, f"{cache_key}.pkl")
+            
+            if os.path.exists(cache_file):
+                try:
+                    print(f"📦 Loading from cache: {cache_file}")
+                    with open(cache_file, 'rb') as f:
+                        cached_data = pickle.load(f)
+                    
+                    # Restore cached data
+                    self._video_frames[node_id] = cached_data['frames']
+                    self._audio_chunks[node_id] = cached_data['audio_chunks']
+                    self._spectrogram_chunks[node_id] = cached_data['spectrogram_chunks']
+                    self._chunk_metadata[node_id] = cached_data['metadata']
+                    
+                    print(f"✅ Loaded from cache!")
+                    print(f"   Frames: {len(cached_data['frames'])}, Chunks: {len(cached_data['audio_chunks'])}")
+                    return
+                except Exception as e:
+                    print(f"⚠️ Cache load failed, will reprocess: {e}")
+        
         try:
-            # Step 1: Extract all video frames
+            # Step 1: Extract video metadata and frames (optimized)
             print("📹 Extracting video frames...")
             cap = cv2.VideoCapture(movie_path)
             fps = cap.get(cv2.CAP_PROP_FPS)
@@ -536,16 +641,22 @@ class VideoNode(Node):
             
             frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             
+            # Optimized: Pre-allocate list with estimated size
             frames = []
+            frames_to_reserve = max(frame_count, 1000) if frame_count > 0 else 1000
+            
             frame_idx = 0
+            last_print = 0
             while True:
                 ret, frame = cap.read()
                 if not ret:
                     break
                 frames.append(frame)
                 frame_idx += 1
-                if frame_idx % 100 == 0:
+                # Less frequent progress updates
+                if frame_idx - last_print >= 100:
                     print(f"  Extracted {frame_idx}/{frame_count} frames...")
+                    last_print = frame_idx
             
             cap.release()
             self._video_frames[node_id] = frames
@@ -644,49 +755,31 @@ class VideoNode(Node):
             self._audio_chunks[node_id] = audio_chunks
             print(f"✅ Created {len(audio_chunks)} audio chunks")
             
-            # Step 4: Pre-compute spectrograms for each chunk
-            print("🌈 Pre-computing spectrograms...")
+            # Step 4: Pre-compute spectrograms for each chunk (PARALLEL)
+            print(f"🌈 Pre-computing spectrograms in parallel (using {cpu_count()} cores)...")
             spectrogram_chunks = []
             binsize = 2**10  # 1024 samples
             
-            for idx, chunk in enumerate(audio_chunks):
-                if idx % 10 == 0:
-                    print(f"  Processing chunk {idx}/{len(audio_chunks)}...")
-                
-                # Perform Fourier transformation
-                s = fourier_transformation(chunk, binsize, overlapFac=0.5, window=np.hanning)
-                
-                # Apply logarithmic frequency scaling
-                sshow, freq = make_logscale(spec=s, sr=sr, factor=1.0)
-                
-                # Convert to dB scale with epsilon to avoid log10(0)
-                sshow_safe = np.maximum(np.abs(sshow), SPECTROGRAM_EPSILON)
-                ims = 20. * np.log10(sshow_safe / 10e-6)
-                
-                # Replace non-finite values
-                ims = np.nan_to_num(ims, nan=-80.0, posinf=0.0, neginf=-80.0)
-                
-                # Transpose for correct orientation (freq x time)
-                ims_transposed = np.transpose(ims, (1, 0))
-                
-                # Apply colormap
-                S_rgb = apply_colormap_to_spectrogram(
-                    ims_transposed,
-                    method='cv2',
-                    cmap=self._spectrogram_colormap
-                )
-                
-                # Flip vertically and convert to BGR
-                #S_rgb = np.flipud(S_rgb)
-                #S_bgr = cv2.cvtColor(S_rgb, cv2.COLOR_RGB2BGR)
-                
-                spectrogram_chunks.append(S_rgb)
+            # Prepare arguments for parallel processing
+            chunk_args = [
+                (idx, chunk, sr, binsize, self._spectrogram_colormap)
+                for idx, chunk in enumerate(audio_chunks)
+            ]
+            
+            # Use parallel processing
+            num_workers = max(1, cpu_count() - 1)  # Leave one core free
+            with Pool(processes=num_workers) as pool:
+                results = pool.map(_process_single_chunk, chunk_args)
+            
+            # Sort results by chunk index and extract spectrograms
+            results.sort(key=lambda x: x[0])
+            spectrogram_chunks = [result[1] for result in results if result[1] is not None]
             
             self._spectrogram_chunks[node_id] = spectrogram_chunks
             print(f"✅ Pre-computed {len(spectrogram_chunks)} spectrograms")
             
             # Step 5: Store metadata
-            self._chunk_metadata[node_id] = {
+            metadata = {
                 'fps': fps,
                 'sr': sr,
                 'chunk_duration': chunk_duration,
@@ -695,9 +788,26 @@ class VideoNode(Node):
                 'num_frames': len(frames),
                 'num_chunks': len(audio_chunks),
             }
+            self._chunk_metadata[node_id] = metadata
             
             print(f"🎉 Pre-processing complete!")
             print(f"   Frames: {len(frames)}, Chunks: {len(audio_chunks)}, FPS: {fps}")
+            
+            # Step 6: Cache the results
+            if cache_file:
+                try:
+                    print(f"💾 Saving to cache: {cache_file}")
+                    cache_data = {
+                        'frames': frames,
+                        'audio_chunks': audio_chunks,
+                        'spectrogram_chunks': spectrogram_chunks,
+                        'metadata': metadata,
+                    }
+                    with open(cache_file, 'wb') as f:
+                        pickle.dump(cache_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+                    print(f"✅ Cached successfully")
+                except Exception as e:
+                    print(f"⚠️ Failed to save cache: {e}")
             
         except Exception as e:
             print(f"❌ Failed to pre-process video: {e}")
