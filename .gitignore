@@ -139,3 +139,8 @@ main_win64.spec
 icon.ico
 dist
 build
+
+# CV Studio specific
+*_audio.mp3
+*_audio.wav
+/tmp/cv_studio_cache/
