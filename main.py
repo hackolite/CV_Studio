@@ -1,5 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+"""CV Studio - Node-based Computer Vision Application.
+
+This module is the main entry point for CV Studio, a professional node-based
+image processing application for computer vision development, verification,
+and comparison.
+
+The application provides a visual node editor powered by DearPyGUI that allows
+users to create computer vision pipelines through an intuitive drag-and-drop
+interface.
+"""
 import sys
 import copy
 import json
@@ -22,6 +32,16 @@ logger = get_logger(__name__)
 
 
 def get_args():
+    """Parse and return command line arguments.
+    
+    Returns
+    -------
+    argparse.Namespace
+        Parsed command line arguments containing:
+        - setting: str, path to configuration JSON file
+        - unuse_async_draw: bool, disable asynchronous drawing if True
+        - use_debug_print: bool, enable debug logging if True
+    """
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -39,6 +59,17 @@ def get_args():
 
 
 def async_main(node_editor):
+    """Run the asynchronous main loop for the node editor.
+    
+    This function continuously updates all nodes in the graph until
+    the terminate flag is set. It maintains separate dictionaries for
+    image, result, and audio data passed between nodes.
+    
+    Parameters
+    ----------
+    node_editor : DpgNodeEditor
+        The node editor instance managing the node graph.
+    """
     node_image_dict = {}
     node_result_dict = {}
     node_audio_dict = {}
@@ -55,9 +86,25 @@ def update_node_info(
     node_audio_dict,
     mode_async=True,
 ):
-    editor_width = dpg.get_viewport_client_width()
-    editor_height = dpg.get_viewport_client_height()
-
+    """Update all nodes in the node graph for one iteration.
+    
+    This function processes all nodes in topologically sorted order,
+    updates their state, and stores the results in the provided dictionaries.
+    
+    Parameters
+    ----------
+    node_editor : DpgNodeEditor
+        The node editor instance managing the node graph.
+    node_image_dict : dict
+        Dictionary mapping node IDs to image data.
+    node_result_dict : dict
+        Dictionary mapping node IDs to JSON result data.
+    node_audio_dict : dict
+        Dictionary mapping node IDs to audio data.
+    mode_async : bool, optional
+        If True, errors during node updates are caught and logged.
+        If False, errors propagate. Default is True.
+    """
     try:
         dpg.set_item_pos(node_editor.window, [0, 0])
         dpg.set_item_width(node_editor.window, dpg.get_viewport_client_width())
@@ -109,6 +156,11 @@ def update_node_info(
 
 
 def main():
+    """Main entry point for the CV Studio application.
+    
+    This function initializes the application, sets up the node editor,
+    configures cameras and serial devices, and starts the main event loop.
+    """
     args = get_args()
     setting = args.setting
     unuse_async_draw = args.unuse_async_draw
