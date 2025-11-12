@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+"""Base node implementation for the CV Studio node editor.
+
+This module provides the base Node class and related data types that all
+nodes in the CV Studio node editor inherit from or use.
+"""
 import copy
 import time
 import os
@@ -13,6 +18,23 @@ import cv2
 
 
 class DataType:
+    """Enumeration of supported data types for node connections.
+    
+    Attributes
+    ----------
+    TYPE_BOOLEAN : str
+        Boolean data type.
+    TYPE_TEXT : str
+        Text/string data type.
+    TYPE_IMAGE : str
+        Image data type.
+    TYPE_FLOAT : str
+        Floating point number data type.
+    TYPE_TIME_MS : str
+        Timestamp in milliseconds data type.
+    TYPE_SOUND : str
+        Audio/sound data type.
+    """
     TYPE_BOOLEAN = "BOOLEAN"
     TYPE_TEXT = "TEXT"
     TYPE_IMAGE = "IMAGE"
@@ -22,11 +44,36 @@ class DataType:
 
 
 class PortType:
+    """Enumeration of port types for node connections.
+    
+    Attributes
+    ----------
+    INPUT : str
+        Input port type.
+    OUTPUT : str
+        Output port type.
+    """
     INPUT = "INPUT"
     OUTPUT = "OUTPUT"
 
 
 class Node:
+    """Base class for all nodes in the CV Studio node editor.
+    
+    This class provides common functionality for all node types including
+    image conversion, input/output handling, and configuration management.
+    
+    Attributes
+    ----------
+    _ver : str
+        Version string for the node implementation.
+    node_label : str
+        Human-readable label for the node.
+    node_tag : str
+        Unique tag identifier for the node type.
+    node_data : Any
+        Data associated with the node.
+    """
     _ver = "0.0.1"
     node_label = "BaseNode"
     node_tag = "BaseNode"
@@ -44,14 +91,26 @@ class Node:
     OUTPUT = "OUTPUT"
 
     def __init__(self, node_id=1, connection_dict=None, opencv_setting_dict=None):
+        """Initialize a new Node instance.
+        
+        Parameters
+        ----------
+        node_id : int, optional
+            Unique identifier for this node instance. Default is 1.
+        connection_dict : dict, optional
+            Dictionary defining the node's connections. Default is None.
+        opencv_setting_dict : dict, optional
+            Configuration dictionary for OpenCV and application settings.
+            Default is None.
+        """
         self.id = self.generate_id()
         self.node_label = "BaseNode"
         self.node_tag = "BaseNode"
         self.tag_node_name = f"{node_id}:{self.node_tag}"
-        # Générer les tags dynamiquement en fonction du dictionnaire
+        # Generate tags dynamically based on the connection dictionary
         # self.tags = self.generate_tags(connection_dict)
 
-        # Paramètres OpenCV
+        # OpenCV parameters
         self._opencv_setting_dict = opencv_setting_dict if opencv_setting_dict else {}
         self.small_window_w = self._opencv_setting_dict.get("process_width", 640)
         self.small_window_h = self._opencv_setting_dict.get("process_height", 480)
@@ -61,12 +120,31 @@ class Node:
         self.use_gpu = self._opencv_setting_dict.get("use_gpu", False)
 
     def generate_id(self):
+        """Generate a unique ID for the node.
+        
+        Returns
+        -------
+        str
+            A unique UUID string.
+        """
         return str(uuid.uuid4())
 
     def generate_tags(self, connection_dict):
+        """Generate DearPyGUI tags for node connections.
+        
+        Parameters
+        ----------
+        connection_dict : dict
+            Dictionary mapping connection indices to connection information.
+            
+        Returns
+        -------
+        dict
+            Dictionary of generated tags for inputs and outputs.
+        """
         tags = {}
 
-        # Parcours du dictionnaire pour générer les tags
+        # Iterate through the dictionary to generate tags
         for index, connection_info in connection_dict.items():
             connection_type = connection_info.get("CONNECTION")
             data_type = connection_info.get("TYPE")
@@ -81,12 +159,48 @@ class Node:
         return tags
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict):
+        """Update the node's state and process data.
+        
+        Parameters
+        ----------
+        node_id : str
+            Unique identifier for this node instance.
+        connection_list : list
+            List of connections to this node.
+        node_image_dict : dict
+            Dictionary mapping node IDs to image data.
+        node_result_dict : dict
+            Dictionary mapping node IDs to result data.
+        """
         pass
 
     def close(self, node_id):
+        """Clean up resources when the node is closed.
+        
+        Parameters
+        ----------
+        node_id : str
+            Unique identifier for this node instance.
+        """
         pass
 
     def convert_cv_to_dpg(self, image, width, height):
+        """Convert an OpenCV image to DearPyGUI texture format.
+        
+        Parameters
+        ----------
+        image : numpy.ndarray
+            OpenCV image in BGR format.
+        width : int
+            Target width for the texture.
+        height : int
+            Target height for the texture.
+            
+        Returns
+        -------
+        numpy.ndarray
+            Flattened array of normalized RGB values suitable for DearPyGUI.
+        """
         resize_image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
 
         data = np.flip(resize_image, 2)
