@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+"""Image input node for CV Studio.
+
+This module provides the Image node that allows users to load and display
+static images in the node editor.
+"""
 import cv2
 import numpy as np
 import dearpygui.dearpygui as dpg
@@ -7,16 +12,25 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
-#from node_editor.util import convert_cv_to_dpg
 from node.basenode import Node
 
 
 class FactoryNode:
+    """Factory class for creating Image nodes.
+    
+    Attributes
+    ----------
+    node_label : str
+        Human-readable label for the node.
+    node_tag : str
+        Unique tag identifier for the node type.
+    """
     node_label = 'Image'
     node_tag = 'Image'
     
 
     def __init__(self):
+        """Initialize the FactoryNode."""
         pass
 
     
@@ -29,6 +43,26 @@ class FactoryNode:
         opencv_setting_dict=None,
         callback=None,
     ):
+        """Add an Image node to the node editor.
+        
+        Parameters
+        ----------
+        parent : int
+            DearPyGUI parent widget ID.
+        node_id : str
+            Unique identifier for this node instance.
+        pos : list[int, int], optional
+            Initial (x, y) position of the node. Default is [0, 0].
+        opencv_setting_dict : dict, optional
+            Configuration dictionary containing OpenCV and application settings.
+        callback : callable, optional
+            Callback function for node events.
+            
+        Returns
+        -------
+        ImageNode
+            The created image node instance.
+        """
 
 
         node = ImageNode()
@@ -150,6 +184,28 @@ class FactoryNode:
 
 
 class ImageNode(Node):
+    """Node for loading and displaying static images.
+    
+    This node allows users to select an image file and outputs the image
+    data to connected nodes.
+    
+    Attributes
+    ----------
+    _ver : str
+        Version string for the node implementation.
+    node_label : str
+        Human-readable label for the node.
+    node_tag : str
+        Unique tag identifier for the node type.
+    _opencv_setting_dict : dict
+        Configuration dictionary for OpenCV settings.
+    _image : dict
+        Dictionary storing loaded images keyed by node ID.
+    _image_filepath : dict
+        Dictionary storing image file paths keyed by node ID.
+    _prev_image_filepath : dict
+        Dictionary storing previous image file paths for change detection.
+    """
     _ver = '0.0.1'
 
     node_label = 'Image'
@@ -162,6 +218,7 @@ class ImageNode(Node):
     _prev_image_filepath = {}
 
     def __init__(self):
+        """Initialize the ImageNode."""
         super().__init__()  # Call parent constructor
         self.node_label = 'Image'
         self.node_tag = 'Image'
@@ -174,6 +231,27 @@ class ImageNode(Node):
         node_result_dict,
         node_audio_dict,
     ):
+        """Update the node and output the loaded image.
+        
+        Parameters
+        ----------
+        node_id : str
+            Unique identifier for this node instance.
+        connection_list : list
+            List of connections to this node.
+        node_image_dict : dict
+            Dictionary mapping node IDs to image data.
+        node_result_dict : dict
+            Dictionary mapping node IDs to result data.
+        node_audio_dict : dict
+            Dictionary mapping node IDs to audio data.
+            
+        Returns
+        -------
+        dict
+            Dictionary with 'image', 'json', and 'audio' keys containing
+            the loaded image data.
+        """
         tag_node_name = str(node_id) + ':' + self.node_tag
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
 
@@ -202,6 +280,13 @@ class ImageNode(Node):
         return {"image": frame, "json": None, "audio": None}
 
     def close(self, node_id):
+        """Clean up resources when the node is closed.
+        
+        Parameters
+        ----------
+        node_id : str
+            Unique identifier for this node instance.
+        """
         pass
 
     def get_setting_dict(self, node_id):
