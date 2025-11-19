@@ -14,14 +14,15 @@ from .timestamped_queue import NodeDataQueueManager
 
 class QueueBackedDict:
     """
-    Dictionary-like interface backed by timestamped queues.
+    Dictionary-like interface backed by timestamped buffers.
     
     This class maintains backward compatibility with the existing dict-based
     interface (node_image_dict, node_result_dict, etc.) while using the
-    timestamped queue system internally.
+    timestamped buffer system internally.
     
-    When you get an item, it returns the oldest (FIFO) data from the queue.
-    When you set an item, it adds the data to the queue with a timestamp.
+    When you get an item, it returns the latest (most recent) data from the buffer.
+    When you set an item, it adds the data to the buffer with a timestamp.
+    The buffer maintains the last 10 items with their timestamps for synchronization.
     """
     
     def __init__(self, queue_manager: NodeDataQueueManager, data_type: str = "default"):
@@ -54,19 +55,19 @@ class QueueBackedDict:
     
     def __getitem__(self, node_id_name: str) -> Any:
         """
-        Get the value for a node (returns oldest from queue, falls back to cache).
+        Get the value for a node (returns latest from buffer, falls back to cache).
         
         Args:
             node_id_name: The node identifier
         
         Returns:
-            The oldest data from the queue, or cached value if queue is empty
+            The most recent data from the buffer, or cached value if buffer is empty
         """
-        # Try to get from queue first (oldest data - FIFO)
-        oldest_data = self._queue_manager.get_oldest_data(node_id_name, self._data_type)
+        # Try to get from buffer first (latest data - buffer behavior)
+        latest_data = self._queue_manager.get_latest_data(node_id_name, self._data_type)
         
-        if oldest_data is not None:
-            return oldest_data
+        if latest_data is not None:
+            return latest_data
         
         # Fall back to cache for backward compatibility
         return self._cache.get(node_id_name)

@@ -130,10 +130,10 @@ def main():
     logger.info("CV_STUDIO Starting")
     logger.info("=" * 60)
     
-    # Initialize timestamped queue system
-    logger.info("Initializing timestamped queue system")
-    queue_manager = NodeDataQueueManager(default_maxsize=100)
-    logger.info("Queue system initialized with FIFO behavior for oldest data retrieval")
+    # Initialize timestamped buffer system
+    logger.info("Initializing timestamped buffer system")
+    queue_manager = NodeDataQueueManager(default_maxsize=10)
+    logger.info("Buffer system initialized: keeps last 10 timestamped items per node for synchronization")
 
     logger.info("Loading configuration")
     opencv_setting_dict = None

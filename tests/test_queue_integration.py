@@ -78,8 +78,8 @@ class TestQueueSystemIntegration(unittest.TestCase):
         self.assertEqual(result["image"], "test_image_1")
         self.assertTrue(result["json"]["processed"])
     
-    def test_fifo_order_multiple_frames(self):
-        """Test that multiple frames are processed in FIFO order."""
+    def test_buffer_order_multiple_frames(self):
+        """Test that multiple frames are stored in buffer and latest is retrieved."""
         source_node_name = self.source_node.node_id_name
         
         # Simulate source node producing multiple frames
@@ -94,17 +94,24 @@ class TestQueueSystemIntegration(unittest.TestCase):
         t3 = time.time()
         self.queue_manager.put_data(source_node_name, "image", "frame3", t3)
         
-        # Retrieve frames - should be in FIFO order (oldest first)
-        frame1 = self.node_image_dict[source_node_name]
-        self.assertEqual(frame1, "frame1")
+        # Retrieve frames - buffer behavior returns latest
+        latest_frame = self.node_image_dict[source_node_name]
+        self.assertEqual(latest_frame, "frame3")
         
-        # The queue still has frame1 as oldest (get doesn't remove)
-        # To simulate actual consumption, we'd need to pop
+        # The buffer still has all frames (get doesn't remove)
         oldest = self.queue_manager.get_oldest_data(source_node_name, "image")
         self.assertEqual(oldest, "frame1")
         
         latest = self.queue_manager.get_latest_data(source_node_name, "image")
         self.assertEqual(latest, "frame3")
+        
+        # All 3 frames should still be in buffer
+        queue = self.queue_manager.get_queue(source_node_name, "image")
+        all_frames = queue.get_all()
+        self.assertEqual(len(all_frames), 3)
+        self.assertEqual(all_frames[0].data, "frame1")
+        self.assertEqual(all_frames[1].data, "frame2")
+        self.assertEqual(all_frames[2].data, "frame3")
     
     def test_multiple_nodes_pipeline(self):
         """Test a pipeline of multiple nodes with queue system."""

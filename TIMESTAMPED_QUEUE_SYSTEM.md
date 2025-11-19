@@ -1,16 +1,16 @@
-# Timestamped FIFO Queue System for Node Data Communication
+# Timestamped Buffer System for Node Data Communication
 
 ## Overview
 
-This document describes the timestamped queue system implemented for CV_Studio's node-based data communication architecture. The system ensures that data passed between nodes is timestamped and retrieved in FIFO (First-In-First-Out) order, with the oldest data being retrieved first.
+This document describes the timestamped buffer system implemented for CV_Studio's node-based data communication architecture. The system ensures that data passed between nodes is timestamped and maintained in a rolling buffer of 10 items, with each element accessible via its timestamp for synchronization purposes.
 
 ## Problem Statement (French)
 
-> "Chaque noeud qui renvoie des données aux autres noeuds le fait par une queue de sa propre classe, la donnée est timestampé, et le noeud qui récupère la data récupère la plus ancienne issus de la fifo."
+> "alors je ne veux pas fifo mais plutôt un tampon qui prend en mémoire 10 valeur en tampon chaque element possede un timestamp pour pouvoir synchroniser plus tard, verifier que ça fonctionne"
 
 **Translation:**
 
-"Each node that sends data to other nodes does so through a queue of its own class, the data is timestamped, and the node that retrieves the data gets the oldest one from the FIFO."
+"so I don't want FIFO but rather a buffer that holds 10 values in memory buffer, each element has a timestamp to be able to synchronize later, verify that it works"
 
 ## Architecture
 
@@ -25,54 +25,63 @@ A container for data with timestamp information:
 
 #### 2. `TimestampedQueue` (class)
 
-A thread-safe FIFO queue that stores timestamped data:
+A thread-safe buffer that stores timestamped data:
 - Automatically timestamps data when added
 - Maintains chronological order
-- Supports FIFO retrieval (oldest data first)
+- Supports non-consuming retrieval (latest or oldest data)
 - Thread-safe for concurrent access
-- Configurable maximum size with automatic oldest-item removal
+- Configurable maximum size (default: 10) with automatic oldest-item removal when full
 
 **Key Methods:**
 - `put(data, timestamp=None)`: Add data with automatic or custom timestamp
-- `get_oldest()`: Retrieve oldest data without removing it
-- `get_latest()`: Retrieve newest data without removing it
-- `pop_oldest()`: Remove and return oldest data (FIFO)
-- `size()`, `is_empty()`, `clear()`: Queue management
+- `get_oldest()`: Retrieve oldest data **without removing it**
+- `get_latest()`: Retrieve newest data **without removing it**
+- `pop_oldest()`: Remove and return oldest data (for cleanup if needed)
+- `get_all()`: Get all buffered items with timestamps
+- `size()`, `is_empty()`, `clear()`: Buffer management
 
 #### 3. `NodeDataQueueManager` (class)
 
-Centralized manager for all node queues:
-- Maintains one queue per node per data type (image, audio, json)
-- Thread-safe queue creation and access
+Centralized manager for all node buffers:
+- Maintains one buffer per node per data type (image, audio, json)
+- Default buffer size: 10 items per buffer
+- Thread-safe buffer creation and access
 - Provides high-level data operations
-- Manages queue lifecycle
+- Manages buffer lifecycle
 
 **Key Methods:**
-- `get_queue(node_id_name, data_type)`: Get or create a queue
-- `put_data(node_id_name, data_type, data, timestamp)`: Add data to a node's queue
-- `get_oldest_data(node_id_name, data_type)`: Get oldest data (FIFO)
-- `get_latest_data(node_id_name, data_type)`: Get newest data
-- `clear_node_queues(node_id_name)`: Clear all queues for a node
-- `get_queue_info(node_id_name, data_type)`: Get queue statistics
+- `get_queue(node_id_name, data_type)`: Get or create a buffer
+- `put_data(node_id_name, data_type, data, timestamp)`: Add data to a node's buffer
+- `get_oldest_data(node_id_name, data_type)`: Get oldest data (without removing)
+- `get_latest_data(node_id_name, data_type)`: Get newest data (without removing)
+- `clear_node_queues(node_id_name)`: Clear all buffers for a node
+- `get_queue_info(node_id_name, data_type)`: Get buffer statistics
 
 #### 4. `QueueBackedDict` (class)
 
-Backward-compatible dictionary interface backed by timestamped queues:
+Backward-compatible dictionary interface backed by timestamped buffers:
 - Maintains the old dict-based API (`node_image_dict`, etc.)
-- Uses queues internally for FIFO behavior
+- Uses buffers internally for data storage
+- Returns the **latest** value when accessed (buffer behavior)
 - Caches latest values for immediate access
 - Transparent to existing code
 
 **Usage:**
 ```python
-# Create queue-backed dictionaries
-queue_manager = NodeDataQueueManager()
+# Create buffer-backed dictionaries
+queue_manager = NodeDataQueueManager()  # Default: 10 items per buffer
 node_image_dict = QueueBackedDict(queue_manager, "image")
 node_audio_dict = QueueBackedDict(queue_manager, "audio")
 
 # Use like regular dicts
-node_image_dict["1:Webcam"] = image_data  # Adds to queue with timestamp
-image = node_image_dict["1:Webcam"]        # Gets oldest from queue (FIFO)
+node_image_dict["1:Webcam"] = image_data  # Adds to buffer with timestamp
+image = node_image_dict["1:Webcam"]       # Gets latest from buffer (doesn't remove)
+
+# Access all buffered items with timestamps for synchronization
+queue = queue_manager.get_queue("1:Webcam", "image")
+all_items = queue.get_all()  # Returns list of TimestampedData objects
+for item in all_items:
+    print(f"Data: {item.data}, Timestamp: {item.timestamp}")
 ```
 
 ## Implementation Details
@@ -82,10 +91,11 @@ image = node_image_dict["1:Webcam"]        # Gets oldest from queue (FIFO)
 1. **Node produces data** → Data is assigned to `node_image_dict[node_id_name]`
 2. **QueueBackedDict** → Intercepts the assignment and:
    - Caches the value for immediate retrieval
-   - Adds to the timestamped queue with current timestamp
+   - Adds to the timestamped buffer with current timestamp
 3. **Node retrieves data** → Requests data via `node_image_dict[source_node_id]`
-4. **QueueBackedDict** → Returns the **oldest data** from the queue (FIFO)
-5. **Fallback** → If queue is empty, returns cached value
+4. **QueueBackedDict** → Returns the **latest data** from the buffer (buffer behavior, doesn't remove)
+5. **Fallback** → If buffer is empty, returns cached value
+6. **Synchronization** → All buffered items remain accessible with timestamps via `get_all()`
 
 ### Thread Safety
 
@@ -94,26 +104,27 @@ All queue operations are protected by thread locks (`threading.RLock()`):
 - No race conditions during concurrent access
 - Consistent state even under high load
 
-### Queue Size Management
+### Buffer Size Management
 
-Each queue has a configurable maximum size (default: 100):
-- When full, oldest items are automatically removed
-- Prevents memory overflow in long-running applications
-- Ensures recent data is always available
+Each buffer has a configurable maximum size (default: 10):
+- When full, oldest items are automatically removed (rolling buffer)
+- Maintains the most recent 10 items with their timestamps
+- All items remain accessible for synchronization purposes
+- Ensures predictable memory usage
 
 ## Integration with CV_Studio
 
 ### Changes to `main.py`
 
 ```python
-# Import the queue system
+# Import the buffer system
 from node.timestamped_queue import NodeDataQueueManager
 from node.queue_adapter import QueueBackedDict
 
-# Initialize the queue manager
-queue_manager = NodeDataQueueManager(default_maxsize=100)
+# Initialize the buffer manager
+queue_manager = NodeDataQueueManager(default_maxsize=10)
 
-# Create queue-backed dictionaries
+# Create buffer-backed dictionaries
 node_image_dict = QueueBackedDict(queue_manager, "image")
 node_result_dict = QueueBackedDict(queue_manager, "json")
 node_audio_dict = QueueBackedDict(queue_manager, "audio")
@@ -132,11 +143,12 @@ node_audio_dict = QueueBackedDict(queue_manager, "audio")
 ### New Capabilities
 
 Nodes can now:
-1. Access queue information:
+1. Access buffer information:
    ```python
    info = node_image_dict.get_queue_info("1:Webcam")
-   print(f"Queue size: {info['size']}")
+   print(f"Buffer size: {info['size']}")
    print(f"Oldest timestamp: {info['oldest_timestamp']}")
+   print(f"Latest timestamp: {info['latest_timestamp']}")
    ```
 
 2. Get the latest data explicitly:
@@ -144,48 +156,73 @@ Nodes can now:
    latest_image = node_image_dict.get_latest("1:Webcam")
    ```
 
-3. Monitor queue status:
+3. Access all buffered items for synchronization:
    ```python
-   if info['size'] > 50:
-       logger.warning("Queue is getting full!")
+   queue = queue_manager.get_queue("1:Webcam", "image")
+   all_items = queue.get_all()  # Get all 10 buffered items with timestamps
+   
+   # Synchronize with audio based on timestamps
+   for video_item in all_items:
+       # Find matching audio by timestamp
+       matching_audio = find_audio_by_timestamp(video_item.timestamp)
+   ```
+
+4. Monitor buffer status:
+   ```python
+   if info['size'] >= 10:
+       logger.warning("Buffer is full!")
    ```
 
 ## Testing
 
-Comprehensive test suites ensure correct behavior:
+Comprehensive test suites ensure correct buffer behavior:
 
 ### Test Files
 
 1. **`tests/test_timestamped_queue.py`** (17 tests)
    - TimestampedData creation and comparison
-   - TimestampedQueue FIFO behavior
+   - TimestampedQueue buffer behavior
    - Thread safety
-   - Queue size limits
+   - Buffer size limits (10 items)
    - NodeDataQueueManager operations
 
 2. **`tests/test_queue_adapter.py`** (12 tests)
    - QueueBackedDict dict-like interface
-   - FIFO retrieval
+   - Buffer retrieval (latest data)
    - Cache fallback
    - Multiple data types
    - None value handling
 
+3. **`tests/test_buffer_system.py`** (13 tests)
+   - Buffer maintains 10 items maximum
+   - Non-consuming reads (data not removed on access)
+   - All items accessible with timestamps
+   - Multi-stream synchronization
+   - Timestamp ordering
+
+4. **`tests/test_queue_integration.py`** (6 tests)
+   - Integration with CV_Studio nodes
+   - Buffer behavior in pipelines
+   - Concurrent node updates
+
 ### Running Tests
 
 ```bash
-# Run all queue tests
-python -m pytest tests/test_timestamped_queue.py tests/test_queue_adapter.py -v
+# Run all buffer tests
+python -m pytest tests/test_timestamped_queue.py tests/test_queue_adapter.py tests/test_buffer_system.py tests/test_queue_integration.py -v
 
-# Run with coverage
-python -m pytest tests/test_timestamped_queue.py tests/test_queue_adapter.py --cov=node --cov-report=html
+# Run with PYTHONPATH
+cd /path/to/CV_Studio
+PYTHONPATH=. python tests/test_buffer_system.py
 ```
 
 ## Performance Considerations
 
 ### Memory Usage
-- Each queue stores up to 100 items by default
+- Each buffer stores up to 10 items by default
 - Old items automatically removed when limit reached
-- Typical node: ~3 queues × 100 items = 300 data items max
+- Typical node: ~3 buffers × 10 items = 30 data items max per node
+- Predictable and minimal memory footprint
 
 ### CPU Usage
 - Lock contention minimal (very fast lock operations)
@@ -193,18 +230,20 @@ python -m pytest tests/test_timestamped_queue.py tests/test_queue_adapter.py --c
 - No significant overhead compared to dict-based approach
 
 ### Latency
-- Negligible added latency (~microseconds for queue operations)
+- Negligible added latency (~microseconds for buffer operations)
 - Thread-safe operations are highly optimized
 - No blocking except during brief lock acquisition
+- Reading doesn't remove items, so synchronization is efficient
 
 ## Future Enhancements
 
 Potential improvements:
 1. **Time-based cleanup**: Remove data older than X seconds
-2. **Priority queues**: Support for prioritized data retrieval
-3. **Queue persistence**: Save/load queue state
-4. **Statistics**: Throughput, latency, queue depth metrics
-5. **Visualization**: Real-time queue status in UI
+2. **Configurable buffer sizes per node**: Allow different buffer sizes for different nodes
+3. **Buffer persistence**: Save/load buffer state
+4. **Statistics**: Throughput, latency, buffer depth metrics
+5. **Visualization**: Real-time buffer status in UI
+6. **Timestamp-based queries**: Find items by timestamp range
 
 ## Examples
 
@@ -222,7 +261,7 @@ def update(self, node_id, connection_list, node_image_dict, node_result_dict):
 
 ```python
 def update(self, node_id, connection_list, node_image_dict, node_result_dict):
-    # Get oldest image from connected node (FIFO)
+    # Get latest image from connected node (buffer behavior)
     source_node = connection_list[0][0].split(":")[:2]
     source_node = ":".join(source_node)
     
@@ -237,25 +276,42 @@ def update(self, node_id, connection_list, node_image_dict, node_result_dict):
 ### Advanced Usage
 
 ```python
-# Check queue status
+# Check buffer status
 info = node_image_dict.get_queue_info(source_node)
 if info['exists'] and not info['is_empty']:
-    logger.info(f"Queue has {info['size']} items")
+    logger.info(f"Buffer has {info['size']} items")
     logger.info(f"Age of oldest data: {time.time() - info['oldest_timestamp']:.2f}s")
 
-# Get latest instead of oldest if needed
+# Get latest instead of using default dict access
 latest_image = node_image_dict.get_latest(source_node)
+
+# Access all buffered items for synchronization
+queue = queue_manager.get_queue(source_node, "image")
+all_items = queue.get_all()  # Returns up to 10 items with timestamps
+
+# Synchronize video and audio by timestamps
+for video_item in all_items:
+    timestamp = video_item.timestamp
+    # Find matching audio
+    audio_queue = queue_manager.get_queue(audio_source, "audio")
+    audio_items = audio_queue.get_all()
+    
+    # Find closest audio by timestamp
+    closest_audio = min(audio_items, key=lambda x: abs(x.timestamp - timestamp))
+    process_synced(video_item.data, closest_audio.data)
 ```
 
 ## Summary
 
-The timestamped queue system provides:
-- ✅ **FIFO data retrieval** - Oldest data retrieved first
+The timestamped buffer system provides:
+- ✅ **Buffer storage** - Maintains last 10 timestamped items per node
+- ✅ **Non-consuming reads** - Reading data doesn't remove it from buffer
 - ✅ **Automatic timestamping** - All data timestamped on creation
+- ✅ **Timestamp synchronization** - All buffered items accessible with timestamps for sync
 - ✅ **Thread safety** - Safe concurrent access
 - ✅ **Backward compatibility** - Works with existing code
-- ✅ **Queue management** - Automatic size limits and cleanup
-- ✅ **Comprehensive testing** - 29 passing tests
+- ✅ **Automatic size management** - Rolling buffer removes oldest when full
+- ✅ **Comprehensive testing** - 48 passing tests across 4 test suites
 - ✅ **Documentation** - Complete API and usage guide
 
-The implementation fulfills the requirement: "Each node that sends data to other nodes does so through a queue of its own class, the data is timestamped, and the node that retrieves the data gets the oldest one from the FIFO."
+The implementation fulfills the requirement: "a buffer that holds 10 values in memory buffer, each element has a timestamp to be able to synchronize later"

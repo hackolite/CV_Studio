@@ -54,8 +54,8 @@ class TestQueueBackedDict(unittest.TestCase):
         result = self.queue_dict.get("1:TestNode")
         self.assertIsNone(result)
     
-    def test_fifo_behavior(self):
-        """Test that FIFO behavior works through the dict interface."""
+    def test_buffer_behavior(self):
+        """Test that buffer behavior works through the dict interface (returns latest)."""
         # Add multiple values with different timestamps
         t1 = time.time()
         self.manager.put_data("1:TestNode", "image", "old_image", t1)
@@ -64,9 +64,9 @@ class TestQueueBackedDict(unittest.TestCase):
         t2 = time.time()
         self.manager.put_data("1:TestNode", "image", "new_image", t2)
         
-        # Getting from dict should return the oldest (FIFO)
+        # Getting from dict should return the latest (buffer behavior)
         result = self.queue_dict["1:TestNode"]
-        self.assertEqual(result, "old_image")
+        self.assertEqual(result, "new_image")
     
     def test_get_latest(self):
         """Test getting the latest data directly."""

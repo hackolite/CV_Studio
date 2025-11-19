@@ -35,14 +35,15 @@ class TimestampedData:
 
 class TimestampedQueue:
     """
-    Thread-safe FIFO queue that stores timestamped data.
+    Thread-safe buffer that stores timestamped data.
     
-    Each node that sends data to other nodes uses its own queue instance.
-    Data is automatically timestamped when added to the queue.
-    Retrieval operations get the oldest data (FIFO behavior).
+    Each node that sends data to other nodes uses its own buffer instance.
+    Data is automatically timestamped when added to the buffer.
+    The buffer maintains the most recent items up to maxsize (default 10).
+    When full, oldest items are automatically removed to make room for new items.
     """
     
-    def __init__(self, maxsize: int = 100, node_id: str = "unknown"):
+    def __init__(self, maxsize: int = 10, node_id: str = "unknown"):
         """
         Initialize a timestamped queue.
         
@@ -139,13 +140,14 @@ class TimestampedQueue:
 
 class NodeDataQueueManager:
     """
-    Manages timestamped queues for all nodes in the system.
+    Manages timestamped buffers for all nodes in the system.
     
-    This class maintains a collection of queues, one for each node that produces data.
-    It provides methods to access and manage these queues centrally.
+    This class maintains a collection of buffers, one for each node that produces data.
+    Each buffer keeps the most recent items (default 10) with timestamps for synchronization.
+    It provides methods to access and manage these buffers centrally.
     """
     
-    def __init__(self, default_maxsize: int = 100):
+    def __init__(self, default_maxsize: int = 10):
         """
         Initialize the queue manager.
         
