@@ -199,6 +199,8 @@ def main():
             "Input": "InputNode",
             "VisionProcess": "ProcessNode",
             "VisionModel": "DLNode",
+            "AudioProcess": "AudioProcessNode",
+            "AudioModel": "AudioModelNode",
             "Stats": "StatsNode",
             "Trigger": "TriggerNode",
             "Router": "RouterNode",
