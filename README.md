@@ -392,6 +392,23 @@ See [tests/dummy_servers/README.md](tests/dummy_servers/README.md) for examples 
 
 CV Studio features a modern, professional architecture designed for scalability and maintainability.
 
+### Timestamped FIFO Queue System
+
+**New in this version**: CV Studio now implements a timestamped queue system for node data communication that ensures:
+- ✅ **FIFO Data Retrieval** - Oldest data is retrieved first from node queues
+- ✅ **Automatic Timestamping** - All data automatically timestamped when created
+- ✅ **Thread-Safe Operations** - Safe concurrent access across all nodes
+- ✅ **Backward Compatibility** - Existing nodes work without modifications
+- ✅ **Queue Management** - Automatic size limits prevent memory overflow
+
+Each node that sends data to other nodes does so through its own timestamped queue. When nodes retrieve data, they get the oldest data from the FIFO queue, ensuring chronological processing order. See [TIMESTAMPED_QUEUE_SYSTEM.md](TIMESTAMPED_QUEUE_SYSTEM.md) for detailed documentation.
+
+**Benefits:**
+- Proper temporal ordering of video frames and audio data
+- Prevention of data race conditions
+- Better synchronization between nodes
+- Monitoring and debugging capabilities
+
 ### Project Structure
 
 ```
@@ -418,10 +435,12 @@ CV_Studio/
 │   ├── DLNode/            # Deep learning nodes
 │   ├── ActionNode/        # Action/control nodes
 │   ├── OverlayNode/       # Drawing and overlay nodes
+│   ├── timestamped_queue.py  # Timestamped FIFO queue system (NEW)
+│   ├── queue_adapter.py   # Backward-compatible queue adapter (NEW)
 │   └── ...                # Other node categories
 │
 ├── node_editor/           # Node editor core and UI
-├── tests/                 # Test suite (38+ tests)
+├── tests/                 # Test suite (52+ tests, including queue system)
 ├── main.py               # Application entry point
 └── requirements.txt      # Python dependencies
 ```
@@ -488,6 +507,7 @@ class MyNode(EnhancedNode):
 - **[Migration Guide](MIGRATION_GUIDE.md)** - How to use new features
 - **[src/README.md](src/README.md)** - Technical architecture documentation
 - **[Restructuring Summary](RESTRUCTURING_SUMMARY.md)** - Changes and improvements
+- **[Timestamped Queue System](TIMESTAMPED_QUEUE_SYSTEM.md)** - FIFO queue documentation (NEW) 🆕
 
 #### Video-Audio Synchronization Documentation
 
@@ -503,7 +523,7 @@ Comprehensive guides explaining how the Video Node synchronizes audio spectrogra
 
 ## 🧪 Testing
 
-CV Studio includes comprehensive test coverage (38+ tests).
+CV Studio includes comprehensive test coverage (52+ tests).
 
 ### Run Tests
 
@@ -515,8 +535,11 @@ python -m pytest tests/ -v
 python -m pytest tests/test_utils/ -v
 python -m pytest tests/test_core/ -v
 
+# Run queue system tests (NEW)
+python -m pytest tests/test_timestamped_queue.py tests/test_queue_adapter.py tests/test_queue_integration.py -v
+
 # Run with coverage report
-python -m pytest tests/ --cov=src --cov-report=html
+python -m pytest tests/ --cov=src --cov=node --cov-report=html
 ```
 
 ### Test Coverage
@@ -526,6 +549,10 @@ python -m pytest tests/ --cov=src --cov-report=html
 - ✅ Resource management (8 tests)
 - ✅ Node factory (7 tests)
 - ✅ Settings management (10 tests)
+- ✅ **Timestamped queue system (35 tests)** ← NEW
+  - Core queue functionality (17 tests)
+  - Backward compatibility adapter (12 tests)
+  - Integration with node system (6 tests)
 
 ## 📚 Available Nodes
 
