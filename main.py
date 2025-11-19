@@ -17,6 +17,10 @@ from src.utils.gpu_utils import log_gpu_info
 from node_editor.util import check_camera_connection
 from node_editor.node_editor import DpgNodeEditor
 
+# Import timestamped queue system
+from node.timestamped_queue import NodeDataQueueManager
+from node.queue_adapter import QueueBackedDict
+
 # Setup logging
 logger = get_logger(__name__)
 
@@ -38,10 +42,14 @@ def get_args():
     return args
 
 
-def async_main(node_editor):
-    node_image_dict = {}
-    node_result_dict = {}
-    node_audio_dict = {}
+def async_main(node_editor, queue_manager):
+    # Create queue-backed dictionaries for backward compatibility
+    node_image_dict = QueueBackedDict(queue_manager, "image")
+    node_result_dict = QueueBackedDict(queue_manager, "json")
+    node_audio_dict = QueueBackedDict(queue_manager, "audio")
+    
+    logger.info("Async main loop started with timestamped queue system")
+    
     while not node_editor.get_terminate_flag():
         update_node_info(
             node_editor, node_image_dict, node_result_dict, node_audio_dict
@@ -121,6 +129,11 @@ def main():
     logger.info("=" * 60)
     logger.info("CV_STUDIO Starting")
     logger.info("=" * 60)
+    
+    # Initialize timestamped queue system
+    logger.info("Initializing timestamped queue system")
+    queue_manager = NodeDataQueueManager(default_maxsize=100)
+    logger.info("Queue system initialized with FIFO behavior for oldest data retrieval")
 
     logger.info("Loading configuration")
     opencv_setting_dict = None
@@ -215,14 +228,16 @@ def main():
     if not unuse_async_draw:
         logger.info("Async draw is enabled")
         event_loop = asyncio.get_event_loop()
-        event_loop.run_in_executor(None, async_main, node_editor)
+        event_loop.run_in_executor(None, async_main, node_editor, queue_manager)
         dpg.start_dearpygui()
 
     else:
         logger.info("Async draw is disabled")
-        node_image_dict = {}
-        node_result_dict = {}
-        node_audio_dict = {}
+        # Create queue-backed dictionaries
+        node_image_dict = QueueBackedDict(queue_manager, "image")
+        node_result_dict = QueueBackedDict(queue_manager, "json")
+        node_audio_dict = QueueBackedDict(queue_manager, "audio")
+        
         while dpg.is_dearpygui_running():
             update_node_info(
                 node_editor,
