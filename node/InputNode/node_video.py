@@ -733,6 +733,40 @@ class VideoNode(Node):
         
         return self._spectrogram_chunks[node_id][chunk_index]
     
+    def _get_audio_chunk_for_frame(self, node_id, frame_number):
+        """
+        Get the audio chunk data for a specific frame number.
+        
+        Args:
+            node_id: Node identifier
+            frame_number: Current frame number
+            
+        Returns:
+            Dictionary with 'data' (numpy array) and 'sample_rate' (int), or None if not available
+        """
+        if node_id not in self._chunk_metadata or node_id not in self._audio_chunks:
+            return None
+        
+        metadata = self._chunk_metadata[node_id]
+        fps = metadata['fps']
+        step_duration = metadata['step_duration']
+        sr = metadata['sr']
+        
+        # Calculate current time from frame number
+        current_time = frame_number / fps if fps > 0 else 0
+        
+        # Calculate chunk index based on step duration
+        chunk_index = int(current_time / step_duration)
+        
+        # Clamp to valid range
+        chunk_index = max(0, min(chunk_index, len(self._audio_chunks[node_id]) - 1))
+        
+        # Return audio chunk in the format expected by audio processing nodes
+        return {
+            'data': self._audio_chunks[node_id][chunk_index],
+            'sample_rate': sr
+        }
+    
     def _add_playback_cursor_to_spectrogram(self, spectrogram_bgr, node_id, frame_number):
         """
         Add a yellow vertical cursor to the spectrogram showing current playback position.
@@ -963,6 +997,12 @@ class VideoNode(Node):
             )
             dpg_set_value(tag_node_output_image, texture)
 
+        # Get audio chunk data for this frame to pass to other audio nodes
+        audio_chunk_data = None
+        current_frame_num = self._frame_count.get(str(node_id), 0)
+        if str(node_id) in self._audio_chunks:
+            audio_chunk_data = self._get_audio_chunk_for_frame(str(node_id), current_frame_num)
+
         # Update spectrogram display if toggle is enabled
         tag_node_spectrogram_toggle = tag_node_name + ":SpectrogramToggle"
 
@@ -970,9 +1010,6 @@ class VideoNode(Node):
             show_spectrogram = dpg_get_value(tag_node_spectrogram_toggle)
             
             if show_spectrogram and str(node_id) in self._spectrogram_chunks:
-                # Get current frame number
-                current_frame_num = self._frame_count.get(str(node_id), 0)
-                
                 # Get pre-computed spectrogram for this frame
                 spectrogram_bgr = self._get_spectrogram_for_frame(str(node_id), current_frame_num)
                 
@@ -988,7 +1025,8 @@ class VideoNode(Node):
                     )
                     dpg_set_value(self.tag_node_output03_value_name, texture)
 
-        return {"image": frame, "json": None, "audio": spectrogram_bgr}
+        # Return frame via IMAGE output and audio chunk data via AUDIO output
+        return {"image": frame, "json": None, "audio": audio_chunk_data}
 
     def close(self, node_id):
         pass
