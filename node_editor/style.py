@@ -12,6 +12,10 @@ MODEL = [
     "LLIE", "Classification", "PoseEstimation", "ObjectDetection",
     "MonocularDepthEstimation", "SemanticSegmentation", "FaceDetection"
 ]
+AUDIO_PROCESS = [
+    "Spectrogram"
+]
+AUDIO_MODEL = []
 STATS = []
 TRIGGER = ["Count", "OnOffSwitch"]
 ROUTER = []
@@ -36,6 +40,14 @@ STYLE = {
     "VisionModel": {
         "names": MODEL,
         "style": [(255, 218, 185, 255)]  # peach puff pastel
+    },
+    "AudioProcess": {
+        "names": AUDIO_PROCESS,
+        "style": [(176, 224, 230, 255)]  # powder blue pastel
+    },
+    "AudioModel": {
+        "names": AUDIO_MODEL,
+        "style": [(255, 192, 203, 255)]  # pink pastel
     },
     "Stats": {
         "names": STATS,
