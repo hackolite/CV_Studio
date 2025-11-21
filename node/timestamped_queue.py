@@ -8,10 +8,14 @@ through FIFO queues where data is timestamped and retrieved in chronological ord
 """
 
 import time
+import logging
 from collections import deque
 from typing import Any, Optional, Dict, Tuple
 from dataclasses import dataclass
 import threading
+
+# Set up logger for this module
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -75,6 +79,13 @@ class TimestampedQueue:
         
         with self._lock:
             self._queue.append(timestamped_data)
+            
+            # Log the data insertion with timestamp and data type
+            data_type = type(data).__name__
+            logger.info(
+                f"Queue [{self._node_id}] - Inserted data: type={data_type}, "
+                f"timestamp={timestamp:.6f}, queue_size={len(self._queue)}/{self._maxsize}"
+            )
     
     def get_oldest(self) -> Optional[TimestampedData]:
         """
@@ -194,6 +205,12 @@ class NodeDataQueueManager:
         """
         queue = self.get_queue(node_id_name, data_type)
         queue.put(data, timestamp)
+        
+        # Log the data insertion at manager level
+        actual_timestamp = timestamp if timestamp is not None else time.time()
+        logger.info(
+            f"Manager - Node [{node_id_name}] received {data_type} data at timestamp={actual_timestamp:.6f}"
+        )
     
     def get_oldest_data(self, node_id_name: str, data_type: str = "default") -> Optional[Any]:
         """

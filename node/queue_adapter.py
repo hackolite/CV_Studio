@@ -8,8 +8,12 @@ internally, allowing existing code to work without modifications while benefitin
 from the new queue-based architecture.
 """
 
+import logging
 from typing import Any, Optional, Dict
 from .timestamped_queue import NodeDataQueueManager
+
+# Set up logger for this module
+logger = logging.getLogger(__name__)
 
 
 class QueueBackedDict:
@@ -52,6 +56,12 @@ class QueueBackedDict:
         # Also add to queue with timestamp
         if value is not None:
             self._queue_manager.put_data(node_id_name, self._data_type, value)
+            
+            # Log the data insertion via adapter
+            data_type_name = type(value).__name__
+            logger.info(
+                f"QueueAdapter [{self._data_type}] - Node [{node_id_name}] set value of type={data_type_name}"
+            )
     
     def __getitem__(self, node_id_name: str) -> Any:
         """
