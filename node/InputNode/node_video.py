@@ -3,11 +3,8 @@
 import time
 import cv2
 import numpy as np
-from numpy.lib import stride_tricks
 import dearpygui.dearpygui as dpg
 import librosa
-import matplotlib.cm
-import matplotlib
 import subprocess
 import tempfile
 import os
@@ -16,13 +13,6 @@ from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
 from node.basenode import Node
-from node.InputNode.spectrogram_utils import apply_colormap_to_spectrogram
-
-# Spectrogram processing constants
-# Minimum amplitude threshold to prevent log10(0) which causes -inf values
-SPECTROGRAM_EPSILON = 1e-10
-# Default colormap for spectrograms (configurable)
-DEFAULT_SPECTROGRAM_COLORMAP = 'JET'
 
 
 class FactoryNode:
@@ -89,13 +79,6 @@ class FactoryNode:
             node.tag_node_name + ":" + node.TYPE_TIME_MS + ":Output02Value"
         )
 
-        node.tag_node_output03_name = (
-            node.tag_node_name + ":" + node.TYPE_AUDIO + ":Output03"
-        )
-        node.tag_node_output03_value_name = (
-            node.tag_node_name + ":" + node.TYPE_AUDIO + ":Output03Value"
-        )
-
         node.tag_node_button_name = (
             node.tag_node_name + ":" + node.TYPE_TEXT + ":Button"
         )
@@ -124,13 +107,6 @@ class FactoryNode:
             node.tag_node_name + ":" + node.TYPE_FLOAT + ":OutputFloatValue"
         )
 
-        # Spectrogram tags
-        # node.tag_node_spectrogram_name = node.tag_node_name + ":Spectrogram"
-        # node.tag_node_spectrogram_value_name = node.tag_node_name + ":SpectrogramValue"
-        node.tag_node_spectrogram_toggle_name = (
-            node.tag_node_name + ":SpectrogramToggle"
-        )
-
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict["input_window_width"]
         small_window_h = node._opencv_setting_dict["input_window_height"]
@@ -149,14 +125,6 @@ class FactoryNode:
                 small_window_h,
                 black_texture,
                 tag=node.tag_node_output01_value_name,
-                format=dpg.mvFormat_Float_rgb,
-            )
-            # Add spectrogram texture (initially black)
-            dpg.add_raw_texture(
-                small_window_w,
-                small_window_h,
-                black_texture,
-                tag=node.tag_node_output03_value_name,
                 format=dpg.mvFormat_Float_rgb,
             )
 
@@ -207,18 +175,6 @@ class FactoryNode:
                 attribute_type=dpg.mvNode_Attr_Output,
             ):
                 dpg.add_image(node.tag_node_output01_value_name)
-
-            # Spectrogram toggle
-            with dpg.node_attribute(
-                tag=node.tag_node_output03_name,
-                attribute_type=dpg.mvNode_Attr_Output,
-            ):
-                dpg.add_checkbox(
-                    label="Show Spectrogram",
-                    tag=node.tag_node_spectrogram_toggle_name,
-                    default_value=False,
-                )
-                dpg.add_image(node.tag_node_output03_value_name)
 
             with dpg.node_attribute(
                 tag=node.tag_node_input02_name,
@@ -332,121 +288,8 @@ class FactoryNode:
 
 
 import os
-
-import scipy.io.wavfile as wav
-import numpy as np
-import matplotlib.pyplot as plt
-
-
-import os
 import numpy as np
 import soundfile as sf
-import librosa
-
-def chunk_audio_wav_or_mp3(input_audio, output_folder, chunk_duration=5.0, step_duration=1.0):
-    os.makedirs(output_folder, exist_ok=True)
-
-    print(f"📥 Chargement : {input_audio}")
-    try:
-        # Chargement avec librosa : supporte .wav, .mp3, etc.
-        data, rate = librosa.load(input_audio, sr=None, mono=True)
-    except Exception as e:
-        print(f"❌ Erreur lors de la lecture : {e}")
-        return
-
-    total_duration = len(data) / rate
-    chunk_samples = int(chunk_duration * rate)
-    step_samples = int(step_duration * rate)
-
-    start = 0
-    count = 1
-
-    print(f"🔍 Fréquence d'échantillonnage : {rate} Hz")
-    print("🚀 Découpage en cours...")
-
-    while (start + chunk_samples) <= len(data):
-        end = start + chunk_samples
-        chunk = data[start:end]
-        output_path = os.path.join(output_folder, f"chunk_{count}.wav")
-        sf.write(output_path, chunk, rate)
-        print(f"✅ chunk_{count}.wav : {start / rate:.2f}s → {end / rate:.2f}s")
-        count += 1
-        start += step_samples
-
-    print(f"\n🎉 {count - 1} chunks enregistrés dans {output_folder}")
-
-
-
-
-
-# Ta fonction plot_spectrogram
-def plot_spectrogram(location, plotpath=None, binsize=2**10, colormap="jet"):
-    samplerate, samples = wav.read(location)
-    s = fourier_transformation(samples, binsize)
-    sshow, freq = make_logscale(s, factor=1.0, sr=samplerate)
-    ims = 20.*np.log10(np.abs(sshow)/10e-6) # amplitude to decibel
-
-    timebins, freqbins = np.shape(ims)
-    #print("timebins:", timebins, "freqbins:", freqbins)
-
-    plt.figure(figsize=(15, 7.5))
-    plt.imshow(np.transpose(ims), origin="lower", aspect="auto", cmap=colormap, interpolation="none")
-    xlocs = np.float32(np.linspace(0, timebins-1, 5))
-    plt.xticks(xlocs, ["%.02f" % l for l in ((xlocs*len(samples)/timebins)+(0.5*binsize))/samplerate])
-    ylocs = np.int16(np.round(np.linspace(0, freqbins-1, 10)))
-    plt.yticks(ylocs, ["%.02f" % freq[i] for i in ylocs])
-
-    if plotpath:
-        plt.savefig(plotpath, bbox_inches="tight")
-    else:
-        plt.show()
-    plt.clf()
-
-    return ims
-
-
-def make_logscale(spec, sr=44100, factor=20.):
-    timebins, freqbins = np.shape(spec)
-
-    scale = np.linspace(0, 1, freqbins) ** factor
-    scale *= (freqbins-1)/max(scale)
-    scale = np.unique(np.round(scale))
-
-    # create spectrogram with new freq bins
-    newspec = np.complex128(np.zeros([timebins, len(scale)]))
-    for i in range(0, len(scale)):
-        if i == len(scale)-1:
-            newspec[:,i] = np.sum(spec[:,int(scale[i]):], axis=1)
-        else:
-            newspec[:,i] = np.sum(spec[:,int(scale[i]):int(scale[i+1])], axis=1)
-
-    # list center freq of bins
-    allfreqs = np.abs(np.fft.fftfreq(freqbins*2, 1./sr)[:freqbins+1])
-    freqs = []
-    for i in range(0, len(scale)):
-        if i == len(scale)-1:
-            freqs += [np.mean(allfreqs[int(scale[i]):])]
-        else:
-            freqs += [np.mean(allfreqs[int(scale[i]):int(scale[i+1])])]
-
-    return newspec, freqs
-    
-def fourier_transformation(sig, frameSize, overlapFac=0.5, window=np.hanning):
-    win = window(frameSize)
-    hopSize = int(frameSize - np.floor(overlapFac * frameSize))
-
-    # zeros at beginning (thus center of 1st window should be for sample nr. 0)
-    samples = np.append(np.zeros(int(np.floor(frameSize/2.0))), sig)
-    # cols for windowing
-    cols = np.ceil( (len(samples) - frameSize) / float(hopSize)) + 1
-    # zeros at end (thus samples can be fully covered by frames)
-    samples = np.append(samples, np.zeros(frameSize))
-
-    frames = stride_tricks.as_strided(samples, shape=(int(cols), frameSize), strides=(samples.strides[0]*hopSize, samples.strides[0])).copy()
-    frames *= win
-
-    return np.fft.rfft(frames)    
-
 
 
 class VideoNode(Node):
@@ -487,32 +330,20 @@ class VideoNode(Node):
         self.node_tag = "Video"
         self.node_label = "Video"
 
-        # Spectrogram storage
-        self._spectrogram_texture = {}
-        self._spectrogram_array = {}
-        self._spectrogram_params = {}
-        self._spectrogram_meta = {}
-        
-        # Spectrogram colormap configuration
-        # Can be changed to 'VIRIDIS', 'JET', 'MAGMA', 'PLASMA', etc.
-        self._spectrogram_colormap = DEFAULT_SPECTROGRAM_COLORMAP
-        
-        # New: Pre-processed data storage
+        # Audio and video data storage
         self._video_frames = {}  # Store extracted frames
         self._audio_chunks = {}  # Store audio chunks
-        self._spectrogram_chunks = {}  # Store pre-computed spectrograms per chunk
         self._chunk_metadata = {}  # Metadata for chunk-to-frame mapping
 
     def _preprocess_video(self, node_id, movie_path, chunk_duration=5.0, step_duration=1.0):
         """
-        Pre-process video by extracting all frames and generating spectrograms for audio chunks.
+        Pre-process video by extracting all frames and chunking audio.
         
         This method:
         1. Extracts all video frames using OpenCV
         2. Extracts audio using librosa
         3. Chunks audio into segments (chunk_duration with step_duration overlap)
-        4. Pre-computes spectrograms for each chunk
-        5. Stores metadata for frame-to-chunk mapping
+        4. Stores metadata for frame-to-chunk mapping
         
         Args:
             node_id: Node identifier
@@ -644,48 +475,7 @@ class VideoNode(Node):
             self._audio_chunks[node_id] = audio_chunks
             print(f"✅ Created {len(audio_chunks)} audio chunks")
             
-            # Step 4: Pre-compute spectrograms for each chunk
-            print("🌈 Pre-computing spectrograms...")
-            spectrogram_chunks = []
-            binsize = 2**10  # 1024 samples
-            
-            for idx, chunk in enumerate(audio_chunks):
-                if idx % 10 == 0:
-                    print(f"  Processing chunk {idx}/{len(audio_chunks)}...")
-                
-                # Perform Fourier transformation
-                s = fourier_transformation(chunk, binsize, overlapFac=0.5, window=np.hanning)
-                
-                # Apply logarithmic frequency scaling
-                sshow, freq = make_logscale(spec=s, sr=sr, factor=1.0)
-                
-                # Convert to dB scale with epsilon to avoid log10(0)
-                sshow_safe = np.maximum(np.abs(sshow), SPECTROGRAM_EPSILON)
-                ims = 20. * np.log10(sshow_safe / 10e-6)
-                
-                # Replace non-finite values
-                ims = np.nan_to_num(ims, nan=-80.0, posinf=0.0, neginf=-80.0)
-                
-                # Transpose for correct orientation (freq x time)
-                ims_transposed = np.transpose(ims, (1, 0))
-                
-                # Apply colormap
-                S_rgb = apply_colormap_to_spectrogram(
-                    ims_transposed,
-                    method='cv2',
-                    cmap=self._spectrogram_colormap
-                )
-                
-                # Flip vertically and convert to BGR
-                #S_rgb = np.flipud(S_rgb)
-                #S_bgr = cv2.cvtColor(S_rgb, cv2.COLOR_RGB2BGR)
-                
-                spectrogram_chunks.append(S_rgb)
-            
-            self._spectrogram_chunks[node_id] = spectrogram_chunks
-            print(f"✅ Pre-computed {len(spectrogram_chunks)} spectrograms")
-            
-            # Step 5: Store metadata
+            # Step 4: Store metadata
             self._chunk_metadata[node_id] = {
                 'fps': fps,
                 'sr': sr,
@@ -703,35 +493,6 @@ class VideoNode(Node):
             print(f"❌ Failed to pre-process video: {e}")
             import traceback
             traceback.print_exc()
-    
-    def _get_spectrogram_for_frame(self, node_id, frame_number):
-        """
-        Get the pre-computed spectrogram for a specific frame number.
-        
-        Args:
-            node_id: Node identifier
-            frame_number: Current frame number
-            
-        Returns:
-            Pre-computed spectrogram (BGR image) or None if not available
-        """
-        if node_id not in self._chunk_metadata or node_id not in self._spectrogram_chunks:
-            return None
-        
-        metadata = self._chunk_metadata[node_id]
-        fps = metadata['fps']
-        step_duration = metadata['step_duration']
-        
-        # Calculate current time from frame number
-        current_time = frame_number / fps if fps > 0 else 0
-        
-        # Calculate chunk index based on step duration
-        chunk_index = int(current_time / step_duration)
-        
-        # Clamp to valid range
-        chunk_index = max(0, min(chunk_index, len(self._spectrogram_chunks[node_id]) - 1))
-        
-        return self._spectrogram_chunks[node_id][chunk_index]
     
     def _get_audio_chunk_for_frame(self, node_id, frame_number):
         """
@@ -766,109 +527,6 @@ class VideoNode(Node):
             'data': self._audio_chunks[node_id][chunk_index],
             'sample_rate': sr
         }
-    
-    def _add_playback_cursor_to_spectrogram(self, spectrogram_bgr, node_id, frame_number):
-        """
-        Add a yellow vertical cursor to the spectrogram showing current playback position.
-        The cursor behavior has three phases:
-        1. Initial phase (first 1/3 of video): cursor moves from left (0) to 1/3 of width
-        2. Middle phase (middle portion of video): cursor stays fixed at 1/3, spectrogram scrolls left
-        3. Final phase (last 1/3 of video): cursor moves from 1/3 to the end (right edge)
-        
-        Args:
-            spectrogram_bgr: Spectrogram image (BGR format)
-            node_id: Node identifier
-            frame_number: Current frame number
-            
-        Returns:
-            Spectrogram with yellow cursor overlay (scrolled if needed)
-        """
-        if node_id not in self._chunk_metadata:
-            return spectrogram_bgr
-        
-        metadata = self._chunk_metadata[node_id]
-        fps = metadata['fps']
-        chunk_duration = metadata['chunk_duration']
-        step_duration = metadata['step_duration']
-        num_frames = metadata['num_frames']
-        
-        # Calculate current time from frame number
-        current_time = frame_number / fps if fps > 0 else 0
-        
-        # Calculate total video duration
-        total_duration = num_frames / fps if fps > 0 else 0
-        
-        # Calculate overall progress through the entire video (0.0 to 1.0)
-        video_progress = current_time / total_duration if total_duration > 0 else 0
-        video_progress = max(0.0, min(1.0, video_progress))
-        
-        # Calculate chunk index and time within chunk (for spectrogram scrolling in middle phase)
-        chunk_index = int(current_time / step_duration)
-        chunk_start_time = chunk_index * step_duration
-        time_within_chunk = current_time - chunk_start_time
-        
-        # Calculate cursor position as a fraction of chunk duration
-        cursor_position_ratio = time_within_chunk / chunk_duration if chunk_duration > 0 else 0
-        cursor_position_ratio = max(0.0, min(1.0, cursor_position_ratio))
-        
-        height, width = spectrogram_bgr.shape[:2]
-        
-        # Fixed cursor position at 1/3 of the width (for middle phase)
-        fixed_cursor_x = width // 3
-        
-        # Three-phase cursor behavior based on overall video progress
-        if video_progress <= 1.0 / 3.0:
-            # Phase 1: First 1/3 of video - cursor moves from 0 to width/3
-            cursor_x = int(video_progress * 3.0 * fixed_cursor_x)  # Maps [0, 1/3] to [0, width/3]
-            spectrogram_with_cursor = spectrogram_bgr.copy()
-        elif video_progress >= 2.0 / 3.0:
-            # Phase 3: Last 1/3 of video - cursor moves from width/3 to end
-            # Map video_progress from [2/3, 1] to cursor position [width/3, width-1]
-            phase3_progress = (video_progress - 2.0/3.0) / (1.0/3.0)  # Maps [2/3, 1] to [0, 1]
-            cursor_x = int(fixed_cursor_x + phase3_progress * (width - fixed_cursor_x - 1))
-            spectrogram_with_cursor = spectrogram_bgr.copy()
-        else:
-            # Phase 2: Middle 1/3 of video - cursor stays at width/3, spectrogram scrolls left
-            # Use cursor_position_ratio for scrolling within the current chunk
-            if cursor_position_ratio <= 1.0 / 3.0:
-                # Within first 1/3 of chunk, cursor moves
-                cursor_x = int(cursor_position_ratio * width)
-            else:
-                # After first 1/3 of chunk, scroll the spectrogram
-                scroll_ratio = (cursor_position_ratio - 1.0 / 3.0) / (2.0 / 3.0)
-                scroll_pixels = int(scroll_ratio * (width - fixed_cursor_x))
-                
-                # Scroll the spectrogram to the left
-                spectrogram_with_cursor = np.zeros_like(spectrogram_bgr)
-                if scroll_pixels < width:
-                    spectrogram_with_cursor[:, :width - scroll_pixels] = spectrogram_bgr[:, scroll_pixels:]
-                    spectrogram_with_cursor[:, width - scroll_pixels:] = spectrogram_bgr[:, -1:]
-                
-                cursor_x = fixed_cursor_x
-            
-            # If we didn't scroll, just copy
-            if cursor_position_ratio <= 1.0 / 3.0:
-                spectrogram_with_cursor = spectrogram_bgr.copy()
-        
-        # Draw yellow vertical line (BGR format: yellow is (0, 255, 255))
-        # Draw a thicker line (3 pixels) for better visibility
-        line_thickness = 3
-        for offset in range(-line_thickness // 2, line_thickness // 2 + 1):
-            x_pos = cursor_x + offset
-            if 0 <= x_pos < width:
-                cv2.line(
-                    spectrogram_with_cursor,
-                    (x_pos, 0),
-                    (x_pos, height - 1),
-                    (0, 255, 255),  # Yellow in BGR
-                    1
-                )
-        
-        return spectrogram_with_cursor
-
-
-
-
 
 
 
@@ -1002,28 +660,6 @@ class VideoNode(Node):
         current_frame_num = self._frame_count.get(str(node_id), 0)
         if str(node_id) in self._audio_chunks:
             audio_chunk_data = self._get_audio_chunk_for_frame(str(node_id), current_frame_num)
-
-        # Update spectrogram display if toggle is enabled
-        tag_node_spectrogram_toggle = tag_node_name + ":SpectrogramToggle"
-
-        if dpg.does_item_exist(tag_node_spectrogram_toggle):
-            show_spectrogram = dpg_get_value(tag_node_spectrogram_toggle)
-            
-            if show_spectrogram and str(node_id) in self._spectrogram_chunks:
-                # Get pre-computed spectrogram for this frame
-                spectrogram_bgr = self._get_spectrogram_for_frame(str(node_id), current_frame_num)
-                
-                if spectrogram_bgr is not None:
-                    # Add yellow cursor to show current playback position
-                    spectrogram_with_cursor = self._add_playback_cursor_to_spectrogram(
-                        spectrogram_bgr, str(node_id), current_frame_num
-                    )
-                    
-                    # Convert to DPG texture format and update
-                    texture = self.convert_cv_to_dpg(
-                        spectrogram_with_cursor, small_window_w, small_window_h
-                    )
-                    dpg_set_value(self.tag_node_output03_value_name, texture)
 
         # Return frame via IMAGE output and audio chunk data via AUDIO output
         return {"image": frame, "json": None, "audio": audio_chunk_data}
