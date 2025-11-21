@@ -17,14 +17,30 @@ from node.basenode import Node
 
 def get_light_live_stream_url(url):
     """Retrieves live stream URL in low resolution (max 360p)."""
+    # Validate input URL
+    if not url or not isinstance(url, str):
+        raise ValueError("URL must be a non-empty string")
+    
+    url = url.strip()
+    if not url:
+        raise ValueError("URL cannot be empty or whitespace")
+    
     ydl_opts = {
         "quiet": True,
         "format": "best[height<=400]",  # Limit to 360p to reduce load
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        return cv2.VideoCapture(info.get("url", None))
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            video_url = info.get("url", None)
+            if not video_url:
+                raise ValueError("No video URL found in the response")
+            return cv2.VideoCapture(video_url)
+    except yt_dlp.utils.DownloadError as e:
+        raise ValueError(f"Failed to download video info: {str(e)}")
+    except Exception as e:
+        raise ValueError(f"Unexpected error while processing URL: {str(e)}")
 
 
 class FactoryNode:
@@ -233,8 +249,21 @@ class YoutubeNode(Node):
     def button(self, sender, data, user_data):
         print(user_data)
         value = dpg.get_value(user_data)
-        self.cap = get_light_live_stream_url(value)
-        print(f"Button clicked, URL: {value}")
+        
+        # Validate the URL before processing
+        if not value or not isinstance(value, str) or not value.strip():
+            print("Error: Please enter a valid YouTube URL")
+            return
+        
+        try:
+            self.cap = get_light_live_stream_url(value)
+            print(f"Button clicked, URL: {value}")
+        except ValueError as e:
+            print(f"Error: {str(e)}")
+            self.cap = None
+        except Exception as e:
+            print(f"Unexpected error: {str(e)}")
+            self.cap = None
         
     def _update(self, node_id, connection_list, node_image_dict, node_result_dict):
         """Updates the video stream image."""
