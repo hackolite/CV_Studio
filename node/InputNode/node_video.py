@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import dearpygui.dearpygui as dpg
 import librosa
+import soundfile as sf
 import subprocess
 import tempfile
 import os
@@ -285,11 +286,6 @@ class FactoryNode:
                 )
 
         return node
-
-
-import os
-import numpy as np
-import soundfile as sf
 
 
 class VideoNode(Node):
