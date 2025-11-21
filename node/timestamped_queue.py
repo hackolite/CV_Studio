@@ -203,13 +203,16 @@ class NodeDataQueueManager:
             data: The data to store
             timestamp: Optional custom timestamp
         """
+        # Create timestamp once to ensure consistency across logs
+        if timestamp is None:
+            timestamp = time.time()
+        
         queue = self.get_queue(node_id_name, data_type)
         queue.put(data, timestamp)
         
-        # Log the data insertion at manager level
-        actual_timestamp = timestamp if timestamp is not None else time.time()
+        # Log the data insertion at manager level with the same timestamp
         logger.info(
-            f"Manager - Node [{node_id_name}] received {data_type} data at timestamp={actual_timestamp:.6f}"
+            f"Manager - Node [{node_id_name}] received {data_type} data at timestamp={timestamp:.6f}"
         )
     
     def get_oldest_data(self, node_id_name: str, data_type: str = "default") -> Optional[Any]:
