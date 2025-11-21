@@ -594,7 +594,6 @@ class VideoNode(Node):
             start_time = time.monotonic()
 
         frame = None
-        spectrogram_bgr = None
         if video_capture is not None:
             # Check frame timing for playback speed control
             current_time = time.time()
@@ -724,5 +723,5 @@ class VideoNode(Node):
         if data["file_name"] != ".":
             node_id = sender.split(":")[1]
             self._movie_filepath[node_id] = data["file_path_name"]
-            # NEW: Preprocess video, audio, and spectrograms BEFORE playback
+            # Preprocess video and extract audio chunks
             self._preprocess_video(node_id, data["file_path_name"])
