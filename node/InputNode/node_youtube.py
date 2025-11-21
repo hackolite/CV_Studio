@@ -38,9 +38,9 @@ def get_light_live_stream_url(url):
                 raise ValueError("No video URL found in the response")
             return cv2.VideoCapture(video_url)
     except yt_dlp.utils.DownloadError as e:
-        raise ValueError(f"Failed to download video info: {str(e)}")
+        raise ValueError(f"Failed to download video info: {e}")
     except Exception as e:
-        raise ValueError(f"Unexpected error while processing URL: {str(e)}")
+        raise ValueError(f"Unexpected error while processing URL: {e}")
 
 
 class FactoryNode:
@@ -259,10 +259,10 @@ class YoutubeNode(Node):
             self.cap = get_light_live_stream_url(value)
             print(f"Button clicked, URL: {value}")
         except ValueError as e:
-            print(f"Error: {str(e)}")
+            print(f"Error: {e}")
             self.cap = None
         except Exception as e:
-            print(f"Unexpected error: {str(e)}")
+            print(f"Unexpected error: {e}")
             self.cap = None
         
     def _update(self, node_id, connection_list, node_image_dict, node_result_dict):
