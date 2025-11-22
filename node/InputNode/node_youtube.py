@@ -110,9 +110,9 @@ class FactoryNode:
         # Create yellow theme for buttons with white text
         with dpg.theme() as yellow_button_theme:
             with dpg.theme_component(dpg.mvButton):
-                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 0, 255))
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255))
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 0, 64, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 153, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 153, 255))
 
 		
         with dpg.node(
