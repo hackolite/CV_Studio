@@ -29,6 +29,7 @@ SPECTROGRAM_METHOD_ITEMS = ['stft_custom']
 def create_spectrogram_custom(audio_data, sample_rate=22050, n_fft=1024, hop_length=512):
     """
     Crée un spectrogramme compatible avec le modèle pré-entraîné.
+    Returns BGR format to be compatible with OpenCV's standard image format.
     """
     if audio_data is None or len(audio_data) == 0:
         return None
@@ -43,12 +44,10 @@ def create_spectrogram_custom(audio_data, sample_rate=22050, n_fft=1024, hop_len
     ims_transposed = np.transpose(ims)
     # Normalisation
     S_norm = cv2.normalize(ims_transposed, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-    # Colormap JET
-    colored = cv2.applyColorMap(S_norm, cv2.COLORMAP_JET)
-    # BGR → RGB
-    colored_rgb = cv2.cvtColor(colored, cv2.COLOR_BGR2RGB)
-    # Flip vertical
-    return np.flipud(colored_rgb)
+    # Colormap JET (returns BGR format)
+    colored_bgr = cv2.applyColorMap(S_norm, cv2.COLORMAP_JET)
+    # Flip vertical and return BGR (compatible with OpenCV standard)
+    return np.flipud(colored_bgr)
 
 # Alias for backwards compatibility with tests
 def create_stft_custom(audio_data, sample_rate=22050, n_fft=1024, hop_length=512):
