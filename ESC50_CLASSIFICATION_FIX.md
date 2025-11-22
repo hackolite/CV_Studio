@@ -16,17 +16,19 @@ The issue was a **color channel mismatch** between the spectrogram generation an
 
 2. **YoloCls Model** (`node/DLNode/classification/Yolo-cls/yolo-cls.py`):
    - Expected BGR input (like all OpenCV images)
-   - Applied `cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB)` conversion
+   - Applied `cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB)` to swap R and B channels
    - **BUT**: Received RGB instead of BGR
-   - **RESULT**: Conversion was wrong (RGB→BGR instead of BGR→RGB)
-   - Model received corrupted color channels
+   - **RESULT**: The channel swap operated on wrong channels
+     - Expected: `[B,G,R] → [R,G,B]` ✓
+     - Actually got: `[R,G,B] → [B,G,R]` ❌
+   - Model received BGR when it expected RGB (corrupted color channels)
 
 ### Why This Matters:
 - The ESC-50 model was trained on spectrograms with specific color mappings (JET colormap)
-- The double conversion changed the color channels:
-  - Red channel → Blue channel
-  - Blue channel → Red channel
-  - Green channel → Green channel (unchanged)
+- The channel swap on wrong input format changed the color interpretation:
+  - Original spectrogram: JET colormap with specific R, G, B values
+  - After wrong conversion: R and B channels swapped
+  - Result: Completely different colors than what model was trained on
 - This completely altered the spectral features the model was trained to recognize
 
 ## Solution
