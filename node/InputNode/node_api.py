@@ -247,7 +247,7 @@ class ApiNode(Node):
         node_result_dict,
         node_audio_dict,
     ):
-
+        frame = None
         return {"image":frame, "json": None, "audio": None}
 
     def close(self, node_id):
@@ -262,7 +262,8 @@ class ApiNode(Node):
         pos = dpg.get_item_pos(tag_node_name)
 
         loop_flag = dpg_get_value(tag_node_input02_value_name)
-        skip_rate = int(dpg_get_value(tag_node_input03_value_name))
+        skip_rate_value = dpg_get_value(tag_node_input03_value_name)
+        skip_rate = int(skip_rate_value) if skip_rate_value is not None else 1
         output_type = dpg_get_value(tag_node_output_type_value_name)
 
         setting_dict = {}
