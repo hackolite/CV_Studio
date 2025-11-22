@@ -3,11 +3,10 @@
 """Tests for text scaling in image_concat node"""
 
 import pytest
-import sys
-import os
 
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Reference height constant (should match node_image_concat.py)
+REFERENCE_HEIGHT = 480.0
 
 
 def test_concat_text_scaling_logic():
@@ -25,7 +24,7 @@ def test_concat_text_scaling_logic():
     
     for height, expected_font_scale, expected_thickness, expected_line_spacing in test_cases:
         # Calculate scaling (same logic as in node_image_concat.py)
-        scale_factor = height / 480.0
+        scale_factor = height / REFERENCE_HEIGHT
         font_scale = 1.0 * scale_factor
         thickness = max(1, int(3 * scale_factor))
         line_spacing = int(35 * scale_factor)
@@ -49,8 +48,8 @@ def test_concat_text_scaling_logic():
 def test_concat_scaling_proportional():
     """Test that text parameters scale proportionally with frame height"""
     
-    # Reference values at 480px height
-    reference_height = 480
+    # Reference values at REFERENCE_HEIGHT
+    reference_height = REFERENCE_HEIGHT
     reference_font_scale = 1.0
     reference_thickness = 3
     reference_line_spacing = 35
@@ -78,7 +77,7 @@ def test_concat_scaling_minimum_values():
     
     # Test with very small frame
     tiny_height = 50
-    scale_factor = tiny_height / 480.0
+    scale_factor = tiny_height / REFERENCE_HEIGHT
     
     font_scale = 1.0 * scale_factor
     thickness = max(1, int(3 * scale_factor))
@@ -103,7 +102,7 @@ def test_concat_scaling_consistency():
     previous_line_spacing = 0
     
     for height in heights:
-        scale_factor = height / 480.0
+        scale_factor = height / REFERENCE_HEIGHT
         font_scale = 1.0 * scale_factor
         thickness = max(1, int(3 * scale_factor))
         line_spacing = int(35 * scale_factor)

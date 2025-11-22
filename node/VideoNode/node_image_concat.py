@@ -164,6 +164,9 @@ class Node(Node):
 
     _max_slot_number = 9
     _slot_id = {}
+    
+    # Reference height for text scaling (in pixels)
+    _REFERENCE_HEIGHT = 480.0
 
     def __init__(self):
         pass
@@ -191,9 +194,9 @@ class Node(Node):
             (255, 0, 255),    # Position 5 (index 4): Magenta
         ]
         
-        # Scale text parameters based on frame height (reference: 480px)
-        # This ensures text size is appropriate for the actual frame size
-        scale_factor = height / 480.0
+        # Scale text parameters based on frame height
+        # Reference height is 480px - text parameters are optimized for this size
+        scale_factor = height / self._REFERENCE_HEIGHT
         font_scale = 1.0 * scale_factor  # Base 1.0, scaled by frame height
         thickness = max(1, int(3 * scale_factor))  # Base 3, scaled and min 1
         line_spacing = int(35 * scale_factor)  # Base 35, scaled by frame height
