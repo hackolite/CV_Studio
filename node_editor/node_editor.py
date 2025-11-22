@@ -236,6 +236,8 @@ class DpgNodeEditor(object):
                     dpg.mvKey_Delete,
                     callback=self._callback_mv_key_del,
                 )
+                # Disable mouse wheel zoom on the node editor by intercepting the event
+                dpg.add_mouse_wheel_handler(callback=self._callback_disable_zoom)
             self.window = window
 
     def get_node_list(self):
@@ -505,6 +507,10 @@ class DpgNodeEditor(object):
             self._last_pos = dpg.get_item_pos(
                 dpg.get_selected_nodes(self._node_editor_tag)[0]
             )
+
+    def _callback_disable_zoom(self, sender, app_data):
+        """Intercept mouse wheel events to disable zoom on the node editor."""
+        pass
 
     def _callback_mv_key_del(self):
         if len(dpg.get_selected_nodes(self._node_editor_tag)) > 0:

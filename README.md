@@ -262,7 +262,6 @@ Here are some practical examples to help you get started with common computer vi
 | **Add Node** | Click menu item, then click on canvas |
 | **Delete Node** | Select node, press `Delete` key |
 | **Pan Canvas** | Middle mouse button drag or `Ctrl` + Left mouse drag |
-| **Zoom Canvas** | Mouse wheel scroll |
 | **Connect Nodes** | Drag from output terminal to input terminal |
 | **Disconnect Nodes** | Right-click on connection line, select delete |
 | **Select Multiple** | `Ctrl` + Click on nodes |
