@@ -557,9 +557,12 @@ class VideoNode(Node):
 
         loop_flag = dpg_get_value(tag_node_input02_value_name)
 
-        skip_rate = int(dpg_get_value(tag_node_input03_value_name))
-        target_fps = int(dpg_get_value(tag_node_input04_value_name))
-        playback_speed = float(dpg_get_value(tag_node_input05_value_name))
+        skip_rate_value = dpg_get_value(tag_node_input03_value_name)
+        skip_rate = int(skip_rate_value) if skip_rate_value is not None else 1
+        target_fps_value = dpg_get_value(tag_node_input04_value_name)
+        target_fps = int(target_fps_value) if target_fps_value is not None else 24
+        playback_speed_value = dpg_get_value(tag_node_input05_value_name)
+        playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
 
         if video_capture is not None and use_pref_counter:
             start_time = time.monotonic()
@@ -651,9 +654,12 @@ class VideoNode(Node):
         pos = dpg.get_item_pos(tag_node_name)
 
         loop_flag = dpg_get_value(tag_node_input02_value_name)
-        skip_rate = int(dpg_get_value(tag_node_input03_value_name))
-        target_fps = int(dpg_get_value(tag_node_input04_value_name))
-        playback_speed = float(dpg_get_value(tag_node_input05_value_name))
+        skip_rate_value = dpg_get_value(tag_node_input03_value_name)
+        skip_rate = int(skip_rate_value) if skip_rate_value is not None else 1
+        target_fps_value = dpg_get_value(tag_node_input04_value_name)
+        target_fps = int(target_fps_value) if target_fps_value is not None else 24
+        playback_speed_value = dpg_get_value(tag_node_input05_value_name)
+        playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
 
         setting_dict = {}
         setting_dict["ver"] = self._ver
