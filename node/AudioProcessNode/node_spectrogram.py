@@ -14,6 +14,9 @@ from node.node_abc import DpgNodeABC
 
 from node.basenode import Node
 
+# Default spectrogram method
+DEFAULT_SPECTROGRAM_METHOD = 'mel'
+
 def create_mel_spectrogram(audio_data, sample_rate=22050, n_fft=2048, hop_length=512):
     """
     Create a mel spectrogram from audio data.
@@ -181,7 +184,7 @@ def create_mfcc(audio_data, sample_rate=22050, n_fft=2048, hop_length=512, n_mfc
     return colored_spec_rgb
 
 
-def create_spectrogram(audio_data, sample_rate=22050, n_fft=2048, hop_length=512, method='mel'):
+def create_spectrogram(audio_data, sample_rate=22050, n_fft=2048, hop_length=512, method=DEFAULT_SPECTROGRAM_METHOD):
     """
     Create a spectrogram from audio data using the specified method.
     
@@ -282,7 +285,7 @@ class FactoryNode:
                 dpg.add_combo(
                     tag=node.tag_node_method_name,
                     items=['mel', 'stft', 'chromagram', 'mfcc'],
-                    default_value='mel',
+                    default_value=DEFAULT_SPECTROGRAM_METHOD,
                     width=150,
                     label='Method',
                 )
@@ -338,7 +341,7 @@ class Node(Node):
         # Get selected spectrogram method
         method = dpg_get_value(method_tag)
         if method is None:
-            method = 'mel'
+            method = DEFAULT_SPECTROGRAM_METHOD
 
         # Get audio input from connections
         audio_data = None
@@ -398,7 +401,7 @@ class Node(Node):
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
-        setting_dict['method'] = method if method is not None else 'mel'
+        setting_dict['method'] = method if method is not None else DEFAULT_SPECTROGRAM_METHOD
 
         return setting_dict
 
@@ -406,5 +409,5 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         method_tag = tag_node_name + ':Method'
         
-        method = setting_dict.get('method', 'mel')
+        method = setting_dict.get('method', DEFAULT_SPECTROGRAM_METHOD)
         dpg_set_value(method_tag, method)
