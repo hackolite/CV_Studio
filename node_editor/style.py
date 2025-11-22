@@ -23,7 +23,7 @@ ACTION = []
 VIDEO = ["ImageConcat", "VideoWriter", "ScreenCapture"]
 TRACKING = ["MultiObjectTracking"]
 OVERLAY = ["DrawInformation", "PutText"]
-VIZ = ["Heatmap", "Visual"]
+VIZ = ["Heatmap", "ObjChart", "Visual"]
 TIMESERIES = []
 
 
