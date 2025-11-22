@@ -13,7 +13,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 def test_adaptive_text_size_logic():
     """Test that text size calculation logic is correct without requiring full imports"""
     
-    # Simulate the adaptive scaling logic
+    # Simulate the adaptive scaling logic with default thickness=3
+    thickness = 3
+    
     test_cases = [
         # (min_dimension, expected_font_scale_range, expected_thickness_range)
         (320, (0.4, 0.5), (1, 2)),    # Small image -> smaller text
@@ -27,8 +29,7 @@ def test_adaptive_text_size_logic():
         font_scale = max(0.3, min(2.0, (min_dimension / 640.0) * 0.9))
         
         # Calculate adaptive thickness (same logic as in the node)
-        base_thickness = 3
-        adaptive_thickness = max(1, int((min_dimension / 640.0) * base_thickness))
+        adaptive_thickness = max(1, int((min_dimension / 640.0) * thickness))
         
         # Verify font scale is within expected range
         assert min_font <= font_scale <= max_font, \
