@@ -406,7 +406,7 @@ class DpgNodeEditor(object):
 
         for node_id_name in self._node_list:
             node_id, node_name = node_id_name.split(":")
-            node = self._node_instance_list[node_name]
+            node = self._node_instances_list[node_id_name]
 
             setting = node.get_setting_dict(node_id)
 
@@ -442,30 +442,38 @@ class DpgNodeEditor(object):
 
             for node_id_name in setting_dict["node_list"]:
                 node_id, node_name = node_id_name.split(":")
-                node = self._node_instance_list[node_name]
-
                 node_id = int(node_id)
 
                 if node_id > self._node_id:
                     self._node_id = node_id
 
-                node = self._node_instance_list[node_name]
+                # Get the factory for this node type
+                factorynode = self._node_factory_list[node_name]
+                
+                # Check version before creating node
+                if "setting" in setting_dict[node_id_name] and "ver" in setting_dict[node_id_name]["setting"]:
+                    saved_ver = setting_dict[node_id_name]["setting"]["ver"]
+                    if hasattr(factorynode, '_ver'):
+                        if saved_ver != factorynode._ver:
+                            warning_node_name = setting_dict[node_id_name]["name"]
+                            logger.warning(f"Node {warning_node_name} version mismatch:")
+                            logger.warning(f"  Load Version: {saved_ver}")
+                            logger.warning(f"  Code Version: {factorynode._ver}")
 
-                ver = setting_dict[node_id_name]["setting"]["ver"]
-                if ver != node._ver:
-                    warning_node_name = setting_dict[node_id_name]["name"]
-                    logger.warning(f"Node {warning_node_name} version mismatch:")
-                    logger.warning(f"  Load Version: {ver}")
-                    logger.warning(f"  Code Version: {node._ver}")
-
+                # Create the node instance using the factory
                 pos = setting_dict[node_id_name]["setting"]["pos"]
-                node.add_node(
+                node = factorynode.add_node(
                     self._node_editor_tag,
                     node_id,
                     pos=pos,
                     opencv_setting_dict=self._opencv_setting_dict,
                 )
 
+                # Store the node instance
+                dpg.bind_item_theme(node.tag_node_name, factorynode.style)
+                self._node_instances_list[node.tag_node_name] = node
+
+                # Apply the saved settings to the node
                 node.set_setting_dict(
                     node_id,
                     setting_dict[node_id_name]["setting"],
