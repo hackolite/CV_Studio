@@ -11,7 +11,7 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
-from node.basenode import Node
+from node.basenode import Node as Chart
 
 import matplotlib
 matplotlib.use('Agg')  # force backend non-GUI
@@ -51,6 +51,10 @@ class FactoryNode:
         # Time aggregation dropdown
         node.tag_node_time_agg_name = node.tag_node_name + ':TimeAggregation'
         node.tag_node_time_agg_value_name = node.tag_node_name + ':TimeAggregationValue'
+        
+        # Chart type dropdown
+        node.tag_node_chart_type_name = node.tag_node_name + ':ChartType'
+        node.tag_node_chart_type_value_name = node.tag_node_name + ':ChartTypeValue'
         
         # Class selection slots
         node.tag_node_class_slots_name = node.tag_node_name + ':ClassSlots'
@@ -123,6 +127,18 @@ class FactoryNode:
                     width=small_window_w - 100,
                 )
 
+            # Chart type dropdown
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_chart_type_value_name,
+                    label="Chart Type",
+                    items=["bar", "line", "area"],
+                    default_value="bar",
+                    width=small_window_w - 100,
+                )
+
             # Container for class selection slots
             with dpg.node_attribute(
                     tag=node.tag_node_class_slots_name,
@@ -162,7 +178,7 @@ class FactoryNode:
         return node
 
 
-class Node(Node):
+class Node(Chart):
     _ver = '0.0.1'
 
     node_label = 'ObjChart'
@@ -180,12 +196,13 @@ class Node(Node):
 
         self._opencv_setting_dict = opencv_setting_dict
         
-        # Data accumulation by time buckets
+        # Data accumulation by time buckets with 24h round-robin
         # Structure: {class_id: {time_bucket: count}}
         self.time_counts = defaultdict(lambda: defaultdict(int))
         
-        # Keep track of last N time buckets for visualization
-        self.max_buckets = 30
+        # 24-hour data retention (1440 minutes max)
+        self.max_data_age_hours = 24
+        self.max_buckets = 30  # For display purposes
 
     @staticmethod
     def add_class_slot_callback(sender, app_data, user_data):
@@ -218,8 +235,33 @@ class Node(Node):
         else:  # hour
             return now.replace(minute=0, second=0, microsecond=0)
 
-    def render_chart(self, time_unit, selected_classes, class_names_dict):
-        """Render the chart as an image using matplotlib"""
+    def cleanup_old_data(self):
+        """Remove data older than 24 hours (round-robin)"""
+        now = datetime.now()
+        cutoff_time = now - timedelta(hours=self.max_data_age_hours)
+        
+        # Clean up old buckets from all classes
+        for class_id in list(self.time_counts.keys()):
+            buckets_to_remove = [
+                bucket for bucket in self.time_counts[class_id].keys()
+                if bucket < cutoff_time
+            ]
+            for bucket in buckets_to_remove:
+                del self.time_counts[class_id][bucket]
+            
+            # Remove empty class entries
+            if not self.time_counts[class_id]:
+                del self.time_counts[class_id]
+
+    def render_chart(self, time_unit, selected_classes, class_names_dict, chart_type="bar"):
+        """Render the chart as an image using matplotlib
+        
+        Args:
+            time_unit: "minute" or "hour"
+            selected_classes: list of class IDs to display
+            class_names_dict: mapping of class ID to class name
+            chart_type: "bar", "line", or "area" for visualization type
+        """
         fig, ax = plt.subplots(figsize=(8, 4), dpi=100)
         
         # Get sorted time buckets (last N buckets)
@@ -246,22 +288,59 @@ class Node(Node):
             
             x_pos = np.arange(len(x_labels))
             
-            # Plot bars for each selected class
-            bar_width = 0.8 / max(len(selected_classes), 1)
+            # Plot based on chart type
+            if chart_type == "bar":
+                # Plot bars for each selected class
+                bar_width = 0.8 / max(len(selected_classes), 1)
+                
+                for idx, class_id in enumerate(selected_classes):
+                    counts = [self.time_counts[class_id].get(bucket, 0) for bucket in sorted_buckets]
+                    offset = (idx - len(selected_classes)/2 + 0.5) * bar_width
+                    
+                    # Get class name for legend
+                    if class_id == "All":
+                        label = "All Classes"
+                    elif class_names_dict and str(class_id) in class_names_dict:
+                        label = f"{class_id}: {class_names_dict[str(class_id)]}"
+                    else:
+                        label = f"Class {class_id}"
+                    
+                    ax.bar(x_pos + offset, counts, bar_width, label=label)
             
-            for idx, class_id in enumerate(selected_classes):
-                counts = [self.time_counts[class_id].get(bucket, 0) for bucket in sorted_buckets]
-                offset = (idx - len(selected_classes)/2 + 0.5) * bar_width
+            elif chart_type == "line":
+                # Plot lines for each selected class
+                for class_id in selected_classes:
+                    counts = [self.time_counts[class_id].get(bucket, 0) for bucket in sorted_buckets]
+                    
+                    # Get class name for legend
+                    if class_id == "All":
+                        label = "All Classes"
+                    elif class_names_dict and str(class_id) in class_names_dict:
+                        label = f"{class_id}: {class_names_dict[str(class_id)]}"
+                    else:
+                        label = f"Class {class_id}"
+                    
+                    ax.plot(x_pos, counts, marker='o', label=label, linewidth=2)
+            
+            elif chart_type == "area":
+                # Plot area chart (stacked) for each selected class
+                counts_by_class = []
+                labels = []
                 
-                # Get class name for legend
-                if class_id == "All":
-                    label = "All Classes"
-                elif class_names_dict and str(class_id) in class_names_dict:
-                    label = f"{class_id}: {class_names_dict[str(class_id)]}"
-                else:
-                    label = f"Class {class_id}"
+                for class_id in selected_classes:
+                    counts = [self.time_counts[class_id].get(bucket, 0) for bucket in sorted_buckets]
+                    counts_by_class.append(counts)
+                    
+                    # Get class name for legend
+                    if class_id == "All":
+                        label = "All Classes"
+                    elif class_names_dict and str(class_id) in class_names_dict:
+                        label = f"{class_id}: {class_names_dict[str(class_id)]}"
+                    else:
+                        label = f"Class {class_id}"
+                    labels.append(label)
                 
-                ax.bar(x_pos + offset, counts, bar_width, label=label)
+                ax.stackplot(x_pos, *counts_by_class, labels=labels, alpha=0.7)
             
             ax.set_xlabel(f'Time ({time_unit})')
             ax.set_ylabel('Detection Count')
@@ -292,6 +371,7 @@ class Node(Node):
     ):
         tag_node_name = str(node_id) + ':' + self.node_tag
         time_agg_tag = tag_node_name + ':TimeAggregationValue'
+        chart_type_tag = tag_node_name + ':ChartTypeValue'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
@@ -300,8 +380,12 @@ class Node(Node):
         
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
-        # Get time aggregation unit
+        # Get time aggregation unit and chart type
         time_unit = dpg_get_value(time_agg_tag)
+        chart_type = dpg_get_value(chart_type_tag)
+        
+        # Cleanup old data (24h round-robin)
+        self.cleanup_old_data()
 
         # Find connected source for JSON data
         connection_info_src = ''
@@ -358,12 +442,12 @@ class Node(Node):
             if not selected_classes:
                 selected_classes = ["All"]
             
-            # Render chart
-            chart_image = self.render_chart(time_unit, selected_classes, class_names)
+            # Render chart with selected chart type
+            chart_image = self.render_chart(time_unit, selected_classes, class_names, chart_type)
 
         else:
             # No detection data yet, render empty chart
-            chart_image = self.render_chart(time_unit, ["All"], {})
+            chart_image = self.render_chart(time_unit, ["All"], {}, chart_type)
 
         if use_pref_counter:
             elapsed_time = time.monotonic() - start_time
@@ -389,8 +473,10 @@ class Node(Node):
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
         time_agg_tag = tag_node_name + ':TimeAggregationValue'
+        chart_type_tag = tag_node_name + ':ChartTypeValue'
 
         time_unit = dpg_get_value(time_agg_tag)
+        chart_type = dpg_get_value(chart_type_tag)
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -398,6 +484,7 @@ class Node(Node):
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
         setting_dict[time_agg_tag] = time_unit
+        setting_dict[chart_type_tag] = chart_type
         
         # Save class slot selections
         class_slots_tag = f"{tag_node_name}:ClassSlots"
@@ -417,9 +504,12 @@ class Node(Node):
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = str(node_id) + ':' + self.node_tag
         time_agg_tag = tag_node_name + ':TimeAggregationValue'
+        chart_type_tag = tag_node_name + ':ChartTypeValue'
 
         time_unit = setting_dict.get(time_agg_tag, "minute")
+        chart_type = setting_dict.get(chart_type_tag, "bar")
         dpg_set_value(time_agg_tag, time_unit)
+        dpg_set_value(chart_type_tag, chart_type)
         
         # Restore class slot selections
         class_slots_tag = f"{tag_node_name}:ClassSlots"

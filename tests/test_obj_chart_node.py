@@ -52,8 +52,8 @@ def test_obj_chart_render_empty():
         'process_width': 600
     })
     
-    # Render chart with no data
-    chart_image = node.render_chart("minute", ["All"], {})
+    # Render chart with no data (default bar chart)
+    chart_image = node.render_chart("minute", ["All"], {}, "bar")
     
     assert chart_image is not None
     assert isinstance(chart_image, np.ndarray)
@@ -103,16 +103,79 @@ def test_obj_chart_render_with_data():
     node.time_counts[1][bucket] = 5
     node.time_counts["All"][bucket] = 15
     
-    # Render chart with data
+    # Render chart with data (bar chart)
     chart_image = node.render_chart("minute", [0, 1], {
         "0": "person",
         "1": "car"
-    })
+    }, "bar")
     
     assert chart_image is not None
     assert isinstance(chart_image, np.ndarray)
     assert len(chart_image.shape) == 3
     assert chart_image.shape[2] == 3
+
+
+def test_obj_chart_render_line_chart():
+    """Test that line chart renders correctly"""
+    from node.VisualNode.node_obj_chart import Node
+    import numpy as np
+    
+    node = Node(opencv_setting_dict={
+        'process_height': 400,
+        'process_width': 600
+    })
+    
+    # Add some test data
+    bucket = node.get_time_bucket("minute")
+    node.time_counts[0][bucket] = 10
+    node.time_counts[1][bucket] = 5
+    
+    # Render line chart
+    chart_image = node.render_chart("minute", [0, 1], {
+        "0": "person",
+        "1": "car"
+    }, "line")
+    
+    assert chart_image is not None
+    assert isinstance(chart_image, np.ndarray)
+    assert len(chart_image.shape) == 3
+    assert chart_image.shape[2] == 3
+
+
+def test_obj_chart_24h_cleanup():
+    """Test that data older than 24 hours is cleaned up"""
+    from node.VisualNode.node_obj_chart import Node
+    from datetime import datetime, timedelta
+    
+    node = Node(opencv_setting_dict={
+        'process_height': 400,
+        'process_width': 600
+    })
+    
+    # Add some old data (25 hours ago)
+    old_bucket = datetime.now() - timedelta(hours=25)
+    old_bucket = old_bucket.replace(second=0, microsecond=0)
+    node.time_counts[0][old_bucket] = 100
+    node.time_counts["All"][old_bucket] = 100
+    
+    # Add some recent data
+    recent_bucket = node.get_time_bucket("minute")
+    node.time_counts[0][recent_bucket] = 10
+    node.time_counts["All"][recent_bucket] = 10
+    
+    # Verify old data exists before cleanup
+    assert old_bucket in node.time_counts[0]
+    assert old_bucket in node.time_counts["All"]
+    
+    # Run cleanup
+    node.cleanup_old_data()
+    
+    # Verify old data is removed
+    assert old_bucket not in node.time_counts[0]
+    
+    # Verify recent data still exists
+    assert recent_bucket in node.time_counts[0]
+    assert node.time_counts[0][recent_bucket] == 10
 
 
 if __name__ == "__main__":
