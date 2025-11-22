@@ -9,6 +9,7 @@ import soundfile as sf
 import subprocess
 import tempfile
 import os
+import shutil
 
 from node_editor.util import dpg_get_value, dpg_set_value
 
@@ -311,19 +312,20 @@ class VideoNode(Node):
         self.node_tag = "Video"
         self.node_label = "Video"
 
-        # Audio data storage
-        self._audio_chunks = {}  # Store audio chunks
+        # Audio data storage - now stores WAV file paths instead of numpy arrays
+        self._audio_chunk_paths = {}  # Store paths to WAV chunk files
         self._chunk_metadata = {}  # Metadata for chunk-to-frame mapping
+        self._chunk_temp_dirs = {}  # Track temporary directories for cleanup
 
     def _preprocess_video(self, node_id, movie_path, chunk_duration=5.0, step_duration=1.0):
         """
-        Pre-process video by extracting and chunking audio.
+        Pre-process video by extracting and chunking audio as WAV files.
         
         This method:
         1. Extracts video metadata (FPS, frame count) using OpenCV
-        2. Extracts audio using librosa
-        3. Chunks audio into segments (chunk_duration with step_duration overlap)
-        4. Stores metadata for frame-to-chunk mapping
+        2. Extracts audio using ffmpeg to WAV format (faster and more efficient)
+        3. Chunks audio into segments and saves each as a WAV file
+        4. Stores metadata and WAV file paths for frame-to-chunk mapping
         
         Args:
             node_id: Node identifier
@@ -337,6 +339,9 @@ class VideoNode(Node):
         
         print(f"🎬 Pre-processing video: {movie_path}")
         
+        # Clean up any previous chunks for this node
+        self._cleanup_audio_chunks(node_id)
+        
         try:
             # Step 1: Extract video metadata only (not frames to avoid memory issues)
             print("📹 Extracting video metadata...")
@@ -349,140 +354,158 @@ class VideoNode(Node):
             cap.release()
             print(f"✅ Video metadata extracted (FPS: {fps}, Frames: {frame_count})")
             
-            # Step 2: Extract audio
-            print("🎵 Extracting audio...")
+            # Step 2: Extract audio using ffmpeg directly to WAV (faster than librosa)
+            print("🎵 Extracting audio with ffmpeg to WAV format...")
+            
+            # Create temporary WAV file for full audio extraction
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio:
+                tmp_audio_path = tmp_audio.name
+            
             try:
-                y, sr = librosa.load(movie_path, sr=None)
-            except Exception as e:
-                print(f"⚠️ Direct audio load failed, trying ffmpeg extraction: {e}")
-                # Fallback: extract audio via ffmpeg
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio:
-                    tmp_audio_path = tmp_audio.name
+                # Use ffmpeg to extract audio as WAV - most efficient for spectrogram conversion
+                subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-i", movie_path,
+                        "-vn",  # No video
+                        "-acodec", "pcm_s16le",  # WAV codec
+                        "-ar", "22050",  # Sample rate
+                        "-ac", "1",  # Mono
+                        "-y", tmp_audio_path,
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
                 
-                try:
-                    subprocess.run(
-                        [
-                            "ffmpeg",
-                            "-i", movie_path,
-                            "-vn",
-                            "-acodec", "pcm_s16le",
-                            "-ar", "22050",
-                            "-ac", "1",
-                            "-y", tmp_audio_path,
-                        ],
-                        check=True,
-                        capture_output=True,
-                    )
-                    y, sr = librosa.load(tmp_audio_path, sr=22050)
-                finally:
-                    if os.path.exists(tmp_audio_path):
-                        os.unlink(tmp_audio_path)
+                # Load audio to get samples and sample rate
+                y, sr = sf.read(tmp_audio_path)
+                print(f"✅ Audio extracted (SR: {sr} Hz, Duration: {len(y)/sr:.2f}s)")
+                
+            except subprocess.CalledProcessError as e:
+                print(f"⚠️ ffmpeg extraction failed, trying librosa: {e}")
+                # Fallback to librosa if ffmpeg fails
+                y, sr = librosa.load(movie_path, sr=22050)
+                print(f"✅ Audio extracted with librosa (SR: {sr} Hz, Duration: {len(y)/sr:.2f}s)")
+            finally:
+                # Clean up temporary full audio file
+                if os.path.exists(tmp_audio_path):
+                    os.unlink(tmp_audio_path)
             
-            print(f"✅ Audio extracted (SR: {sr} Hz, Duration: {len(y)/sr:.2f}s)")
+            # Step 3: Create temporary directory for audio chunks
+            chunk_temp_dir = tempfile.mkdtemp(prefix=f"cv_studio_audio_{node_id}_")
+            self._chunk_temp_dirs[node_id] = chunk_temp_dir
+            print(f"📁 Created temp directory for chunks: {chunk_temp_dir}")
             
-            # Step 2.5: Save extracted audio as MP3 file
             try:
-                # Create audio filename based on video path
-                video_dir = os.path.dirname(movie_path)
-                video_basename = os.path.splitext(os.path.basename(movie_path))[0]
-                audio_mp3_path = os.path.join(video_dir, f"{video_basename}_audio.mp3")
+                # Step 4: Chunk audio with sliding window and save each as WAV
+                print(f"✂️ Chunking audio and saving as WAV files (chunk: {chunk_duration}s, step: {step_duration}s)...")
+                chunk_samples = int(chunk_duration * sr)
+                step_samples = int(step_duration * sr)
                 
-                # Use ffmpeg to convert the audio array to MP3
-                # First save as temporary WAV, then convert to MP3
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
-                    tmp_wav_path = tmp_wav.name
-                    sf.write(tmp_wav_path, y, sr)
+                chunk_paths = []
+                chunk_start_times = []
+                start = 0
+                chunk_idx = 0
                 
-                try:
-                    # Convert WAV to MP3 using ffmpeg
-                    subprocess.run(
-                        [
-                            "ffmpeg",
-                            "-i", tmp_wav_path,
-                            "-codec:a", "libmp3lame",
-                            "-qscale:a", "2",  # High quality MP3
-                            "-y", audio_mp3_path,
-                        ],
-                        check=True,
-                        capture_output=True,
-                    )
-                    print(f"💾 Audio saved as MP3: {audio_mp3_path}")
-                except subprocess.CalledProcessError as e:
-                    print(f"⚠️ Failed to convert to MP3, saving as WAV instead: {e}")
-                    # Fallback: keep the WAV file
-                    audio_wav_path = os.path.join(video_dir, f"{video_basename}_audio.wav")
-                    sf.write(audio_wav_path, y, sr)
-                    print(f"💾 Audio saved as WAV: {audio_wav_path}")
-                finally:
-                    # Clean up temporary WAV file
-                    if os.path.exists(tmp_wav_path):
-                        os.unlink(tmp_wav_path)
-                        
-            except Exception as e:
-                print(f"⚠️ Failed to save audio file: {e}")
-            
-            # Step 3: Chunk audio with sliding window
-            print(f"✂️ Chunking audio (chunk: {chunk_duration}s, step: {step_duration}s)...")
-            chunk_samples = int(chunk_duration * sr)
-            step_samples = int(step_duration * sr)
-            
-            audio_chunks = []
-            chunk_start_times = []
-            start = 0
-            chunk_idx = 0
-            
-            while (start + chunk_samples) <= len(y):
-                end = start + chunk_samples
-                chunk = y[start:end]
-                audio_chunks.append(chunk)
-                chunk_start_times.append(start / sr)
-                chunk_idx += 1
-                start += step_samples
-            
-            # Handle remaining audio: pad to chunk_duration if necessary
-            remaining_samples = len(y) - start
-            if remaining_samples > 0:
-                # Extract remaining audio
-                remaining_chunk = y[start:]
-                # Pad with zeros to reach chunk_samples (5 seconds)
-                padding_needed = chunk_samples - remaining_samples
-                padded_chunk = np.pad(remaining_chunk, (0, padding_needed), mode='constant', constant_values=0)
-                audio_chunks.append(padded_chunk)
-                chunk_start_times.append(start / sr)
-                print(f"⚠️ Padded last chunk: {remaining_samples/sr:.2f}s → {chunk_duration}s (added {padding_needed/sr:.2f}s of silence)")
-            
-            self._audio_chunks[node_id] = audio_chunks
-            
-            # Verify all chunks are exactly chunk_duration
-            for idx, chunk in enumerate(audio_chunks):
-                actual_duration = len(chunk) / sr
-                if abs(actual_duration - chunk_duration) > 0.001:  # Allow 1ms tolerance
-                    print(f"⚠️ Warning: Chunk {idx} duration is {actual_duration:.3f}s, expected {chunk_duration}s")
+                while (start + chunk_samples) <= len(y):
+                    end = start + chunk_samples
+                    chunk = y[start:end]
                     
-            print(f"✅ Created {len(audio_chunks)} audio chunks (all {chunk_duration}s each)")
+                    # Save chunk as WAV file
+                    chunk_path = os.path.join(chunk_temp_dir, f"chunk_{chunk_idx:04d}.wav")
+                    sf.write(chunk_path, chunk, sr)
+                    
+                    chunk_paths.append(chunk_path)
+                    chunk_start_times.append(start / sr)
+                    chunk_idx += 1
+                    start += step_samples
+                
+                # Handle remaining audio: pad to chunk_duration if necessary
+                remaining_samples = len(y) - start
+                if remaining_samples > 0:
+                    # Extract remaining audio
+                    remaining_chunk = y[start:]
+                    # Pad with zeros to reach chunk_samples (5 seconds)
+                    padding_needed = chunk_samples - remaining_samples
+                    padded_chunk = np.pad(remaining_chunk, (0, padding_needed), mode='constant', constant_values=0)
+                    
+                    # Save padded chunk as WAV file
+                    chunk_path = os.path.join(chunk_temp_dir, f"chunk_{chunk_idx:04d}.wav")
+                    sf.write(chunk_path, padded_chunk, sr)
+                    
+                    chunk_paths.append(chunk_path)
+                    chunk_start_times.append(start / sr)
+                    print(f"⚠️ Padded last chunk: {remaining_samples/sr:.2f}s → {chunk_duration}s (added {padding_needed/sr:.2f}s of silence)")
+                
+                # Store chunk paths instead of numpy arrays
+                self._audio_chunk_paths[node_id] = chunk_paths
+                
+                # Verify all chunks are exactly chunk_duration by reading first and last
+                if len(chunk_paths) > 0:
+                    first_chunk, _ = sf.read(chunk_paths[0])
+                    last_chunk, _ = sf.read(chunk_paths[-1])
+                    first_duration = len(first_chunk) / sr
+                    last_duration = len(last_chunk) / sr
+                    
+                    if abs(first_duration - chunk_duration) > 0.001 or abs(last_duration - chunk_duration) > 0.001:
+                        print(f"⚠️ Warning: Chunk duration mismatch - first: {first_duration:.3f}s, last: {last_duration:.3f}s")
+                        
+                print(f"✅ Created {len(chunk_paths)} audio chunks as WAV files (all {chunk_duration}s each)")
+                
+                # Step 5: Store metadata
+                self._chunk_metadata[node_id] = {
+                    'fps': fps,
+                    'sr': sr,
+                    'chunk_duration': chunk_duration,
+                    'step_duration': step_duration,
+                    'chunk_start_times': chunk_start_times,
+                    'num_frames': frame_count,
+                    'num_chunks': len(chunk_paths),
+                }
+                
+                print(f"🎉 Pre-processing complete!")
+                print(f"   Frames: {frame_count}, Chunks: {len(chunk_paths)}, FPS: {fps}")
+                print(f"   All chunks saved as WAV files for efficient spectrogram conversion")
             
-            # Step 4: Store metadata
-            self._chunk_metadata[node_id] = {
-                'fps': fps,
-                'sr': sr,
-                'chunk_duration': chunk_duration,
-                'step_duration': step_duration,
-                'chunk_start_times': chunk_start_times,
-                'num_frames': frame_count,
-                'num_chunks': len(audio_chunks),
-            }
-            
-            print(f"🎉 Pre-processing complete!")
-            print(f"   Frames: {frame_count}, Chunks: {len(audio_chunks)}, FPS: {fps}")
+            except Exception as chunk_error:
+                # If chunking fails, clean up the temp directory
+                print(f"❌ Failed during audio chunking: {chunk_error}")
+                self._cleanup_audio_chunks(node_id)
+                raise
             
         except Exception as e:
             print(f"❌ Failed to pre-process video: {e}")
             import traceback
             traceback.print_exc()
     
+    def _cleanup_audio_chunks(self, node_id):
+        """
+        Clean up temporary WAV chunk files for a node.
+        
+        Args:
+            node_id: Node identifier
+        """
+        # Clean up temporary directory (which also removes all chunk files)
+        if node_id in self._chunk_temp_dirs:
+            temp_dir = self._chunk_temp_dirs[node_id]
+            if os.path.exists(temp_dir):
+                try:
+                    shutil.rmtree(temp_dir)
+                except Exception as e:
+                    print(f"⚠️ Failed to delete temp directory {temp_dir}: {e}")
+            del self._chunk_temp_dirs[node_id]
+        
+        # Clean up chunk paths reference
+        if node_id in self._audio_chunk_paths:
+            del self._audio_chunk_paths[node_id]
+        
+        # Clean up metadata
+        if node_id in self._chunk_metadata:
+            del self._chunk_metadata[node_id]
+    
     def _get_audio_chunk_for_frame(self, node_id, frame_number):
         """
-        Get the audio chunk data for a specific frame number.
+        Get the audio chunk data for a specific frame number by loading from WAV file.
         
         Args:
             node_id: Node identifier
@@ -491,7 +514,7 @@ class VideoNode(Node):
         Returns:
             Dictionary with 'data' (numpy array) and 'sample_rate' (int), or None if not available
         """
-        if node_id not in self._chunk_metadata or node_id not in self._audio_chunks:
+        if node_id not in self._chunk_metadata or node_id not in self._audio_chunk_paths:
             return None
         
         metadata = self._chunk_metadata[node_id]
@@ -506,13 +529,27 @@ class VideoNode(Node):
         chunk_index = int(current_time / step_duration)
         
         # Clamp to valid range
-        chunk_index = max(0, min(chunk_index, len(self._audio_chunks[node_id]) - 1))
+        chunk_paths = self._audio_chunk_paths[node_id]
+        chunk_index = max(0, min(chunk_index, len(chunk_paths) - 1))
         
-        # Return audio chunk in the format expected by audio processing nodes
-        return {
-            'data': self._audio_chunks[node_id][chunk_index],
-            'sample_rate': sr
-        }
+        # Load audio chunk from WAV file
+        chunk_path = None
+        try:
+            chunk_path = chunk_paths[chunk_index]
+            if os.path.exists(chunk_path):
+                audio_data, sample_rate = sf.read(chunk_path)
+                # Return audio chunk in the format expected by audio processing nodes
+                return {
+                    'data': audio_data,
+                    'sample_rate': sample_rate
+                }
+        except Exception as e:
+            if chunk_path:
+                print(f"⚠️ Failed to load audio chunk {chunk_index} from {chunk_path}: {e}")
+            else:
+                print(f"⚠️ Failed to load audio chunk {chunk_index}: {e}")
+        
+        return None
 
 
 
@@ -646,14 +683,15 @@ class VideoNode(Node):
         # Get audio chunk data for this frame to pass to other audio nodes
         audio_chunk_data = None
         current_frame_num = self._frame_count.get(str(node_id), 0)
-        if str(node_id) in self._audio_chunks:
+        if str(node_id) in self._audio_chunk_paths:
             audio_chunk_data = self._get_audio_chunk_for_frame(str(node_id), current_frame_num)
 
         # Return frame via IMAGE output and audio chunk data via AUDIO output
         return {"image": frame, "json": None, "audio": audio_chunk_data}
 
     def close(self, node_id):
-        pass
+        """Clean up audio chunks and temporary files when node is closed."""
+        self._cleanup_audio_chunks(str(node_id))
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ":" + self.node_tag

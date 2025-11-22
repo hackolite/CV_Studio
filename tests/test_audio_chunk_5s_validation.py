@@ -80,11 +80,11 @@ def test_audio_chunks_are_5_seconds():
         # Preprocess the video
         node._preprocess_video(node_id, video_path, chunk_duration=5.0, step_duration=1.0)
         
-        # Check that chunks were created
-        assert node_id in node._audio_chunks, "Audio chunks should be created"
+        # Check that chunk paths were created (WAV-based storage)
+        assert node_id in node._audio_chunk_paths, "Audio chunk paths should be created"
         assert node_id in node._chunk_metadata, "Chunk metadata should be created"
         
-        chunks = node._audio_chunks[node_id]
+        chunk_paths = node._audio_chunk_paths[node_id]
         metadata = node._chunk_metadata[node_id]
         
         # Get the sample rate from metadata
@@ -92,13 +92,15 @@ def test_audio_chunks_are_5_seconds():
         expected_chunk_samples = int(5.0 * sr)
         
         print(f"\nTest Results:")
-        print(f"  Total chunks created: {len(chunks)}")
+        print(f"  Total chunks created: {len(chunk_paths)}")
         print(f"  Sample rate: {sr} Hz")
         print(f"  Expected samples per chunk: {expected_chunk_samples}")
         
-        # Verify each chunk is exactly 5 seconds (110250 samples at 22050 Hz)
+        # Verify each chunk WAV file is exactly 5 seconds
         all_chunks_valid = True
-        for idx, chunk in enumerate(chunks):
+        for idx, chunk_path in enumerate(chunk_paths):
+            # Load WAV file
+            chunk, _ = sf.read(chunk_path)
             chunk_duration = len(chunk) / sr
             is_valid = len(chunk) == expected_chunk_samples
             
@@ -106,7 +108,7 @@ def test_audio_chunks_are_5_seconds():
                 print(f"  ❌ Chunk {idx}: {len(chunk)} samples ({chunk_duration:.3f}s) - INVALID")
                 all_chunks_valid = False
             else:
-                print(f"  ✅ Chunk {idx}: {len(chunk)} samples ({chunk_duration:.3f}s)")
+                print(f"  ✅ Chunk {idx}: {len(chunk)} samples ({chunk_duration:.3f}s) [WAV file]")
         
         # Assert all chunks are valid
         assert all_chunks_valid, "All chunks should be exactly 5 seconds"
@@ -116,10 +118,13 @@ def test_audio_chunks_are_5_seconds():
         # Remaining audio from 8s-12.5s (4.5s) gets padded to 5s (1 chunk)
         # Total: 9 chunks
         expected_num_chunks = 9
-        assert len(chunks) == expected_num_chunks, \
-            f"Expected {expected_num_chunks} chunks for 12.5s audio, got {len(chunks)}"
+        assert len(chunk_paths) == expected_num_chunks, \
+            f"Expected {expected_num_chunks} chunks for 12.5s audio, got {len(chunk_paths)}"
         
-        print(f"\n✅ All {len(chunks)} audio chunks are exactly 5 seconds!")
+        print(f"\n✅ All {len(chunk_paths)} audio chunks are exactly 5 seconds (saved as WAV files)!")
+        
+        # Clean up audio chunks
+        node._cleanup_audio_chunks(node_id)
         
     finally:
         # Clean up the temporary video file
@@ -151,23 +156,27 @@ def test_audio_chunks_exact_multiple():
         # Preprocess the video
         node._preprocess_video(node_id, video_path, chunk_duration=5.0, step_duration=1.0)
         
-        # Check that chunks were created
-        assert node_id in node._audio_chunks, "Audio chunks should be created"
+        # Check that chunk paths were created
+        assert node_id in node._audio_chunk_paths, "Audio chunk paths should be created"
         
-        chunks = node._audio_chunks[node_id]
+        chunk_paths = node._audio_chunk_paths[node_id]
         metadata = node._chunk_metadata[node_id]
         sr = metadata['sr']
         expected_chunk_samples = int(5.0 * sr)
         
         print(f"\nTest Results for exact multiple:")
-        print(f"  Total chunks created: {len(chunks)}")
+        print(f"  Total chunks created: {len(chunk_paths)}")
         
-        # Verify each chunk is exactly 5 seconds
-        for idx, chunk in enumerate(chunks):
+        # Verify each chunk WAV file is exactly 5 seconds
+        for idx, chunk_path in enumerate(chunk_paths):
+            chunk, _ = sf.read(chunk_path)
             assert len(chunk) == expected_chunk_samples, \
-                f"Chunk {idx} should be exactly {expected_chunk_samples} samples"
+                f"Chunk {idx} should be exactly {expected_chunk_samples} samples, got {len(chunk)}"
         
-        print(f"✅ All {len(chunks)} audio chunks are exactly 5 seconds!")
+        print(f"✅ All {len(chunk_paths)} audio chunks are exactly 5 seconds (saved as WAV files)!")
+        
+        # Clean up audio chunks
+        node._cleanup_audio_chunks(node_id)
         
     finally:
         # Clean up the temporary video file
@@ -195,11 +204,15 @@ def test_chunk_validation_in_code():
     assert 'np.pad' in content, \
         "Code should pad incomplete chunks with zeros"
     
-    # Check for validation
-    assert 'actual_duration = len(chunk) / sr' in content, \
-        "Code should validate chunk durations"
+    # Check for WAV file saving
+    assert 'sf.write(chunk_path, chunk, sr)' in content or 'sf.write(chunk_path, padded_chunk, sr)' in content, \
+        "Code should save chunks as WAV files"
     
-    print("✅ Code includes proper validation for 5-second chunks")
+    # Check for WAV-based storage
+    assert '_audio_chunk_paths' in content, \
+        "Code should use WAV file paths for chunk storage"
+    
+    print("✅ Code includes proper validation for 5-second chunks with WAV files")
 
 
 if __name__ == '__main__':

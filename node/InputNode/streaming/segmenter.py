@@ -19,8 +19,7 @@ def download_segments(manifest_url, output_pattern="chunk_%03d.mp4", segment_tim
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-crf", "25",
-        "-c:a", "aac",
-        "-b:a", "128k",
+        "-c:a", "pcm_s16le",  # WAV codec for efficient spectrogram conversion
         "-f", "segment",
         "-segment_time", str(segment_time),
         "-reset_timestamps", "1",

@@ -28,38 +28,36 @@ def test_video_node_structure():
     
     # Check imports
     assert 'import librosa' in content, "Should import librosa"
-    assert 'import matplotlib.cm' in content, "Should import matplotlib.cm"
     assert 'import subprocess' in content, "Should import subprocess"
     assert 'import tempfile' in content, "Should import tempfile"
+    assert 'import soundfile as sf' in content, "Should import soundfile for WAV operations"
     
-    # Check method exists (now it's _preprocess_video instead of _prepare_spectrogram)
+    # Check method exists - _preprocess_video now handles WAV chunking
     assert 'def _preprocess_video' in content, "Should have _preprocess_video method"
     
-    # Check storage attributes (updated for new architecture)
-    assert '_spectrogram_texture = {}' in content or '_spectrogram_chunks = {}' in content, "Should have spectrogram storage dict"
-    assert '_spectrogram_array = {}' in content or '_spectrogram_chunks = {}' in content, "Should have spectrogram data dict"
-    assert '_spectrogram_params = {}' in content or '_chunk_metadata = {}' in content, "Should have spectrogram params/metadata dict"
-    assert '_spectrogram_meta = {}' in content or '_chunk_metadata = {}' in content, "Should have metadata dict"
+    # Check storage attributes for WAV-based chunking
+    assert '_audio_chunk_paths' in content, "Should have WAV chunk paths storage dict"
+    assert '_chunk_metadata' in content, "Should have chunk metadata dict"
+    assert '_chunk_temp_dirs' in content, "Should track temporary directories for cleanup"
     
-    # Check UI elements
-    assert 'Show Spectrogram' in content, "Should have Show Spectrogram checkbox"
-    assert 'SpectrogramToggle' in content, "Should have spectrogram toggle tag"
+    # Check WAV file operations
+    assert 'sf.write(chunk_path,' in content, "Should save audio chunks as WAV files"
+    assert 'sf.read(chunk_path)' in content, "Should load audio chunks from WAV files"
     
-    # Check STFT parameters (new approach)
-    assert 'binsize = 2**10' in content or 'frameSize' in content, "Should use STFT with frame size"
-    # hop_length is not needed in new chunking architecture, so we just check for audio processing
-    assert 'chunk_samples' in content or 'hop_length' in content, "Should process audio in chunks"
+    # Check ffmpeg usage for efficient audio extraction
+    assert 'pcm_s16le' in content, "Should use WAV codec for audio extraction"
+    
+    # Check audio processing
+    assert 'chunk_samples' in content, "Should process audio in chunks"
     assert 'sr=22050' in content or 'sr = 22050' in content or 'sr=None' in content, "Should use sample rate"
     
-    # Check for new STFT functions
-    assert 'def fourier_transformation' in content, "Should have fourier_transformation function"
-    assert 'def make_logscale' in content, "Should have make_logscale function"
-    
-    # Check colormap - now uses configurable colormap via utility function
-    assert 'apply_colormap_to_spectrogram' in content, "Should use apply_colormap_to_spectrogram function"
-    assert 'SPECTROGRAM_COLORMAP' in content, "Should have configurable colormap constant"
+    # Check cleanup
+    assert 'def _cleanup_audio_chunks' in content, "Should have cleanup method for WAV files"
     
     print("✓ All structure checks passed")
+    print("  - WAV-based audio chunking implemented")
+    print("  - ffmpeg used for efficient audio extraction")
+    print("  - Proper cleanup methods in place")
 
 
 def test_requirements_updated():
