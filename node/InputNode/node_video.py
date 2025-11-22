@@ -326,17 +326,16 @@ class VideoNode(Node):
         self.node_tag = "Video"
         self.node_label = "Video"
 
-        # Audio and video data storage
-        self._video_frames = {}  # Store extracted frames
+        # Audio data storage
         self._audio_chunks = {}  # Store audio chunks
         self._chunk_metadata = {}  # Metadata for chunk-to-frame mapping
 
     def _preprocess_video(self, node_id, movie_path, chunk_duration=5.0, step_duration=1.0):
         """
-        Pre-process video by extracting all frames and chunking audio.
+        Pre-process video by extracting and chunking audio.
         
         This method:
-        1. Extracts all video frames using OpenCV
+        1. Extracts video metadata (FPS, frame count) using OpenCV
         2. Extracts audio using librosa
         3. Chunks audio into segments (chunk_duration with step_duration overlap)
         4. Stores metadata for frame-to-chunk mapping
@@ -354,29 +353,16 @@ class VideoNode(Node):
         print(f"🎬 Pre-processing video: {movie_path}")
         
         try:
-            # Step 1: Extract all video frames
-            print("📹 Extracting video frames...")
+            # Step 1: Extract video metadata only (not frames to avoid memory issues)
+            print("📹 Extracting video metadata...")
             cap = cv2.VideoCapture(movie_path)
             fps = cap.get(cv2.CAP_PROP_FPS)
             if fps <= 0:
                 fps = 30.0  # Default fallback
             
             frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            
-            frames = []
-            frame_idx = 0
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                frames.append(frame)
-                frame_idx += 1
-                if frame_idx % 100 == 0:
-                    print(f"  Extracted {frame_idx}/{frame_count} frames...")
-            
             cap.release()
-            self._video_frames[node_id] = frames
-            print(f"✅ Extracted {len(frames)} frames (FPS: {fps})")
+            print(f"✅ Video metadata extracted (FPS: {fps}, Frames: {frame_count})")
             
             # Step 2: Extract audio
             print("🎵 Extracting audio...")
@@ -478,12 +464,12 @@ class VideoNode(Node):
                 'chunk_duration': chunk_duration,
                 'step_duration': step_duration,
                 'chunk_start_times': chunk_start_times,
-                'num_frames': len(frames),
+                'num_frames': frame_count,
                 'num_chunks': len(audio_chunks),
             }
             
             print(f"🎉 Pre-processing complete!")
-            print(f"   Frames: {len(frames)}, Chunks: {len(audio_chunks)}, FPS: {fps}")
+            print(f"   Frames: {frame_count}, Chunks: {len(audio_chunks)}, FPS: {fps}")
             
         except Exception as e:
             print(f"❌ Failed to pre-process video: {e}")
