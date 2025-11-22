@@ -97,6 +97,12 @@ class FactoryNode:
                 format=dpg.mvFormat_Float_rgb,
             )
 
+        # Create yellow theme for JSON button
+        with dpg.theme() as yellow_button_theme:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 153, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 153, 255))
 
         with dpg.node(
                 tag=node.tag_node_name,
@@ -166,14 +172,19 @@ class FactoryNode:
                         tag=node.tag_node_output_result,
                         default_value='elapsed time(ms)',
                     )
+            
+            # JSON output button
             with dpg.node_attribute(
-                        tag=node.tag_node_output_json_name,
-                        attribute_type=dpg.mvNode_Attr_Output,
-                ):
-                    dpg.add_text(
-                        tag=node.tag_node_output_json,
-                        default_value='coco',
-                    )
+                    tag=node.tag_node_output_json_name,
+                    attribute_type=dpg.mvNode_Attr_Output,
+            ):
+                btn = dpg.add_button(
+                    label="JSON",
+                    tag=node.tag_node_output_json,
+                    width=small_window_w,
+                    enabled=False,
+                )
+                dpg.bind_item_theme(btn, yellow_button_theme)
         
         return node
 

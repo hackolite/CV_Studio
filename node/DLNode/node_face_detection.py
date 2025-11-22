@@ -99,6 +99,8 @@ class Node(Node):
         tag_node_output01_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         tag_node_output02_name = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02'
         tag_node_output02_value_name = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
+        tag_node_output_json_name = tag_node_name + ':' + self.TYPE_JSON + ':OutputJson'
+        tag_node_output_json_value_name = tag_node_name + ':' + self.TYPE_JSON + ':OutputJsonValue'
 
         tag_provider_select_name = tag_node_name + ':' + self.TYPE_TEXT + ':Provider'
         tag_provider_select_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
@@ -127,6 +129,12 @@ class Node(Node):
                 format=dpg.mvFormat_Float_rgb,
             )
 
+        # Create yellow theme for JSON button
+        with dpg.theme() as yellow_button_theme:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 153, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 153, 255))
 
         with dpg.node(
                 tag=tag_node_name,
@@ -196,6 +204,19 @@ class Node(Node):
                         tag=tag_node_output02_value_name,
                         default_value='elapsed time(ms)',
                     )
+
+            # JSON output button
+            with dpg.node_attribute(
+                    tag=tag_node_output_json_name,
+                    attribute_type=dpg.mvNode_Attr_Output,
+            ):
+                btn = dpg.add_button(
+                    label="JSON",
+                    tag=tag_node_output_json_value_name,
+                    width=small_window_w,
+                    enabled=False,
+                )
+                dpg.bind_item_theme(btn, yellow_button_theme)
 
         self.tag_node_name = tag_node_name
         return self
