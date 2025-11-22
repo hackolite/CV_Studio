@@ -88,6 +88,11 @@ class DpgNodeEditor(object):
 
         self._opencv_setting_dict = opencv_setting_dict
         self.window = None
+        
+        # Zoom level for node editor (default scale is 1.0)
+        self._zoom_level = 1.0
+        self._min_zoom = 0.25  # Minimum zoom (25%)
+        self._max_zoom = 3.0   # Maximum zoom (300%)
 
         if menu_dict is None:
             menu_dict = OrderedDict(
@@ -232,6 +237,7 @@ class DpgNodeEditor(object):
 
             with dpg.handler_registry():
                 dpg.add_mouse_click_handler(callback=self._callback_save_last_pos)
+                dpg.add_mouse_wheel_handler(callback=self._callback_mouse_wheel)
                 dpg.add_key_press_handler(
                     dpg.mvKey_Delete,
                     callback=self._callback_mv_key_del,
@@ -505,6 +511,24 @@ class DpgNodeEditor(object):
             self._last_pos = dpg.get_item_pos(
                 dpg.get_selected_nodes(self._node_editor_tag)[0]
             )
+
+    def _callback_mouse_wheel(self, sender, data):
+        """Handle mouse wheel scrolling for zoom in/out"""
+        # data contains the wheel delta (positive = scroll up/zoom in, negative = scroll down/zoom out)
+        zoom_speed = 0.1
+        zoom_delta = data * zoom_speed
+        
+        # Update zoom level with constraints
+        new_zoom = self._zoom_level + zoom_delta
+        new_zoom = max(self._min_zoom, min(self._max_zoom, new_zoom))
+        
+        # Apply zoom if it changed
+        if new_zoom != self._zoom_level:
+            self._zoom_level = new_zoom
+            dpg.set_global_font_scale(self._zoom_level)
+            
+            if self._use_debug_print:
+                logger.debug(f"Zoom level: {self._zoom_level:.2f}")
 
     def _callback_mv_key_del(self):
         if len(dpg.get_selected_nodes(self._node_editor_tag)) > 0:
