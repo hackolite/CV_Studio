@@ -3,7 +3,7 @@ INPUT = [
     "Video", "YouTubeInput", "RTSP", "VideoSetFramePos"
 ]
 PROCESS = [
-    "Resize", "Crop", "Zoom", "Grayscale", "ApplyColorMap", "Contrast",
+    "Resize", "Crop", "Grayscale", "ApplyColorMap", "Contrast",
     "Flip", "Brightness", "EqualizeHist", "GammaCorrection",
     "OmnidirectionalViewer", "Blur", "Canny", "SimpleFilter",
     "Threshold", "ImageAlphaBlend"
