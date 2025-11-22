@@ -62,7 +62,7 @@ class FactoryNode:
         use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
 
-        black_image = np.zeros((small_window_h, small_window_w, 3))
+        black_image = np.zeros((small_window_w, small_window_h, 3))
         black_texture = node.convert_cv_to_dpg(
             black_image,
             small_window_w,
@@ -145,7 +145,7 @@ class FactoryNode:
                     tag=node.tag_node_add_slot_name,
                     label="Add Class Slot",
                     callback=lambda s, a, u: Node.add_class_slot_callback(s, a, u),
-                    user_data=node.tag_node_name,
+                    user_data=(node.tag_node_name, small_window_w - 100),
                     width=small_window_w - 100,
                 )
 
@@ -167,8 +167,6 @@ class Node(Node):
 
     node_label = 'ObjChart'
     node_tag = 'ObjChart'
-
-    _class_slot_counter = 0
     
     def __init__(self, opencv_setting_dict=None):
         super().__init__()
@@ -188,13 +186,11 @@ class Node(Node):
         
         # Keep track of last N time buckets for visualization
         self.max_buckets = 30
-        
-        self._class_slot_counter = 1  # Start at 1 since we have one initial slot
 
     @staticmethod
     def add_class_slot_callback(sender, app_data, user_data):
         """Callback to add a new class selection slot"""
-        node_tag = user_data
+        node_tag, combo_width = user_data
         class_slots_tag = f"{node_tag}:ClassSlots"
         
         # Find current number of slots
@@ -210,7 +206,7 @@ class Node(Node):
                 label=f"Class {slot_count + 1}",
                 items=["All", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
                 default_value="All",
-                width=500,
+                width=combo_width,
                 parent=class_slots_tag,
             )
 
@@ -354,7 +350,8 @@ class Node(Node):
                                     selected_classes.append("All")
                                 else:
                                     selected_classes.append(int(selected_value))
-                        except:
+                        except (ValueError, TypeError):
+                            # Skip invalid values
                             pass
             
             # If no classes selected, default to "All"
@@ -411,7 +408,8 @@ class Node(Node):
                     try:
                         selected_value = dpg_get_value(child)
                         setting_dict[f"{tag_node_name}:ClassSlot:{idx}"] = selected_value
-                    except:
+                    except (KeyError, TypeError, AttributeError):
+                        # Skip slots that can't be retrieved
                         pass
 
         return setting_dict
@@ -433,5 +431,6 @@ class Node(Node):
                     if slot_key in setting_dict:
                         try:
                             dpg_set_value(child, setting_dict[slot_key])
-                        except:
+                        except (KeyError, TypeError, AttributeError):
+                            # Skip slots that can't be set
                             pass
