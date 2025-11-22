@@ -34,37 +34,8 @@ class FactoryNode:
     
     def add_node(self, parent, node_id, pos=[0, 0], callback=None, opencv_setting_dict=None):
         """Adds a node to the processing graph."""
-        
-        # Generate tags for Node and its attributes
         node = Node()
-
-        node.tag_node_name = f"{node_id}:{node.node_tag}"
-        tag_node_output01_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01"
-        tag_node_output01_value_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01Value"
-
-        # Initialize video stream
-        node.cap = get_light_live_stream_url(VIDEO_ID)
-        node.last_frame_time = None
-        node.frame_time = 1.0 / 32  # 32 FPS for smooth playback
-        node.small_window_w, node.small_window_h = 600, 400  # Display size
-
-        # Black image for startup
-        black_image = np.zeros((nodesmall_window_w, node.small_window_h, 3))
-        black_texture = node.convert_cv_to_dpg(black_image, node.small_window_w, node.small_window_h)
-
-        # Create texture to display image
-        with dpg.texture_registry(show=False):
-            dpg.add_raw_texture(
-                node.small_window_w, node.small_window_h, black_texture,
-                tag=tag_node_output01_value_name, format=dpg.mvFormat_Float_rgb
-            )
-
-        # Create node in the GUI
-        with dpg.node(tag=tag_node_name, parent=parent, label=node.node_label, pos=pos):
-            with dpg.node_attribute(tag=tag_node_output01_name, attribute_type=dpg.mvNode_Attr_Output):
-                dpg.add_image(tag_node_output01_value_name)
-
-        return node
+        return node.add_node(parent, node_id, pos, opencv_setting_dict, callback)
 
 class Node(Node):
     _ver = '0.0.1'
@@ -139,7 +110,7 @@ class Node(Node):
 
         # 初期化用黒画像
         black_image = np.zeros((small_window_w, small_window_h, 3))
-        black_texture = convert_cv_to_dpg(
+        black_texture = self.convert_cv_to_dpg(
             black_image,
             small_window_w,
             small_window_h,
@@ -317,13 +288,13 @@ class Node(Node):
 
         # 描画
         if frame is not None:
-            debug_frame = draw_semantic_segmentation_info(
+            debug_frame = self.draw_semantic_segmentation_info(
                 frame,
                 score_th,
                 class_num,
                 segmentation_map,
             )
-            texture = convert_cv_to_dpg(
+            texture = self.convert_cv_to_dpg(
                 debug_frame,
                 small_window_w,
                 small_window_h,
