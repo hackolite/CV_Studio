@@ -439,8 +439,27 @@ class VideoNode(Node):
                 chunk_idx += 1
                 start += step_samples
             
+            # Handle remaining audio: pad to chunk_duration if necessary
+            remaining_samples = len(y) - start
+            if remaining_samples > 0:
+                # Extract remaining audio
+                remaining_chunk = y[start:]
+                # Pad with zeros to reach chunk_samples (5 seconds)
+                padding_needed = chunk_samples - remaining_samples
+                padded_chunk = np.pad(remaining_chunk, (0, padding_needed), mode='constant', constant_values=0)
+                audio_chunks.append(padded_chunk)
+                chunk_start_times.append(start / sr)
+                print(f"⚠️ Padded last chunk: {remaining_samples/sr:.2f}s → {chunk_duration}s (added {padding_needed/sr:.2f}s of silence)")
+            
             self._audio_chunks[node_id] = audio_chunks
-            print(f"✅ Created {len(audio_chunks)} audio chunks")
+            
+            # Verify all chunks are exactly chunk_duration
+            for idx, chunk in enumerate(audio_chunks):
+                actual_duration = len(chunk) / sr
+                if abs(actual_duration - chunk_duration) > 0.001:  # Allow 1ms tolerance
+                    print(f"⚠️ Warning: Chunk {idx} duration is {actual_duration:.3f}s, expected {chunk_duration}s")
+                    
+            print(f"✅ Created {len(audio_chunks)} audio chunks (all {chunk_duration}s each)")
             
             # Step 4: Store metadata
             self._chunk_metadata[node_id] = {
