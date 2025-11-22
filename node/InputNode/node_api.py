@@ -61,10 +61,6 @@ class FactoryNode:
         node.tag_node_output_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJson'
         node.tag_node_output_json_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJsonValue'
 
-        node.tag_node_output_type_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':OutputType'
-        node.tag_node_output_type_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':OutputTypeValue'
-
-
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict['input_window_width']
         small_window_h = node._opencv_setting_dict['input_window_height']
@@ -133,19 +129,6 @@ class FactoryNode:
                     min_value=node._min_val,
                     max_value=node._max_val,
                     callback=None,
-                )
-
-            # Add dropdown for output type selection
-            with dpg.node_attribute(
-                    tag=node.tag_node_output_type_name,
-                    attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_combo(
-                    tag=node.tag_node_output_type_value_name,
-                    items=["Audio", "JSON"],
-                    label="Output Type",
-                    default_value="Audio",
-                    width=node._small_window_w - 80,
                 )
 
             # Bouton Start avec thème jaune
@@ -257,33 +240,27 @@ class ApiNode(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_input02_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         tag_node_input03_value_name = tag_node_name + ':' + self.TYPE_INT + ':Input03Value'
-        tag_node_output_type_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':OutputTypeValue'
 
         pos = dpg.get_item_pos(tag_node_name)
 
         loop_flag = dpg_get_value(tag_node_input02_value_name)
         skip_rate_value = dpg_get_value(tag_node_input03_value_name)
         skip_rate = int(skip_rate_value) if skip_rate_value is not None else 1
-        output_type = dpg_get_value(tag_node_output_type_value_name)
 
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
         setting_dict[tag_node_input02_value_name] = loop_flag
         setting_dict[tag_node_input03_value_name] = skip_rate
-        setting_dict[tag_node_output_type_value_name] = output_type
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_input02_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         tag_node_input03_value_name = tag_node_name + ':' + self.TYPE_INT + ':Input03Value'
-        tag_node_output_type_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':OutputTypeValue'
 
         loop_flag = setting_dict[tag_node_input02_value_name]
         skip_rate = int(setting_dict[tag_node_input03_value_name])
-        output_type = setting_dict.get(tag_node_output_type_value_name, "Audio")
 
         dpg_set_value(tag_node_input02_value_name, loop_flag)
         dpg_set_value(tag_node_input03_value_name, skip_rate)
-        dpg_set_value(tag_node_output_type_value_name, output_type)
