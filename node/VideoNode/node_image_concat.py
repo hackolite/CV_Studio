@@ -191,10 +191,12 @@ class Node(Node):
             (255, 0, 255),    # Position 5 (index 4): Magenta
         ]
         
-        # Larger font size and thicker text
-        font_scale = 1.0  # Increased from 0.6
-        thickness = 3     # Increased from 2
-        line_spacing = 35  # Increased from 20 for bigger text
+        # Scale text parameters based on frame height (reference: 480px)
+        # This ensures text size is appropriate for the actual frame size
+        scale_factor = height / 480.0
+        font_scale = 1.0 * scale_factor  # Base 1.0, scaled by frame height
+        thickness = max(1, int(3 * scale_factor))  # Base 3, scaled and min 1
+        line_spacing = int(35 * scale_factor)  # Base 35, scaled by frame height
         
         # Calculate starting position from bottom
         num_lines = len(class_ids)
