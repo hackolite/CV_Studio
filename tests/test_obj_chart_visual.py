@@ -51,22 +51,22 @@ def test_visual_output():
         "2": "bicycle"
     }
     
-    # Test 1: Chart with all classes
-    print("\nTest 1: Rendering chart with 'All' classes...")
-    chart_all = node.render_chart("minute", ["All"], class_names)
+    # Test 1: Chart with all classes (bar chart)
+    print("\nTest 1: Rendering bar chart with 'All' classes...")
+    chart_all = node.render_chart("minute", ["All"], class_names, "bar")
     print(f"  Chart size: {chart_all.shape}")
     cv2.imwrite("/tmp/obj_chart_all_classes.png", chart_all)
     print("  ✓ Saved to /tmp/obj_chart_all_classes.png")
     
-    # Test 2: Chart with specific classes
-    print("\nTest 2: Rendering chart with classes 0 and 1...")
-    chart_specific = node.render_chart("minute", [0, 1], class_names)
+    # Test 2: Chart with specific classes (line chart)
+    print("\nTest 2: Rendering line chart with classes 0 and 1...")
+    chart_specific = node.render_chart("minute", [0, 1], class_names, "line")
     print(f"  Chart size: {chart_specific.shape}")
     cv2.imwrite("/tmp/obj_chart_specific_classes.png", chart_specific)
     print("  ✓ Saved to /tmp/obj_chart_specific_classes.png")
     
-    # Test 3: Chart with hourly aggregation
-    print("\nTest 3: Rendering chart with hourly aggregation...")
+    # Test 3: Chart with hourly aggregation (area chart)
+    print("\nTest 3: Rendering area chart with hourly aggregation...")
     
     # Add hourly data
     hour_bucket = datetime.now().replace(minute=0, second=0, microsecond=0)
@@ -74,7 +74,7 @@ def test_visual_output():
     node.time_counts[1][hour_bucket] = 30
     node.time_counts["All"][hour_bucket] = 80
     
-    chart_hourly = node.render_chart("hour", ["All"], class_names)
+    chart_hourly = node.render_chart("hour", [0, 1], class_names, "area")
     print(f"  Chart size: {chart_hourly.shape}")
     cv2.imwrite("/tmp/obj_chart_hourly.png", chart_hourly)
     print("  ✓ Saved to /tmp/obj_chart_hourly.png")
@@ -85,7 +85,7 @@ def test_visual_output():
         'process_height': 480,
         'process_width': 640
     })
-    chart_empty = empty_node.render_chart("minute", ["All"], {})
+    chart_empty = empty_node.render_chart("minute", ["All"], {}, "bar")
     print(f"  Chart size: {chart_empty.shape}")
     cv2.imwrite("/tmp/obj_chart_empty.png", chart_empty)
     print("  ✓ Saved to /tmp/obj_chart_empty.png")
