@@ -451,13 +451,14 @@ class DpgNodeEditor(object):
                 factorynode = self._node_factory_list[node_name]
                 
                 # Check version before creating node
-                saved_ver = setting_dict[node_id_name]["setting"]["ver"]
-                if hasattr(factorynode, '_ver'):
-                    if saved_ver != factorynode._ver:
-                        warning_node_name = setting_dict[node_id_name]["name"]
-                        logger.warning(f"Node {warning_node_name} version mismatch:")
-                        logger.warning(f"  Load Version: {saved_ver}")
-                        logger.warning(f"  Code Version: {factorynode._ver}")
+                if "setting" in setting_dict[node_id_name] and "ver" in setting_dict[node_id_name]["setting"]:
+                    saved_ver = setting_dict[node_id_name]["setting"]["ver"]
+                    if hasattr(factorynode, '_ver'):
+                        if saved_ver != factorynode._ver:
+                            warning_node_name = setting_dict[node_id_name]["name"]
+                            logger.warning(f"Node {warning_node_name} version mismatch:")
+                            logger.warning(f"  Load Version: {saved_ver}")
+                            logger.warning(f"  Code Version: {factorynode._ver}")
 
                 # Create the node instance using the factory
                 pos = setting_dict[node_id_name]["setting"]["pos"]

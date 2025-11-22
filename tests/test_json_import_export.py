@@ -9,15 +9,21 @@ This test verifies the fixes for:
 import sys
 import os
 import json
-import tempfile
 from unittest.mock import MagicMock, patch, mock_open
+import pytest
 
 # Add the parent directory to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# Mock dearpygui before importing node_editor
-sys.modules['dearpygui'] = MagicMock()
-sys.modules['dearpygui.dearpygui'] = MagicMock()
+
+@pytest.fixture(autouse=True)
+def mock_dearpygui():
+    """Mock dearpygui for all tests in this module"""
+    with patch.dict('sys.modules', {
+        'dearpygui': MagicMock(),
+        'dearpygui.dearpygui': MagicMock()
+    }):
+        yield
 
 
 def test_export_uses_correct_dictionary():
@@ -85,8 +91,6 @@ def test_export_uses_correct_dictionary():
             assert mock_node.get_setting_dict.called, "get_setting_dict should have been called on node"
             
             print("✓ Export correctly uses _node_instances_list")
-    
-    return True
 
 
 def test_import_uses_factory_to_create_nodes():
@@ -165,11 +169,9 @@ def test_import_uses_factory_to_create_nodes():
     
     print("✓ Import correctly uses factory to create nodes")
     print("✓ Import correctly stores nodes in _node_instances_list")
-    
-    return True
 
 
-def test_export_import_roundtrip():
+def test_export_import_roundtrip(tmp_path):
     """
     Test that export and import work together correctly
     """
@@ -221,59 +223,49 @@ def test_export_import_roundtrip():
     editor_export._node_list = [node_id_name]
     editor_export._node_link_list = []
     
-    # Export to temp file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp_file:
-        tmp_path = tmp_file.name
+    # Export to temp file using pytest's tmp_path fixture
+    tmp_file = tmp_path / "test_export.json"
     
-    try:
-        mock_export_data = {'file_path_name': tmp_path}
-        editor_export._callback_file_export(None, mock_export_data)
-        
-        # Verify file was created and has valid JSON
-        assert os.path.exists(tmp_path), "Export file should be created"
-        
-        with open(tmp_path, 'r') as f:
-            exported_data = json.load(f)
-        
-        assert 'node_list' in exported_data, "Exported data should have node_list"
-        assert 'link_list' in exported_data, "Exported data should have link_list"
-        assert node_id_name in exported_data, f"Exported data should have {node_id_name}"
-        
-        print("✓ Export creates valid JSON file")
-        
-        # Setup import scenario
-        mock_imported_node = MagicMock()
-        mock_imported_node.tag_node_name = node_id_name
-        mock_imported_node._ver = "1.0.0"
-        mock_imported_node.set_setting_dict = MagicMock()
-        
-        mock_factory = MagicMock()
-        mock_factory.add_node = MagicMock(return_value=mock_imported_node)
-        mock_factory.style = MagicMock()
-        
-        editor_import._node_factory_list["ExportNode"] = mock_factory
-        
-        # Import from temp file
-        mock_import_data = {'file_name': 'test.json', 'file_path_name': tmp_path}
-        
-        with patch('dearpygui.dearpygui.bind_item_theme'):
-            with patch('dearpygui.dearpygui.add_node_link'):
-                editor_import._callback_file_import(None, mock_import_data)
-        
-        # Verify import worked
-        assert node_id_name in editor_import._node_instances_list, "Imported node should be in _node_instances_list"
-        assert mock_factory.add_node.called, "Factory should have been used to create node"
-        assert mock_imported_node.set_setting_dict.called, "Settings should have been applied to imported node"
-        
-        print("✓ Import successfully loads exported JSON file")
-        print("✓ Export/import roundtrip works correctly")
-        
-    finally:
-        # Cleanup
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+    mock_export_data = {'file_path_name': str(tmp_file)}
+    editor_export._callback_file_export(None, mock_export_data)
     
-    return True
+    # Verify file was created and has valid JSON
+    assert tmp_file.exists(), "Export file should be created"
+    
+    exported_data = json.loads(tmp_file.read_text())
+    
+    assert 'node_list' in exported_data, "Exported data should have node_list"
+    assert 'link_list' in exported_data, "Exported data should have link_list"
+    assert node_id_name in exported_data, f"Exported data should have {node_id_name}"
+    
+    print("✓ Export creates valid JSON file")
+    
+    # Setup import scenario
+    mock_imported_node = MagicMock()
+    mock_imported_node.tag_node_name = node_id_name
+    mock_imported_node._ver = "1.0.0"
+    mock_imported_node.set_setting_dict = MagicMock()
+    
+    mock_factory = MagicMock()
+    mock_factory.add_node = MagicMock(return_value=mock_imported_node)
+    mock_factory.style = MagicMock()
+    
+    editor_import._node_factory_list["ExportNode"] = mock_factory
+    
+    # Import from temp file
+    mock_import_data = {'file_name': 'test.json', 'file_path_name': str(tmp_file)}
+    
+    with patch('dearpygui.dearpygui.bind_item_theme'):
+        with patch('dearpygui.dearpygui.add_node_link'):
+            editor_import._callback_file_import(None, mock_import_data)
+    
+    # Verify import worked
+    assert node_id_name in editor_import._node_instances_list, "Imported node should be in _node_instances_list"
+    assert mock_factory.add_node.called, "Factory should have been used to create node"
+    assert mock_imported_node.set_setting_dict.called, "Settings should have been applied to imported node"
+    
+    print("✓ Import successfully loads exported JSON file")
+    print("✓ Export/import roundtrip works correctly")
 
 
 def test_import_handles_empty_file():
@@ -310,8 +302,6 @@ def test_import_handles_empty_file():
     assert len(editor._node_list) == 0, "Node list should be empty after cancelled import"
     
     print("✓ Import handles cancelled file dialog correctly")
-    
-    return True
 
 
 if __name__ == "__main__":
