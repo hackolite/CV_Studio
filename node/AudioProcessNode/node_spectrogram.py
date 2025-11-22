@@ -184,6 +184,15 @@ def create_mfcc(audio_data, sample_rate=22050, n_fft=2048, hop_length=512, n_mfc
     return colored_spec_rgb
 
 
+# Method dispatch mapping
+SPECTROGRAM_METHODS = {
+    'mel': create_mel_spectrogram,
+    'stft': create_stft_spectrogram,
+    'chromagram': create_chromagram,
+    'mfcc': create_mfcc,
+}
+
+
 def create_spectrogram(audio_data, sample_rate=22050, n_fft=2048, hop_length=512, method=DEFAULT_SPECTROGRAM_METHOD):
     """
     Create a spectrogram from audio data using the specified method.
@@ -197,18 +206,14 @@ def create_spectrogram(audio_data, sample_rate=22050, n_fft=2048, hop_length=512
         
     Returns:
         RGB image of the spectrogram
+        
+    Note:
+        The MFCC method uses a fixed n_mfcc=20 parameter internally, which is
+        the standard for most speech and audio ML applications.
     """
-    if method == 'mel':
-        return create_mel_spectrogram(audio_data, sample_rate, n_fft, hop_length)
-    elif method == 'stft':
-        return create_stft_spectrogram(audio_data, sample_rate, n_fft, hop_length)
-    elif method == 'chromagram':
-        return create_chromagram(audio_data, sample_rate, n_fft, hop_length)
-    elif method == 'mfcc':
-        return create_mfcc(audio_data, sample_rate, n_fft, hop_length)
-    else:
-        # Default to mel spectrogram
-        return create_mel_spectrogram(audio_data, sample_rate, n_fft, hop_length)
+    # Get the appropriate method function, default to mel if unknown
+    method_func = SPECTROGRAM_METHODS.get(method, create_mel_spectrogram)
+    return method_func(audio_data, sample_rate, n_fft, hop_length)
 
 
 class FactoryNode:
