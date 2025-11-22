@@ -31,11 +31,13 @@ def test_zoom_level_initialization():
         assert hasattr(editor, '_zoom_level'), "Editor should have _zoom_level attribute"
         assert hasattr(editor, '_min_zoom'), "Editor should have _min_zoom attribute"
         assert hasattr(editor, '_max_zoom'), "Editor should have _max_zoom attribute"
+        assert hasattr(editor, '_zoom_speed'), "Editor should have _zoom_speed attribute"
         
         # Check initial values
         assert editor._zoom_level == 1.0, "Initial zoom level should be 1.0"
         assert editor._min_zoom == 0.25, "Minimum zoom should be 0.25"
         assert editor._max_zoom == 3.0, "Maximum zoom should be 3.0"
+        assert editor._zoom_speed == 0.1, "Zoom speed should be 0.1"
         
         # Cleanup
         dpg.destroy_context()
@@ -157,8 +159,12 @@ def test_zoom_min_constraint():
             use_debug_print=False
         )
         
+        # Calculate how many scroll events needed to reach minimum
+        # Add extra scrolls to ensure we exceed the limit
+        scrolls_needed = int((editor._zoom_level - editor._min_zoom) / editor._zoom_speed) + 5
+        
         # Try to zoom out beyond minimum
-        for _ in range(20):  # More than enough to reach minimum
+        for _ in range(scrolls_needed):
             editor._callback_mouse_wheel(None, -1)
         
         # Check zoom level is clamped to minimum
@@ -189,8 +195,12 @@ def test_zoom_max_constraint():
             use_debug_print=False
         )
         
+        # Calculate how many scroll events needed to reach maximum
+        # Add extra scrolls to ensure we exceed the limit
+        scrolls_needed = int((editor._max_zoom - editor._zoom_level) / editor._zoom_speed) + 5
+        
         # Try to zoom in beyond maximum
-        for _ in range(30):  # More than enough to reach maximum
+        for _ in range(scrolls_needed):
             editor._callback_mouse_wheel(None, 1)
         
         # Check zoom level is clamped to maximum

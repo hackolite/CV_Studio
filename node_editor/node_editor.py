@@ -93,6 +93,7 @@ class DpgNodeEditor(object):
         self._zoom_level = 1.0
         self._min_zoom = 0.25  # Minimum zoom (25%)
         self._max_zoom = 3.0   # Maximum zoom (300%)
+        self._zoom_speed = 0.1  # Zoom increment per mouse wheel tick
 
         if menu_dict is None:
             menu_dict = OrderedDict(
@@ -515,8 +516,7 @@ class DpgNodeEditor(object):
     def _callback_mouse_wheel(self, sender, data):
         """Handle mouse wheel scrolling for zoom in/out"""
         # data contains the wheel delta (positive = scroll up/zoom in, negative = scroll down/zoom out)
-        zoom_speed = 0.1
-        zoom_delta = data * zoom_speed
+        zoom_delta = data * self._zoom_speed
         
         # Update zoom level with constraints
         new_zoom = self._zoom_level + zoom_delta
