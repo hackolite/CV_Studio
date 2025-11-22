@@ -1,5 +1,5 @@
 INPUT = [
-    "WebCam", "YoutubeLive", "IntValue",
+    "WebCam", "YoutubeLive", "IntValue", "FloatValue",
     "Video", "YouTubeInput", "RTSP", "VideoSetFramePos"
 ]
 PROCESS = [
