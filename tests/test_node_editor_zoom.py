@@ -99,7 +99,8 @@ def test_zoom_in():
         
         # Check zoom level increased
         assert editor._zoom_level > initial_zoom, "Zoom level should increase when scrolling up"
-        assert editor._zoom_level == initial_zoom + 0.1, f"Zoom level should be {initial_zoom + 0.1}, got {editor._zoom_level}"
+        expected_zoom = initial_zoom + editor._zoom_speed
+        assert editor._zoom_level == expected_zoom, f"Zoom level should be {expected_zoom}, got {editor._zoom_level}"
         
         # Cleanup
         dpg.destroy_context()
@@ -133,7 +134,8 @@ def test_zoom_out():
         
         # Check zoom level decreased
         assert editor._zoom_level < initial_zoom, "Zoom level should decrease when scrolling down"
-        assert editor._zoom_level == initial_zoom - 0.1, f"Zoom level should be {initial_zoom - 0.1}, got {editor._zoom_level}"
+        expected_zoom = initial_zoom - editor._zoom_speed
+        assert editor._zoom_level == expected_zoom, f"Zoom level should be {expected_zoom}, got {editor._zoom_level}"
         
         # Cleanup
         dpg.destroy_context()
@@ -236,8 +238,8 @@ def test_zoom_speed():
         # Simulate multiple scroll events
         editor._callback_mouse_wheel(None, 5)  # Scroll up 5 units
         
-        # Check zoom level changed by expected amount (5 * 0.1 = 0.5)
-        expected_zoom = min(initial_zoom + 0.5, editor._max_zoom)
+        # Check zoom level changed by expected amount (5 * zoom_speed)
+        expected_zoom = min(initial_zoom + (5 * editor._zoom_speed), editor._max_zoom)
         assert editor._zoom_level == expected_zoom, f"Zoom level should be {expected_zoom}, got {editor._zoom_level}"
         
         # Cleanup

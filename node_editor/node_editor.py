@@ -514,7 +514,12 @@ class DpgNodeEditor(object):
             )
 
     def _callback_mouse_wheel(self, sender, data):
-        """Handle mouse wheel scrolling for zoom in/out"""
+        """Handle mouse wheel scrolling for zoom in/out
+        
+        Note: This uses dpg.set_global_font_scale() which affects the entire UI,
+        not just the node editor. This is intentional as it provides a consistent
+        zoom experience across all UI elements (nodes, menus, dialogs, etc.).
+        """
         # data contains the wheel delta (positive = scroll up/zoom in, negative = scroll down/zoom out)
         zoom_delta = data * self._zoom_speed
         
