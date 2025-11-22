@@ -201,15 +201,15 @@ def main():
             "VisionModel": "DLNode",
             "AudioProcess": "AudioProcessNode",
             "AudioModel": "AudioModelNode",
-            "Stats": "StatsNode",
+            "DataProcess": "StatsNode",
+            "DataModel": "TimeseriesNode",
             "Trigger": "TriggerNode",
             "Router": "RouterNode",
             "Action": "ActionNode",
-            "Video": "VideoNode",
-            "Tracking": "TrackerNode",
             "Overlay": "OverlayNode",
+            "Tracking": "TrackerNode",
+            "Video": "VideoNode",
             "Visual": "VisualNode",
-            "TimeseriesML": "TimeseriesNode",
         }
     )
 

@@ -49,9 +49,13 @@ STYLE = {
         "names": AUDIO_MODEL,
         "style": [(255, 192, 203, 255)]  # pink pastel
     },
-    "Stats": {
+    "DataProcess": {
         "names": STATS,
         "style": [(173, 216, 230, 255)]  # light blue pastel (unchanged)
+    },
+    "DataModel": {
+        "names": TIMESERIES,
+        "style": [(255, 222, 243, 255)]  # very soft pastel pink
     },
     "Trigger": {
         "names": TRIGGER,
@@ -65,25 +69,21 @@ STYLE = {
         "names": ACTION,
         "style": [(255, 204, 153, 255)]  # orange pastel doux
     },
-    "Video": {
-        "names": VIDEO,
-        "style": [(193, 255, 193, 255)]  # very light green pastel
+    "Overlay": {
+        "names": OVERLAY,
+        "style": [(245, 245, 245, 255)]  # very light gray (almost white)
     },
     "Tracking": {
         "names": TRACKING,
         "style": [(173, 216, 230, 255)]  # bleu pastel
     },
-    "Overlay": {
-        "names": OVERLAY,
-        "style": [(245, 245, 245, 255)]  # very light gray (almost white)
+    "Video": {
+        "names": VIDEO,
+        "style": [(193, 255, 193, 255)]  # very light green pastel
     },
     "Visual": {
         "names": VIZ,
         "style": [(255, 182, 193, 255)]  # rose clair (light pink)
-    },
-    "Timeseries": {
-        "names": TIMESERIES,
-        "style": [(255, 222, 243, 255)]  # very soft pastel pink
     }
 }
 
