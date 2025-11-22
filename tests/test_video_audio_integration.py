@@ -91,8 +91,8 @@ def test_video_node_outputs():
     # Verify both output types are defined
     assert 'TYPE_IMAGE' in content and 'Output01' in content, \
         "Should have IMAGE output (Output01)"
-    assert 'TYPE_AUDIO' in content and 'Output03' in content, \
-        "Should have AUDIO output (Output03)"
+    assert 'TYPE_AUDIO' in content and 'OutputAudio' in content, \
+        "Should have AUDIO output (OutputAudio)"
     
     # Verify the comment explains the separation
     assert 'Return frame via IMAGE output and audio chunk data via AUDIO output' in content, \
@@ -100,7 +100,7 @@ def test_video_node_outputs():
     
     print("✓ Video node output types verified")
     print("  - Output01: TYPE_IMAGE (video frames)")
-    print("  - Output03: TYPE_AUDIO (audio chunks)")
+    print("  - OutputAudio: TYPE_AUDIO (audio chunks)")
     print("  - Both outputs work independently")
 
 

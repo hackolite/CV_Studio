@@ -23,11 +23,12 @@ def test_new_architecture_data_structures():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Check new data structures
-    assert "_video_frames = {}" in content, "Should have _video_frames dict"
+    # Check new data structures (video frames removed to prevent memory issues)
     assert "_audio_chunks = {}" in content, "Should have _audio_chunks dict"
-    assert "_spectrogram_chunks = {}" in content, "Should have _spectrogram_chunks dict"
     assert "_chunk_metadata = {}" in content, "Should have _chunk_metadata dict"
+    
+    # Verify that _video_frames has been removed to prevent memory issues
+    assert "_video_frames = {}" not in content, "_video_frames should be removed to prevent memory issues"
     
     print("✓ New architecture data structures are present")
 
@@ -49,8 +50,8 @@ def test_preprocess_video_method():
     assert "chunk_duration=5.0" in content, "Should have chunk_duration parameter with default 5.0"
     assert "step_duration=1.0" in content, "Should have step_duration parameter with default 1.0"
     
-    # Check it extracts frames
-    assert "cv2.VideoCapture" in content, "Should use cv2.VideoCapture to extract frames"
+    # Check it extracts metadata only (not all frames to prevent memory issues)
+    assert "cv2.VideoCapture" in content, "Should use cv2.VideoCapture to extract metadata"
     
     # Check it extracts audio
     assert "librosa.load" in content, "Should use librosa.load to extract audio"
@@ -59,16 +60,11 @@ def test_preprocess_video_method():
     assert "chunk_samples" in content, "Should calculate chunk_samples"
     assert "step_samples" in content, "Should calculate step_samples"
     
-    # Check it generates spectrograms
-    assert "fourier_transformation" in content, "Should use fourier_transformation"
-    assert "make_logscale" in content, "Should use make_logscale"
-    assert "apply_colormap_to_spectrogram" in content, "Should use apply_colormap_to_spectrogram"
-    
     print("✓ _preprocess_video method has correct structure")
 
 
-def test_get_spectrogram_for_frame_method():
-    """Test that _get_spectrogram_for_frame method exists"""
+def test_get_audio_chunk_for_frame_method():
+    """Test that _get_audio_chunk_for_frame method exists and works correctly"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -78,15 +74,15 @@ def test_get_spectrogram_for_frame_method():
         content = f.read()
     
     # Check method exists
-    assert "def _get_spectrogram_for_frame" in content, "Should have _get_spectrogram_for_frame method"
+    assert "def _get_audio_chunk_for_frame" in content, "Should have _get_audio_chunk_for_frame method"
     
     # Check it uses chunk_index calculation
     assert "chunk_index" in content, "Should calculate chunk_index"
     
-    # Check it accesses pre-computed spectrograms
-    assert "self._spectrogram_chunks" in content, "Should access _spectrogram_chunks"
+    # Check it accesses audio chunks
+    assert "self._audio_chunks" in content, "Should access _audio_chunks"
     
-    print("✓ _get_spectrogram_for_frame method exists")
+    print("✓ _get_audio_chunk_for_frame method exists")
 
 
 def test_callback_uses_preprocess():
@@ -122,7 +118,7 @@ def test_callback_uses_preprocess():
 
 
 def test_update_method_simplified():
-    """Test that update method uses simplified spectrogram lookup"""
+    """Test that update method uses simplified audio chunk lookup"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -132,24 +128,24 @@ def test_update_method_simplified():
         content = f.read()
     
     # Check simplified logic
-    assert "_get_spectrogram_for_frame" in content, "Should call _get_spectrogram_for_frame"
+    assert "_get_audio_chunk_for_frame" in content, "Should call _get_audio_chunk_for_frame"
     
-    # Check it uses _spectrogram_chunks
+    # Check it uses _audio_chunks
     lines = content.split('\n')
     found_chunks_check = False
     
     for line in lines:
-        if "str(node_id) in self._spectrogram_chunks" in line:
+        if "str(node_id) in self._audio_chunks" in line:
             found_chunks_check = True
             break
     
-    assert found_chunks_check, "Should check if node_id in _spectrogram_chunks"
+    assert found_chunks_check, "Should check if node_id in _audio_chunks"
     
     print("✓ update method uses simplified lookup")
 
 
 def test_old_prepare_method_removed():
-    """Test that the old _prepare_spectrogram method is removed"""
+    """Test that spectrogram methods have been removed"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -158,10 +154,11 @@ def test_old_prepare_method_removed():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # The old method should be removed
+    # The old spectrogram methods should be removed
     assert "def _prepare_spectrogram" not in content, "_prepare_spectrogram method should be removed"
+    assert "def _get_spectrogram_for_frame" not in content, "_get_spectrogram_for_frame method should be removed"
     
-    print("✓ Old _prepare_spectrogram method is removed")
+    print("✓ Old spectrogram methods are removed")
 
 
 def test_python_syntax_valid():
@@ -181,8 +178,8 @@ def test_python_syntax_valid():
         pytest.fail(f"Syntax error in node_video.py: {e}")
 
 
-def test_constants_preserved():
-    """Test that existing constants are preserved"""
+def test_memory_efficiency():
+    """Test that video node doesn't store all frames in memory"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -191,21 +188,24 @@ def test_constants_preserved():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Check constants
-    assert "SPECTROGRAM_EPSILON" in content, "Should have SPECTROGRAM_EPSILON constant"
-    assert "DEFAULT_SPECTROGRAM_COLORMAP" in content, "Should have DEFAULT_SPECTROGRAM_COLORMAP constant"
+    # Verify that frames are not being stored in memory
+    assert "_video_frames[node_id] = frames" not in content, "Should NOT store all frames in _video_frames"
+    assert "frames.append(frame)" not in content, "Should NOT append frames to a list during preprocessing"
     
-    print("✓ Required constants are preserved")
+    # Verify that frames are read on-demand via VideoCapture
+    assert "video_capture.read()" in content, "Should read frames on-demand from VideoCapture"
+    
+    print("✓ Video node is memory efficient")
 
 
 if __name__ == '__main__':
     test_new_architecture_data_structures()
     test_preprocess_video_method()
-    test_get_spectrogram_for_frame_method()
+    test_get_audio_chunk_for_frame_method()
     test_callback_uses_preprocess()
     test_update_method_simplified()
     test_old_prepare_method_removed()
     test_python_syntax_valid()
-    test_constants_preserved()
+    test_memory_efficiency()
     print("\n✓ All frame-by-frame architecture tests passed successfully!")
 

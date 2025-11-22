@@ -105,12 +105,13 @@ def test_frame_timing_logic():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Check timing calculation
-    assert 'frame_interval = (1.0 / target_fps) / playback_speed' in content, \
+    # Check timing calculation (allow for multi-line formatting)
+    assert 'frame_interval' in content and '(1.0 / target_fps) / playback_speed' in content, \
         "Should calculate frame_interval based on FPS and speed"
     
-    # Check timing check
-    assert 'should_read_frame = (last_time is None) or ((current_time - last_time) >= frame_interval)' in content, \
+    # Check timing check (allow for multi-line formatting)
+    assert 'should_read_frame = (last_time is None) or' in content and \
+           '(current_time - last_time) >= frame_interval' in content, \
         "Should check if enough time has passed to read next frame"
     
     # Check frame time recording
