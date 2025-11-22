@@ -361,7 +361,13 @@ class Node(Node):
             start_time = time.monotonic()
 
         if audio_data is not None:
-            frame = create_spectrogram(audio_data, sample_rate, method=method)
+            frame = create_spectrogram(
+                audio_data, 
+                sample_rate, 
+                n_fft=2048, 
+                hop_length=512, 
+                method=method
+            )
 
         if audio_data is not None and use_pref_counter:
             elapsed_time = time.monotonic() - start_time
