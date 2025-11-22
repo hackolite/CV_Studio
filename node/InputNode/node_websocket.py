@@ -71,7 +71,7 @@ class FactoryNode:
                 label=label,
                 tag=tag,
                 enabled=False,
-                width=300
+                width=small_window_w
             )
             dpg.bind_item_theme(btn, yellow_button_theme)
             return btn  
@@ -80,11 +80,11 @@ class FactoryNode:
         with dpg.node(tag=node.tag_node_name, parent=parent, label=node.node_label, pos=pos):  
             # Input field for link
             with dpg.node_attribute(tag=node.tag_node_input_text_name, attribute_type=dpg.mvNode_Attr_Static):
-                dpg.add_input_text(tag=node.tag_node_input_text_value_name, width=300, hint="Entrer une URL")
+                dpg.add_input_text(tag=node.tag_node_input_text_value_name, width=small_window_w, hint="Entrer une URL")
         
             # Start button
             with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
-                btn = dpg.add_button(label="Start", tag=tag_start_button, callback=callback, user_data=tag_input_url, width=300)
+                btn = dpg.add_button(label="Start", tag=tag_start_button, callback=callback, user_data=tag_input_url, width=small_window_w)
                 dpg.bind_item_theme(btn, yellow_button_theme)
                 
             # Outputs
