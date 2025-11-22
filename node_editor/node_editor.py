@@ -49,8 +49,8 @@ def node_style(module_name):
 class DpgNodeEditor(object):
     _ver = "0.0.1"
 
-    _node_editor_tag = "NodeEditor"
-    _node_editor_label = "NodeEditor"
+    _node_editor_tag = "CV_STUDIO"
+    _node_editor_label = "CV_STUDIO"
 
     _node_id = 0
     _node_instance_list = {}
