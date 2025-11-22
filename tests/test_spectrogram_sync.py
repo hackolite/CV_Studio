@@ -64,7 +64,7 @@ def test_preprocess_video_method():
 
 
 def test_get_audio_chunk_for_frame_method():
-    """Test that _get_audio_chunk_for_frame method exists (spectrogram removed)"""
+    """Test that _get_audio_chunk_for_frame method exists and works correctly"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -118,7 +118,7 @@ def test_callback_uses_preprocess():
 
 
 def test_update_method_simplified():
-    """Test that update method uses simplified audio lookup (spectrogram removed)"""
+    """Test that update method uses simplified audio chunk lookup"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
