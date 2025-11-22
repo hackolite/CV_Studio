@@ -418,6 +418,18 @@ class Node(Node):
         ):
             debug_image = copy.deepcopy(image)
             logger.debug(f"Drawing object detection info on image with shape: {debug_image.shape}")
+            
+            # Calculate adaptive font scale and thickness based on image size
+            # Use the smaller dimension to ensure text is always readable
+            image_height, image_width = debug_image.shape[:2]
+            min_dimension = min(image_height, image_width)
+            
+            # Scale font size: base size of 0.9 for ~640px, scale proportionally
+            font_scale = max(0.3, min(2.0, (min_dimension / 640.0) * 0.9))
+            
+            # Scale thickness: base thickness of 3 for ~640px, scale proportionally
+            adaptive_thickness = max(1, int((min_dimension / 640.0) * thickness))
+            
             for bbox, score, class_id in zip(bboxes, scores, class_ids):
                 x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
 
@@ -431,21 +443,30 @@ class Node(Node):
                     (x1, y1),
                     (x2, y2),
                     color,
-                    thickness=thickness,
+                    thickness=adaptive_thickness,
                 )
 
 
                 score = '%.2f' % score
                 text = '%s:%s(%s)' % (int(class_id), str(
                     class_names[int(class_id)]), score)
+                
+                # Calculate text size to position it better
+                (text_width, text_height), baseline = cv2.getTextSize(
+                    text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, adaptive_thickness
+                )
+                
+                # Position text above the bounding box with some padding
+                text_y = max(y1 - 5, text_height + 5)
+                
                 debug_image = cv2.putText(
                     debug_image,
                     text,
-                    (x1, y1 - 12),
+                    (x1, text_y),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.9,
+                    font_scale,
                     color,
-                    thickness=thickness,
+                    thickness=adaptive_thickness,
                 )
 
             return debug_image
