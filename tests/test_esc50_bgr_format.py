@@ -22,28 +22,37 @@ def test_spectrogram_outputs_bgr():
     with open(file_path, 'r') as f:
         content = f.read()
     
-    # Verify that the function no longer converts to RGB
-    assert 'COLOR_BGR2RGB' not in content or 'colored_bgr' in content, \
-        "Spectrogram should output BGR, not RGB"
-    
     # Verify that applyColorMap is used (which returns BGR)
     assert 'applyColorMap' in content, \
         "Should use cv2.applyColorMap which returns BGR"
     
-    # Verify it returns BGR
-    in_create_spec = False
+    # Extract the create_spectrogram_custom function
     lines = content.split('\n')
-    for i, line in enumerate(lines):
+    in_function = False
+    function_lines = []
+    
+    for line in lines:
         if 'def create_spectrogram_custom' in line:
-            in_create_spec = True
-        elif in_create_spec and 'def ' in line and 'create_spectrogram_custom' not in line:
-            in_create_spec = False
-        elif in_create_spec and 'return' in line and 'flipud' in line:
-            # Found the return statement
-            # It should return BGR (colored_bgr) not RGB (colored_rgb)
-            assert 'colored_bgr' in line or 'colored)' in line, \
-                "Should return BGR format"
-            break
+            in_function = True
+        elif in_function:
+            if line.startswith('def ') and 'create_spectrogram_custom' not in line:
+                # Found the next function, stop
+                break
+            function_lines.append(line)
+    
+    function_code = '\n'.join(function_lines)
+    
+    # Verify that BGR->RGB conversion is NOT present in the function
+    assert 'COLOR_BGR2RGB' not in function_code, \
+        "create_spectrogram_custom should NOT convert BGR to RGB"
+    
+    # Verify that the function returns BGR by checking for colored_bgr variable
+    assert 'colored_bgr' in function_code, \
+        "Function should use 'colored_bgr' variable name to indicate BGR format"
+    
+    # Verify the return statement uses the BGR variable
+    assert 'return np.flipud(colored_bgr)' in function_code, \
+        "Function should return BGR format (colored_bgr)"
     
     print(f"✓ Spectrogram code verified to output BGR format")
     print(f"✓ Spectrogram format: BGR (compatible with OpenCV)")
@@ -104,11 +113,12 @@ def test_bgr_fix_explanation():
     print("="*70)
     print("\nPREVIOUS ISSUE:")
     print("  ❌ Spectrogram Node produced RGB (BGR→RGB conversion)")
-    print("  ❌ YoloCls expected BGR and converted again (RGB→BGR)")
+    print("  ❌ YoloCls expected BGR and converted to RGB internally")
+    print("  ❌ But received RGB, so conversion was wrong (RGB→BGR)")
     print("  ❌ Result: Double conversion corrupted colors!")
     print("\nFIX APPLIED:")
     print("  ✅ Spectrogram Node now outputs BGR (removed extra conversion)")
-    print("  ✅ YoloCls receives BGR and converts to RGB (correct flow)")
+    print("  ✅ YoloCls receives BGR and converts to RGB correctly")
     print("  ✅ Result: Colors are correct, classification works!")
     print("\nCODE CHANGE:")
     print("  - REMOVED: cv2.cvtColor(colored, cv2.COLOR_BGR2RGB)")
