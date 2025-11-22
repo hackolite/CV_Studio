@@ -14,6 +14,13 @@ from node.node_abc import DpgNodeABC
 
 from node.basenode import Node
 
+# Import STFT-based spectrogram functions
+from node.InputNode.spectrogram_utils import (
+    fourier_transformation,
+    make_logscale,
+    create_spectrogram_from_audio
+)
+
 # Default spectrogram method
 DEFAULT_SPECTROGRAM_METHOD = 'mel'
 
@@ -184,10 +191,44 @@ def create_mfcc(audio_data, sample_rate=22050, n_fft=2048, hop_length=512, n_mfc
     return colored_spec_rgb
 
 
+def create_stft_custom(audio_data, sample_rate=22050, n_fft=2048, hop_length=512):
+    """
+    Create a custom STFT spectrogram using the fourier_transformation approach.
+    
+    This uses the STFT implementation with stride tricks and log scaling
+    as specified in the problem statement.
+    
+    Args:
+        audio_data: numpy array of audio samples
+        sample_rate: sample rate of the audio
+        n_fft: FFT window size (binsize)
+        hop_length: number of samples between successive frames (used to calculate overlap)
+        
+    Returns:
+        RGB image of the STFT spectrogram
+    """
+    if audio_data is None or len(audio_data) == 0:
+        return None
+    
+    # Calculate overlap factor from hop_length
+    # hop_length = n_fft - floor(overlap_fac * n_fft)
+    # => overlap_fac = (n_fft - hop_length) / n_fft
+    overlap_fac = (n_fft - hop_length) / n_fft
+    
+    # Use the custom STFT implementation
+    return create_spectrogram_from_audio(
+        audio_data, 
+        sample_rate=sample_rate, 
+        binsize=n_fft, 
+        colormap="jet"
+    )
+
+
 # Method dispatch mapping
 SPECTROGRAM_METHODS = {
     'mel': create_mel_spectrogram,
     'stft': create_stft_spectrogram,
+    'stft_custom': create_stft_custom,
     'chromagram': create_chromagram,
     'mfcc': create_mfcc,
 }
@@ -202,7 +243,7 @@ def create_spectrogram(audio_data, sample_rate=22050, n_fft=2048, hop_length=512
         sample_rate: sample rate of the audio
         n_fft: FFT window size
         hop_length: number of samples between successive frames
-        method: spectrogram method ('mel', 'stft', 'chromagram', 'mfcc')
+        method: spectrogram method ('mel', 'stft', 'stft_custom', 'chromagram', 'mfcc')
         
     Returns:
         RGB image of the spectrogram
@@ -210,6 +251,8 @@ def create_spectrogram(audio_data, sample_rate=22050, n_fft=2048, hop_length=512
     Note:
         The MFCC method uses a fixed n_mfcc=20 parameter internally, which is
         the standard for most speech and audio ML applications.
+        The 'stft_custom' method uses the fourier_transformation approach with
+        log scaling as specified in the requirements.
     """
     # Get the appropriate method function, default to mel if unknown
     method_func = SPECTROGRAM_METHODS.get(method, create_mel_spectrogram)
@@ -289,7 +332,7 @@ class FactoryNode:
             ):
                 dpg.add_combo(
                     tag=node.tag_node_method_name,
-                    items=['mel', 'stft', 'chromagram', 'mfcc'],
+                    items=['mel', 'stft', 'stft_custom', 'chromagram', 'mfcc'],
                     default_value=DEFAULT_SPECTROGRAM_METHOD,
                     width=150,
                     label='Method',
