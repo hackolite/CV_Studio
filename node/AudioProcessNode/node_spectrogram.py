@@ -7,9 +7,21 @@ import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.basenode import Node
-from node.InputNode.spectrogram_utils import fourier_transformation, make_logscale
+from node.InputNode.spectrogram_utils import (
+    fourier_transformation, 
+    make_logscale, 
+    create_spectrogram_from_audio,
+    REFERENCE_AMPLITUDE
+)
 
 DEFAULT_SPECTROGRAM_METHOD = 'stft_custom'
+
+# Available spectrogram methods for future combo box implementation
+SPECTROGRAM_METHODS = {
+    'stft_custom': 'STFT Custom',
+}
+# Placeholder for combo box - dpg.add_combo(items=['stft_custom'], ...)
+SPECTROGRAM_METHOD_ITEMS = ['stft_custom']
 
 # ---------------------------
 # Générateur de spectrogramme
@@ -22,17 +34,26 @@ def create_spectrogram_custom(audio_data, sample_rate=22050, n_fft=1024, hop_len
         return None
 
     # STFT custom
-    S, freqs, ts = fourier_transformation(audio_data, sample_rate=sample_rate, binsize=n_fft)
+    S = fourier_transformation(audio_data, n_fft)
     # Log scale
-    S_log, freqs_log = make_logscale(S, freqs)
+    S_log, freqs_log = make_logscale(S, sr=sample_rate, factor=1.0)
+    # Convert to magnitude and dB
+    ims = 20. * np.log10(np.abs(S_log) / REFERENCE_AMPLITUDE)
+    # Transpose to get correct orientation (frequencies on Y-axis)
+    ims_transposed = np.transpose(ims)
     # Normalisation
-    S_norm = cv2.normalize(S_log, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    S_norm = cv2.normalize(ims_transposed, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
     # Colormap JET
     colored = cv2.applyColorMap(S_norm, cv2.COLORMAP_JET)
     # BGR → RGB
     colored_rgb = cv2.cvtColor(colored, cv2.COLOR_BGR2RGB)
     # Flip vertical
     return np.flipud(colored_rgb)
+
+# Alias for backwards compatibility with tests
+def create_stft_custom(audio_data, sample_rate=22050, n_fft=1024, hop_length=512):
+    """Alias for create_spectrogram_custom for backwards compatibility."""
+    return create_spectrogram_custom(audio_data, sample_rate, n_fft, hop_length)
 
 # ---------------------------
 # Factory Node
