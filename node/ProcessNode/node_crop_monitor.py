@@ -281,13 +281,13 @@ class Node(Node):
         max_y = float(dpg_get_value(input_value05_tag))
        
 
-        # Ensure min values are less than max values
+        # Ensure min values are less than max values (matching crop node logic)
         if min_x > max_x:
-            min_x, max_x = max_x, min_x
+            min_x, max_x = max_x - 0.01, min_x + 0.01
             dpg_set_value(input_value02_tag, min_x)
             dpg_set_value(input_value03_tag, max_x)
         if min_y > max_y:
-            min_y, max_y = max_y, min_y
+            min_y, max_y = max_y - 0.01, min_y + 0.01
             dpg_set_value(input_value04_tag, min_y)
             dpg_set_value(input_value05_tag, max_y)
 
