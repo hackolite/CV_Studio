@@ -199,7 +199,7 @@ class Node(Node):
         scale_factor = height / self._REFERENCE_HEIGHT
         font_scale = 1.0 * scale_factor  # Base 1.0, scaled by frame height
         thickness = max(1, int(3 * scale_factor))  # Base 3, scaled and min 1
-        line_spacing = int(35 * scale_factor)  # Base 35, scaled by frame height
+        line_spacing = max(1, int(35 * scale_factor))  # Base 35, scaled and min 1
         
         # Calculate starting position from bottom
         num_lines = len(class_ids)

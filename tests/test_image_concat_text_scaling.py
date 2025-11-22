@@ -27,7 +27,7 @@ def test_concat_text_scaling_logic():
         scale_factor = height / REFERENCE_HEIGHT
         font_scale = 1.0 * scale_factor
         thickness = max(1, int(3 * scale_factor))
-        line_spacing = int(35 * scale_factor)
+        line_spacing = max(1, int(35 * scale_factor))
         
         # Verify calculations match expected values
         assert abs(font_scale - expected_font_scale) < 0.01, \
@@ -60,7 +60,7 @@ def test_concat_scaling_proportional():
     
     font_scale = 1.0 * scale_factor
     thickness = max(1, int(3 * scale_factor))
-    line_spacing = int(35 * scale_factor)
+    line_spacing = max(1, int(35 * scale_factor))
     
     # At 2x height, font scale should be 2x
     assert abs(font_scale - 2.0) < 0.01, "Font scale should double with height"
@@ -81,7 +81,7 @@ def test_concat_scaling_minimum_values():
     
     font_scale = 1.0 * scale_factor
     thickness = max(1, int(3 * scale_factor))
-    line_spacing = int(35 * scale_factor)
+    line_spacing = max(1, int(35 * scale_factor))
     
     # Thickness should never go below 1
     assert thickness >= 1, "Thickness should have minimum of 1"
@@ -89,8 +89,8 @@ def test_concat_scaling_minimum_values():
     # Font scale can be very small but should be positive
     assert font_scale > 0, "Font scale should be positive"
     
-    # Line spacing should be positive
-    assert line_spacing >= 0, "Line spacing should be non-negative"
+    # Line spacing should be positive to prevent text overlap
+    assert line_spacing > 0, "Line spacing should be positive"
 
 
 def test_concat_scaling_consistency():
@@ -105,7 +105,7 @@ def test_concat_scaling_consistency():
         scale_factor = height / REFERENCE_HEIGHT
         font_scale = 1.0 * scale_factor
         thickness = max(1, int(3 * scale_factor))
-        line_spacing = int(35 * scale_factor)
+        line_spacing = max(1, int(35 * scale_factor))
         
         # Each parameter should increase or stay the same as height increases
         assert font_scale >= previous_font_scale, \
