@@ -81,7 +81,8 @@ def test_spectrogram_utils_functions():
     from node.InputNode.spectrogram_utils import (
         fourier_transformation,
         make_logscale,
-        apply_colormap_to_spectrogram
+        apply_colormap_to_spectrogram,
+        REFERENCE_AMPLITUDE
     )
     
     # Create test signal
@@ -107,8 +108,8 @@ def test_spectrogram_utils_functions():
     
     # Test colormap application
     magnitude = np.abs(log_spec)
-    # Convert to dB
-    db_spec = 20. * np.log10(magnitude / 10e-6)
+    # Convert to dB using the reference amplitude constant
+    db_spec = 20. * np.log10(magnitude / REFERENCE_AMPLITUDE)
     db_transposed = np.transpose(db_spec)
     
     colored = apply_colormap_to_spectrogram(db_transposed, method='cv2', cmap='JET')

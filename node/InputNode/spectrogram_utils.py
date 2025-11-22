@@ -151,6 +151,9 @@ AVAILABLE_OPENCV_COLORMAPS = [
     'PLASMA', 'VIRIDIS', 'CIVIDIS', 'TWILIGHT', 'TWILIGHT_SHIFTED', 'TURBO'
 ]
 
+# Reference amplitude for dB conversion (1 micropascal)
+REFERENCE_AMPLITUDE = 1e-6
+
 
 def fourier_transformation(sig, frameSize, overlapFac=0.5, window=np.hanning):
     """
@@ -206,7 +209,7 @@ def make_logscale(spec, sr=44100, factor=20.):
     scale = np.unique(np.round(scale))
 
     # Créer le spectrogramme avec les nouvelles bins de fréquence
-    newspec = np.complex128(np.zeros([timebins, len(scale)]))
+    newspec = np.zeros([timebins, len(scale)], dtype=np.complex128)
     for i in range(0, len(scale)):
         if i == len(scale)-1:
             newspec[:,i] = np.sum(spec[:,int(scale[i]):], axis=1)
@@ -251,7 +254,7 @@ def plot_spectrogram(location, plotpath=None, binsize=2**10, colormap="jet"):
     sshow, freq = make_logscale(s, factor=1.0, sr=samplerate)
     
     # Convertir l'amplitude en décibels
-    ims = 20. * np.log10(np.abs(sshow) / 10e-6)
+    ims = 20. * np.log10(np.abs(sshow) / REFERENCE_AMPLITUDE)
 
     timebins, freqbins = np.shape(ims)
 
@@ -312,7 +315,7 @@ def create_spectrogram_from_audio(audio_data, sample_rate=22050, binsize=2**10, 
     sshow, freq = make_logscale(s, factor=1.0, sr=sample_rate)
     
     # Convertir l'amplitude en décibels
-    ims = 20. * np.log10(np.abs(sshow) / 10e-6)
+    ims = 20. * np.log10(np.abs(sshow) / REFERENCE_AMPLITUDE)
     
     # Transpose to get correct orientation (frequencies on Y-axis)
     ims_transposed = np.transpose(ims)

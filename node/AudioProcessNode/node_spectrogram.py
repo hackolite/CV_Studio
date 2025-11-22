@@ -211,8 +211,8 @@ def create_stft_custom(audio_data, sample_rate=22050, n_fft=2048, hop_length=512
         return None
     
     # Calculate overlap factor from hop_length
-    # hop_length = frameSize - floor(overlapFac * frameSize)
-    # => overlapFac = (frameSize - hop_length) / frameSize
+    # hop_length = n_fft - floor(overlap_fac * n_fft)
+    # => overlap_fac = (n_fft - hop_length) / n_fft
     overlap_fac = (n_fft - hop_length) / n_fft
     
     # Use the custom STFT implementation
