@@ -10,6 +10,12 @@ converting them to colored RGB images for better visualization and event detecti
 import cv2
 import numpy as np
 import matplotlib.cm as cm
+from matplotlib import pyplot as plt
+from numpy.lib import stride_tricks
+try:
+    import scipy.io.wavfile as wav
+except ImportError:
+    wav = None
 
 
 def apply_colormap_cv2(spectrogram_2d, colormap=cv2.COLORMAP_INFERNO):
@@ -144,3 +150,194 @@ AVAILABLE_OPENCV_COLORMAPS = [
     'SPRING', 'COOL', 'HSV', 'PINK', 'HOT', 'PARULA', 'MAGMA', 'INFERNO',
     'PLASMA', 'VIRIDIS', 'CIVIDIS', 'TWILIGHT', 'TWILIGHT_SHIFTED', 'TURBO'
 ]
+
+
+def fourier_transformation(sig, frameSize, overlapFac=0.5, window=np.hanning):
+    """
+    Transformée de Fourier avec fenêtrage (STFT with windowing).
+    
+    Args:
+        sig: Audio signal as numpy array
+        frameSize: Size of the FFT window
+        overlapFac: Overlap factor between frames (default 0.5 = 50% overlap)
+        window: Window function (default np.hanning)
+    
+    Returns:
+        np.ndarray: Complex-valued STFT result with shape (num_frames, frameSize//2+1)
+    """
+    win = window(frameSize)
+    hopSize = int(frameSize - np.floor(overlapFac * frameSize))
+
+    # Zeros au début pour centrer la première fenêtre sur l'échantillon 0
+    samples = np.append(np.zeros(int(np.floor(frameSize/2.0))), sig)
+    # Colonnes pour le fenêtrage
+    cols = np.ceil((len(samples) - frameSize) / float(hopSize)) + 1
+    # Zeros à la fin pour couvrir complètement les échantillons
+    samples = np.append(samples, np.zeros(frameSize))
+
+    frames = stride_tricks.as_strided(
+        samples, 
+        shape=(int(cols), frameSize), 
+        strides=(samples.strides[0]*hopSize, samples.strides[0])
+    ).copy()
+    frames *= win
+
+    return np.fft.rfft(frames)
+
+
+def make_logscale(spec, sr=44100, factor=20.):
+    """
+    Convertit le spectrogramme en échelle logarithmique.
+    
+    Args:
+        spec: Complex spectrogram array from FFT
+        sr: Sample rate (default 44100)
+        factor: Log scale factor (default 20.0)
+    
+    Returns:
+        tuple: (newspec, freqs) where:
+            - newspec: Log-scale spectrogram as complex array
+            - freqs: List of center frequencies for each bin
+    """
+    timebins, freqbins = np.shape(spec)
+
+    scale = np.linspace(0, 1, freqbins) ** factor
+    scale *= (freqbins-1)/max(scale)
+    scale = np.unique(np.round(scale))
+
+    # Créer le spectrogramme avec les nouvelles bins de fréquence
+    newspec = np.complex128(np.zeros([timebins, len(scale)]))
+    for i in range(0, len(scale)):
+        if i == len(scale)-1:
+            newspec[:,i] = np.sum(spec[:,int(scale[i]):], axis=1)
+        else:
+            newspec[:,i] = np.sum(spec[:,int(scale[i]):int(scale[i+1])], axis=1)
+
+    # Lister les fréquences centrales des bins
+    allfreqs = np.abs(np.fft.fftfreq(freqbins*2, 1./sr)[:freqbins+1])
+    freqs = []
+    for i in range(0, len(scale)):
+        if i == len(scale)-1:
+            freqs += [np.mean(allfreqs[int(scale[i]):])]
+        else:
+            freqs += [np.mean(allfreqs[int(scale[i]):int(scale[i+1])])]
+
+    return newspec, freqs
+
+
+def plot_spectrogram(location, plotpath=None, binsize=2**10, colormap="jet"):
+    """
+    Crée et sauvegarde un spectrogramme à partir d'un fichier audio.
+    
+    Args:
+        location: Chemin du fichier audio (.wav)
+        plotpath: Chemin de sauvegarde de l'image (si None, affiche à l'écran)
+        binsize: Taille de la fenêtre FFT (par défaut 1024)
+        colormap: Colormap matplotlib à utiliser
+    
+    Returns:
+        ims: Matrice du spectrogramme en décibels
+    """
+    if wav is None:
+        raise ImportError("scipy is required for plot_spectrogram. Install with: pip install scipy")
+    
+    # Lire le fichier audio
+    samplerate, samples = wav.read(location)
+    
+    # Appliquer la transformée de Fourier
+    s = fourier_transformation(samples, binsize)
+    
+    # Convertir en échelle logarithmique
+    sshow, freq = make_logscale(s, factor=1.0, sr=samplerate)
+    
+    # Convertir l'amplitude en décibels
+    ims = 20. * np.log10(np.abs(sshow) / 10e-6)
+
+    timebins, freqbins = np.shape(ims)
+
+    # Créer la figure
+    plt.figure(figsize=(15, 7.5))
+    plt.imshow(
+        np.transpose(ims), 
+        origin="lower", 
+        aspect="auto", 
+        cmap=colormap, 
+        interpolation="none"
+    )
+    
+    # Configurer les axes X (temps)
+    xlocs = np.float32(np.linspace(0, timebins-1, 5))
+    plt.xticks(
+        xlocs, 
+        ["%.02f" % l for l in ((xlocs*len(samples)/timebins)+(0.5*binsize))/samplerate]
+    )
+    
+    # Configurer les axes Y (fréquence)
+    ylocs = np.int16(np.round(np.linspace(0, freqbins-1, 10)))
+    plt.yticks(ylocs, ["%.02f" % freq[i] for i in ylocs])
+
+    if plotpath:
+        plt.savefig(plotpath, bbox_inches="tight")
+    else:
+        plt.show()
+    
+    plt.clf()
+
+    return ims
+
+
+def create_spectrogram_from_audio(audio_data, sample_rate=22050, binsize=2**10, colormap="jet"):
+    """
+    Create a spectrogram image from audio data using STFT.
+    
+    This function uses the fourier_transformation and make_logscale approach
+    to create spectrograms compatible with the CV Studio node system.
+    
+    Args:
+        audio_data: numpy array of audio samples
+        sample_rate: sample rate of the audio (default 22050)
+        binsize: FFT window size (default 1024)
+        colormap: colormap name for visualization (default "jet")
+    
+    Returns:
+        np.ndarray: RGB image of the spectrogram with shape (H, W, 3) and dtype uint8
+    """
+    if audio_data is None or len(audio_data) == 0:
+        return None
+    
+    # Appliquer la transformée de Fourier
+    s = fourier_transformation(audio_data, binsize)
+    
+    # Convertir en échelle logarithmique
+    sshow, freq = make_logscale(s, factor=1.0, sr=sample_rate)
+    
+    # Convertir l'amplitude en décibels
+    ims = 20. * np.log10(np.abs(sshow) / 10e-6)
+    
+    # Transpose to get correct orientation (frequencies on Y-axis)
+    ims_transposed = np.transpose(ims)
+    
+    # Apply colormap using existing utility
+    # Map common matplotlib colormap names to OpenCV
+    colormap_mapping = {
+        'jet': 'JET',
+        'viridis': 'VIRIDIS',
+        'inferno': 'INFERNO',
+        'plasma': 'PLASMA',
+        'magma': 'MAGMA',
+        'hot': 'HOT',
+    }
+    
+    cv_colormap = colormap_mapping.get(colormap.lower(), 'JET')
+    
+    try:
+        # Use OpenCV colormap application
+        colored_spec = apply_colormap_to_spectrogram(ims_transposed, method='cv2', cmap=cv_colormap)
+    except Exception:
+        # Fallback to matplotlib colormap
+        colored_spec = apply_colormap_to_spectrogram(ims_transposed, method='mpl', cmap=colormap.lower())
+    
+    # Flip vertically so low frequencies are at the bottom
+    colored_spec = np.flipud(colored_spec)
+    
+    return colored_spec
