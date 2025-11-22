@@ -3,7 +3,6 @@
 import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
-from node.node_abc import DpgNodeABC
 from node.basenode import Node as BaseNode
 
 
