@@ -259,8 +259,8 @@ class FactoryNode:
                 dpg.bind_item_theme(btn, yellow_button_theme)
                 return btn
 
-            # with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Output):
-            #    btn = add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
+            with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Output):
+                btn = add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
 
             with dpg.node_attribute(
                 tag=node.tag_node_output_json_name,
