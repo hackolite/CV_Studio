@@ -38,9 +38,6 @@ class FactoryNode:
         node.tag_node_output_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJson'
         node.tag_node_output_json_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJsonValue'
 
-        node.tag_node_output_float_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloat'
-        node.tag_node_output_float_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':OutputFloatValue'
-
         node.tag_node_output_type_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':OutputType'
         node.tag_node_output_type_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':OutputTypeValue'
 
@@ -93,9 +90,6 @@ class FactoryNode:
                     
             with dpg.node_attribute(tag=node.tag_node_output_json_name, attribute_type=dpg.mvNode_Attr_Output):
                 add_yellow_disabled_button("JSON", node.tag_node_output_json_value_name)
-
-            with dpg.node_attribute(tag=node.tag_node_output_float_name, attribute_type=dpg.mvNode_Attr_Static):
-                add_yellow_disabled_button("Float", node.tag_node_output_float_value_name)
                     
         return node
 
