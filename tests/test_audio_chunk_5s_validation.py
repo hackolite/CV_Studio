@@ -111,8 +111,9 @@ def test_audio_chunks_are_5_seconds():
         # Assert all chunks are valid
         assert all_chunks_valid, "All chunks should be exactly 5 seconds"
         
-        # For 12.5 seconds of audio with 1 second steps, we expect:
-        # Chunks at: 0s, 1s, 2s, 3s, 4s, 5s, 6s, 7s, and one padded chunk starting at 8s
+        # For 12.5 seconds of audio with 5s chunks and 1s steps:
+        # Full 5s chunks starting at: 0s, 1s, 2s, 3s, 4s, 5s, 6s, 7s (8 chunks)
+        # Remaining audio from 8s-12.5s (4.5s) gets padded to 5s (1 chunk)
         # Total: 9 chunks
         expected_num_chunks = 9
         assert len(chunks) == expected_num_chunks, \
@@ -131,7 +132,9 @@ def test_audio_chunks_exact_multiple():
     from node.InputNode.node_video import VideoNode
     
     # Create a test video with exactly 10 seconds of audio
-    # This should create 10 chunks with no padding needed
+    # With 5s chunks and 1s steps: chunks at 0s, 1s, 2s, 3s, 4s, 5s (6 full chunks)
+    # Plus remaining 4s from 6s-10s gets padded to 5s (1 chunk)
+    # Total: 7 chunks
     video_path = create_test_video_with_audio(duration_seconds=10.0)
     
     try:
@@ -164,7 +167,7 @@ def test_audio_chunks_exact_multiple():
             assert len(chunk) == expected_chunk_samples, \
                 f"Chunk {idx} should be exactly {expected_chunk_samples} samples"
         
-        print(f"✅ All {len(chunks)} audio chunks are exactly 5 seconds (no padding needed)!")
+        print(f"✅ All {len(chunks)} audio chunks are exactly 5 seconds!")
         
     finally:
         # Clean up the temporary video file
