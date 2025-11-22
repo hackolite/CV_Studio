@@ -208,8 +208,8 @@ def main():
             "Action": "ActionNode",
             "Overlay": "OverlayNode",
             "Tracking": "TrackerNode",
-            "Video": "VideoNode",
             "Visual": "VisualNode",
+            "Video": "VideoNode",
         }
     )
 
