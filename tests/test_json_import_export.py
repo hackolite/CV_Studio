@@ -15,10 +15,15 @@ import pytest
 # Add the parent directory to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+# Mock dearpygui for direct execution (when not using pytest)
+if 'dearpygui' not in sys.modules:
+    sys.modules['dearpygui'] = MagicMock()
+    sys.modules['dearpygui.dearpygui'] = MagicMock()
+
 
 @pytest.fixture(autouse=True)
 def mock_dearpygui():
-    """Mock dearpygui for all tests in this module"""
+    """Mock dearpygui for all tests in this module when using pytest"""
     with patch.dict('sys.modules', {
         'dearpygui': MagicMock(),
         'dearpygui.dearpygui': MagicMock()
@@ -305,14 +310,23 @@ def test_import_handles_empty_file():
 
 
 if __name__ == "__main__":
+    import tempfile
+    
     print("=" * 60)
     print("Testing JSON Import/Export Functionality")
+    print("=" * 60)
+    print("Note: Use 'pytest tests/test_json_import_export.py' for best results")
     print("=" * 60)
     
     try:
         test_export_uses_correct_dictionary()
         test_import_uses_factory_to_create_nodes()
-        test_export_import_roundtrip()
+        
+        # Create temp directory for roundtrip test
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from pathlib import Path
+            test_export_import_roundtrip(Path(tmpdir))
+        
         test_import_handles_empty_file()
         
         print("\n" + "=" * 60)
