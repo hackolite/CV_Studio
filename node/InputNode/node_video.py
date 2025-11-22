@@ -533,6 +533,7 @@ class VideoNode(Node):
         chunk_index = max(0, min(chunk_index, len(chunk_paths) - 1))
         
         # Load audio chunk from WAV file
+        chunk_path = None
         try:
             chunk_path = chunk_paths[chunk_index]
             if os.path.exists(chunk_path):
@@ -543,7 +544,10 @@ class VideoNode(Node):
                     'sample_rate': sample_rate
                 }
         except Exception as e:
-            print(f"⚠️ Failed to load audio chunk {chunk_index} from {chunk_path}: {e}")
+            if chunk_path:
+                print(f"⚠️ Failed to load audio chunk {chunk_index} from {chunk_path}: {e}")
+            else:
+                print(f"⚠️ Failed to load audio chunk {chunk_index}: {e}")
         
         return None
 
