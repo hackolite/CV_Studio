@@ -130,10 +130,10 @@ class FactoryNode:
                 )  # Yellow background
                 dpg.add_theme_color(
                     dpg.mvThemeCol_ButtonHovered, (255, 255, 153, 255)
-                )  # Light yellow on hover
+                )  # Yellow on hover
                 dpg.add_theme_color(
                     dpg.mvThemeCol_ButtonActive, (255, 255, 153, 255)
-                )  # Darker yellow on press
+                )  # Yellow on press
 
         with dpg.file_dialog(
             directory_selector=False,
