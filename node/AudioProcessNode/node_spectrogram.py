@@ -188,12 +188,21 @@ class Node(BaseNode):
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
-        small_window_w = self._opencv_setting_dict['process_width']
-        small_window_h = self._opencv_setting_dict['process_height']
-        use_pref_counter = self._opencv_setting_dict['use_pref_counter']
+        # Handle case when _opencv_setting_dict is None
+        if self._opencv_setting_dict is None:
+            small_window_w = 240
+            small_window_h = 135
+            use_pref_counter = False
+        else:
+            small_window_w = self._opencv_setting_dict['process_width']
+            small_window_h = self._opencv_setting_dict['process_height']
+            use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
         # Get the selected method
-        method = dpg_get_value(input_value02_tag)
+        try:
+            method = dpg_get_value(input_value02_tag)
+        except:
+            method = 'mel'  # Default method if dpg is not available
 
         # Get audio input
         audio_data = None
@@ -236,15 +245,21 @@ class Node(BaseNode):
         if frame is not None and use_pref_counter:
             elapsed_time = time.monotonic() - start_time
             elapsed_time = int(elapsed_time * 1000)
-            dpg_set_value(output_value02_tag, str(elapsed_time).zfill(4) + 'ms')
+            try:
+                dpg_set_value(output_value02_tag, str(elapsed_time).zfill(4) + 'ms')
+            except:
+                pass  # Ignore if DPG is not available
 
         if frame is not None:
-            texture = self.convert_cv_to_dpg(
-                frame,
-                small_window_w,
-                small_window_h,
-            )
-            dpg_set_value(output_value01_tag, texture)
+            try:
+                texture = self.convert_cv_to_dpg(
+                    frame,
+                    small_window_w,
+                    small_window_h,
+                )
+                dpg_set_value(output_value01_tag, texture)
+            except:
+                pass  # Ignore if DPG is not available
 
         return {"image": frame, "json": None, "audio": None}
 
