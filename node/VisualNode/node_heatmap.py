@@ -112,7 +112,7 @@ class FactoryNode:
                     callback=None,
                 )
 
-            # Add decay slider for heatmap memory control
+            # Add Memory slider for heatmap memory control
             node.tag_node_input04_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input04'
             node.tag_node_input04_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input04Value'
             
@@ -244,8 +244,8 @@ class Node(Node):
                     x1, y1, x2, y2 = map(int, box)
                     heatmap[y1:y2, x1:x2] += score
 
-                # Accumulate with decay (memory effect)
-                # Higher decay value = longer memory (0.98 retains 98% of previous values)
+                # Accumulate with memory retention
+                # Higher memory value = longer retention (0.98 retains 98% of previous values)
                 self.heatmap_accum = self.heatmap_accum * decay + heatmap
 
                 # Normalisation with division by zero check
