@@ -32,8 +32,10 @@ class FactoryNode:
 
         node = Node()
         node.tag_node_name = str(node_id) + ':' + node.node_tag
-        node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input01'
-        node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input01Value'
+        node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Input01'
+        node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Input01Value'
+        node.tag_node_input02_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input02'
+        node.tag_node_input02_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input02Value'
         node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
         node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
         node.tag_node_output02_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
@@ -42,6 +44,10 @@ class FactoryNode:
         # Alpha slider for transparency
         node.tag_node_alpha_name = node.tag_node_name + ':Alpha'
         node.tag_node_alpha_value_name = node.tag_node_name + ':AlphaValue'
+        
+        # Class selection dropdown
+        node.tag_node_class_name = node.tag_node_name + ':Class'
+        node.tag_node_class_value_name = node.tag_node_name + ':ClassValue'
 
 
         node._opencv_setting_dict = opencv_setting_dict
@@ -81,6 +87,15 @@ class FactoryNode:
             ):
                 dpg.add_text(
                     tag=node.tag_node_input01_value_name,
+                    default_value='Input image (optional)',
+                )
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_input02_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_input02_value_name,
                     default_value='Input detection JSON',
                 )
 
@@ -89,6 +104,18 @@ class FactoryNode:
                     attribute_type=dpg.mvNode_Attr_Output,
             ):
                 dpg.add_image(node.tag_node_output01_value_name)
+
+            # Class selection dropdown
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_class_value_name,
+                    label="Class",
+                    items=["All", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+                    default_value="All",
+                    width=small_window_w - 100,
+                )
 
             # Alpha slider
             with dpg.node_attribute(
@@ -153,6 +180,7 @@ class Node(Node):
     ):
         tag_node_name = str(node_id) + ':' + self.node_tag
         alpha_tag = tag_node_name + ':AlphaValue'
+        class_tag = tag_node_name + ':ClassValue'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
@@ -161,21 +189,27 @@ class Node(Node):
         
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
-        # Get decay factor
+        # Get decay factor and selected class
         decay = dpg_get_value(alpha_tag)
+        selected_class = dpg_get_value(class_tag)
 
-        # Find connected source for JSON data
-        connection_info_src = ''
+        # Find connected sources for JSON and IMAGE data
+        connection_info_src_json = ''
+        connection_info_src_image = ''
         for connection_info in connection_list:
             connection_type = connection_info[0].split(':')[2]
             if connection_type == self.TYPE_JSON:
-                connection_info_src = connection_info[0]
-                connection_info_src = connection_info_src.split(':')[:2]
-                connection_info_src = ':'.join(connection_info_src)
-                break
+                connection_info_src_json = connection_info[0]
+                connection_info_src_json = connection_info_src_json.split(':')[:2]
+                connection_info_src_json = ':'.join(connection_info_src_json)
+            elif connection_type == self.TYPE_IMAGE:
+                connection_info_src_image = connection_info[0]
+                connection_info_src_image = connection_info_src_image.split(':')[:2]
+                connection_info_src_image = ':'.join(connection_info_src_image)
 
-        # Get detection data
-        node_result = node_result_dict.get(connection_info_src, {})
+        # Get detection data and input image
+        node_result = node_result_dict.get(connection_info_src_json, {})
+        input_image = node_image_dict.get(connection_info_src_image, None)
         
         if use_pref_counter:
             start_time = time.monotonic()
@@ -186,13 +220,22 @@ class Node(Node):
             # Extract detection data
             bboxes = node_result.get('bboxes', [])
             scores = node_result.get('scores', [])
+            class_ids = node_result.get('class_ids', [])
             
             if bboxes and scores:
                 # Create temporary heatmap for current frame
                 temp_heatmap = np.zeros_like(self.heatmap_accum)
                 
-                # Add each detection to the heatmap
-                for bbox, score in zip(bboxes, scores):
+                # Filter and add each detection to the heatmap based on selected class
+                for idx, (bbox, score) in enumerate(zip(bboxes, scores)):
+                    # Check if we should include this detection based on class filter
+                    if selected_class != "All":
+                        # Skip if class_ids not available or doesn't match selected class
+                        if not class_ids or idx >= len(class_ids):
+                            continue
+                        if int(class_ids[idx]) != int(selected_class):
+                            continue
+                    
                     x1, y1, x2, y2 = map(int, bbox)
                     
                     # Clip coordinates to image bounds
@@ -226,7 +269,19 @@ class Node(Node):
         heatmap_display = cv2.GaussianBlur(heatmap_display, (25, 25), 0)
         
         # Apply colormap (JET colormap for hot-cold visualization)
-        heatmap_image = cv2.applyColorMap(heatmap_display, cv2.COLORMAP_JET)
+        heatmap_colored = cv2.applyColorMap(heatmap_display, cv2.COLORMAP_JET)
+        
+        # Overlay heatmap with input image if available
+        if input_image is not None:
+            # Resize input image if needed
+            if input_image.shape[:2] != (small_window_h, small_window_w):
+                input_image = cv2.resize(input_image, (small_window_w, small_window_h))
+            
+            # Blend heatmap with input image (0.6 heatmap, 0.4 original image)
+            heatmap_image = cv2.addWeighted(input_image, 0.4, heatmap_colored, 0.6, 0)
+        else:
+            # No input image, just use the heatmap
+            heatmap_image = heatmap_colored
 
         if use_pref_counter:
             elapsed_time = time.monotonic() - start_time
@@ -252,8 +307,10 @@ class Node(Node):
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
         alpha_tag = tag_node_name + ':AlphaValue'
+        class_tag = tag_node_name + ':ClassValue'
 
         decay = dpg_get_value(alpha_tag)
+        selected_class = dpg_get_value(class_tag)
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -261,12 +318,16 @@ class Node(Node):
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
         setting_dict[alpha_tag] = decay
+        setting_dict[class_tag] = selected_class
 
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = str(node_id) + ':' + self.node_tag
         alpha_tag = tag_node_name + ':AlphaValue'
+        class_tag = tag_node_name + ':ClassValue'
 
         decay = setting_dict.get(alpha_tag, 0.95)
+        selected_class = setting_dict.get(class_tag, "All")
         dpg_set_value(alpha_tag, decay)
+        dpg_set_value(class_tag, selected_class)
