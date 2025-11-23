@@ -1,0 +1,272 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import time
+
+import cv2
+import numpy as np
+import dearpygui.dearpygui as dpg
+
+from node_editor.util import dpg_get_value, dpg_set_value
+
+from node.node_abc import DpgNodeABC
+from node.basenode import Node
+
+
+class FactoryNode:
+    node_label = 'ObjHeatmap'
+    node_tag = 'ObjHeatmap'
+    
+
+    def __init__(self):
+        pass
+
+
+    def add_node(
+        self,
+        parent,
+        node_id,
+        pos=[0, 0],
+        opencv_setting_dict=None,
+        callback=None,
+    ):
+
+        node = Node()
+        node.tag_node_name = str(node_id) + ':' + node.node_tag
+        node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input01'
+        node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input01Value'
+        node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
+        node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
+        node.tag_node_output02_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
+        node.tag_node_output02_value_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02Value'
+
+        # Alpha slider for transparency
+        node.tag_node_alpha_name = node.tag_node_name + ':Alpha'
+        node.tag_node_alpha_value_name = node.tag_node_name + ':AlphaValue'
+
+
+        node._opencv_setting_dict = opencv_setting_dict
+        small_window_w = node._opencv_setting_dict['process_width']
+        small_window_h = node._opencv_setting_dict['process_height']
+        use_pref_counter = node._opencv_setting_dict['use_pref_counter']
+
+
+        black_image = np.zeros((small_window_h, small_window_w, 3))
+        black_texture = node.convert_cv_to_dpg(
+            black_image,
+            small_window_w,
+            small_window_h,
+        )
+
+
+        with dpg.texture_registry(show=False):
+            dpg.add_raw_texture(
+                small_window_w,
+                small_window_h,
+                black_texture,
+                tag=node.tag_node_output01_value_name,
+                format=dpg.mvFormat_Float_rgb,
+            )
+
+
+        with dpg.node(
+                tag=node.tag_node_name,
+                parent=parent,
+                label=node.node_label,
+                pos=pos,
+        ):
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_input01_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_input01_value_name,
+                    default_value='Input detection JSON',
+                )
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_output01_name,
+                    attribute_type=dpg.mvNode_Attr_Output,
+            ):
+                dpg.add_image(node.tag_node_output01_value_name)
+
+            # Alpha slider
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_alpha_value_name,
+                    label="Decay",
+                    width=small_window_w - 80,
+                    default_value=0.95,
+                    min_value=0.5,
+                    max_value=0.99,
+                    callback=None,
+                )
+
+            if use_pref_counter:
+                with dpg.node_attribute(
+                        tag=node.tag_node_output02_name,
+                        attribute_type=dpg.mvNode_Attr_Output,
+                ):
+                    dpg.add_text(
+                        tag=node.tag_node_output02_value_name,
+                        default_value='elapsed time(ms)',
+                    )
+
+        return node
+
+
+class Node(Node):
+    _ver = '0.0.1'
+
+    node_label = 'ObjHeatmap'
+    node_tag = 'ObjHeatmap'
+
+    
+    def __init__(self, opencv_setting_dict=None):
+        super().__init__()
+
+        if opencv_setting_dict is None:
+            # Default values
+            opencv_setting_dict = {
+                'process_height': 400,
+                'process_width': 600
+            }
+
+        self._opencv_setting_dict = opencv_setting_dict
+        
+        # Accumulator for heatmap
+        self.heatmap_accum = np.zeros((
+            self._opencv_setting_dict['process_height'],
+            self._opencv_setting_dict['process_width']
+        ), dtype=np.float32)
+
+
+    def update(
+        self,
+        node_id,
+        connection_list,
+        node_image_dict,
+        node_result_dict,
+        node_audio_dict,
+    ):
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        alpha_tag = tag_node_name + ':AlphaValue'
+        output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
+        output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
+
+        small_window_w = self._opencv_setting_dict['process_width']
+        small_window_h = self._opencv_setting_dict['process_height']
+        
+        use_pref_counter = self._opencv_setting_dict['use_pref_counter']
+
+        # Get decay factor
+        decay = dpg_get_value(alpha_tag)
+
+        # Find connected source for JSON data
+        connection_info_src = ''
+        for connection_info in connection_list:
+            connection_type = connection_info[0].split(':')[2]
+            if connection_type == self.TYPE_JSON:
+                connection_info_src = connection_info[0]
+                connection_info_src = connection_info_src.split(':')[:2]
+                connection_info_src = ':'.join(connection_info_src)
+                break
+
+        # Get detection data
+        node_result = node_result_dict.get(connection_info_src, {})
+        
+        if use_pref_counter:
+            start_time = time.monotonic()
+
+        heatmap_image = None
+        
+        if node_result and isinstance(node_result, dict):
+            # Extract detection data
+            bboxes = node_result.get('bboxes', [])
+            scores = node_result.get('scores', [])
+            
+            if bboxes and scores:
+                # Create temporary heatmap for current frame
+                temp_heatmap = np.zeros_like(self.heatmap_accum)
+                
+                # Add each detection to the heatmap
+                for bbox, score in zip(bboxes, scores):
+                    x1, y1, x2, y2 = map(int, bbox)
+                    
+                    # Clip coordinates to image bounds
+                    x1 = max(0, min(x1, small_window_w - 1))
+                    x2 = max(0, min(x2, small_window_w - 1))
+                    y1 = max(0, min(y1, small_window_h - 1))
+                    y2 = max(0, min(y2, small_window_h - 1))
+                    
+                    # Add score to the bounding box region
+                    if x2 > x1 and y2 > y1:
+                        temp_heatmap[y1:y2, x1:x2] += score
+                
+                # Apply decay and accumulate
+                self.heatmap_accum = self.heatmap_accum * decay + temp_heatmap
+            else:
+                # No detections, just decay
+                self.heatmap_accum = self.heatmap_accum * decay
+        else:
+            # No detection data, just decay
+            self.heatmap_accum = self.heatmap_accum * decay
+        
+        # Normalize and create colored heatmap
+        if self.heatmap_accum.max() > 0:
+            heatmap_norm = np.clip(self.heatmap_accum / self.heatmap_accum.max(), 0, 1)
+        else:
+            heatmap_norm = self.heatmap_accum
+        
+        heatmap_display = (heatmap_norm * 255).astype(np.uint8)
+        
+        # Apply Gaussian blur for smoother appearance
+        heatmap_display = cv2.GaussianBlur(heatmap_display, (25, 25), 0)
+        
+        # Apply colormap (JET colormap for hot-cold visualization)
+        heatmap_image = cv2.applyColorMap(heatmap_display, cv2.COLORMAP_JET)
+
+        if use_pref_counter:
+            elapsed_time = time.monotonic() - start_time
+            elapsed_time = int(elapsed_time * 1000)
+            dpg_set_value(output_value02_tag,
+                          str(elapsed_time).zfill(4) + 'ms')
+
+        if heatmap_image is not None:
+            texture = self.convert_cv_to_dpg(
+                heatmap_image,
+                small_window_w,
+                small_window_h,
+            )
+            dpg_set_value(output_value01_tag, texture)
+
+        return {"image": heatmap_image, "json": None, "audio": None}
+
+
+    def close(self, node_id):
+        pass
+
+
+    def get_setting_dict(self, node_id):
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        alpha_tag = tag_node_name + ':AlphaValue'
+
+        decay = dpg_get_value(alpha_tag)
+
+        pos = dpg.get_item_pos(tag_node_name)
+
+        setting_dict = {}
+        setting_dict['ver'] = self._ver
+        setting_dict['pos'] = pos
+        setting_dict[alpha_tag] = decay
+
+        return setting_dict
+
+    def set_setting_dict(self, node_id, setting_dict):
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        alpha_tag = tag_node_name + ':AlphaValue'
+
+        decay = setting_dict.get(alpha_tag, 0.95)
+        dpg_set_value(alpha_tag, decay)
