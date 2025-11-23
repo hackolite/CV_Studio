@@ -226,6 +226,8 @@ class Node(BaseNode):
                     # Handle legacy tuple format for backward compatibility
                     elif isinstance(audio_dict_entry, (list, tuple)) and len(audio_dict_entry) == 2:
                         audio_data, sample_rate = audio_dict_entry
+                    else:
+                        logger.warning(f"Unexpected audio data format: {type(audio_dict_entry)}")
                 break
 
         frame = None
