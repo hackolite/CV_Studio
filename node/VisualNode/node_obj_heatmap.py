@@ -218,7 +218,6 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         alpha_tag = tag_node_name + ':AlphaValue'
         class_tag = tag_node_name + ':ClassValue'
-        input_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01Value'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
