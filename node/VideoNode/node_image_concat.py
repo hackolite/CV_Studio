@@ -177,10 +177,19 @@ class Node(Node):
         class_ids,
         class_scores,
         class_names,
+        target_height=None,
     ):
         """
         Override base class method to display classification results
         bigger and at the bottom left of the image.
+        
+        Args:
+            image: Input image to draw on
+            class_ids: List of class IDs
+            class_scores: List of class scores
+            class_names: List of class names
+            target_height: Target height for text scaling (used when image will be resized).
+                          If None, uses the current image height.
         """
         debug_image = copy.deepcopy(image)
         height, width = debug_image.shape[:2]
@@ -194,9 +203,11 @@ class Node(Node):
             (255, 0, 255),    # Position 5 (index 4): Magenta
         ]
         
-        # Scale text parameters based on frame height
+        # Scale text parameters based on target height (or current height if not specified)
         # Reference height is 480px - text parameters are optimized for this size
-        scale_factor = height / self._REFERENCE_HEIGHT
+        # Use target_height for scaling when provided (for concat node resizing)
+        scaling_height = target_height if target_height is not None else height
+        scale_factor = scaling_height / self._REFERENCE_HEIGHT
         font_scale = 1.0 * scale_factor  # Base 1.0, scaled by frame height
         thickness = max(1, int(3 * scale_factor))  # Base 3, scaled and min 1
         line_spacing = max(1, int(35 * scale_factor))  # Base 35, scaled and min 1
@@ -254,7 +265,7 @@ class Node(Node):
                     if draw_info_on_result:
                         node_result = node_result_dict[node_id_name]
                         image_node_name = node_id_name.split(':')[1]
-                        frame = self.draw_info(image_node_name, node_result, frame)
+                        frame = self.draw_info(image_node_name, node_result, frame, target_height=resize_height)
                     resize_frame = cv2.resize(frame, (resize_width, resize_height))
                     frame_dict[slot_num - index - 1] = copy.deepcopy(resize_frame)
 
@@ -408,7 +419,7 @@ class Node(Node):
 
 
 
-    def draw_info(self, node_name, node_result, image):
+    def draw_info(self, node_name, node_result, image, target_height=None):
         # need some abstraction here
         print("node name :", node_name, "node_result :", node_result)
         classification_nodes = ['Classification']
@@ -432,6 +443,9 @@ class Node(Node):
                 od_class_ids = node_result.get('od_class_ids', [])
                 od_class_names = node_result.get('od_class_names', [])
                 od_score_th = node_result.get('od_score_th', [])
+                # Note: draw_classification_with_od_info uses fixed font size (0.9) from base class
+                # and doesn't have the same scaling issue as draw_classification_info.
+                # If dynamic scaling is needed in the future, override this method.
                 debug_image = self.draw_classification_with_od_info(
                     debug_image,
                     class_ids,
@@ -450,6 +464,7 @@ class Node(Node):
                     class_ids,
                     class_scores,
                     class_names,
+                    target_height=target_height,
                 )
         elif node_name in object_detection_nodes:
             bboxes = node_result.get('bboxes', [])
