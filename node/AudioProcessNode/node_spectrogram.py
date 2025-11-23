@@ -26,7 +26,7 @@ SPECTROGRAM_METHOD_ITEMS = ['stft_custom']
 # ---------------------------
 # Générateur de spectrogramme
 # ---------------------------
-def create_spectrogram_custom(audio_data, sample_rate=22050, n_fft=1024, hop_length=512):
+def create_spectrogram_custom(audio_data, sample_rate=44100, n_fft=1024, hop_length=512):
     """
     Crée un spectrogramme compatible avec le modèle pré-entraîné.
     Returns BGR format to be compatible with OpenCV's standard image format.
@@ -50,7 +50,7 @@ def create_spectrogram_custom(audio_data, sample_rate=22050, n_fft=1024, hop_len
     return np.flipud(colored_bgr)
 
 # Alias for backwards compatibility with tests
-def create_stft_custom(audio_data, sample_rate=22050, n_fft=1024, hop_length=512):
+def create_stft_custom(audio_data, sample_rate=44100, n_fft=1024, hop_length=512):
     """Alias for create_spectrogram_custom for backwards compatibility."""
     return create_spectrogram_custom(audio_data, sample_rate, n_fft, hop_length)
 
@@ -109,14 +109,14 @@ class Node(Node):
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
         # Récupère l'audio depuis les connections
-        audio_data, sample_rate = None, 22050
+        audio_data, sample_rate = None, 44100
         for conn in connection_list:
             if conn[0].split(':')[2] == self.TYPE_AUDIO:
                 src = ':'.join(conn[0].split(':')[:2])
                 audio_dict_entry = node_audio_dict.get(src, None)
                 if audio_dict_entry:
                     audio_data = audio_dict_entry.get('data', None)
-                    sample_rate = audio_dict_entry.get('sample_rate', 22050)
+                    sample_rate = audio_dict_entry.get('sample_rate', 44100)
                 break
 
         frame = None
