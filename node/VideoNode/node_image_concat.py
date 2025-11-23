@@ -241,6 +241,85 @@ class Node(Node):
 
         return debug_image
 
+    def draw_object_detection_info(
+        self,
+        image,
+        score_th,
+        bboxes,
+        scores,
+        class_ids,
+        class_names,
+        thickness=3,
+        target_height=None,
+    ):
+        """
+        Override base class method to support target_height parameter for proper
+        text scaling when images are resized in concat node.
+        
+        Args:
+            image: Input image to draw on
+            score_th: Score threshold for filtering detections
+            bboxes: Bounding boxes
+            scores: Detection scores
+            class_ids: Class IDs
+            class_names: Class names dictionary
+            thickness: Base thickness for drawing (default: 3)
+            target_height: Target height for text scaling (used when image will be resized).
+                          If None, uses the current image height.
+        """
+        debug_image = copy.deepcopy(image)
+        image_height, image_width = debug_image.shape[:2]
+        
+        # Use target_height for scaling if provided (for concat resizing)
+        # Otherwise use current image height
+        scaling_height = target_height if target_height is not None else image_height
+        scaling_width = int(scaling_height * image_width / image_height) if target_height is not None else image_width
+        min_dimension = min(scaling_height, scaling_width)
+        
+        # Scale font size: base size of 0.9 for ~640px, scale proportionally
+        font_scale = max(0.3, min(2.0, (min_dimension / 640.0) * 0.9))
+        
+        # Scale thickness: base thickness of 3 for ~640px, scale proportionally
+        adaptive_thickness = max(1, int((min_dimension / 640.0) * thickness))
+        
+        for bbox, score, class_id in zip(bboxes, scores, class_ids):
+            x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+
+            if score_th > score:
+                continue
+
+            color = self.get_color(class_id)
+
+            debug_image = cv2.rectangle(
+                debug_image,
+                (x1, y1),
+                (x2, y2),
+                color,
+                thickness=adaptive_thickness,
+            )
+
+            score_str = '%.2f' % score
+            text = '%s:%s(%s)' % (int(class_id), str(class_names[int(class_id)]), score_str)
+            
+            # Calculate text size to position it better
+            (text_width, text_height), baseline = cv2.getTextSize(
+                text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, adaptive_thickness
+            )
+            
+            # Position text above the bounding box with some padding
+            text_y = max(y1 - 5, text_height + 5)
+            
+            debug_image = cv2.putText(
+                debug_image,
+                text,
+                (x1, text_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                font_scale,
+                color,
+                thickness=adaptive_thickness,
+            )
+
+        return debug_image
 
     def create_image_dict(
             self,
@@ -479,6 +558,7 @@ class Node(Node):
                 scores,
                 class_ids,
                 class_names,
+                target_height=target_height,
             )
         elif node_name in semantic_segmentation_nodes:
             class_num = node_result.get('class_num', [])
