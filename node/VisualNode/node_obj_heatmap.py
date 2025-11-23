@@ -273,7 +273,8 @@ class Node(Node):
 
         heatmap_image = None
         
-        if node_result and isinstance(node_result, dict):
+        # Only process and display heatmap if BOTH image and JSON data are present
+        if input_image is not None and node_result and isinstance(node_result, dict):
             # Extract detection data
             bboxes = node_result.get('bboxes', [])
             scores = node_result.get('scores', [])
@@ -314,26 +315,21 @@ class Node(Node):
             else:
                 # No detections, just decay
                 self.heatmap_accum = self.heatmap_accum * decay
-        else:
-            # No detection data, just decay
-            self.heatmap_accum = self.heatmap_accum * decay
-        
-        # Normalize and create colored heatmap
-        if self.heatmap_accum.max() > 0:
-            heatmap_norm = np.clip(self.heatmap_accum / self.heatmap_accum.max(), 0, 1)
-        else:
-            heatmap_norm = self.heatmap_accum
-        
-        heatmap_display = (heatmap_norm * 255).astype(np.uint8)
-        
-        # Apply Gaussian blur for smoother appearance
-        heatmap_display = cv2.GaussianBlur(heatmap_display, (25, 25), 0)
-        
-        # Apply colormap (JET colormap for hot-cold visualization)
-        heatmap_colored = cv2.applyColorMap(heatmap_display, cv2.COLORMAP_JET)
-        
-        # Overlay heatmap with input image if available
-        if input_image is not None:
+            
+            # Normalize and create colored heatmap
+            if self.heatmap_accum.max() > 0:
+                heatmap_norm = np.clip(self.heatmap_accum / self.heatmap_accum.max(), 0, 1)
+            else:
+                heatmap_norm = self.heatmap_accum
+            
+            heatmap_display = (heatmap_norm * 255).astype(np.uint8)
+            
+            # Apply Gaussian blur for smoother appearance
+            heatmap_display = cv2.GaussianBlur(heatmap_display, (25, 25), 0)
+            
+            # Apply colormap (JET colormap for hot-cold visualization)
+            heatmap_colored = cv2.applyColorMap(heatmap_display, cv2.COLORMAP_JET)
+            
             # Prepare input image for blending
             prepared_input = self._prepare_image_for_display(
                 input_image, small_window_w, small_window_h
@@ -341,9 +337,6 @@ class Node(Node):
             
             # Blend heatmap with input image (0.6 heatmap, 0.4 original image)
             heatmap_image = cv2.addWeighted(prepared_input, 0.4, heatmap_colored, 0.6, 0)
-        else:
-            # No input image, just use the heatmap
-            heatmap_image = heatmap_colored
 
         if use_pref_counter:
             elapsed_time = time.monotonic() - start_time
