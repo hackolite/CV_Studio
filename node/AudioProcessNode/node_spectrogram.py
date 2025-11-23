@@ -5,10 +5,12 @@ import cv2
 import numpy as np
 import dearpygui.dearpygui as dpg
 import librosa
+import traceback
 
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node as BaseNode
+from src.utils.logging import get_logger
 
 # Import STFT-based functions from spectrogram_utils
 from node.InputNode.spectrogram_utils import (
@@ -18,6 +20,8 @@ from node.InputNode.spectrogram_utils import (
     apply_colormap_to_spectrogram,
     REFERENCE_AMPLITUDE
 )
+
+logger = get_logger(__name__)
 
 
 def create_mel_spectrogram(audio_data, sample_rate=22050):
@@ -95,7 +99,7 @@ class FactoryNode:
         use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
         # Create black texture for initial display
-        black_image = np.zeros((small_window_w, small_window_h, 3))
+        black_image = np.zeros((small_window_h, small_window_w, 3))
         black_texture = node.convert_cv_to_dpg(
             black_image,
             small_window_w,
@@ -137,7 +141,7 @@ class FactoryNode:
                 dpg.add_combo(
                     items=['mel', 'stft', 'stft_custom', 'chromagram', 'mfcc'],
                     default_value='mel',
-                    width=small_window_w - 0,
+                    width=small_window_w,
                     label="Method",
                     tag=node.tag_node_input02_value_name,
                     callback=callback,
@@ -201,7 +205,8 @@ class Node(BaseNode):
         # Get the selected method
         try:
             method = dpg_get_value(input_value02_tag)
-        except:
+        except Exception as e:
+            logger.debug(f"Could not get method value from DPG: {e}")
             method = 'mel'  # Default method if dpg is not available
 
         # Get audio input
@@ -239,7 +244,7 @@ class Node(BaseNode):
                     # Default to mel
                     frame = create_mel_spectrogram(audio_data, sample_rate)
             except Exception as e:
-                print(f"Error creating spectrogram: {e}")
+                logger.error(f"Error creating {method} spectrogram: {e}", exc_info=True)
                 frame = None
 
         if frame is not None and use_pref_counter:
@@ -247,8 +252,8 @@ class Node(BaseNode):
             elapsed_time = int(elapsed_time * 1000)
             try:
                 dpg_set_value(output_value02_tag, str(elapsed_time).zfill(4) + 'ms')
-            except:
-                pass  # Ignore if DPG is not available
+            except Exception as e:
+                logger.debug(f"Could not set performance counter value: {e}")
 
         if frame is not None:
             try:
@@ -258,8 +263,8 @@ class Node(BaseNode):
                     small_window_h,
                 )
                 dpg_set_value(output_value01_tag, texture)
-            except:
-                pass  # Ignore if DPG is not available
+            except Exception as e:
+                logger.debug(f"Could not set output texture: {e}")
 
         return {"image": frame, "json": None, "audio": None}
 
