@@ -369,7 +369,7 @@ class VideoNode(Node):
                         "-i", movie_path,
                         "-vn",  # No video
                         "-acodec", "pcm_s16le",  # WAV codec
-                        "-ar", "22050",  # Sample rate
+                        "-ar", "44100",  # Sample rate (ESC-50 native sample rate)
                         "-ac", "1",  # Mono
                         "-y", tmp_audio_path,
                     ],
@@ -384,7 +384,7 @@ class VideoNode(Node):
             except subprocess.CalledProcessError as e:
                 print(f"⚠️ ffmpeg extraction failed, trying librosa: {e}")
                 # Fallback to librosa if ffmpeg fails
-                y, sr = librosa.load(movie_path, sr=22050)
+                y, sr = librosa.load(movie_path, sr=44100)
                 print(f"✅ Audio extracted with librosa (SR: {sr} Hz, Duration: {len(y)/sr:.2f}s)")
             finally:
                 # Clean up temporary full audio file

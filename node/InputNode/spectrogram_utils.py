@@ -289,7 +289,7 @@ def plot_spectrogram(location, plotpath=None, binsize=2**10, colormap="jet"):
     return ims
 
 
-def create_spectrogram_from_audio(audio_data, sample_rate=22050, binsize=2**10, colormap="jet"):
+def create_spectrogram_from_audio(audio_data, sample_rate=44100, binsize=2**10, colormap="jet"):
     """
     Create a spectrogram image from audio data using STFT.
     
@@ -298,7 +298,7 @@ def create_spectrogram_from_audio(audio_data, sample_rate=22050, binsize=2**10, 
     
     Args:
         audio_data: numpy array of audio samples
-        sample_rate: sample rate of the audio (default 22050)
+        sample_rate: sample rate of the audio (default 44100, ESC-50 native)
         binsize: FFT window size (default 1024)
         colormap: colormap name for visualization (default "jet")
     
