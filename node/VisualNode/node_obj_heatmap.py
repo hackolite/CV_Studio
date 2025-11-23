@@ -65,6 +65,15 @@ class FactoryNode:
 
 
         with dpg.texture_registry(show=False):
+            # Texture for input image display
+            dpg.add_raw_texture(
+                small_window_w,
+                small_window_h,
+                black_texture,
+                tag=node.tag_node_input01_value_name,
+                format=dpg.mvFormat_Float_rgb,
+            )
+            # Texture for output heatmap
             dpg.add_raw_texture(
                 small_window_w,
                 small_window_h,
@@ -85,10 +94,7 @@ class FactoryNode:
                     tag=node.tag_node_input01_name,
                     attribute_type=dpg.mvNode_Attr_Input,
             ):
-                dpg.add_text(
-                    tag=node.tag_node_input01_value_name,
-                    default_value='Input image (optional)',
-                )
+                dpg.add_image(node.tag_node_input01_value_name)
 
             with dpg.node_attribute(
                     tag=node.tag_node_input02_name,
@@ -181,6 +187,7 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         alpha_tag = tag_node_name + ':AlphaValue'
         class_tag = tag_node_name + ':ClassValue'
+        input_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01Value'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
@@ -210,6 +217,30 @@ class Node(Node):
         # Get detection data and input image
         node_result = node_result_dict.get(connection_info_src_json, {})
         input_image = node_image_dict.get(connection_info_src_image, None)
+        
+        # Update input image display
+        if input_image is not None:
+            # Resize and display input image
+            display_input = input_image.copy()
+            if display_input.shape[:2] != (small_window_h, small_window_w):
+                display_input = cv2.resize(display_input, (small_window_w, small_window_h))
+            
+            # Ensure display_input has 3 channels (BGR)
+            if len(display_input.shape) == 2:
+                display_input = cv2.cvtColor(display_input, cv2.COLOR_GRAY2BGR)
+            elif len(display_input.shape) == 3:
+                if display_input.shape[2] == 1:
+                    display_input = cv2.cvtColor(display_input.squeeze(axis=2), cv2.COLOR_GRAY2BGR)
+                elif display_input.shape[2] == 4:
+                    display_input = cv2.cvtColor(display_input, cv2.COLOR_BGRA2BGR)
+            
+            # Update input texture
+            input_texture = self.convert_cv_to_dpg(
+                display_input,
+                small_window_w,
+                small_window_h,
+            )
+            dpg_set_value(input_value01_tag, input_texture)
         
         if use_pref_counter:
             start_time = time.monotonic()
