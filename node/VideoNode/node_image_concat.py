@@ -272,7 +272,7 @@ class Node(Node):
             scores: Detection scores
             class_ids: Class IDs
             class_names: Class names dictionary
-            thickness: Base thickness for drawing (default: 3)
+            thickness: Base thickness for drawing (default: _OD_BASE_THICKNESS)
             target_height: Target height for text scaling (used when image will be resized).
                           If None, uses the current image height.
             target_width: Target width for text scaling (used when image will be resized).
@@ -291,6 +291,11 @@ class Node(Node):
             aspect_ratio = image_width / image_height
             scaling_height = target_height
             scaling_width = int(target_height * aspect_ratio)
+        elif target_width is not None:
+            # Only target_width provided, estimate height based on aspect ratio
+            aspect_ratio = image_height / image_width
+            scaling_height = int(target_width * aspect_ratio)
+            scaling_width = target_width
         else:
             # No target dimensions, use current image size
             scaling_height = image_height
