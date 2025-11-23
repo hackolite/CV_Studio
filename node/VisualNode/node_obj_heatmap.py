@@ -233,7 +233,11 @@ class Node(Node):
                         # Skip if class_ids not available or doesn't match selected class
                         if not class_ids or idx >= len(class_ids):
                             continue
-                        if int(class_ids[idx]) != int(selected_class):
+                        try:
+                            if int(class_ids[idx]) != int(selected_class):
+                                continue
+                        except (ValueError, TypeError):
+                            # Skip if class_id cannot be converted to int
                             continue
                     
                     x1, y1, x2, y2 = map(int, bbox)
