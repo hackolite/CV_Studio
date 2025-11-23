@@ -222,12 +222,14 @@ class Node(BaseNode):
                     # Handle dictionary format from Video node
                     if isinstance(audio_dict_entry, dict):
                         audio_data = audio_dict_entry.get('data', None)
+                        if audio_data is None:
+                            logger.warning("Audio dictionary missing 'data' key")
                         sample_rate = audio_dict_entry.get('sample_rate', 22050)
                     # Handle legacy tuple format for backward compatibility
                     elif isinstance(audio_dict_entry, (list, tuple)) and len(audio_dict_entry) == 2:
                         audio_data, sample_rate = audio_dict_entry
                     else:
-                        logger.warning(f"Unexpected audio data format: {type(audio_dict_entry)}")
+                        logger.warning(f"Unexpected audio data format: {type(audio_dict_entry)}, expected dict or tuple")
                 break
 
         frame = None
