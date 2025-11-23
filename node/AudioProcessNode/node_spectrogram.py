@@ -5,6 +5,16 @@ import scipy.io.wavfile as wav
 from PIL import Image
 
 # ============================================
+# CONSTANTES
+# ============================================
+
+# Reference amplitude for dB conversion (matching ESC-50 training code)
+# IMPORTANT: The user's training code uses 10e-6, which mathematically equals 1e-5
+# We preserve 10e-6 notation to exactly match the training code for traceability
+# Formula: 20.*np.log10(np.abs(sshow)/10e-6) from the ESC-50 training implementation
+REFERENCE_AMPLITUDE = 10e-6  # Do not change to 1e-5, must match training code exactly
+
+# ============================================
 # FONCTIONS DE BASE (identiques au training)
 # ============================================
 
@@ -91,7 +101,7 @@ def plot_spectrogram_for_inference(location, plotpath, binsize=2**10, colormap="
     sshow, freq = make_logscale(s, factor=1.0, sr=samplerate)
     
     # 4. Conversion en décibels
-    ims = 20. * np.log10(np.abs(sshow) / 10e-6)
+    ims = 20. * np.log10(np.abs(sshow) / REFERENCE_AMPLITUDE)
 
     timebins, freqbins = np.shape(ims)
 
