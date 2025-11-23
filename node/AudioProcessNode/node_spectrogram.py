@@ -1,148 +1,181 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-import time
 import numpy as np
-import cv2
-import dearpygui.dearpygui as dpg
+from matplotlib import pyplot as plt
+from numpy.lib import stride_tricks
+import scipy.io.wavfile as wav
+from PIL import Image
 
-from node_editor.util import dpg_get_value, dpg_set_value
-from node.basenode import Node
-from node.InputNode.spectrogram_utils import (
-    fourier_transformation, 
-    make_logscale, 
-    create_spectrogram_from_audio,
-    REFERENCE_AMPLITUDE
-)
+# ============================================
+# FONCTIONS DE BASE (identiques au training)
+# ============================================
 
-DEFAULT_SPECTROGRAM_METHOD = 'stft_custom'
+def fourier_transformation(sig, frameSize, overlapFac=0.5, window=np.hanning):
+    """Transformée de Fourier avec fenêtrage"""
+    win = window(frameSize)
+    hopSize = int(frameSize - np.floor(overlapFac * frameSize))
 
-# Available spectrogram methods for future combo box implementation
-SPECTROGRAM_METHODS = {
-    'stft_custom': 'STFT Custom',
-}
-# Placeholder for combo box - dpg.add_combo(items=['stft_custom'], ...)
-SPECTROGRAM_METHOD_ITEMS = ['stft_custom']
+    # Zeros au début pour centrer la première fenêtre sur l'échantillon 0
+    samples = np.append(np.zeros(int(np.floor(frameSize/2.0))), sig)
+    # Colonnes pour le fenêtrage
+    cols = np.ceil((len(samples) - frameSize) / float(hopSize)) + 1
+    # Zeros à la fin pour couvrir complètement les échantillons
+    samples = np.append(samples, np.zeros(frameSize))
 
-# ---------------------------
-# Générateur de spectrogramme
-# ---------------------------
-def create_spectrogram_custom(audio_data, sample_rate=44100, n_fft=1024, hop_length=512):
+    frames = stride_tricks.as_strided(
+        samples, 
+        shape=(int(cols), frameSize), 
+        strides=(samples.strides[0]*hopSize, samples.strides[0])
+    ).copy()
+    frames *= win
+
+    return np.fft.rfft(frames)
+
+
+def make_logscale(spec, sr=44100, factor=20.):
+    """Convertit le spectrogramme en échelle logarithmique"""
+    timebins, freqbins = np.shape(spec)
+
+    scale = np.linspace(0, 1, freqbins) ** factor
+    scale *= (freqbins-1)/max(scale)
+    scale = np.unique(np.round(scale))
+
+    # Créer le spectrogramme avec les nouvelles bins de fréquence
+    newspec = np.complex128(np.zeros([timebins, len(scale)]))
+    for i in range(0, len(scale)):
+        if i == len(scale)-1:
+            newspec[:,i] = np.sum(spec[:,int(scale[i]):], axis=1)
+        else:
+            newspec[:,i] = np.sum(spec[:,int(scale[i]):int(scale[i+1])], axis=1)
+
+    # Lister les fréquences centrales des bins
+    allfreqs = np.abs(np.fft.fftfreq(freqbins*2, 1./sr)[:freqbins+1])
+    freqs = []
+    for i in range(0, len(scale)):
+        if i == len(scale)-1:
+            freqs += [np.mean(allfreqs[int(scale[i]):])]
+        else:
+            freqs += [np.mean(allfreqs[int(scale[i]):int(scale[i+1])])]
+
+    return newspec, freqs
+
+
+# ============================================
+# FONCTION CORRIGÉE POUR L'INFÉRENCE
+# ============================================
+
+def plot_spectrogram_for_inference(location, plotpath, binsize=2**10, colormap="jet", target_size=(224, 224)):
     """
-    Crée un spectrogramme compatible avec le modèle pré-entraîné.
-    Returns BGR format to be compatible with OpenCV's standard image format.
+    Crée un spectrogramme EXACTEMENT comme pendant l'entraînement.
+    
+    DIFFÉRENCES CLÉS avec l'ancienne version:
+    1. factor=1.0 dans make_logscale (pas 20.0)
+    2. Redimensionnement à 224x224 APRÈS sauvegarde
+    3. Mêmes paramètres de figure et d'axes
+    
+    Args:
+        location: Chemin du fichier audio (.wav)
+        plotpath: Chemin de sauvegarde obligatoire
+        binsize: Taille FFT (défaut: 1024 = 2**10)
+        colormap: Colormap matplotlib (défaut: "jet")
+        target_size: Taille finale (défaut: (224, 224))
+    
+    Returns:
+        ims: Matrice du spectrogramme en décibels
     """
-    if audio_data is None or len(audio_data) == 0:
-        return None
+    # 1. Lire le fichier audio
+    samplerate, samples = wav.read(location)
+    
+    # 2. Transformée de Fourier
+    s = fourier_transformation(samples, binsize)
+    
+    # 3. Échelle logarithmique avec factor=1.0 (IMPORTANT!)
+    sshow, freq = make_logscale(s, factor=1.0, sr=samplerate)
+    
+    # 4. Conversion en décibels
+    ims = 20. * np.log10(np.abs(sshow) / 10e-6)
 
-    # STFT custom
-    S = fourier_transformation(audio_data, n_fft)
-    # Log scale
-    S_log, freqs_log = make_logscale(S, sr=sample_rate, factor=1.0)
-    # Convert to magnitude and dB
-    ims = 20. * np.log10(np.abs(S_log) / REFERENCE_AMPLITUDE)
-    # Transpose to get correct orientation (frequencies on Y-axis)
-    ims_transposed = np.transpose(ims)
-    # Normalisation
-    S_norm = cv2.normalize(ims_transposed, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-    # Colormap JET (returns BGR format)
-    colored_bgr = cv2.applyColorMap(S_norm, cv2.COLORMAP_JET)
-    # Flip vertical and return BGR (compatible with OpenCV standard)
-    return np.flipud(colored_bgr)
+    timebins, freqbins = np.shape(ims)
 
-# Alias for backwards compatibility with tests
-def create_stft_custom(audio_data, sample_rate=44100, n_fft=1024, hop_length=512):
-    """Alias for create_spectrogram_custom for backwards compatibility."""
-    return create_spectrogram_custom(audio_data, sample_rate, n_fft, hop_length)
+    # 5. Créer la figure avec les MÊMES paramètres que le training
+    plt.figure(figsize=(15, 7.5))
+    plt.imshow(
+        np.transpose(ims), 
+        origin="lower", 
+        aspect="auto", 
+        cmap=colormap, 
+        interpolation="none"
+    )
+    
+    # 6. Axes X (temps) - identique au training
+    xlocs = np.float32(np.linspace(0, timebins-1, 5))
+    plt.xticks(
+        xlocs, 
+        ["%.02f" % l for l in ((xlocs*len(samples)/timebins)+(0.5*binsize))/samplerate]
+    )
+    
+    # 7. Axes Y (fréquence) - identique au training
+    ylocs = np.int16(np.round(np.linspace(0, freqbins-1, 10)))
+    plt.yticks(ylocs, ["%.02f" % freq[i] for i in ylocs])
 
-# ---------------------------
-# Factory Node
-# ---------------------------
-class FactoryNode:
-    node_label = 'Spectrogram'
-    node_tag = 'Spectrogram'
+    # 8. Sauvegarder avec bbox_inches="tight" (comme le training)
+    plt.savefig(plotpath, bbox_inches="tight")
+    plt.clf()
+    
+    # 9. Redimensionner APRÈS sauvegarde (comme dans le code d'inférence)
+    img = Image.open(plotpath)
+    img = img.resize(target_size, Image.LANCZOS)
+    img.save(plotpath)
 
-    def add_node(self, parent, node_id, pos=[0,0], opencv_setting_dict=None, callback=None):
-        node = Node()
-        node.tag_node_name = f"{node_id}:{node.node_tag}"
-        node.tag_node_input_name = f"{node.tag_node_name}:{node.TYPE_AUDIO}:Input01"
-        node.tag_node_input_value = f"{node.tag_node_name}:{node.TYPE_AUDIO}:Input01Value"
-        node.tag_node_output_name = f"{node.tag_node_name}:{node.TYPE_IMAGE}:Output01"
-        node.tag_node_output_value = f"{node.tag_node_name}:{node.TYPE_IMAGE}:Output01Value"
-        node.tag_node_time_value = f"{node.tag_node_name}:{node.TYPE_TIME_MS}:Output02Value"
+    return ims
 
-        node._opencv_setting_dict = opencv_setting_dict
-        w, h = node._opencv_setting_dict['process_width'], node._opencv_setting_dict['process_height']
-        use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
-        black_img = np.zeros((h, w, 3))
-        black_tex = node.convert_cv_to_dpg(black_img, w, h)
+# ============================================
+# FONCTION POUR TRAITER UN DOSSIER
+# ============================================
 
-        with dpg.texture_registry(show=False):
-            dpg.add_raw_texture(w, h, black_tex, tag=node.tag_node_output_value, format=dpg.mvFormat_Float_rgb)
+def process_chunks_to_spectrograms_corrected(chunks_folder, spectro_output_folder):
+    """
+    Génère des spectrogrammes pour l'inférence avec les MÊMES paramètres que le training
+    
+    Args:
+        chunks_folder: Dossier contenant les fichiers .wav
+        spectro_output_folder: Dossier de sortie pour les spectrogrammes
+    """
+    import os
+    os.makedirs(spectro_output_folder, exist_ok=True)
 
-        with dpg.node(tag=node.tag_node_name, parent=parent, label=node.node_label, pos=pos):
-            with dpg.node_attribute(tag=node.tag_node_input_name, attribute_type=dpg.mvNode_Attr_Input):
-                dpg.add_text(tag=node.tag_node_input_value, default_value="Input Audio")
-            with dpg.node_attribute(tag=node.tag_node_output_name, attribute_type=dpg.mvNode_Attr_Output):
-                dpg.add_image(node.tag_node_output_value)
-            if use_pref_counter:
-                with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output):
-                    dpg.add_text(tag=node.tag_node_time_value, default_value="elapsed time(ms)")
+    for filename in sorted(os.listdir(chunks_folder)):
+        if filename.endswith(".wav"):
+            audio_path = os.path.join(chunks_folder, filename)
+            base_name = os.path.splitext(filename)[0]
+            save_path = os.path.join(spectro_output_folder, f"{base_name}.png")
 
-        return node
+            print(f"Création du spectrogramme pour {filename}...")
+            try:
+                plot_spectrogram_for_inference(
+                    location=audio_path,
+                    plotpath=save_path,
+                    binsize=2**10,  # 1024
+                    colormap="jet",
+                    target_size=(224, 224)
+                )
+                print(f"✅ Sauvegardé: {save_path}")
+            except Exception as e:
+                print(f"❌ Erreur avec {filename}: {e}")
 
-# ---------------------------
-# Node
-# ---------------------------
-class Node(Node):
-    _ver = '1.0.0'
-    node_label = 'Spectrogram'
-    node_tag = 'Spectrogram'
-    _opencv_setting_dict = None
 
-    def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
-        tag_node_name = f"{node_id}:{self.node_tag}"
-        output_tag = f"{tag_node_name}:{self.TYPE_IMAGE}:Output01Value"
-        time_tag = f"{tag_node_name}:{self.TYPE_TIME_MS}:Output02Value"
+# ============================================
+# EXEMPLE D'UTILISATION
+# ============================================
 
-        w, h = self._opencv_setting_dict['process_width'], self._opencv_setting_dict['process_height']
-        use_pref_counter = self._opencv_setting_dict['use_pref_counter']
-
-        # Récupère l'audio depuis les connections
-        audio_data, sample_rate = None, 44100
-        for conn in connection_list:
-            if conn[0].split(':')[2] == self.TYPE_AUDIO:
-                src = ':'.join(conn[0].split(':')[:2])
-                audio_dict_entry = node_audio_dict.get(src, None)
-                if audio_dict_entry:
-                    audio_data = audio_dict_entry.get('data', None)
-                    sample_rate = audio_dict_entry.get('sample_rate', 44100)
-                break
-
-        frame = None
-        if audio_data is not None and use_pref_counter:
-            start = time.monotonic()
-
-        if audio_data is not None:
-            frame = create_spectrogram_custom(audio_data, sample_rate=sample_rate)
-
-        if audio_data is not None and use_pref_counter:
-            elapsed = int((time.monotonic() - start) * 1000)
-            dpg_set_value(time_tag, f"{elapsed:04d}ms")
-
-        if frame is not None:
-            texture = self.convert_cv_to_dpg(frame, w, h)
-            dpg_set_value(output_tag, texture)
-
-        return {"image": frame, "json": None, "audio": None}
-
-    def close(self, node_id):
-        pass
-
-    def get_setting_dict(self, node_id):
-        pos = dpg.get_item_pos(f"{node_id}:{self.node_tag}")
-        return {'ver': self._ver, 'pos': pos, 'method': DEFAULT_SPECTROGRAM_METHOD}
-
-    def set_setting_dict(self, node_id, setting_dict):
-        pass
-
+if __name__ == "__main__":
+    # Exemple 1: Traiter un seul fichier
+    plot_spectrogram_for_inference(
+        location="chunk_1.wav",
+        plotpath="chunk_1_inference.png"
+    )
+    
+    # Exemple 2: Traiter un dossier complet
+    process_chunks_to_spectrograms_corrected(
+        chunks_folder="/content/chunks_audiotrain_audio",
+        spectro_output_folder="/content/chunks_audiotrain_spectrograms_corrected"
+    )
