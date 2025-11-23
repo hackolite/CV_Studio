@@ -151,8 +151,9 @@ AVAILABLE_OPENCV_COLORMAPS = [
     'PLASMA', 'VIRIDIS', 'CIVIDIS', 'TWILIGHT', 'TWILIGHT_SHIFTED', 'TURBO'
 ]
 
-# Reference amplitude for dB conversion (1 micropascal)
-REFERENCE_AMPLITUDE = 1e-6
+# Reference amplitude for dB conversion (matching ESC-50 training code)
+# Note: Using 10e-6 (which equals 1e-5) to match the original ESC-50 training implementation
+REFERENCE_AMPLITUDE = 10e-6
 
 
 def fourier_transformation(sig, frameSize, overlapFac=0.5, window=np.hanning):

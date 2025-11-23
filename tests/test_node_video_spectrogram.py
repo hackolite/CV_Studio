@@ -49,7 +49,7 @@ def test_video_node_structure():
     
     # Check audio processing
     assert 'chunk_samples' in content, "Should process audio in chunks"
-    assert 'sr=22050' in content or 'sr = 22050' in content or 'sr=None' in content, "Should use sample rate"
+    assert 'sr=44100' in content or 'sr = 44100' in content or 'sr=None' in content, "Should use sample rate 44100 Hz (ESC-50 native)"
     
     # Check cleanup
     assert 'def _cleanup_audio_chunks' in content, "Should have cleanup method for WAV files"
