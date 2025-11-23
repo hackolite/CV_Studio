@@ -272,7 +272,7 @@ class Node(Node):
             scores: Detection scores
             class_ids: Class IDs
             class_names: Class names dictionary
-            thickness: Base thickness for drawing (default: _OD_BASE_THICKNESS)
+            thickness: Base thickness for drawing (default: 3, from _OD_BASE_THICKNESS constant)
             target_height: Target height for text scaling (used when image will be resized).
                           If None, uses the current image height.
             target_width: Target width for text scaling (used when image will be resized).
@@ -374,8 +374,10 @@ class Node(Node):
                     if draw_info_on_result:
                         node_result = node_result_dict[node_id_name]
                         image_node_name = node_id_name.split(':')[1]
-                        frame = self.draw_info(image_node_name, node_result, frame, 
-                                             target_height=resize_height, target_width=resize_width)
+                        frame = self.draw_info(
+                            image_node_name, node_result, frame,
+                            target_height=resize_height, target_width=resize_width
+                        )
                     resize_frame = cv2.resize(frame, (resize_width, resize_height))
                     frame_dict[slot_num - index - 1] = copy.deepcopy(resize_frame)
 
