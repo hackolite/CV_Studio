@@ -316,12 +316,12 @@ class SpectrogramNode(Node):
             # Convert figure to image
             fig.canvas.draw()
             
-            # Get image as numpy array
-            img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-            img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+            # Get image as numpy array (updated for newer matplotlib versions)
+            buf = fig.canvas.buffer_rgba()
+            img = np.asarray(buf)
             
-            # Convert RGB to BGR for OpenCV
-            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            # Convert RGBA to BGR for OpenCV
+            img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
             
             plt.close(fig)
             
