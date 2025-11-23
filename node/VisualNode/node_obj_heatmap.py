@@ -269,6 +269,17 @@ class Node(Node):
             scores = node_result.get('scores', [])
             class_ids = node_result.get('class_ids', [])
             
+            # Calculate scaling factors from input image to processing window
+            input_h, input_w = input_image.shape[:2]
+            # Protect against division by zero (invalid input images)
+            if input_w > 0 and input_h > 0:
+                scale_x = small_window_w / input_w
+                scale_y = small_window_h / input_h
+            else:
+                # Invalid input dimensions, use 1:1 scale (no scaling)
+                scale_x = 1.0
+                scale_y = 1.0
+            
             if bboxes and scores:
                 # Create temporary heatmap for current frame
                 temp_heatmap = np.zeros_like(self.heatmap_accum)
@@ -287,7 +298,12 @@ class Node(Node):
                             # Skip if class_id cannot be converted to int
                             continue
                     
-                    x1, y1, x2, y2 = map(int, bbox)
+                    # Scale coordinates from input image space to processing window space
+                    x1, y1, x2, y2 = bbox
+                    x1 = int(x1 * scale_x)
+                    y1 = int(y1 * scale_y)
+                    x2 = int(x2 * scale_x)
+                    y2 = int(y2 * scale_y)
                     
                     # Clip coordinates to image bounds
                     x1 = max(0, min(x1, small_window_w - 1))
