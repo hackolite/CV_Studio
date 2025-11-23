@@ -217,9 +217,19 @@ class Node(BaseNode):
             connection_type = connection_info[0].split(':')[2]
             if connection_type == self.TYPE_AUDIO:
                 connection_info_src = ':'.join(connection_info[0].split(':')[:2])
-                audio_tuple = node_audio_dict.get(connection_info_src, None)
-                if audio_tuple is not None and len(audio_tuple) == 2:
-                    audio_data, sample_rate = audio_tuple
+                audio_dict_entry = node_audio_dict.get(connection_info_src, None)
+                if audio_dict_entry is not None:
+                    # Handle dictionary format from Video node
+                    if isinstance(audio_dict_entry, dict):
+                        audio_data = audio_dict_entry.get('data', None)
+                        if audio_data is None:
+                            logger.warning("Audio dictionary missing 'data' key")
+                        sample_rate = audio_dict_entry.get('sample_rate', 22050)
+                    # Handle legacy tuple format for backward compatibility
+                    elif isinstance(audio_dict_entry, (list, tuple)) and len(audio_dict_entry) == 2:
+                        audio_data, sample_rate = audio_dict_entry
+                    else:
+                        logger.warning(f"Unexpected audio data format: {type(audio_dict_entry)}, expected dict or tuple")
                 break
 
         frame = None
