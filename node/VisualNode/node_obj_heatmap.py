@@ -65,14 +65,6 @@ class FactoryNode:
 
 
         with dpg.texture_registry(show=False):
-            # Texture for input image display
-            dpg.add_raw_texture(
-                small_window_w,
-                small_window_h,
-                black_texture,
-                tag=node.tag_node_input01_value_name,
-                format=dpg.mvFormat_Float_rgb,
-            )
             # Texture for output heatmap
             dpg.add_raw_texture(
                 small_window_w,
@@ -94,7 +86,10 @@ class FactoryNode:
                     tag=node.tag_node_input01_name,
                     attribute_type=dpg.mvNode_Attr_Input,
             ):
-                dpg.add_image(node.tag_node_input01_value_name)
+                dpg.add_text(
+                    tag=node.tag_node_input01_value_name,
+                    default_value='Image',
+                )
 
             with dpg.node_attribute(
                     tag=node.tag_node_input02_name,
@@ -223,7 +218,6 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         alpha_tag = tag_node_name + ':AlphaValue'
         class_tag = tag_node_name + ':ClassValue'
-        input_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01Value'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
@@ -253,20 +247,6 @@ class Node(Node):
         # Get detection data and input image
         node_result = node_result_dict.get(connection_info_src_json, {})
         input_image = node_image_dict.get(connection_info_src_image, None)
-        
-        # Update input image display
-        if input_image is not None:
-            display_input = self._prepare_image_for_display(
-                input_image, small_window_w, small_window_h
-            )
-            
-            # Update input texture
-            input_texture = self.convert_cv_to_dpg(
-                display_input,
-                small_window_w,
-                small_window_h,
-            )
-            dpg_set_value(input_value01_tag, input_texture)
         
         if use_pref_counter:
             start_time = time.monotonic()
