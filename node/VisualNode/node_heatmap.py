@@ -207,7 +207,6 @@ class Node(Node):
 
         
         if frame is not None:
-                print(frame.shape)
                 bboxes = detections['bboxes']
                 scores = detections['scores']
 
@@ -243,8 +242,6 @@ class Node(Node):
                 colored_heatmap = cv2.applyColorMap(heatmap_display, cv2.COLORMAP_JET)
 
                 # Overlay - increase heatmap visibility (0.4 frame, 0.6 heatmap)
-                print("frame.shape =", frame.shape)
-                print("colored_heatmap.shape =", colored_heatmap.shape)
                 frame = cv2.addWeighted(frame, 0.4, colored_heatmap, 0.6, 0)
 
 
