@@ -112,6 +112,24 @@ class FactoryNode:
                     callback=None,
                 )
 
+            # Add Memory slider for heatmap memory control
+            node.tag_node_input04_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input04'
+            node.tag_node_input04_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input04Value'
+            
+            with dpg.node_attribute(
+                    tag=node.tag_node_input04_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_input04_value_name,
+                    label="Memory",
+                    width=small_window_w - 80,
+                    default_value=0.98,
+                    min_value=0.80,
+                    max_value=0.995,
+                    callback=None,
+                )
+
             if use_pref_counter:
                 with dpg.node_attribute(
                         tag=node.tag_node_output02_name,
@@ -145,7 +163,6 @@ class Node(Node):
                 'process_width': 600
             }
 
-        self.num_frames = 0
         self._opencv_setting_dict = opencv_setting_dict
         self.heatmap_accum = np.zeros((
             self._opencv_setting_dict['process_height'],
@@ -164,6 +181,7 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01Value'
         input_value03_tag = tag_node_name + ':' + self.TYPE_INT + ':Input03Value'
+        input_value04_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input04Value'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
@@ -200,6 +218,7 @@ class Node(Node):
         node_result = node_result_dict.get(connection_info_src, [])
         detections = node_result
         binary_threshold = dpg_get_value(input_value03_tag)
+        decay = dpg_get_value(input_value04_tag)  # Get memory decay value
 
 
         if frame is not None and use_pref_counter:
@@ -218,21 +237,18 @@ class Node(Node):
                 )
                 dpg_set_value(input_value01_tag, input_texture)
 
-                # Frame heatmap (temporaire)
+                # Frame heatmap (temporary)
                 heatmap = np.zeros_like(self.heatmap_accum)
 
                 for box, score in zip(bboxes, scores):
                     x1, y1, x2, y2 = map(int, box)
                     heatmap[y1:y2, x1:x2] += score
 
-                # Cumul avec décroissance (memory effect)
-                #decay = 0.95  # baisse à chaque frame
-                #self.heatmap_accum = self.heatmap_accum * decay + heatmap
-                self.num_frames += 1
-                alpha = 1.0 / self.num_frames
-                self.heatmap_accum = (1 - alpha) * self.heatmap_accum + alpha * heatmap
+                # Accumulate with memory retention
+                # Higher memory value = longer retention (0.98 retains 98% of previous values)
+                self.heatmap_accum = self.heatmap_accum * decay + heatmap
 
-                # Normalisation with division by zero check
+                # Normalization with division by zero check
                 if self.heatmap_accum.max() > 0:
                     heatmap_norm = np.clip(self.heatmap_accum / self.heatmap_accum.max(), 0, 1)
                 else:
@@ -271,11 +287,13 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         input_value03_tag = tag_node_name + ':' + self.TYPE_INT + ':Input03Value'
+        input_value04_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input04Value'
 
 
         #threshold_type = dpg_get_value(input_value02_tag)
 
         binary_threshold = dpg_get_value(input_value03_tag)
+        decay = dpg_get_value(input_value04_tag)
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -284,6 +302,7 @@ class Node(Node):
         setting_dict['pos'] = pos
         #setting_dict[input_value02_tag] = threshold_type
         setting_dict[input_value03_tag] = binary_threshold
+        setting_dict[input_value04_tag] = decay
 
         return setting_dict
 
@@ -291,9 +310,12 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         input_value03_tag = tag_node_name + ':' + self.TYPE_INT + ':Input03Value'
+        input_value04_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input04Value'
 
         #threshold_type = setting_dict[input_value02_tag]
         binary_threshold = float(setting_dict[input_value03_tag])
+        decay = setting_dict.get(input_value04_tag, 0.98)  # Default to 0.98 for backward compatibility
 
         #dpg_set_value(input_value02_tag, threshold_type)
         dpg_set_value(input_value03_tag, binary_threshold)
+        dpg_set_value(input_value04_tag, decay)

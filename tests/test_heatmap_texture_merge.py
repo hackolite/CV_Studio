@@ -46,10 +46,9 @@ def test_heatmap_basic():
         x1, y1, x2, y2 = map(int, bbox)
         heatmap[y1:y2, x1:x2] += score
     
-    # Apply accumulation
-    node.num_frames += 1
-    alpha = 1.0 / node.num_frames
-    node.heatmap_accum = (1 - alpha) * node.heatmap_accum + alpha * heatmap
+    # Apply accumulation with decay (new approach)
+    decay = 0.98
+    node.heatmap_accum = node.heatmap_accum * decay + heatmap
     
     # Normalize with division by zero check (THE FIX)
     if node.heatmap_accum.max() > 0:
@@ -129,9 +128,9 @@ def test_heatmap_overlay_visibility():
         x1, y1, x2, y2 = map(int, bbox)
         heatmap[y1:y2, x1:x2] += score
     
-    node.num_frames += 1
-    alpha = 1.0 / node.num_frames
-    node.heatmap_accum = (1 - alpha) * node.heatmap_accum + alpha * heatmap
+    # Apply accumulation with decay (new approach)
+    decay = 0.98
+    node.heatmap_accum = node.heatmap_accum * decay + heatmap
     
     # Create colored heatmap
     if node.heatmap_accum.max() > 0:
@@ -220,9 +219,9 @@ def test_visual_output():
         x1, y1, x2, y2 = map(int, bbox)
         heatmap[y1:y2, x1:x2] += score
     
-    node.num_frames += 1
-    alpha = 1.0 / node.num_frames
-    node.heatmap_accum = (1 - alpha) * node.heatmap_accum + alpha * heatmap
+    # Apply accumulation with decay (new approach)
+    decay = 0.98
+    node.heatmap_accum = node.heatmap_accum * decay + heatmap
     
     if node.heatmap_accum.max() > 0:
         heatmap_norm = np.clip(node.heatmap_accum / node.heatmap_accum.max(), 0, 1)
