@@ -124,11 +124,11 @@ class FactoryNode:
             ):
                 dpg.add_slider_float(
                     tag=node.tag_node_alpha_value_name,
-                    label="Decay",
+                    label="Memory",
                     width=small_window_w - 80,
-                    default_value=0.95,
-                    min_value=0.5,
-                    max_value=0.99,
+                    default_value=0.98,
+                    min_value=0.80,
+                    max_value=0.995,
                     callback=None,
                 )
 
@@ -387,7 +387,7 @@ class Node(Node):
         alpha_tag = tag_node_name + ':AlphaValue'
         class_tag = tag_node_name + ':ClassValue'
 
-        decay = setting_dict.get(alpha_tag, 0.95)
+        decay = setting_dict.get(alpha_tag, 0.98)  # Default to 0.98 for backward compatibility
         selected_class = setting_dict.get(class_tag, "All")
         dpg_set_value(alpha_tag, decay)
         dpg_set_value(class_tag, selected_class)
