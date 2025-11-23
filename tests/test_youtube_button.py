@@ -25,6 +25,7 @@ def test_tag_parsing():
     assert tag_node_name == "123:YouTube", f"Expected '123:YouTube', got '{tag_node_name}'"
     
     # Construct the button tag
+    # Note: TYPE_TEXT should match Node.TYPE_TEXT from basenode.py
     TYPE_TEXT = "TEXT"
     tag_node_button_value_name = tag_node_name + ':' + TYPE_TEXT + ':ButtonValue'
     
@@ -41,6 +42,7 @@ def test_tag_parsing_with_different_node_id():
         ("abc:YouTube:TEXT:Input01Value", "abc:YouTube", "abc:YouTube:TEXT:ButtonValue"),
     ]
     
+    # Note: TYPE_TEXT should match Node.TYPE_TEXT from basenode.py
     TYPE_TEXT = "TEXT"
     for user_data, expected_node_name, expected_button_tag in test_cases:
         tag_parts = user_data.split(':')
