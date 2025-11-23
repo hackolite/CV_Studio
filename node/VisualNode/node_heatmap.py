@@ -60,6 +60,15 @@ class FactoryNode:
 
 
         with dpg.texture_registry(show=False):
+            # Texture for input image display
+            dpg.add_raw_texture(
+                small_window_w,
+                small_window_h,
+                black_texture,
+                tag=node.tag_node_input01_value_name,
+                format=dpg.mvFormat_Float_rgb,
+            )
+            # Texture for output heatmap
             dpg.add_raw_texture(
                 small_window_w,
                 small_window_h,
@@ -80,10 +89,7 @@ class FactoryNode:
                     tag=node.tag_node_input01_name,
                     attribute_type=dpg.mvNode_Attr_Input,
             ):
-                dpg.add_text(
-                    tag=node.tag_node_input01_value_name,
-                    default_value='Input BGR image',
-                )
+                dpg.add_image(node.tag_node_input01_value_name)
 
             with dpg.node_attribute(
                     tag=node.tag_node_output01_name,
@@ -156,6 +162,7 @@ class Node(Node):
         node_audio_dict,
     ):
         tag_node_name = str(node_id) + ':' + self.node_tag
+        input_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01Value'
         input_value03_tag = tag_node_name + ':' + self.TYPE_INT + ':Input03Value'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
@@ -200,9 +207,16 @@ class Node(Node):
 
         
         if frame is not None:
-                print(frame.shape)
                 bboxes = detections['bboxes']
                 scores = detections['scores']
+
+                # Update input image display
+                input_texture = self.convert_cv_to_dpg(
+                    frame,
+                    small_window_w,
+                    small_window_h,
+                )
+                dpg_set_value(input_value01_tag, input_texture)
 
                 # Frame heatmap (temporaire)
                 heatmap = np.zeros_like(self.heatmap_accum)
@@ -218,16 +232,17 @@ class Node(Node):
                 alpha = 1.0 / self.num_frames
                 self.heatmap_accum = (1 - alpha) * self.heatmap_accum + alpha * heatmap
 
-                # Normalisation
-                heatmap_norm = np.clip(self.heatmap_accum / self.heatmap_accum.max(), 0, 1)
+                # Normalisation with division by zero check
+                if self.heatmap_accum.max() > 0:
+                    heatmap_norm = np.clip(self.heatmap_accum / self.heatmap_accum.max(), 0, 1)
+                else:
+                    heatmap_norm = self.heatmap_accum
                 heatmap_display = (heatmap_norm * 255).astype(np.uint8)
                 heatmap_display = cv2.GaussianBlur(heatmap_display, (25, 25), 0)
                 colored_heatmap = cv2.applyColorMap(heatmap_display, cv2.COLORMAP_JET)
 
-                # Overlay
-                print("frame.shape =", frame.shape)
-                print("colored_heatmap.shape =", colored_heatmap.shape)
-                frame = cv2.addWeighted(frame, 0.7, colored_heatmap, 0.3, 0)
+                # Overlay - increase heatmap visibility (0.4 frame, 0.6 heatmap)
+                frame = cv2.addWeighted(frame, 0.4, colored_heatmap, 0.6, 0)
 
 
         if frame is not None and use_pref_counter:
