@@ -25,23 +25,23 @@ def test_tag_parsing():
     assert tag_node_name == "123:YouTube", f"Expected '123:YouTube', got '{tag_node_name}'"
     
     # Construct the button tag
-    TYPE_TEXT = "Text"
+    TYPE_TEXT = "TEXT"
     tag_node_button_value_name = tag_node_name + ':' + TYPE_TEXT + ':ButtonValue'
     
     # Verify the button tag is correct
-    assert tag_node_button_value_name == "123:YouTube:Text:ButtonValue", \
-        f"Expected '123:YouTube:Text:ButtonValue', got '{tag_node_button_value_name}'"
+    assert tag_node_button_value_name == "123:YouTube:TEXT:ButtonValue", \
+        f"Expected '123:YouTube:TEXT:ButtonValue', got '{tag_node_button_value_name}'"
 
 
 def test_tag_parsing_with_different_node_id():
     """Test tag parsing with different node IDs"""
     test_cases = [
-        ("1:YouTube:Text:Input01Value", "1:YouTube", "1:YouTube:Text:ButtonValue"),
-        ("999:YouTube:Text:Input01Value", "999:YouTube", "999:YouTube:Text:ButtonValue"),
-        ("abc:YouTube:Text:Input01Value", "abc:YouTube", "abc:YouTube:Text:ButtonValue"),
+        ("1:YouTube:TEXT:Input01Value", "1:YouTube", "1:YouTube:TEXT:ButtonValue"),
+        ("999:YouTube:TEXT:Input01Value", "999:YouTube", "999:YouTube:TEXT:ButtonValue"),
+        ("abc:YouTube:TEXT:Input01Value", "abc:YouTube", "abc:YouTube:TEXT:ButtonValue"),
     ]
     
-    TYPE_TEXT = "Text"
+    TYPE_TEXT = "TEXT"
     for user_data, expected_node_name, expected_button_tag in test_cases:
         tag_parts = user_data.split(':')
         tag_node_name = ':'.join(tag_parts[:2])
