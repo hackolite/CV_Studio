@@ -77,7 +77,6 @@ def test_obj_heatmap_basic():
     assert node.heatmap_accum.max() > 0, "Heatmap accumulator should have values"
     
     print("✓ Test basic heatmap generation passed")
-    return heatmap_image
 
 
 def test_obj_heatmap_empty():
@@ -112,7 +111,6 @@ def test_obj_heatmap_empty():
     assert heatmap_image.shape == (480, 640, 3), f"Expected shape (480, 640, 3), got {heatmap_image.shape}"
     
     print("✓ Test heatmap with no detections passed")
-    return heatmap_image
 
 
 def test_obj_heatmap_accumulation():
@@ -175,7 +173,6 @@ def test_obj_heatmap_accumulation():
     assert max_after_frame2 > max_after_frame1, "Heatmap should accumulate on repeated detections"
     
     print("✓ Test heatmap accumulation passed")
-    return heatmap_image
 
 
 def test_visual_output():
@@ -185,33 +182,132 @@ def test_visual_output():
     
     # Test 1: Basic heatmap
     print("\nTest 1: Basic heatmap with 3 detections...")
-    img1 = test_obj_heatmap_basic()
-    cv2.imwrite("/tmp/obj_heatmap_basic.png", img1)
-    print("  ✓ Saved to /tmp/obj_heatmap_basic.png")
     
-    # Test 2: Empty heatmap
-    print("\nTest 2: Empty heatmap...")
-    img2 = test_obj_heatmap_empty()
-    cv2.imwrite("/tmp/obj_heatmap_empty.png", img2)
-    print("  ✓ Saved to /tmp/obj_heatmap_empty.png")
-    
-    # Test 3: Accumulated heatmap
-    print("\nTest 3: Accumulated heatmap...")
-    img3 = test_obj_heatmap_accumulation()
-    cv2.imwrite("/tmp/obj_heatmap_accumulation.png", img3)
-    print("  ✓ Saved to /tmp/obj_heatmap_accumulation.png")
-    
-    # Test 4: Multiple detections over time
-    print("\nTest 4: Multiple frames with varying detections...")
+    # Create node
     node = Node(opencv_setting_dict={
         'process_height': 480,
         'process_width': 640,
         'use_pref_counter': False
     })
     
+    # Simulate detection data
+    detection_data = {
+        'bboxes': [
+            [100, 100, 200, 200],
+            [300, 150, 400, 250],
+            [150, 300, 250, 400],
+        ],
+        'scores': [0.9, 0.8, 0.7],
+    }
+    
     decay = 0.95
     small_window_w = 640
     small_window_h = 480
+    
+    bboxes = detection_data.get('bboxes', [])
+    scores = detection_data.get('scores', [])
+    
+    temp_heatmap = np.zeros((small_window_h, small_window_w), dtype=np.float32)
+    
+    for bbox, score in zip(bboxes, scores):
+        x1, y1, x2, y2 = map(int, bbox)
+        x1 = max(0, min(x1, small_window_w - 1))
+        x2 = max(0, min(x2, small_window_w - 1))
+        y1 = max(0, min(y1, small_window_h - 1))
+        y2 = max(0, min(y2, small_window_h - 1))
+        
+        if x2 > x1 and y2 > y1:
+            temp_heatmap[y1:y2, x1:x2] += score
+    
+    node.heatmap_accum = node.heatmap_accum * decay + temp_heatmap
+    
+    if node.heatmap_accum.max() > 0:
+        heatmap_norm = np.clip(node.heatmap_accum / node.heatmap_accum.max(), 0, 1)
+    else:
+        heatmap_norm = node.heatmap_accum
+    
+    heatmap_display = (heatmap_norm * 255).astype(np.uint8)
+    heatmap_display = cv2.GaussianBlur(heatmap_display, (25, 25), 0)
+    img1 = cv2.applyColorMap(heatmap_display, cv2.COLORMAP_JET)
+    
+    cv2.imwrite("/tmp/obj_heatmap_basic.png", img1)
+    print("  ✓ Saved to /tmp/obj_heatmap_basic.png")
+    
+    # Test 2: Empty heatmap
+    print("\nTest 2: Empty heatmap...")
+    node2 = Node(opencv_setting_dict={
+        'process_height': 480,
+        'process_width': 640,
+        'use_pref_counter': False
+    })
+    
+    node2.heatmap_accum = node2.heatmap_accum * decay
+    
+    if node2.heatmap_accum.max() > 0:
+        heatmap_norm = np.clip(node2.heatmap_accum / node2.heatmap_accum.max(), 0, 1)
+    else:
+        heatmap_norm = node2.heatmap_accum
+    
+    heatmap_display = (heatmap_norm * 255).astype(np.uint8)
+    heatmap_display = cv2.GaussianBlur(heatmap_display, (25, 25), 0)
+    img2 = cv2.applyColorMap(heatmap_display, cv2.COLORMAP_JET)
+    
+    cv2.imwrite("/tmp/obj_heatmap_empty.png", img2)
+    print("  ✓ Saved to /tmp/obj_heatmap_empty.png")
+    
+    # Test 3: Accumulated heatmap
+    print("\nTest 3: Accumulated heatmap...")
+    node3 = Node(opencv_setting_dict={
+        'process_height': 480,
+        'process_width': 640,
+        'use_pref_counter': False
+    })
+    
+    bboxes_1 = [[100, 100, 200, 200]]
+    scores_1 = [0.9]
+    
+    temp_heatmap_1 = np.zeros((small_window_h, small_window_w), dtype=np.float32)
+    for bbox, score in zip(bboxes_1, scores_1):
+        x1, y1, x2, y2 = map(int, bbox)
+        x1 = max(0, min(x1, small_window_w - 1))
+        x2 = max(0, min(x2, small_window_w - 1))
+        y1 = max(0, min(y1, small_window_h - 1))
+        y2 = max(0, min(y2, small_window_h - 1))
+        if x2 > x1 and y2 > y1:
+            temp_heatmap_1[y1:y2, x1:x2] += score
+    
+    node3.heatmap_accum = node3.heatmap_accum * decay + temp_heatmap_1
+    
+    bboxes_2 = [[100, 100, 200, 200]]
+    scores_2 = [0.9]
+    
+    temp_heatmap_2 = np.zeros((small_window_h, small_window_w), dtype=np.float32)
+    for bbox, score in zip(bboxes_2, scores_2):
+        x1, y1, x2, y2 = map(int, bbox)
+        x1 = max(0, min(x1, small_window_w - 1))
+        x2 = max(0, min(x2, small_window_w - 1))
+        y1 = max(0, min(y1, small_window_h - 1))
+        y2 = max(0, min(y2, small_window_h - 1))
+        if x2 > x1 and y2 > y1:
+            temp_heatmap_2[y1:y2, x1:x2] += score
+    
+    node3.heatmap_accum = node3.heatmap_accum * decay + temp_heatmap_2
+    
+    heatmap_norm = np.clip(node3.heatmap_accum / node3.heatmap_accum.max(), 0, 1)
+    heatmap_display = (heatmap_norm * 255).astype(np.uint8)
+    heatmap_display = cv2.GaussianBlur(heatmap_display, (25, 25), 0)
+    img3 = cv2.applyColorMap(heatmap_display, cv2.COLORMAP_JET)
+    
+    cv2.imwrite("/tmp/obj_heatmap_accumulation.png", img3)
+    print("  ✓ Saved to /tmp/obj_heatmap_accumulation.png")
+    
+    # Test 4: Multiple detections over time
+    print("\nTest 4: Multiple frames with varying detections...")
+    node4 = Node(opencv_setting_dict={
+        'process_height': 480,
+        'process_width': 640,
+        'use_pref_counter': False
+    })
     
     # Simulate 20 frames with varying detections
     for frame_idx in range(20):
@@ -235,10 +331,10 @@ def test_visual_output():
             if x2 > x1 and y2 > y1:
                 temp_heatmap[y1:y2, x1:x2] += score
         
-        node.heatmap_accum = node.heatmap_accum * decay + temp_heatmap
+        node4.heatmap_accum = node4.heatmap_accum * decay + temp_heatmap
     
     # Create final heatmap
-    heatmap_norm = np.clip(node.heatmap_accum / node.heatmap_accum.max(), 0, 1)
+    heatmap_norm = np.clip(node4.heatmap_accum / node4.heatmap_accum.max(), 0, 1)
     heatmap_display = (heatmap_norm * 255).astype(np.uint8)
     heatmap_display = cv2.GaussianBlur(heatmap_display, (25, 25), 0)
     heatmap_image = cv2.applyColorMap(heatmap_display, cv2.COLORMAP_JET)
