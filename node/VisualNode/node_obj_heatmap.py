@@ -281,6 +281,18 @@ class Node(Node):
             if input_image.shape[:2] != (small_window_h, small_window_w):
                 input_image = cv2.resize(input_image, (small_window_w, small_window_h))
             
+            # Ensure input_image has 3 channels (BGR) to match heatmap_colored
+            if len(input_image.shape) == 2:
+                # Convert grayscale (H, W) to BGR
+                input_image = cv2.cvtColor(input_image, cv2.COLOR_GRAY2BGR)
+            elif len(input_image.shape) == 3:
+                if input_image.shape[2] == 1:
+                    # Convert grayscale (H, W, 1) to BGR - need to squeeze first
+                    input_image = cv2.cvtColor(input_image.squeeze(axis=2), cv2.COLOR_GRAY2BGR)
+                elif input_image.shape[2] == 4:
+                    # Convert BGRA to BGR
+                    input_image = cv2.cvtColor(input_image, cv2.COLOR_BGRA2BGR)
+            
             # Blend heatmap with input image (0.6 heatmap, 0.4 original image)
             heatmap_image = cv2.addWeighted(input_image, 0.4, heatmap_colored, 0.6, 0)
         else:
