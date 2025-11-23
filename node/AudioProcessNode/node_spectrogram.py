@@ -1,191 +1,293 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import time
+import cv2
 import numpy as np
-from matplotlib import pyplot as plt
-from numpy.lib import stride_tricks
-import scipy.io.wavfile as wav
-from PIL import Image
+import dearpygui.dearpygui as dpg
+import librosa
+import traceback
 
-# ============================================
-# CONSTANTES
-# ============================================
+from node_editor.util import dpg_get_value, dpg_set_value
+from node.node_abc import DpgNodeABC
+from node.basenode import Node as BaseNode
+from src.utils.logging import get_logger
 
-# Reference amplitude for dB conversion (matching ESC-50 training code)
-# IMPORTANT: The user's training code uses 10e-6, which mathematically equals 1e-5
-# We preserve 10e-6 notation to exactly match the training code for traceability
-# Formula: 20.*np.log10(np.abs(sshow)/10e-6) from the ESC-50 training implementation
-REFERENCE_AMPLITUDE = 10e-6  # Do not change to 1e-5, must match training code exactly
+# Import STFT-based functions from spectrogram_utils
+from node.InputNode.spectrogram_utils import (
+    fourier_transformation,
+    make_logscale,
+    create_spectrogram_from_audio,
+    apply_colormap_to_spectrogram,
+    REFERENCE_AMPLITUDE
+)
 
-# ============================================
-# FONCTIONS DE BASE (identiques au training)
-# ============================================
-
-def fourier_transformation(sig, frameSize, overlapFac=0.5, window=np.hanning):
-    """Transformée de Fourier avec fenêtrage"""
-    win = window(frameSize)
-    hopSize = int(frameSize - np.floor(overlapFac * frameSize))
-
-    # Zeros au début pour centrer la première fenêtre sur l'échantillon 0
-    samples = np.append(np.zeros(int(np.floor(frameSize/2.0))), sig)
-    # Colonnes pour le fenêtrage
-    cols = np.ceil((len(samples) - frameSize) / float(hopSize)) + 1
-    # Zeros à la fin pour couvrir complètement les échantillons
-    samples = np.append(samples, np.zeros(frameSize))
-
-    frames = stride_tricks.as_strided(
-        samples, 
-        shape=(int(cols), frameSize), 
-        strides=(samples.strides[0]*hopSize, samples.strides[0])
-    ).copy()
-    frames *= win
-
-    return np.fft.rfft(frames)
+logger = get_logger(__name__)
 
 
-def make_logscale(spec, sr=44100, factor=20.):
-    """Convertit le spectrogramme en échelle logarithmique"""
-    timebins, freqbins = np.shape(spec)
-
-    scale = np.linspace(0, 1, freqbins) ** factor
-    scale *= (freqbins-1)/max(scale)
-    scale = np.unique(np.round(scale))
-
-    # Créer le spectrogramme avec les nouvelles bins de fréquence
-    newspec = np.complex128(np.zeros([timebins, len(scale)]))
-    for i in range(0, len(scale)):
-        if i == len(scale)-1:
-            newspec[:,i] = np.sum(spec[:,int(scale[i]):], axis=1)
-        else:
-            newspec[:,i] = np.sum(spec[:,int(scale[i]):int(scale[i+1])], axis=1)
-
-    # Lister les fréquences centrales des bins
-    allfreqs = np.abs(np.fft.fftfreq(freqbins*2, 1./sr)[:freqbins+1])
-    freqs = []
-    for i in range(0, len(scale)):
-        if i == len(scale)-1:
-            freqs += [np.mean(allfreqs[int(scale[i]):])]
-        else:
-            freqs += [np.mean(allfreqs[int(scale[i]):int(scale[i+1])])]
-
-    return newspec, freqs
+def create_mel_spectrogram(audio_data, sample_rate=22050):
+    """Create mel spectrogram using librosa"""
+    mel_spec = librosa.feature.melspectrogram(y=audio_data, sr=sample_rate, n_fft=2048, hop_length=512, n_mels=128)
+    mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
+    mel_spec_db_transposed = np.transpose(mel_spec_db)
+    spec_image = apply_colormap_to_spectrogram(mel_spec_db_transposed, method='cv2', cmap='INFERNO')
+    spec_image = np.flipud(spec_image)
+    return spec_image
 
 
-# ============================================
-# FONCTION CORRIGÉE POUR L'INFÉRENCE
-# ============================================
+def create_stft_spectrogram(audio_data, sample_rate=22050):
+    """Create STFT spectrogram using librosa"""
+    stft = librosa.stft(audio_data, n_fft=2048, hop_length=512)
+    stft_db = librosa.amplitude_to_db(np.abs(stft), ref=np.max)
+    stft_db_transposed = np.transpose(stft_db)
+    spec_image = apply_colormap_to_spectrogram(stft_db_transposed, method='cv2', cmap='VIRIDIS')
+    spec_image = np.flipud(spec_image)
+    return spec_image
 
-def plot_spectrogram_for_inference(location, plotpath, binsize=2**10, colormap="jet", target_size=(224, 224)):
-    """
-    Crée un spectrogramme EXACTEMENT comme pendant l'entraînement.
+
+def create_chromagram(audio_data, sample_rate=22050):
+    """Create chromagram using librosa"""
+    chroma = librosa.feature.chroma_stft(y=audio_data, sr=sample_rate, n_fft=2048, hop_length=512)
+    chroma_transposed = np.transpose(chroma)
+    spec_image = apply_colormap_to_spectrogram(chroma_transposed, method='cv2', cmap='PLASMA')
+    spec_image = np.flipud(spec_image)
+    return spec_image
+
+
+def create_mfcc(audio_data, sample_rate=22050):
+    """Create MFCC using librosa"""
+    mfcc = librosa.feature.mfcc(y=audio_data, sr=sample_rate, n_fft=2048, hop_length=512, n_mfcc=20)
+    mfcc_transposed = np.transpose(mfcc)
+    spec_image = apply_colormap_to_spectrogram(mfcc_transposed, method='cv2', cmap='JET')
+    spec_image = np.flipud(spec_image)
+    return spec_image
+
+
+def create_stft_custom(audio_data, sample_rate=22050, binsize=1024, colormap="jet"):
+    """Create STFT spectrogram using custom fourier_transformation method"""
+    return create_spectrogram_from_audio(audio_data, sample_rate, binsize, colormap)
+
+
+class FactoryNode:
+    node_label = 'Spectrogram'
+    node_tag = 'Spectrogram'
     
-    DIFFÉRENCES CLÉS avec l'ancienne version:
-    1. factor=1.0 dans make_logscale (pas 20.0)
-    2. Redimensionnement à 224x224 APRÈS sauvegarde
-    3. Mêmes paramètres de figure et d'axes
-    
-    Args:
-        location: Chemin du fichier audio (.wav)
-        plotpath: Chemin de sauvegarde obligatoire
-        binsize: Taille FFT (défaut: 1024 = 2**10)
-        colormap: Colormap matplotlib (défaut: "jet")
-        target_size: Taille finale (défaut: (224, 224))
-    
-    Returns:
-        ims: Matrice du spectrogramme en décibels
-    """
-    # 1. Lire le fichier audio
-    samplerate, samples = wav.read(location)
-    
-    # 2. Transformée de Fourier
-    s = fourier_transformation(samples, binsize)
-    
-    # 3. Échelle logarithmique avec factor=1.0 (IMPORTANT!)
-    sshow, freq = make_logscale(s, factor=1.0, sr=samplerate)
-    
-    # 4. Conversion en décibels
-    ims = 20. * np.log10(np.abs(sshow) / REFERENCE_AMPLITUDE)
+    def __init__(self):
+        pass
 
-    timebins, freqbins = np.shape(ims)
+    def add_node(
+        self,
+        parent,
+        node_id,
+        pos=[0, 0],
+        opencv_setting_dict=None,
+        callback=None,
+    ):
+        node = Node()
+        node.tag_node_name = str(node_id) + ':' + self.node_tag
+        node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':Input01'
+        node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':Input01Value'
+        node.tag_node_input02_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input02'
+        node.tag_node_input02_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input02Value'
+        node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
+        node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
+        node.tag_node_output02_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
+        node.tag_node_output02_value_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02Value'
 
-    # 5. Créer la figure avec les MÊMES paramètres que le training
-    plt.figure(figsize=(15, 7.5))
-    plt.imshow(
-        np.transpose(ims), 
-        origin="lower", 
-        aspect="auto", 
-        cmap=colormap, 
-        interpolation="none"
-    )
-    
-    # 6. Axes X (temps) - identique au training
-    xlocs = np.float32(np.linspace(0, timebins-1, 5))
-    plt.xticks(
-        xlocs, 
-        ["%.02f" % l for l in ((xlocs*len(samples)/timebins)+(0.5*binsize))/samplerate]
-    )
-    
-    # 7. Axes Y (fréquence) - identique au training
-    ylocs = np.int16(np.round(np.linspace(0, freqbins-1, 10)))
-    plt.yticks(ylocs, ["%.02f" % freq[i] for i in ylocs])
+        node._opencv_setting_dict = opencv_setting_dict
+        small_window_w = node._opencv_setting_dict['process_width']
+        small_window_h = node._opencv_setting_dict['process_height']
+        use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
-    # 8. Sauvegarder avec bbox_inches="tight" (comme le training)
-    plt.savefig(plotpath, bbox_inches="tight")
-    plt.clf()
-    
-    # 9. Redimensionner APRÈS sauvegarde (comme dans le code d'inférence)
-    img = Image.open(plotpath)
-    img = img.resize(target_size, Image.LANCZOS)
-    img.save(plotpath)
+        # Create black texture for initial display
+        black_image = np.zeros((small_window_h, small_window_w, 3))
+        black_texture = node.convert_cv_to_dpg(
+            black_image,
+            small_window_w,
+            small_window_h,
+        )
 
-    return ims
+        # Register texture
+        with dpg.texture_registry(show=False):
+            dpg.add_raw_texture(
+                small_window_w,
+                small_window_h,
+                black_texture,
+                tag=node.tag_node_output01_value_name,
+                format=dpg.mvFormat_Float_rgb,
+            )
 
-
-# ============================================
-# FONCTION POUR TRAITER UN DOSSIER
-# ============================================
-
-def process_chunks_to_spectrograms_corrected(chunks_folder, spectro_output_folder):
-    """
-    Génère des spectrogrammes pour l'inférence avec les MÊMES paramètres que le training
-    
-    Args:
-        chunks_folder: Dossier contenant les fichiers .wav
-        spectro_output_folder: Dossier de sortie pour les spectrogrammes
-    """
-    import os
-    os.makedirs(spectro_output_folder, exist_ok=True)
-
-    for filename in sorted(os.listdir(chunks_folder)):
-        if filename.endswith(".wav"):
-            audio_path = os.path.join(chunks_folder, filename)
-            base_name = os.path.splitext(filename)[0]
-            save_path = os.path.join(spectro_output_folder, f"{base_name}.png")
-
-            print(f"Création du spectrogramme pour {filename}...")
-            try:
-                plot_spectrogram_for_inference(
-                    location=audio_path,
-                    plotpath=save_path,
-                    binsize=2**10,  # 1024
-                    colormap="jet",
-                    target_size=(224, 224)
+        # Create node UI
+        with dpg.node(
+                tag=node.tag_node_name,
+                parent=parent,
+                label=self.node_label,
+                pos=pos,
+        ):
+            # Audio input
+            with dpg.node_attribute(
+                    tag=node.tag_node_input01_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_input01_value_name,
+                    default_value='Input Audio',
                 )
-                print(f"✅ Sauvegardé: {save_path}")
+
+            # Method selector
+            with dpg.node_attribute(
+                    tag=node.tag_node_input02_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    items=['mel', 'stft', 'stft_custom', 'chromagram', 'mfcc'],
+                    default_value='mel',
+                    width=small_window_w,
+                    label="Method",
+                    tag=node.tag_node_input02_value_name,
+                    callback=callback,
+                )
+
+            # Image output
+            with dpg.node_attribute(
+                    tag=node.tag_node_output01_name,
+                    attribute_type=dpg.mvNode_Attr_Output,
+            ):
+                dpg.add_image(node.tag_node_output01_value_name)
+
+            # Performance counter
+            if use_pref_counter:
+                with dpg.node_attribute(
+                        tag=node.tag_node_output02_name,
+                        attribute_type=dpg.mvNode_Attr_Output,
+                ):
+                    dpg.add_text(
+                        tag=node.tag_node_output02_value_name,
+                        default_value='elapsed time(ms)',
+                    )
+
+        return node
+
+
+class Node(BaseNode):
+    _ver = '0.0.1'
+
+    node_label = 'Spectrogram'
+    node_tag = 'Spectrogram'
+
+    _opencv_setting_dict = None
+
+    def __init__(self):
+        pass
+
+    def update(
+        self,
+        node_id,
+        connection_list,
+        node_image_dict,
+        node_result_dict,
+        node_audio_dict,
+    ):
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
+        output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
+        output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
+
+        # Handle case when _opencv_setting_dict is None
+        if self._opencv_setting_dict is None:
+            small_window_w = 240
+            small_window_h = 135
+            use_pref_counter = False
+        else:
+            small_window_w = self._opencv_setting_dict['process_width']
+            small_window_h = self._opencv_setting_dict['process_height']
+            use_pref_counter = self._opencv_setting_dict['use_pref_counter']
+
+        # Get the selected method
+        try:
+            method = dpg_get_value(input_value02_tag)
+        except Exception as e:
+            logger.debug(f"Could not get method value from DPG: {e}")
+            method = 'mel'  # Default method if dpg is not available
+
+        # Get audio input
+        audio_data = None
+        sample_rate = 22050  # Default sample rate
+        
+        for connection_info in connection_list:
+            connection_type = connection_info[0].split(':')[2]
+            if connection_type == self.TYPE_AUDIO:
+                connection_info_src = ':'.join(connection_info[0].split(':')[:2])
+                audio_tuple = node_audio_dict.get(connection_info_src, None)
+                if audio_tuple is not None and len(audio_tuple) == 2:
+                    audio_data, sample_rate = audio_tuple
+                break
+
+        frame = None
+        
+        if audio_data is not None and use_pref_counter:
+            start_time = time.monotonic()
+
+        if audio_data is not None:
+            try:
+                # Create spectrogram based on selected method
+                if method == 'mel':
+                    frame = create_mel_spectrogram(audio_data, sample_rate)
+                elif method == 'stft':
+                    frame = create_stft_spectrogram(audio_data, sample_rate)
+                elif method == 'chromagram':
+                    frame = create_chromagram(audio_data, sample_rate)
+                elif method == 'mfcc':
+                    frame = create_mfcc(audio_data, sample_rate)
+                elif method == 'stft_custom':
+                    frame = create_stft_custom(audio_data, sample_rate, binsize=1024, colormap="jet")
+                else:
+                    # Default to mel
+                    frame = create_mel_spectrogram(audio_data, sample_rate)
             except Exception as e:
-                print(f"❌ Erreur avec {filename}: {e}")
+                logger.error(f"Error creating {method} spectrogram: {e}", exc_info=True)
+                frame = None
 
+        if frame is not None and use_pref_counter:
+            elapsed_time = time.monotonic() - start_time
+            elapsed_time = int(elapsed_time * 1000)
+            try:
+                dpg_set_value(output_value02_tag, str(elapsed_time).zfill(4) + 'ms')
+            except Exception as e:
+                logger.debug(f"Could not set performance counter value: {e}")
 
-# ============================================
-# EXEMPLE D'UTILISATION
-# ============================================
+        if frame is not None:
+            try:
+                texture = self.convert_cv_to_dpg(
+                    frame,
+                    small_window_w,
+                    small_window_h,
+                )
+                dpg_set_value(output_value01_tag, texture)
+            except Exception as e:
+                logger.debug(f"Could not set output texture: {e}")
 
-if __name__ == "__main__":
-    # Exemple 1: Traiter un seul fichier
-    plot_spectrogram_for_inference(
-        location="chunk_1.wav",
-        plotpath="chunk_1_inference.png"
-    )
-    
-    # Exemple 2: Traiter un dossier complet
-    process_chunks_to_spectrograms_corrected(
-        chunks_folder="/content/chunks_audiotrain_audio",
-        spectro_output_folder="/content/chunks_audiotrain_spectrograms_corrected"
-    )
+        return {"image": frame, "json": None, "audio": None}
+
+    def close(self, node_id):
+        pass
+
+    def get_setting_dict(self, node_id):
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
+
+        pos = dpg.get_item_pos(tag_node_name)
+        method = dpg_get_value(input_value02_tag)
+
+        setting_dict = {}
+        setting_dict['ver'] = self._ver
+        setting_dict['pos'] = pos
+        setting_dict['method'] = method
+
+        return setting_dict
+
+    def set_setting_dict(self, node_id, setting_dict):
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
+
+        method = setting_dict.get('method', 'mel')
+        dpg_set_value(input_value02_tag, method)
