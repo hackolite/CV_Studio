@@ -152,8 +152,10 @@ AVAILABLE_OPENCV_COLORMAPS = [
 ]
 
 # Reference amplitude for dB conversion (matching ESC-50 training code)
-# Note: Using 10e-6 (which equals 1e-5) to match the original ESC-50 training implementation
-REFERENCE_AMPLITUDE = 10e-6
+# IMPORTANT: The user's training code uses 10e-6, which mathematically equals 1e-5
+# We preserve 10e-6 notation to exactly match the training code for traceability
+# Formula: 20.*np.log10(np.abs(sshow)/10e-6) from the ESC-50 training implementation
+REFERENCE_AMPLITUDE = 10e-6  # Do not change to 1e-5, must match training code exactly
 
 
 def fourier_transformation(sig, frameSize, overlapFac=0.5, window=np.hanning):
