@@ -237,7 +237,7 @@ class Node(Node):
                 )
                 dpg_set_value(input_value01_tag, input_texture)
 
-                # Frame heatmap (temporaire)
+                # Frame heatmap (temporary)
                 heatmap = np.zeros_like(self.heatmap_accum)
 
                 for box, score in zip(bboxes, scores):
@@ -248,7 +248,7 @@ class Node(Node):
                 # Higher memory value = longer retention (0.98 retains 98% of previous values)
                 self.heatmap_accum = self.heatmap_accum * decay + heatmap
 
-                # Normalisation with division by zero check
+                # Normalization with division by zero check
                 if self.heatmap_accum.max() > 0:
                     heatmap_norm = np.clip(self.heatmap_accum / self.heatmap_accum.max(), 0, 1)
                 else:
