@@ -259,10 +259,11 @@ class Node(Node):
         class_names,
         thickness=3,
         target_height=None,
+        target_width=None,
     ):
         """
-        Override base class method to support target_height parameter for proper
-        text scaling when images are resized in concat node.
+        Override base class method to support target_height and target_width parameters
+        for proper text scaling when images are resized in concat node.
         
         Args:
             image: Input image to draw on
@@ -274,17 +275,24 @@ class Node(Node):
             thickness: Base thickness for drawing (default: 3)
             target_height: Target height for text scaling (used when image will be resized).
                           If None, uses the current image height.
+            target_width: Target width for text scaling (used when image will be resized).
+                         If None, uses the current image width.
         """
         debug_image = copy.deepcopy(image)
         image_height, image_width = debug_image.shape[:2]
         
-        # Calculate scaling dimensions
-        # When target_height is provided, calculate what the dimensions will be after resize
-        if target_height is not None:
+        # Calculate scaling dimensions based on target size (if provided)
+        # When both target dimensions are provided, use them directly for accurate scaling
+        if target_height is not None and target_width is not None:
+            scaling_height = target_height
+            scaling_width = target_width
+        elif target_height is not None:
+            # Only target_height provided, estimate width based on aspect ratio
             aspect_ratio = image_width / image_height
             scaling_height = target_height
             scaling_width = int(target_height * aspect_ratio)
         else:
+            # No target dimensions, use current image size
             scaling_height = image_height
             scaling_width = image_width
         
@@ -361,7 +369,8 @@ class Node(Node):
                     if draw_info_on_result:
                         node_result = node_result_dict[node_id_name]
                         image_node_name = node_id_name.split(':')[1]
-                        frame = self.draw_info(image_node_name, node_result, frame, target_height=resize_height)
+                        frame = self.draw_info(image_node_name, node_result, frame, 
+                                             target_height=resize_height, target_width=resize_width)
                     resize_frame = cv2.resize(frame, (resize_width, resize_height))
                     frame_dict[slot_num - index - 1] = copy.deepcopy(resize_frame)
 
@@ -515,7 +524,7 @@ class Node(Node):
 
 
 
-    def draw_info(self, node_name, node_result, image, target_height=None):
+    def draw_info(self, node_name, node_result, image, target_height=None, target_width=None):
         # need some abstraction here
         print("node name :", node_name, "node_result :", node_result)
         classification_nodes = ['Classification']
@@ -576,6 +585,7 @@ class Node(Node):
                 class_ids,
                 class_names,
                 target_height=target_height,
+                target_width=target_width,
             )
         elif node_name in semantic_segmentation_nodes:
             class_num = node_result.get('class_num', [])
