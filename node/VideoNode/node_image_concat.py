@@ -257,7 +257,7 @@ class Node(Node):
         scores,
         class_ids,
         class_names,
-        thickness=3,
+        thickness=_OD_BASE_THICKNESS,
         target_height=None,
         target_width=None,
     ):
@@ -305,7 +305,7 @@ class Node(Node):
         )
         
         # Scale thickness: base thickness for reference dimension, scale proportionally
-        adaptive_thickness = max(1, int((min_dimension / self._OD_REFERENCE_DIMENSION) * self._OD_BASE_THICKNESS))
+        adaptive_thickness = max(1, int((min_dimension / self._OD_REFERENCE_DIMENSION) * thickness))
         
         for bbox, score, class_id in zip(bboxes, scores, class_ids):
             x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
