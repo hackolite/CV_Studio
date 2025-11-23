@@ -443,6 +443,9 @@ class Node(Node):
                 od_class_ids = node_result.get('od_class_ids', [])
                 od_class_names = node_result.get('od_class_names', [])
                 od_score_th = node_result.get('od_score_th', [])
+                # Note: draw_classification_with_od_info uses fixed font size (0.9) from base class
+                # and doesn't have the same scaling issue as draw_classification_info.
+                # If dynamic scaling is needed in the future, override this method.
                 debug_image = self.draw_classification_with_od_info(
                     debug_image,
                     class_ids,
