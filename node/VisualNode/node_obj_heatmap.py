@@ -273,6 +273,15 @@ class Node(Node):
 
         heatmap_image = None
         
+        # Ensure heatmap accumulator has correct dimensions
+        if self.heatmap_accum.shape != (small_window_h, small_window_w):
+            # Resize the accumulator to match current processing dimensions
+            self.heatmap_accum = cv2.resize(
+                self.heatmap_accum, 
+                (small_window_w, small_window_h),
+                interpolation=cv2.INTER_LINEAR
+            )
+        
         # Only process and display heatmap if BOTH image and JSON data are present
         if input_image is not None and node_result and isinstance(node_result, dict):
             # Extract detection data
