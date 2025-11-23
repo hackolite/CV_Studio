@@ -241,23 +241,46 @@ class YoutubeNode(Node):
     
 
     def button(self, sender, data, user_data):
-        print(user_data)
-        value = dpg.get_value(user_data)
+        # user_data is the tag for the URL input field
+        # We need to construct the button tag from the node name
+        tag_parts = user_data.split(':')
+        tag_node_name = ':'.join(tag_parts[:2])  # Get node_id:node_tag
+        tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
         
-        # Validate the URL before processing
-        if not value or not isinstance(value, str) or not value.strip():
-            print("Error: Please enter a valid YouTube URL")
-            return
+        # Get current button label to determine state
+        label = dpg.get_item_label(tag_node_button_value_name)
         
-        try:
-            self.cap = get_light_live_stream_url(value)
-            print(f"Button clicked, URL: {value}")
-        except ValueError as e:
-            print(f"Error: {e}")
-            self.cap = None
-        except Exception as e:
-            print(f"Unexpected error: {e}")
-            self.cap = None
+        # Get the YouTube URL
+        youtube_url = dpg.get_value(user_data)
+        
+        if label == self._start_label:
+            # Starting the stream
+            if not youtube_url or not isinstance(youtube_url, str) or not youtube_url.strip():
+                print("Error: Please enter a valid YouTube URL")
+                return
+            
+            try:
+                # Initialize the video capture
+                self.cap = get_light_live_stream_url(youtube_url)
+                print(f"YouTube stream started: {youtube_url}")
+                # Change button label to Stop
+                dpg.set_item_label(tag_node_button_value_name, self._stop_label)
+            except ValueError as e:
+                print(f"Error: {e}")
+                self.cap = None
+            except Exception as e:
+                print(f"Unexpected error: {e}")
+                self.cap = None
+        
+        elif label == self._stop_label:
+            # Stopping the stream
+            if self.cap is not None:
+                self.cap.release()
+                self.cap = None
+                print("YouTube stream stopped")
+            
+            # Change button label back to Start
+            dpg.set_item_label(tag_node_button_value_name, self._start_label)
         
     def _update(self, node_id, connection_list, node_image_dict, node_result_dict):
         """Updates the video stream image."""
