@@ -4,7 +4,6 @@
 Spectrogram Node - Converts audio to spectrogram visualization
 """
 import time
-import tempfile
 import os
 
 import cv2
@@ -13,12 +12,8 @@ import dearpygui.dearpygui as dpg
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
-from matplotlib import cm
-import scipy.io.wavfile as wav
-from numpy.lib import stride_tricks
 
 from node_editor.util import dpg_get_value, dpg_set_value
-from node.node_abc import DpgNodeABC
 from node.basenode import Node
 
 # Import spectrogram utility functions from the existing module
@@ -167,7 +162,6 @@ class SpectrogramNode(Node):
         # Set node-specific attributes after parent init
         self.node_label = 'Spectrogram'
         self.node_tag = 'Spectrogram'
-        self._temp_audio_file = None
 
     def update(
         self,
@@ -334,12 +328,8 @@ class SpectrogramNode(Node):
             return None
 
     def close(self, node_id):
-        """Cleanup temporary files"""
-        if self._temp_audio_file and os.path.exists(self._temp_audio_file):
-            try:
-                os.unlink(self._temp_audio_file)
-            except:
-                pass
+        """Cleanup method"""
+        pass
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
