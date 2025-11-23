@@ -271,8 +271,14 @@ class Node(Node):
             
             # Calculate scaling factors from input image to processing window
             input_h, input_w = input_image.shape[:2]
-            scale_x = small_window_w / input_w
-            scale_y = small_window_h / input_h
+            # Protect against division by zero (invalid input images)
+            if input_w > 0 and input_h > 0:
+                scale_x = small_window_w / input_w
+                scale_y = small_window_h / input_h
+            else:
+                # Invalid input dimensions, use 1:1 scale (no scaling)
+                scale_x = 1.0
+                scale_y = 1.0
             
             if bboxes and scores:
                 # Create temporary heatmap for current frame
