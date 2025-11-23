@@ -175,6 +175,42 @@ class Node(Node):
             self._opencv_setting_dict['process_width']
         ), dtype=np.float32)
 
+    def _prepare_image_for_display(self, image, target_width, target_height):
+        """
+        Prepare an image for display by resizing and converting to BGR format.
+        
+        Args:
+            image: Input image (can be grayscale or color, various formats)
+            target_width: Target width for resizing
+            target_height: Target height for resizing
+            
+        Returns:
+            Processed image ready for display (BGR format, correct size)
+        """
+        if image is None:
+            return None
+            
+        # Make a copy to avoid modifying the original
+        processed = image.copy()
+        
+        # Resize if needed
+        if processed.shape[:2] != (target_height, target_width):
+            processed = cv2.resize(processed, (target_width, target_height))
+        
+        # Ensure 3 channels (BGR)
+        if len(processed.shape) == 2:
+            # Convert grayscale (H, W) to BGR
+            processed = cv2.cvtColor(processed, cv2.COLOR_GRAY2BGR)
+        elif len(processed.shape) == 3:
+            if processed.shape[2] == 1:
+                # Convert grayscale (H, W, 1) to BGR - need to squeeze first
+                processed = cv2.cvtColor(processed.squeeze(axis=2), cv2.COLOR_GRAY2BGR)
+            elif processed.shape[2] == 4:
+                # Convert BGRA to BGR
+                processed = cv2.cvtColor(processed, cv2.COLOR_BGRA2BGR)
+        
+        return processed
+
 
     def update(
         self,
@@ -220,19 +256,9 @@ class Node(Node):
         
         # Update input image display
         if input_image is not None:
-            # Resize and display input image
-            display_input = input_image.copy()
-            if display_input.shape[:2] != (small_window_h, small_window_w):
-                display_input = cv2.resize(display_input, (small_window_w, small_window_h))
-            
-            # Ensure display_input has 3 channels (BGR)
-            if len(display_input.shape) == 2:
-                display_input = cv2.cvtColor(display_input, cv2.COLOR_GRAY2BGR)
-            elif len(display_input.shape) == 3:
-                if display_input.shape[2] == 1:
-                    display_input = cv2.cvtColor(display_input.squeeze(axis=2), cv2.COLOR_GRAY2BGR)
-                elif display_input.shape[2] == 4:
-                    display_input = cv2.cvtColor(display_input, cv2.COLOR_BGRA2BGR)
+            display_input = self._prepare_image_for_display(
+                input_image, small_window_w, small_window_h
+            )
             
             # Update input texture
             input_texture = self.convert_cv_to_dpg(
@@ -308,24 +334,13 @@ class Node(Node):
         
         # Overlay heatmap with input image if available
         if input_image is not None:
-            # Resize input image if needed
-            if input_image.shape[:2] != (small_window_h, small_window_w):
-                input_image = cv2.resize(input_image, (small_window_w, small_window_h))
-            
-            # Ensure input_image has 3 channels (BGR) to match heatmap_colored
-            if len(input_image.shape) == 2:
-                # Convert grayscale (H, W) to BGR
-                input_image = cv2.cvtColor(input_image, cv2.COLOR_GRAY2BGR)
-            elif len(input_image.shape) == 3:
-                if input_image.shape[2] == 1:
-                    # Convert grayscale (H, W, 1) to BGR - need to squeeze first
-                    input_image = cv2.cvtColor(input_image.squeeze(axis=2), cv2.COLOR_GRAY2BGR)
-                elif input_image.shape[2] == 4:
-                    # Convert BGRA to BGR
-                    input_image = cv2.cvtColor(input_image, cv2.COLOR_BGRA2BGR)
+            # Prepare input image for blending
+            prepared_input = self._prepare_image_for_display(
+                input_image, small_window_w, small_window_h
+            )
             
             # Blend heatmap with input image (0.6 heatmap, 0.4 original image)
-            heatmap_image = cv2.addWeighted(input_image, 0.4, heatmap_colored, 0.6, 0)
+            heatmap_image = cv2.addWeighted(prepared_input, 0.4, heatmap_colored, 0.6, 0)
         else:
             # No input image, just use the heatmap
             heatmap_image = heatmap_colored
