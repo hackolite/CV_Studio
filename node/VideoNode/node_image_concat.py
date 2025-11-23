@@ -165,8 +165,16 @@ class Node(Node):
     _max_slot_number = 9
     _slot_id = {}
     
-    # Reference height for text scaling (in pixels)
+    # Reference height for classification text scaling (in pixels)
     _REFERENCE_HEIGHT = 480.0
+    
+    # Reference dimension for object detection text scaling (in pixels)
+    # Object detection uses min dimension for aspect-ratio independence
+    _OD_REFERENCE_DIMENSION = 640.0
+    _OD_BASE_FONT_SCALE = 0.9
+    _OD_MIN_FONT_SCALE = 0.3
+    _OD_MAX_FONT_SCALE = 2.0
+    _OD_BASE_THICKNESS = 3
 
     def __init__(self):
         pass
@@ -241,6 +249,107 @@ class Node(Node):
 
         return debug_image
 
+    def draw_object_detection_info(
+        self,
+        image,
+        score_th,
+        bboxes,
+        scores,
+        class_ids,
+        class_names,
+        thickness=_OD_BASE_THICKNESS,
+        target_height=None,
+        target_width=None,
+    ):
+        """
+        Override base class method to support target_height and target_width parameters
+        for proper text scaling when images are resized in concat node.
+        
+        Args:
+            image: Input image to draw on
+            score_th: Score threshold for filtering detections
+            bboxes: Bounding boxes
+            scores: Detection scores
+            class_ids: Class IDs
+            class_names: Class names dictionary
+            thickness: Base thickness for drawing (default: 3, from _OD_BASE_THICKNESS constant)
+            target_height: Target height for text scaling (used when image will be resized).
+                          If None, uses the current image height.
+            target_width: Target width for text scaling (used when image will be resized).
+                         If None, uses the current image width.
+        """
+        debug_image = copy.deepcopy(image)
+        image_height, image_width = debug_image.shape[:2]
+        
+        # Calculate scaling dimensions based on target size (if provided)
+        # When both target dimensions are provided, use them directly for accurate scaling
+        if target_height is not None and target_width is not None:
+            scaling_height = target_height
+            scaling_width = target_width
+        elif target_height is not None:
+            # Only target_height provided, estimate width based on aspect ratio
+            aspect_ratio = image_width / image_height
+            scaling_height = target_height
+            scaling_width = int(target_height * aspect_ratio)
+        elif target_width is not None:
+            # Only target_width provided, estimate height based on aspect ratio
+            aspect_ratio = image_height / image_width
+            scaling_height = int(target_width * aspect_ratio)
+            scaling_width = target_width
+        else:
+            # No target dimensions, use current image size
+            scaling_height = image_height
+            scaling_width = image_width
+        
+        min_dimension = min(scaling_height, scaling_width)
+        
+        # Scale font size: base size for reference dimension, scale proportionally
+        font_scale = max(
+            self._OD_MIN_FONT_SCALE,
+            min(self._OD_MAX_FONT_SCALE, (min_dimension / self._OD_REFERENCE_DIMENSION) * self._OD_BASE_FONT_SCALE)
+        )
+        
+        # Scale thickness: base thickness for reference dimension, scale proportionally
+        adaptive_thickness = max(1, int((min_dimension / self._OD_REFERENCE_DIMENSION) * thickness))
+        
+        for bbox, score, class_id in zip(bboxes, scores, class_ids):
+            x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+
+            if score_th > score:
+                continue
+
+            color = self.get_color(class_id)
+
+            debug_image = cv2.rectangle(
+                debug_image,
+                (x1, y1),
+                (x2, y2),
+                color,
+                thickness=adaptive_thickness,
+            )
+
+            score_str = '%.2f' % score
+            text = '%s:%s(%s)' % (int(class_id), str(class_names[int(class_id)]), score_str)
+            
+            # Calculate text size to position it better
+            (text_width, text_height), baseline = cv2.getTextSize(
+                text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, adaptive_thickness
+            )
+            
+            # Position text above the bounding box with some padding
+            text_y = max(y1 - 5, text_height + 5)
+            
+            debug_image = cv2.putText(
+                debug_image,
+                text,
+                (x1, text_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                font_scale,
+                color,
+                thickness=adaptive_thickness,
+            )
+
+        return debug_image
 
     def create_image_dict(
             self,
@@ -265,7 +374,10 @@ class Node(Node):
                     if draw_info_on_result:
                         node_result = node_result_dict[node_id_name]
                         image_node_name = node_id_name.split(':')[1]
-                        frame = self.draw_info(image_node_name, node_result, frame, target_height=resize_height)
+                        frame = self.draw_info(
+                            image_node_name, node_result, frame,
+                            target_height=resize_height, target_width=resize_width
+                        )
                     resize_frame = cv2.resize(frame, (resize_width, resize_height))
                     frame_dict[slot_num - index - 1] = copy.deepcopy(resize_frame)
 
@@ -419,7 +531,7 @@ class Node(Node):
 
 
 
-    def draw_info(self, node_name, node_result, image, target_height=None):
+    def draw_info(self, node_name, node_result, image, target_height=None, target_width=None):
         # need some abstraction here
         print("node name :", node_name, "node_result :", node_result)
         classification_nodes = ['Classification']
@@ -479,6 +591,8 @@ class Node(Node):
                 scores,
                 class_ids,
                 class_names,
+                target_height=target_height,
+                target_width=target_width,
             )
         elif node_name in semantic_segmentation_nodes:
             class_num = node_result.get('class_num', [])
