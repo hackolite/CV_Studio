@@ -165,8 +165,16 @@ class Node(Node):
     _max_slot_number = 9
     _slot_id = {}
     
-    # Reference height for text scaling (in pixels)
+    # Reference height for classification text scaling (in pixels)
     _REFERENCE_HEIGHT = 480.0
+    
+    # Reference dimension for object detection text scaling (in pixels)
+    # Object detection uses min dimension for aspect-ratio independence
+    _OD_REFERENCE_DIMENSION = 640.0
+    _OD_BASE_FONT_SCALE = 0.9
+    _OD_MIN_FONT_SCALE = 0.3
+    _OD_MAX_FONT_SCALE = 2.0
+    _OD_BASE_THICKNESS = 3
 
     def __init__(self):
         pass
@@ -270,17 +278,26 @@ class Node(Node):
         debug_image = copy.deepcopy(image)
         image_height, image_width = debug_image.shape[:2]
         
-        # Use target_height for scaling if provided (for concat resizing)
-        # Otherwise use current image height
-        scaling_height = target_height if target_height is not None else image_height
-        scaling_width = int(scaling_height * image_width / image_height) if target_height is not None else image_width
+        # Calculate scaling dimensions
+        # When target_height is provided, calculate what the dimensions will be after resize
+        if target_height is not None:
+            aspect_ratio = image_width / image_height
+            scaling_height = target_height
+            scaling_width = int(target_height * aspect_ratio)
+        else:
+            scaling_height = image_height
+            scaling_width = image_width
+        
         min_dimension = min(scaling_height, scaling_width)
         
-        # Scale font size: base size of 0.9 for ~640px, scale proportionally
-        font_scale = max(0.3, min(2.0, (min_dimension / 640.0) * 0.9))
+        # Scale font size: base size for reference dimension, scale proportionally
+        font_scale = max(
+            self._OD_MIN_FONT_SCALE,
+            min(self._OD_MAX_FONT_SCALE, (min_dimension / self._OD_REFERENCE_DIMENSION) * self._OD_BASE_FONT_SCALE)
+        )
         
-        # Scale thickness: base thickness of 3 for ~640px, scale proportionally
-        adaptive_thickness = max(1, int((min_dimension / 640.0) * thickness))
+        # Scale thickness: base thickness for reference dimension, scale proportionally
+        adaptive_thickness = max(1, int((min_dimension / self._OD_REFERENCE_DIMENSION) * self._OD_BASE_THICKNESS))
         
         for bbox, score, class_id in zip(bboxes, scores, class_ids):
             x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
