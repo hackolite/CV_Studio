@@ -12,6 +12,7 @@ from node.node_abc import DpgNodeABC
 
 
 from node.basenode import Node
+from node.VisualNode.heatmap_utils import get_colormap, ensure_odd_blur_size, COLORMAP_NAMES
 
 class FactoryNode:
     node_label = 'Heatmap'
@@ -145,6 +146,7 @@ class FactoryNode:
                     default_value=25,
                     min_value=1,
                     max_value=99,
+                    clamped=True,
                     callback=None,
                 )
 
@@ -159,7 +161,7 @@ class FactoryNode:
                 dpg.add_combo(
                     tag=node.tag_node_input06_value_name,
                     label="Colormap",
-                    items=["JET", "HOT", "COOL", "RAINBOW", "VIRIDIS", "TURBO"],
+                    items=COLORMAP_NAMES,
                     default_value="JET",
                     width=small_window_w - 100,
                     callback=None,
@@ -280,19 +282,10 @@ class Node(Node):
         blend_alpha = dpg_get_value(input_value07_tag)  # Get blend alpha
         
         # Ensure blur_size is odd for GaussianBlur
-        if blur_size % 2 == 0:
-            blur_size += 1
+        blur_size = ensure_odd_blur_size(blur_size)
         
-        # Map colormap name to OpenCV constant
-        colormap_dict = {
-            "JET": cv2.COLORMAP_JET,
-            "HOT": cv2.COLORMAP_HOT,
-            "COOL": cv2.COLORMAP_COOL,
-            "RAINBOW": cv2.COLORMAP_RAINBOW,
-            "VIRIDIS": cv2.COLORMAP_VIRIDIS,
-            "TURBO": cv2.COLORMAP_TURBO,
-        }
-        colormap = colormap_dict.get(colormap_name, cv2.COLORMAP_JET)
+        # Get colormap constant
+        colormap = get_colormap(colormap_name)
 
 
         if frame is not None and use_pref_counter:
