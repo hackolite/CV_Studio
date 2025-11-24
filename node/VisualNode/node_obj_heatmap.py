@@ -118,7 +118,7 @@ class FactoryNode:
                     width=small_window_w - 100,
                 )
 
-            # Alpha slider
+            # Alpha slider (Memory)
             with dpg.node_attribute(
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
@@ -129,6 +129,56 @@ class FactoryNode:
                     default_value=0.98,
                     min_value=0.80,
                     max_value=0.995,
+                    callback=None,
+                )
+
+            # Blur slider
+            node.tag_node_blur_name = node.tag_node_name + ':Blur'
+            node.tag_node_blur_value_name = node.tag_node_name + ':BlurValue'
+            
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_int(
+                    tag=node.tag_node_blur_value_name,
+                    label="Blur",
+                    width=small_window_w - 80,
+                    default_value=25,
+                    min_value=1,
+                    max_value=99,
+                    callback=None,
+                )
+
+            # Colormap dropdown
+            node.tag_node_colormap_name = node.tag_node_name + ':Colormap'
+            node.tag_node_colormap_value_name = node.tag_node_name + ':ColormapValue'
+            
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_colormap_value_name,
+                    label="Colormap",
+                    items=["JET", "HOT", "COOL", "RAINBOW", "VIRIDIS", "TURBO"],
+                    default_value="JET",
+                    width=small_window_w - 100,
+                    callback=None,
+                )
+
+            # Blend Alpha slider
+            node.tag_node_blend_name = node.tag_node_name + ':Blend'
+            node.tag_node_blend_value_name = node.tag_node_name + ':BlendValue'
+            
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_blend_value_name,
+                    label="Blend Alpha",
+                    width=small_window_w - 80,
+                    default_value=0.6,
+                    min_value=0.0,
+                    max_value=1.0,
                     callback=None,
                 )
 
@@ -218,6 +268,9 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         alpha_tag = tag_node_name + ':AlphaValue'
         class_tag = tag_node_name + ':ClassValue'
+        blur_tag = tag_node_name + ':BlurValue'
+        colormap_tag = tag_node_name + ':ColormapValue'
+        blend_tag = tag_node_name + ':BlendValue'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
@@ -226,9 +279,27 @@ class Node(Node):
         
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
-        # Get decay factor and selected class
+        # Get parameters
         decay = dpg_get_value(alpha_tag)
         selected_class = dpg_get_value(class_tag)
+        blur_size = dpg_get_value(blur_tag)
+        colormap_name = dpg_get_value(colormap_tag)
+        blend_alpha = dpg_get_value(blend_tag)
+        
+        # Ensure blur_size is odd for GaussianBlur
+        if blur_size % 2 == 0:
+            blur_size += 1
+        
+        # Map colormap name to OpenCV constant
+        colormap_dict = {
+            "JET": cv2.COLORMAP_JET,
+            "HOT": cv2.COLORMAP_HOT,
+            "COOL": cv2.COLORMAP_COOL,
+            "RAINBOW": cv2.COLORMAP_RAINBOW,
+            "VIRIDIS": cv2.COLORMAP_VIRIDIS,
+            "TURBO": cv2.COLORMAP_TURBO,
+        }
+        colormap = colormap_dict.get(colormap_name, cv2.COLORMAP_JET)
 
         # Find connected sources for JSON and IMAGE data
         connection_info_src_json = ''
@@ -329,19 +400,19 @@ class Node(Node):
             
             heatmap_display = (heatmap_norm * 255).astype(np.uint8)
             
-            # Apply Gaussian blur for smoother appearance
-            heatmap_display = cv2.GaussianBlur(heatmap_display, (25, 25), 0)
+            # Apply Gaussian blur for smoother appearance with configurable kernel size
+            heatmap_display = cv2.GaussianBlur(heatmap_display, (blur_size, blur_size), 0)
             
-            # Apply colormap (JET colormap for hot-cold visualization)
-            heatmap_colored = cv2.applyColorMap(heatmap_display, cv2.COLORMAP_JET)
+            # Apply colormap with configurable colormap
+            heatmap_colored = cv2.applyColorMap(heatmap_display, colormap)
             
             # Prepare input image for blending
             prepared_input = self._prepare_image_for_display(
                 input_image, small_window_w, small_window_h
             )
             
-            # Blend heatmap with input image (0.6 heatmap, 0.4 original image)
-            heatmap_image = cv2.addWeighted(prepared_input, 0.4, heatmap_colored, 0.6, 0)
+            # Blend heatmap with input image with configurable alpha
+            heatmap_image = cv2.addWeighted(prepared_input, 1.0 - blend_alpha, heatmap_colored, blend_alpha, 0)
 
         if use_pref_counter:
             elapsed_time = time.monotonic() - start_time
@@ -368,9 +439,15 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         alpha_tag = tag_node_name + ':AlphaValue'
         class_tag = tag_node_name + ':ClassValue'
+        blur_tag = tag_node_name + ':BlurValue'
+        colormap_tag = tag_node_name + ':ColormapValue'
+        blend_tag = tag_node_name + ':BlendValue'
 
         decay = dpg_get_value(alpha_tag)
         selected_class = dpg_get_value(class_tag)
+        blur_size = dpg_get_value(blur_tag)
+        colormap_name = dpg_get_value(colormap_tag)
+        blend_alpha = dpg_get_value(blend_tag)
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -379,6 +456,9 @@ class Node(Node):
         setting_dict['pos'] = pos
         setting_dict[alpha_tag] = decay
         setting_dict[class_tag] = selected_class
+        setting_dict[blur_tag] = blur_size
+        setting_dict[colormap_tag] = colormap_name
+        setting_dict[blend_tag] = blend_alpha
 
         return setting_dict
 
@@ -386,8 +466,18 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         alpha_tag = tag_node_name + ':AlphaValue'
         class_tag = tag_node_name + ':ClassValue'
+        blur_tag = tag_node_name + ':BlurValue'
+        colormap_tag = tag_node_name + ':ColormapValue'
+        blend_tag = tag_node_name + ':BlendValue'
 
         decay = setting_dict.get(alpha_tag, 0.98)  # Default to 0.98 for backward compatibility
         selected_class = setting_dict.get(class_tag, "All")
+        blur_size = setting_dict.get(blur_tag, 25)  # Default to 25 for backward compatibility
+        colormap_name = setting_dict.get(colormap_tag, "JET")  # Default to JET for backward compatibility
+        blend_alpha = setting_dict.get(blend_tag, 0.6)  # Default to 0.6 for backward compatibility
+        
         dpg_set_value(alpha_tag, decay)
         dpg_set_value(class_tag, selected_class)
+        dpg_set_value(blur_tag, blur_size)
+        dpg_set_value(colormap_tag, colormap_name)
+        dpg_set_value(blend_tag, blend_alpha)
