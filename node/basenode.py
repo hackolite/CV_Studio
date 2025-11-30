@@ -497,48 +497,49 @@ class Node:
         return image
 
     def draw_mediapipe_hands_info(self, image, results_list):
-        for id in range(21):
-            landmark_x, landmark_y = results[id][0], results[id][1]
-            cv2.circle(image, (landmark_x, landmark_y), 5, (0, 255, 0), -1)
+        for results in results_list:
+            for id in range(21):
+                landmark_x, landmark_y = results[id][0], results[id][1]
+                cv2.circle(image, (landmark_x, landmark_y), 5, (0, 255, 0), -1)
 
-        cv2.line(image, results[2][:2], results[3][:2], (0, 255, 0), 2)
-        cv2.line(image, results[3][:2], results[4][:2], (0, 255, 0), 2)
+            cv2.line(image, results[2][:2], results[3][:2], (0, 255, 0), 2)
+            cv2.line(image, results[3][:2], results[4][:2], (0, 255, 0), 2)
 
-        cv2.line(image, results[5][:2], results[6][:2], (0, 255, 0), 2)
-        cv2.line(image, results[6][:2], results[7][:2], (0, 255, 0), 2)
-        cv2.line(image, results[7][:2], results[8][:2], (0, 255, 0), 2)
+            cv2.line(image, results[5][:2], results[6][:2], (0, 255, 0), 2)
+            cv2.line(image, results[6][:2], results[7][:2], (0, 255, 0), 2)
+            cv2.line(image, results[7][:2], results[8][:2], (0, 255, 0), 2)
 
-        cv2.line(image, results[9][:2], results[10][:2], (0, 255, 0), 2)
-        cv2.line(image, results[10][:2], results[11][:2], (0, 255, 0), 2)
-        cv2.line(image, results[11][:2], results[12][:2], (0, 255, 0), 2)
+            cv2.line(image, results[9][:2], results[10][:2], (0, 255, 0), 2)
+            cv2.line(image, results[10][:2], results[11][:2], (0, 255, 0), 2)
+            cv2.line(image, results[11][:2], results[12][:2], (0, 255, 0), 2)
 
-        cv2.line(image, results[13][:2], results[14][:2], (0, 255, 0), 2)
-        cv2.line(image, results[14][:2], results[15][:2], (0, 255, 0), 2)
-        cv2.line(image, results[15][:2], results[16][:2], (0, 255, 0), 2)
+            cv2.line(image, results[13][:2], results[14][:2], (0, 255, 0), 2)
+            cv2.line(image, results[14][:2], results[15][:2], (0, 255, 0), 2)
+            cv2.line(image, results[15][:2], results[16][:2], (0, 255, 0), 2)
 
-        cv2.line(image, results[17][:2], results[18][:2], (0, 255, 0), 2)
-        cv2.line(image, results[18][:2], results[19][:2], (0, 255, 0), 2)
-        cv2.line(image, results[19][:2], results[20][:2], (0, 255, 0), 2)
+            cv2.line(image, results[17][:2], results[18][:2], (0, 255, 0), 2)
+            cv2.line(image, results[18][:2], results[19][:2], (0, 255, 0), 2)
+            cv2.line(image, results[19][:2], results[20][:2], (0, 255, 0), 2)
 
-        cv2.line(image, results[0][:2], results[1][:2], (0, 255, 0), 2)
-        cv2.line(image, results[1][:2], results[2][:2], (0, 255, 0), 2)
-        cv2.line(image, results[2][:2], results[5][:2], (0, 255, 0), 2)
-        cv2.line(image, results[5][:2], results[9][:2], (0, 255, 0), 2)
-        cv2.line(image, results[9][:2], results[13][:2], (0, 255, 0), 2)
-        cv2.line(image, results[13][:2], results[17][:2], (0, 255, 0), 2)
-        cv2.line(image, results[17][:2], results[0][:2], (0, 255, 0), 2)
+            cv2.line(image, results[0][:2], results[1][:2], (0, 255, 0), 2)
+            cv2.line(image, results[1][:2], results[2][:2], (0, 255, 0), 2)
+            cv2.line(image, results[2][:2], results[5][:2], (0, 255, 0), 2)
+            cv2.line(image, results[5][:2], results[9][:2], (0, 255, 0), 2)
+            cv2.line(image, results[9][:2], results[13][:2], (0, 255, 0), 2)
+            cv2.line(image, results[13][:2], results[17][:2], (0, 255, 0), 2)
+            cv2.line(image, results[17][:2], results[0][:2], (0, 255, 0), 2)
 
-        cx, cy = results["palm_moment"]
-        cv2.putText(
-            image,
-            results["label"],
-            (cx - 20, cy),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (0, 255, 0),
-            2,
-            cv2.LINE_AA,
-        )
+            cx, cy = results["palm_moment"]
+            cv2.putText(
+                image,
+                results["label"],
+                (cx - 20, cy),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 255, 0),
+                2,
+                cv2.LINE_AA,
+            )
 
         return image
 
