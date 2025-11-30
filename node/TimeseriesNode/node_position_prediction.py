@@ -10,6 +10,7 @@ using a Kalman filter-based prediction model.
 import copy
 import time
 
+import cv2
 import numpy as np
 import dearpygui.dearpygui as dpg
 
@@ -356,8 +357,6 @@ class Node(Node):
         ndarray
             Image with drawn predictions.
         """
-        import cv2
-
         debug_image = copy.deepcopy(image)
 
         results_list = pose_result.get('results_list', [])
