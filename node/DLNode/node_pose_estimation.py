@@ -70,6 +70,8 @@ class FactoryNode:
         node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
         node.tag_node_output02_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
         node.tag_node_output02_value_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02Value'
+        node.tag_node_output_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Output03'
+        node.tag_node_output_json_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Output03Value'
 
         node.tag_provider_select_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Provider'
         node.tag_provider_select_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':ProviderValue'
@@ -171,11 +173,11 @@ class FactoryNode:
                     )
 
             with dpg.node_attribute(
-                        tag=node.tag_node_output02_name + "result",
+                        tag=node.tag_node_output_json_name,
                         attribute_type=dpg.mvNode_Attr_Output,
                 ):
                     dpg.add_text(
-                        tag=node.tag_node_output02_name + "result_1",
+                        tag=node.tag_node_output_json_value_name,
                         default_value='Pose Results',
                     )
 
