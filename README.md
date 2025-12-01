@@ -207,9 +207,6 @@ Compress-Archive -Path CV_Studio -DestinationPath CV_Studio_v1.0.zip
 
 # Or use 7-Zip (if installed):
 7z a CV_Studio_v1.0.zip CV_Studio
-
-# Or create tar.gz (Git Bash/Linux):
-tar -czf CV_Studio_v1.0.tar.gz CV_Studio
 ```
 
 The ZIP file can be distributed to users who just need to:
@@ -239,11 +236,11 @@ python build_exe.py --windowed
 # Debug mode with detailed logging
 python build_exe.py --debug
 
-# Custom icon
-python build_exe.py --icon icon.ico
+# Custom icon (if you have an icon file)
+python build_exe.py --icon your_icon.ico
 
 # Combine options
-python build_exe.py --clean --windowed --icon icon.ico
+python build_exe.py --clean --windowed --icon your_icon.ico
 ```
 
 #### ⚠️ Dépannage / Troubleshooting
