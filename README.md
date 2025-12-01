@@ -123,7 +123,7 @@ cd CV_Studio
 **Étape 2 : Installer les dépendances principales / Step 2: Install main dependencies**
 
 ```bash
-# Install runtime dependencies
+# Install main dependencies
 pip install -r requirements.txt
 ```
 
@@ -205,8 +205,11 @@ cd dist
 # On Windows PowerShell:
 Compress-Archive -Path CV_Studio -DestinationPath CV_Studio_v1.0.zip
 
-# Or use tar (Git Bash/Windows 10+):
-tar -a -c -f CV_Studio_v1.0.zip CV_Studio
+# Or use 7-Zip (if installed):
+7z a CV_Studio_v1.0.zip CV_Studio
+
+# Or create tar.gz (Git Bash/Linux):
+tar -czf CV_Studio_v1.0.tar.gz CV_Studio
 ```
 
 The ZIP file can be distributed to users who just need to:
@@ -237,10 +240,10 @@ python build_exe.py --windowed
 python build_exe.py --debug
 
 # Custom icon
-python build_exe.py --icon path/to/icon.ico
+python build_exe.py --icon icon.ico
 
 # Combine options
-python build_exe.py --clean --windowed --icon logo.ico
+python build_exe.py --clean --windowed --icon icon.ico
 ```
 
 #### ⚠️ Dépannage / Troubleshooting
