@@ -73,22 +73,23 @@ def check_requirements():
         print("  ✓ PyInstaller installed")
     
     # Check required packages
-    required_packages = [
-        'dearpygui',
-        'opencv-python',
-        'onnxruntime-gpu',
-        'numpy',
-        'mediapipe',
-    ]
+    # Map of package names to their import names
+    required_packages = {
+        'dearpygui': 'dearpygui',
+        'opencv-python': 'cv2',
+        'onnxruntime-gpu': 'onnxruntime',
+        'numpy': 'numpy',
+        'mediapipe': 'mediapipe',
+    }
     
     missing_packages = []
-    for package in required_packages:
+    for package_name, import_name in required_packages.items():
         try:
-            __import__(package.replace('-', '_').split('[')[0])
-            print(f"  ✓ {package}")
+            __import__(import_name)
+            print(f"  ✓ {package_name}")
         except ImportError:
-            missing_packages.append(package)
-            print(f"  ✗ {package}")
+            missing_packages.append(package_name)
+            print(f"  ✗ {package_name}")
     
     if missing_packages:
         print(f"\nWARNING: Missing packages: {', '.join(missing_packages)}")

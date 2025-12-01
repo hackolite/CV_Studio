@@ -77,14 +77,8 @@ datas.append(('node_editor', 'node_editor'))
 # Add src directory
 datas.append(('src', 'src'))
 
-# Add specific ONNX models (recursive include)
-# This ensures all .onnx files in the DLNode directories are included
-for root, dirs, files in os.walk('node/DLNode'):
-    for file in files:
-        if file.endswith('.onnx'):
-            src_path = os.path.join(root, file)
-            dest_path = os.path.dirname(root)
-            datas.append((src_path, dest_path))
+# Note: ONNX models are already included via the 'node' directory above
+# All .onnx files in node/DLNode/* are automatically bundled
 
 # Add fonts
 datas.append(('node_editor/font', 'node_editor/font'))
