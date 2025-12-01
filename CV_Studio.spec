@@ -77,8 +77,11 @@ datas.append(('node_editor', 'node_editor'))
 # Add src directory
 datas.append(('src', 'src'))
 
-# Note: ONNX models are already included via the 'node' directory above
-# All .onnx files in node/DLNode/* are automatically bundled
+# ONNX models are automatically included via the 'node' directory above
+# The entire node directory is copied recursively, including:
+# - All .onnx model files in node/DLNode/*/model/
+# - All node Python modules and supporting files
+# This ensures all ONNX models for object detection are bundled
 
 # Add fonts
 datas.append(('node_editor/font', 'node_editor/font'))

@@ -107,7 +107,6 @@ def clean_build_directories():
     print("[2/5] Cleaning build directories...")
     
     dirs_to_clean = ['build', 'dist', '__pycache__']
-    files_to_clean = ['*.pyc', '*.pyo']
     
     for dir_name in dirs_to_clean:
         if os.path.exists(dir_name):
@@ -115,12 +114,17 @@ def clean_build_directories():
             shutil.rmtree(dir_name)
     
     # Clean __pycache__ directories recursively
+    # Use a list to avoid modification during iteration
+    pycache_dirs = []
     for root, dirs, files in os.walk('.'):
         for dir_name in dirs:
             if dir_name == '__pycache__':
-                dir_path = os.path.join(root, dir_name)
-                print(f"  - Removing {dir_path}")
-                shutil.rmtree(dir_path)
+                pycache_dirs.append(os.path.join(root, dir_name))
+    
+    for dir_path in pycache_dirs:
+        if os.path.exists(dir_path):
+            print(f"  - Removing {dir_path}")
+            shutil.rmtree(dir_path)
     
     print("  ✓ Clean complete\n")
 
@@ -140,18 +144,22 @@ def modify_spec_file(args):
     
     # Modify console setting for windowed mode
     if args.windowed:
-        spec_content = spec_content.replace(
-            "console=True,  # Set to False to hide console window",
-            "console=False,  # Console hidden (windowed mode)"
+        import re
+        spec_content = re.sub(
+            r'console=True,\s*#.*',
+            'console=False,  # Console hidden (windowed mode)',
+            spec_content
         )
         print("  - Windowed mode enabled (no console)")
     
     # Add icon if specified
     if args.icon:
         if os.path.exists(args.icon):
-            spec_content = spec_content.replace(
-                "icon=None,  # Add icon='icon.ico' if you have an icon file",
-                f"icon='{args.icon}',"
+            import re
+            spec_content = re.sub(
+                r"icon=None,\s*#.*",
+                f"icon='{args.icon}',",
+                spec_content
             )
             print(f"  - Custom icon: {args.icon}")
         else:
@@ -159,17 +167,12 @@ def modify_spec_file(args):
     
     # Handle onefile mode
     if args.onefile:
-        # This requires modifying the spec file structure
-        # For simplicity, we'll just note it
-        print("  - Single file mode requested (modifying spec...)")
-        # Replace COLLECT with single file settings
-        spec_content = spec_content.replace(
-            "exclude_binaries=True,",
-            "exclude_binaries=False,"
-        )
-        # Remove COLLECT section for onefile
-        if "coll = COLLECT(" in spec_content:
-            spec_content = spec_content[:spec_content.find("coll = COLLECT(")]
+        print("  - Single file mode requested")
+        print("  NOTE: Onefile mode requires manual spec file modification")
+        print("  Please edit CV_Studio.spec and change:")
+        print("    1. exe: exclude_binaries=False")
+        print("    2. Remove or comment out the COLLECT section")
+        print("  For now, building with standard (folder) mode...")
     
     # Write modified spec file
     with open(spec_file, 'w') as f:
