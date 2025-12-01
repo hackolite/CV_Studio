@@ -100,6 +100,32 @@ ipn-editor
 
 See [Image-Processing-Node-Editor/docker/nvidia-gpu](https://github.com/Kazuhito00/Image-Processing-Node-Editor/tree/main/docker/nvidia-gpu) for Docker setup instructions.  
 
+### Method 5: Standalone Executable (Windows)
+
+For Windows users who want a standalone .exe file that doesn't require Python installation:
+
+```bash
+# 1. Install build dependencies
+pip install -r requirements-build.txt
+
+# 2. Build the executable
+python build_exe.py --clean
+
+# 3. Your .exe is ready!
+# Location: dist/CV_Studio/CV_Studio.exe
+```
+
+The executable includes:
+- ✅ All nodes (Input, Process, DL, Audio, etc.)
+- ✅ All ONNX models for object detection
+- ✅ Complete Python runtime
+- ✅ No installation required - just run the .exe!
+
+**For detailed instructions, see:**
+- [Quick Reference](BUILD_EXE_QUICKREF.md) - Quick start guide
+- [Full Guide (English)](BUILD_EXE_GUIDE.md) - Complete documentation
+- [Guide complet (Français)](BUILD_EXE_GUIDE_FR.md) - Documentation complète
+
 ## 💡 Usage
 
 ### Basic Usage

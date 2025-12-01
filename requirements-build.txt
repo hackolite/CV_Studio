@@ -1,0 +1,8 @@
+# Additional requirements for building CV_Studio executable
+# Install with: pip install -r requirements-build.txt
+
+# Main build tool
+pyinstaller>=5.0.0
+
+# The tool will automatically use the main requirements.txt
+# This file only adds the build-specific dependencies

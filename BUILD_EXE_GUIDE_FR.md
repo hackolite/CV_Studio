@@ -1,0 +1,466 @@
+# Guide de Construction d'un Exécutable (.exe) pour CV_Studio
+
+## Vue d'ensemble
+
+Ce guide explique comment créer un fichier exécutable Windows (.exe) autonome pour CV_Studio qui inclut tous les nœuds, en particulier les nœuds de détection d'objets ONNX.
+
+## 🎯 Objectif
+
+Créer un fichier `.exe` qui :
+- ✅ Fonctionne de manière autonome (pas besoin d'installer Python)
+- ✅ Inclut tous les nœuds (Input, Process, DL, Audio, etc.)
+- ✅ Contient tous les modèles ONNX pour la détection d'objets
+- ✅ Embarque toutes les dépendances nécessaires
+- ✅ Peut être distribué facilement
+
+## 📋 Prérequis
+
+### Logiciels requis
+
+1. **Python 3.7 ou supérieur** (testé avec Python 3.12)
+2. **Git** pour cloner le dépôt
+3. **Visual C++ Redistributable** (pour l'exécution)
+
+### Installation des dépendances
+
+```bash
+# Cloner le dépôt
+git clone https://github.com/hackolite/CV_Studio.git
+cd CV_Studio
+
+# Installer les dépendances Python
+pip install -r requirements.txt
+
+# Installer PyInstaller (outil de construction)
+pip install pyinstaller
+```
+
+## 🚀 Construction rapide
+
+### Méthode 1 : Script automatique (RECOMMANDÉ)
+
+La méthode la plus simple est d'utiliser le script de construction automatique :
+
+```bash
+# Construction standard
+python build_exe.py
+
+# Construction avec nettoyage préalable
+python build_exe.py --clean
+
+# Construction en mode fenêtré (sans console)
+python build_exe.py --windowed
+
+# Construction avec icône personnalisée
+python build_exe.py --icon CV_Studio.ico
+```
+
+Le script va :
+1. ✅ Vérifier les dépendances
+2. ✅ Nettoyer les anciens builds (si --clean)
+3. ✅ Configurer la construction
+4. ✅ Compiler l'exécutable
+5. ✅ Créer la documentation
+
+### Méthode 2 : Construction manuelle avec PyInstaller
+
+Si vous préférez plus de contrôle :
+
+```bash
+# Utiliser le fichier spec pré-configuré
+pyinstaller CV_Studio.spec
+
+# Ou construction directe (sans spec)
+pyinstaller --name CV_Studio ^
+            --add-data "node;node" ^
+            --add-data "node_editor;node_editor" ^
+            --add-data "src;src" ^
+            --hidden-import dearpygui ^
+            --hidden-import cv2 ^
+            --hidden-import onnxruntime ^
+            --collect-all mediapipe ^
+            main.py
+```
+
+## 📂 Structure de sortie
+
+Après la construction, vous obtiendrez :
+
+```
+dist/CV_Studio/
+├── CV_Studio.exe           # Exécutable principal ← LANCEZ CECI
+├── README.txt              # Documentation d'utilisation
+├── node/                   # Tous les nœuds
+│   ├── DLNode/            # Nœuds Deep Learning
+│   │   └── object_detection/
+│   │       ├── YOLOX/model/*.onnx      # Modèles YOLOX
+│   │       ├── YOLO/model/*.onnx       # Modèles YOLO
+│   │       ├── FreeYOLO/model/*.onnx   # Modèles FreeYOLO
+│   │       └── ...
+│   ├── InputNode/         # Nœuds d'entrée
+│   ├── ProcessNode/       # Nœuds de traitement
+│   ├── AudioProcessNode/  # Nœuds audio
+│   └── ...
+├── node_editor/           # Éditeur de nœuds
+│   ├── font/             # Polices
+│   └── setting/          # Fichiers de configuration
+├── src/                   # Utilitaires source
+└── _internal/            # Runtime Python et dépendances
+```
+
+## 🎮 Utilisation de l'exécutable
+
+### Lancement simple
+
+```bash
+# Double-clic sur le fichier
+CV_Studio.exe
+
+# Ou depuis la ligne de commande
+cd dist\CV_Studio
+CV_Studio.exe
+```
+
+### Options de ligne de commande
+
+```bash
+# Avec fichier de configuration personnalisé
+CV_Studio.exe --setting mon_config.json
+
+# Mode debug
+CV_Studio.exe --use_debug_print
+
+# Désactiver le rendu asynchrone
+CV_Studio.exe --unuse_async_draw
+```
+
+## 🧪 Test de l'exécutable
+
+### Vérification de base
+
+1. **Lancer l'application**
+   ```bash
+   dist\CV_Studio\CV_Studio.exe
+   ```
+
+2. **Tester un nœud simple**
+   - Ajouter un nœud "Image" (Input → Image)
+   - Sélectionner une image
+   - Ajouter un nœud "Result Image"
+   - Connecter les deux nœuds
+
+3. **Tester la détection d'objets ONNX**
+   - Ajouter un nœud "Image" ou "WebCam"
+   - Ajouter un nœud "Object Detection" (VisionModel → Object Detection)
+   - Sélectionner un modèle (ex: YOLOX nano)
+   - Ajouter un nœud "Draw Information"
+   - Connecter : Input → Object Detection → Draw Information → Result Image
+
+### Vérification des modèles ONNX
+
+Les modèles suivants doivent être présents et fonctionnels :
+
+```
+node/DLNode/object_detection/
+├── YOLOX/model/
+│   ├── yolox_nano.onnx    ✅
+│   ├── yolox_tiny.onnx    ✅
+│   ├── yolox_s.onnx       ✅
+│   └── yolo11_n.onnx      ✅
+├── FreeYOLO/model/
+│   └── freeyolo.onnx      ✅
+└── TennisYOLO/model/
+    └── tennis.onnx        ✅
+```
+
+## 🎨 Options de construction avancées
+
+### Mode fenêtré (sans console)
+
+Pour une application purement GUI sans fenêtre de console :
+
+```bash
+python build_exe.py --windowed
+```
+
+### Fichier unique (onefile)
+
+Pour créer un seul fichier .exe (démarrage plus lent) :
+
+```bash
+python build_exe.py --onefile
+```
+
+**Note** : Le mode onefile est plus lent au démarrage car il doit extraire tous les fichiers temporairement.
+
+### Icône personnalisée
+
+```bash
+python build_exe.py --icon mon_icone.ico
+```
+
+### Build de debug
+
+Pour le débogage :
+
+```bash
+python build_exe.py --debug
+```
+
+## 📦 Distribution
+
+### Préparer la distribution
+
+1. **Tester l'exécutable** sur votre machine
+2. **Compresser le dossier**
+   ```bash
+   # Créer une archive ZIP
+   cd dist
+   tar -a -c -f CV_Studio_v1.0.zip CV_Studio
+   ```
+
+3. **Partager l'archive**
+   - Uploader sur GitHub Releases
+   - Partager via Google Drive / Dropbox
+   - Distribuer directement
+
+### Ce que les utilisateurs doivent faire
+
+1. Télécharger l'archive ZIP
+2. Extraire le dossier `CV_Studio`
+3. Lancer `CV_Studio.exe`
+
+**C'est tout !** Aucune installation Python requise.
+
+### Taille approximative
+
+- Build standard : ~800 MB - 1.5 GB
+  - Python runtime : ~100 MB
+  - OpenCV + dépendances : ~200 MB
+  - ONNX Runtime : ~100 MB
+  - Modèles ONNX : ~100-500 MB
+  - Autres dépendances : ~300 MB
+
+## 🔧 Dépannage
+
+### Problème : PyInstaller non trouvé
+
+```bash
+pip install pyinstaller
+```
+
+### Problème : Dépendances manquantes
+
+```bash
+pip install -r requirements.txt
+```
+
+### Problème : Erreur "module not found" dans l'exe
+
+Ajouter le module manquant dans `CV_Studio.spec` :
+
+```python
+hiddenimports += [
+    'nom_du_module_manquant',
+]
+```
+
+Puis reconstruire :
+
+```bash
+pyinstaller CV_Studio.spec
+```
+
+### Problème : Modèles ONNX non trouvés
+
+Vérifier que les modèles sont inclus dans `datas` dans le fichier spec :
+
+```python
+# Dans CV_Studio.spec
+datas.append(('node/DLNode', 'node/DLNode'))
+```
+
+### Problème : L'exe ne démarre pas
+
+1. **Tester depuis la ligne de commande** pour voir les erreurs :
+   ```bash
+   cd dist\CV_Studio
+   CV_Studio.exe --use_debug_print
+   ```
+
+2. **Installer Visual C++ Redistributable** :
+   - Télécharger : https://aka.ms/vs/17/release/vc_redist.x64.exe
+   - Installer et redémarrer
+
+3. **Vérifier les permissions** :
+   - Exécuter en tant qu'administrateur
+   - Désactiver l'antivirus temporairement
+
+### Problème : "Failed to execute script"
+
+Reconstruire avec le mode debug pour voir les détails :
+
+```bash
+python build_exe.py --debug
+```
+
+### Problème : Performance faible
+
+- Utiliser les modèles ONNX plus petits (nano, tiny)
+- Désactiver l'accélération GPU si pas de GPU compatible
+- Réduire la résolution de traitement
+
+## 🌟 Fonctionnalités incluses
+
+### Nœuds inclus dans l'exe
+
+✅ **Input Nodes**
+- Image, Video, WebCam, RTSP, Screen Capture
+- Int Value, Float Value
+
+✅ **Process Nodes**
+- Blur, Brightness, Contrast, Canny
+- Crop, Flip, Resize, Threshold, Grayscale
+- Et plus...
+
+✅ **Deep Learning Nodes**
+- Object Detection (YOLOX, YOLO, FreeYOLO)
+- Face Detection (YuNet, MediaPipe)
+- Classification, Pose Estimation
+- Semantic Segmentation
+- Low-Light Enhancement, Depth Estimation
+
+✅ **Audio Nodes**
+- Audio processing and model nodes
+- Spectrogram, ESC50 classification
+
+✅ **Other Nodes**
+- Tracking (MOT)
+- Overlay (Draw, PutText, Image Concat)
+- Visual (Result Image, RGB Histogram)
+- Action (Video Writer, ON/OFF Switch)
+
+### Modèles ONNX inclus
+
+✅ **Object Detection**
+- YOLOX (nano, tiny, small)
+- YOLO11 (nano)
+- FreeYOLO
+- Tennis YOLO
+- Lightweight Person Detector
+
+✅ **Face Detection**
+- YuNet
+
+✅ **Classification**
+- ResNet, MobileNet, EfficientNet
+
+✅ **Autres**
+- Depth estimation models
+- Low-light enhancement models
+- Segmentation models
+
+## 📝 Personnalisation
+
+### Modifier le fichier spec
+
+Pour personnaliser la construction, éditez `CV_Studio.spec` :
+
+```python
+# Ajouter des modules cachés
+hiddenimports += [
+    'mon_module',
+]
+
+# Ajouter des fichiers de données
+datas.append(('mon_dossier', 'mon_dossier'))
+
+# Exclure des packages inutiles
+excludes=[
+    'package_a_exclure',
+]
+
+# Changer le nom de l'exe
+name='MonApplication',
+
+# Masquer la console
+console=False,
+
+# Ajouter une icône
+icon='mon_icone.ico',
+```
+
+### Optimiser la taille
+
+Pour réduire la taille de l'exe :
+
+1. **Exclure des packages inutilisés** dans le spec
+2. **Supprimer les modèles ONNX non utilisés**
+3. **Utiliser UPX compression** (déjà activé)
+4. **Nettoyer les fichiers de test/doc**
+
+## 🔗 Liens utiles
+
+- **PyInstaller Documentation** : https://pyinstaller.org/
+- **CV_Studio GitHub** : https://github.com/hackolite/CV_Studio
+- **ONNX Runtime** : https://onnxruntime.ai/
+- **DearPyGUI** : https://github.com/hoffstadt/DearPyGui
+
+## ✅ Checklist de construction
+
+- [ ] Python 3.7+ installé
+- [ ] Dépendances installées (`pip install -r requirements.txt`)
+- [ ] PyInstaller installé (`pip install pyinstaller`)
+- [ ] Exécuter `python build_exe.py`
+- [ ] Tester `dist/CV_Studio/CV_Studio.exe`
+- [ ] Vérifier que les nœuds ONNX fonctionnent
+- [ ] Vérifier que tous les nœuds sont présents
+- [ ] Créer l'archive ZIP pour distribution
+- [ ] Tester sur une machine propre (sans Python)
+
+## 🎓 Exemples d'utilisation
+
+### Exemple 1 : Build standard
+
+```bash
+cd CV_Studio
+python build_exe.py --clean
+```
+
+### Exemple 2 : Build pour distribution
+
+```bash
+# Build avec icône personnalisée et mode fenêtré
+python build_exe.py --clean --windowed --icon logo.ico
+
+# Tester
+cd dist\CV_Studio
+CV_Studio.exe
+
+# Créer l'archive
+cd dist
+tar -a -c -f CV_Studio_Release_v1.0.zip CV_Studio
+```
+
+### Exemple 3 : Build de debug
+
+```bash
+# Build avec informations de debug
+python build_exe.py --debug
+
+# Lancer avec debug
+dist\CV_Studio\CV_Studio.exe --use_debug_print
+```
+
+## 📞 Support
+
+Pour toute question ou problème :
+
+1. **Vérifier ce guide** en premier
+2. **Consulter la documentation PyInstaller**
+3. **Ouvrir une issue** sur GitHub : https://github.com/hackolite/CV_Studio/issues
+4. **Vérifier les issues existantes** pour des problèmes similaires
+
+---
+
+**Bon build ! 🚀**
