@@ -104,27 +104,173 @@ See [Image-Processing-Node-Editor/docker/nvidia-gpu](https://github.com/Kazuhito
 
 For Windows users who want a standalone .exe file that doesn't require Python installation:
 
+#### 📋 Prérequis / Prerequisites
+
+Before building the executable, ensure you have:
+- **Python 3.7+** installed (tested with Python 3.12)
+- **Git** for cloning the repository
+- **Windows OS** (for building Windows executables)
+
+#### 🔧 Étapes de création du .exe / Step-by-Step Build Instructions
+
+**Étape 1 : Cloner le dépôt / Step 1: Clone the repository**
+
 ```bash
-# 1. Install build dependencies
-pip install -r requirements-build.txt
-
-# 2. Build the executable
-python build_exe.py --clean
-
-# 3. Your .exe is ready!
-# Location: dist/CV_Studio/CV_Studio.exe
+git clone https://github.com/hackolite/CV_Studio.git
+cd CV_Studio
 ```
 
-The executable includes:
-- ✅ All nodes (Input, Process, DL, Audio, etc.)
-- ✅ All ONNX models for object detection
-- ✅ Complete Python runtime
-- ✅ No installation required - just run the .exe!
+**Étape 2 : Installer les dépendances principales / Step 2: Install main dependencies**
 
-**For detailed instructions, see:**
+```bash
+# Install main dependencies
+pip install -r requirements.txt
+```
+
+**Étape 3 : Installer les dépendances de build / Step 3: Install build dependencies**
+
+```bash
+# Install PyInstaller and build tools
+pip install -r requirements-build.txt
+# Or manually: pip install pyinstaller
+```
+
+**Étape 4 : Construire l'exécutable / Step 4: Build the executable**
+
+```bash
+# Standard build with clean
+python build_exe.py --clean
+
+# Alternative: Build without console window (GUI only)
+python build_exe.py --clean --windowed
+
+# Alternative: With custom icon
+python build_exe.py --clean --icon your_icon.ico
+```
+
+The build process will:
+1. ✅ Verify all dependencies are installed
+2. ✅ Clean previous build artifacts (if --clean flag used)
+3. ✅ Package all Python dependencies
+4. ✅ Include all nodes (Input, Process, DL, Audio, etc.)
+5. ✅ Bundle all ONNX models for object detection
+6. ✅ Create the standalone executable
+
+**Build time:** Approximately 5-15 minutes depending on your system.
+
+**Étape 5 : Localiser l'exécutable / Step 5: Locate your executable**
+
+Your .exe file is ready at:
+```
+dist/CV_Studio/CV_Studio.exe
+```
+
+The `dist/CV_Studio/` folder contains:
+- `CV_Studio.exe` - Main executable
+- `node/` - All node implementations and ONNX models
+- `node_editor/` - Editor core and settings
+- `src/` - Source utilities
+- `_internal/` - Python runtime and dependencies
+
+**Étape 6 : Tester l'exécutable / Step 6: Test the executable**
+
+```bash
+# Navigate to the dist folder
+cd dist/CV_Studio
+
+# Run the executable
+CV_Studio.exe
+
+# Or run with debug output
+CV_Studio.exe --use_debug_print
+```
+
+**Étape 7 : Vérifier les fonctionnalités / Step 7: Verify functionality**
+
+Test that everything works:
+1. Open the application
+2. Add an **Image** node (Input → Image)
+3. Add an **Object Detection** node (VisionModel → Object Detection)
+4. Select a YOLOX model
+5. Add a **Result Image** node
+6. Connect the nodes and verify object detection works
+
+**Étape 8 : Distribution / Step 8: Distribution**
+
+To share your executable:
+
+```bash
+# Create a ZIP archive
+cd dist
+# On Windows PowerShell:
+Compress-Archive -Path CV_Studio -DestinationPath CV_Studio_v1.0.zip
+
+# Or use 7-Zip (if installed):
+7z a CV_Studio_v1.0.zip CV_Studio
+```
+
+The ZIP file can be distributed to users who just need to:
+1. Extract the ZIP file
+2. Run `CV_Studio.exe`
+3. No Python installation required!
+
+#### 📦 What's included in the executable
+
+- ✅ All nodes (Input, Process, DL, Audio, etc.)
+- ✅ All ONNX models for object detection (YOLOX, YOLO, FreeYOLO, etc.)
+- ✅ Complete Python runtime (no separate Python installation needed)
+- ✅ All required libraries (OpenCV, DearPyGUI, ONNX Runtime, etc.)
+- ✅ Configuration files and fonts
+
+**Size:** Approximately 800 MB - 1.5 GB
+
+#### 🔍 Options de build avancées / Advanced Build Options
+
+```bash
+# Clean build (recommended)
+python build_exe.py --clean
+
+# GUI mode without console window
+python build_exe.py --windowed
+
+# Debug mode with detailed logging
+python build_exe.py --debug
+
+# Custom icon (if you have an icon file)
+python build_exe.py --icon your_icon.ico
+
+# Combine options
+python build_exe.py --clean --windowed --icon your_icon.ico
+```
+
+#### ⚠️ Dépannage / Troubleshooting
+
+**Problem:** PyInstaller not found
+```bash
+pip install pyinstaller
+```
+
+**Problem:** Missing dependencies
+```bash
+pip install -r requirements.txt
+pip install -r requirements-build.txt
+```
+
+**Problem:** Exe doesn't start
+- Install [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+- Run from command line to see error messages: `CV_Studio.exe --use_debug_print`
+- Check antivirus isn't blocking the executable
+
+**Problem:** ONNX models not found
+- Verify the `dist/CV_Studio/node/DLNode/` directory structure is intact
+- Rebuild with `python build_exe.py --clean`
+
+#### 📚 Documentation détaillée / Detailed Documentation
+
+**For comprehensive guides, see:**
 - [Quick Reference](BUILD_EXE_QUICKREF.md) - Quick start guide
-- [Full Guide (English)](BUILD_EXE_GUIDE.md) - Complete documentation
-- [Guide complet (Français)](BUILD_EXE_GUIDE_FR.md) - Documentation complète
+- [Full Guide (English)](BUILD_EXE_GUIDE.md) - Complete documentation with all options
+- [Guide complet (Français)](BUILD_EXE_GUIDE_FR.md) - Documentation complète en français
 
 ## 💡 Usage
 
