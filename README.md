@@ -102,7 +102,7 @@ See [Image-Processing-Node-Editor/docker/nvidia-gpu](https://github.com/Kazuhito
 
 ### Method 5: Standalone Executable (Windows)
 
-For Windows users who want a standalone .exe file that doesn't require Python installation.
+For Windows users who want a standalone .exe file that doesn't require Python installation:
 
 #### 📋 Prérequis / Prerequisites
 
@@ -176,7 +176,7 @@ The `dist/CV_Studio/` folder contains:
 
 ```bash
 # Navigate to the dist folder
-cd dist\CV_Studio
+cd dist/CV_Studio
 
 # Run the executable
 CV_Studio.exe
