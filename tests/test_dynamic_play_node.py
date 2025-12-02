@@ -184,7 +184,7 @@ def test_overlay_activation_without_frame():
     node_tag = "test_node:DynamicPlay"
     node.tag_node_name = node_tag
     
-    # Initialize state
+    # Initialize state variables
     node._active_overlay_index[node_tag] = None
     node._overlay_position[node_tag] = (50, 50)
     node._overlay_size[node_tag] = (320, 240)
@@ -195,17 +195,13 @@ def test_overlay_activation_without_frame():
     node._resize_mode_start_time[node_tag] = None
     
     # Simulate clicking on overlay button index 0
-    # This should activate overlay even if no frame is available
     clicked_index = 0
     overlay_slot = clicked_index + 1
     
-    # Before fix: would require overlay_slot to be in frames dict
-    # After fix: should activate regardless
-    
-    # Simulate the activation logic (from lines 498-521)
+    # Get current state before clicking
     active_overlay = node._active_overlay_index[node_tag]
     
-    # Handle square click (overlay activation)
+    # Simulate square click activation (mimics update() method logic)
     if clicked_index is not None:
         # Toggle overlay: if already active, deactivate it
         if active_overlay == clicked_index:
@@ -216,14 +212,15 @@ def test_overlay_activation_without_frame():
             node._overlay_position[node_tag] = (50, 50)
             node._overlay_size[node_tag] = (320, 240)
     
-    # Verify overlay was activated
+    # Verify overlay was activated without requiring frame availability
     assert node._active_overlay_index[node_tag] == 0, "Overlay should be activated when clicking on square"
     
-    # Test toggling (clicking same square again)
+    # Test toggling: clicking same square again should deactivate
     active_overlay = node._active_overlay_index[node_tag]
     if active_overlay == clicked_index:
         node._active_overlay_index[node_tag] = None
     
+    # Verify overlay was deactivated
     assert node._active_overlay_index[node_tag] is None, "Overlay should be deactivated when clicking same square again"
 
 
