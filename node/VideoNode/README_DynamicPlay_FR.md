@@ -20,8 +20,8 @@ Ce nœud combine la vision par ordinateur (MediaPipe Hands) avec des contrôles 
 ### Contrôles par Gestes de la Main
 
 #### Activation d'Overlay
-- Utilisez votre **geste de pointage avec l'index** pour activer un flux overlay
-- Pointez sur le bouton numéroté superposé à l'écran
+- Utilisez votre **geste de pointage avec le pouce** pour activer un flux overlay
+- Pointez sur le bouton numéroté superposé à l'écran avec votre pouce
 - Le flux overlay activé apparaît en picture-in-picture sur le flux maître
 - Pointez à nouveau sur le même bouton pour désactiver l'overlay
 
@@ -59,8 +59,8 @@ Ce nœud combine la vision par ordinateur (MediaPipe Hands) avec des contrôles 
 
 ### Contrôles par Gestes
 1. **Activation d'un Overlay** :
-   - Étendez votre index
-   - Pointez sur le bouton numéroté correspondant au flux overlay que vous souhaitez activer
+   - Étendez votre pouce
+   - Pointez sur le bouton numéroté correspondant au flux overlay que vous souhaitez activer avec votre pouce
    - L'overlay apparaîtra en picture-in-picture sur le flux maître
    - Pointez à nouveau sur le même bouton pour le désactiver
 
@@ -87,7 +87,8 @@ Ce nœud combine la vision par ordinateur (MediaPipe Hands) avec des contrôles 
 - **Bordure Cyan** : Bordure autour de l'overlay actif pour le rendre visible
 
 ### Visualisation de la Main
-- **Cercles jaunes** : Bout du pouce et de l'index (points de suivi clés)
+- **Cercle cyan (plus grand)** : Bout du pouce (pointeur principal pour la sélection)
+- **Cercle jaune** : Bout de l'index (pour le geste de pincement)
 - **Cercles verts** : Autres points de repère de la main
 
 ## Détails Techniques
@@ -150,7 +151,7 @@ La grille de boutons s'ajuste automatiquement selon le nombre de flux overlay :
 - **Vérifiez la distance** : La main doit être à une distance raisonnable de la caméra (30cm-1m)
 
 ### Gestes Ne Répondent Pas
-- **Pointez clairement** : Étendez complètement l'index pour pointer
+- **Pointez clairement** : Étendez complètement le pouce pour pointer sur les boutons
 - **Pincez clairement** : Faites un geste de pincement distinct avec le pouce et l'index
 - **Évitez les mouvements rapides** : Gardez les mouvements de main fluides et constants
 

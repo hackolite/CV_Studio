@@ -38,8 +38,8 @@ This document describes the enhancement of the DynamicPlay node to implement a m
 #### 3. Gesture Controls
 
 **Activation:**
-- Point index finger at numbered button (1-8)
-- Overlay activates when index is inside button bounds
+- Point thumb at numbered button (1-8)
+- Overlay activates when thumb is inside button bounds
 - Point at same button again to deactivate
 
 **Dragging:**

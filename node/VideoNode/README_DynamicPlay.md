@@ -20,8 +20,8 @@ This node combines computer vision (MediaPipe Hands) with interactive controls t
 ### Hand Gesture Controls
 
 #### Overlay Activation
-- Use your **index finger pointing gesture** to activate an overlay stream
-- Point at the numbered button overlay on the screen
+- Use your **thumb pointing gesture** to activate an overlay stream
+- Point at the numbered button overlay on the screen with your thumb
 - The activated overlay stream appears as picture-in-picture on the master stream
 - Point at the same button again to deactivate the overlay
 
@@ -59,8 +59,8 @@ This node combines computer vision (MediaPipe Hands) with interactive controls t
 
 ### Gesture Controls
 1. **Activating an Overlay**:
-   - Extend your index finger
-   - Point at the numbered button corresponding to the overlay stream you want to activate
+   - Extend your thumb
+   - Point at the numbered button corresponding to the overlay stream you want to activate with your thumb
    - The overlay will appear as picture-in-picture on the master stream
    - Point at the same button again to deactivate it
 
@@ -87,7 +87,8 @@ This node combines computer vision (MediaPipe Hands) with interactive controls t
 - **Cyan Border**: Border around the active overlay to make it visible
 
 ### Hand Visualization
-- **Yellow circles**: Thumb tip and index finger tip (key tracking points)
+- **Cyan circle (larger)**: Thumb tip (primary pointer for selection)
+- **Yellow circle**: Index finger tip (for pinch gesture)
 - **Green circles**: Other hand landmarks
 
 ## Technical Details
@@ -150,7 +151,7 @@ The button grid automatically adjusts based on the number of overlay streams:
 - **Check distance**: Hand should be at a reasonable distance from camera (30cm-1m)
 
 ### Gestures Not Responding
-- **Point clearly**: Extend index finger fully for pointing
+- **Point clearly**: Extend thumb fully for pointing at buttons
 - **Pinch clearly**: Make distinct pinch gesture with thumb and index
 - **Avoid fast movements**: Keep hand movements smooth and steady
 
