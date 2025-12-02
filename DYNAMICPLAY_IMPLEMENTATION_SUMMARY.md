@@ -38,8 +38,8 @@ The DynamicPlay node implements the following features as requested:
 #### Hand Gesture Controls
 
 **Pointing Gesture for Stream Selection**:
-- Detects index finger pointing gesture
-- Selects stream when pointing at numbered button
+- Detects thumb pointing gesture
+- Selects stream when pointing at numbered button with thumb
 - Real-time visual feedback
 - Automatic stream switching
 
