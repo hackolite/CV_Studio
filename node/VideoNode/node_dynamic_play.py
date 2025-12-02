@@ -276,6 +276,43 @@ class Node(Node):
         result[y:y+height, x:x+width] = resized_overlay
         
         return result
+
+    def _create_grid_buttons(self, frame, num_slots):
+        """Create visual button grid based on number of slots"""
+        height, width = frame.shape[:2]
+        
+        # Calculate grid layout
+        if num_slots <= 1:
+            cols, rows = 1, 1
+        elif num_slots <= 2:
+            cols, rows = min(num_slots, 2), 1
+        elif num_slots <= 4:
+            cols, rows = 2, 2
+        elif num_slots <= 6:
+            cols, rows = 3, 2
+        else:
+            cols, rows = 3, 3
+        
+        button_width = width // cols
+        button_height = height // rows
+        
+        buttons = []
+        for i in range(num_slots):
+            row = i // cols
+            col = i % cols
+            
+            x1 = col * button_width
+            y1 = row * button_height
+            x2 = x1 + button_width
+            y2 = y1 + button_height
+            
+            buttons.append({
+                'index': i,
+                'bounds': (x1, y1, x2, y2),
+                'center': (x1 + button_width // 2, y1 + button_height // 2)
+            })
+        
+        return buttons
         """Create visual button grid based on number of slots"""
         height, width = frame.shape[:2]
         
