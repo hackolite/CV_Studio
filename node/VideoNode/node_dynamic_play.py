@@ -219,21 +219,22 @@ class Node(Node):
         return distance
 
     def _is_pointing(self, keypoints):
-        """Check if hand is in pointing gesture (index finger extended)"""
+        """Check if hand is in pointing gesture (thumb extended)"""
         if keypoints is None:
             return False, None
         
-        # Index finger tip (8) and MCP (5)
-        if 8 not in keypoints or 5 not in keypoints:
+        # Thumb tip (4) and IP (3)
+        if 4 not in keypoints or 3 not in keypoints:
             return False, None
         
-        index_tip = keypoints[8]
-        index_mcp = keypoints[5]
+        thumb_tip = keypoints[4]
+        thumb_ip = keypoints[3]
         
-        # Check if index finger is extended (tip is above MCP)
-        is_extended = index_tip[1] < index_mcp[1]
+        # Check if thumb is extended (tip is further from palm than IP joint)
+        # For thumb, we check horizontal extension (x-axis distance)
+        is_extended = abs(thumb_tip[0] - thumb_ip[0]) > 20
         
-        return is_extended, index_tip
+        return is_extended, thumb_tip
 
     def _is_pinching(self, keypoints):
         """Check if hand is in pinch gesture (thumb and index close together)"""
@@ -399,8 +400,10 @@ class Node(Node):
         if hand_keypoints:
             for id, (x, y) in hand_keypoints.items():
                 # Draw keypoint
-                if id in [4, 8]:  # Thumb and index finger tips
-                    cv2.circle(frame, (x, y), 8, (0, 255, 255), -1)
+                if id == 4:  # Thumb tip - primary pointer (larger, brighter)
+                    cv2.circle(frame, (x, y), 10, (0, 255, 255), -1)
+                elif id == 8:  # Index finger tip - for pinch gesture
+                    cv2.circle(frame, (x, y), 8, (255, 255, 0), -1)
                 else:
                     cv2.circle(frame, (x, y), 5, (0, 255, 0), -1)
         
