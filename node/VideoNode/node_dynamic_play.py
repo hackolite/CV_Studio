@@ -54,8 +54,8 @@ class FactoryNode:
         small_window_w = node._opencv_setting_dict['process_width']
         small_window_h = node._opencv_setting_dict['process_height']
 
-        # Create black texture
-        black_image = np.zeros((small_window_w, small_window_h, 3))
+        # Create black texture (height, width, channels)
+        black_image = np.zeros((small_window_h, small_window_w, 3))
         black_texture = node.convert_cv_to_dpg(
             black_image,
             small_window_w,
@@ -132,6 +132,11 @@ class Node(Node):
     
     # Hand pose estimation model
     _hand_model = None
+    
+    # Zoom constants
+    _MIN_ZOOM = 1.0
+    _MAX_ZOOM = 3.0
+    _BASE_PINCH_DISTANCE = 100  # Base pinch distance in pixels for 1x zoom
 
     def __init__(self):
         pass
@@ -204,7 +209,6 @@ class Node(Node):
         index_mcp = keypoints[5]
         
         # Check if index finger is extended (tip is above MCP)
-        # Also check other fingers are curled
         is_extended = index_tip[1] < index_mcp[1]
         
         return is_extended, index_tip
@@ -421,9 +425,9 @@ class Node(Node):
                     pinch_distance = self._calculate_pinch_distance(hand_keypoints)
                     if pinch_distance is not None:
                         # Map pinch distance to zoom scale
-                        # Distance 20-200 pixels maps to zoom 1.0-3.0
-                        base_distance = 100
-                        zoom = max(1.0, min(3.0, pinch_distance / base_distance))
+                        # Pinch distance maps proportionally to zoom level
+                        zoom = max(self._MIN_ZOOM, min(self._MAX_ZOOM, 
+                                                       pinch_distance / self._BASE_PINCH_DISTANCE))
                         self._zoom_scale[self.tag_node_name] = zoom
                         
                         # Update zoom center to index finger position
