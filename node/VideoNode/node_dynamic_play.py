@@ -115,7 +115,7 @@ class FactoryNode:
 
 
 class Node(Node):
-    _ver = '0.0.1'
+    _ver = '0.1.0'
 
     node_label = 'DynamicPlay'
     node_tag = 'DynamicPlay'
@@ -125,18 +125,22 @@ class Node(Node):
     _max_slot_number = 9
     _slot_id = {}
     
-    # Hand detection state
-    _selected_stream_index = {}  # Per-node selected stream
-    _zoom_scale = {}  # Per-node zoom scale
-    _zoom_center = {}  # Per-node zoom center (x, y)
+    # Hand detection state - MODIFIED for master stream + overlay architecture
+    _active_overlay_index = {}  # Per-node active overlay stream (None = no overlay)
+    _overlay_position = {}  # Per-node overlay position (x, y)
+    _overlay_size = {}  # Per-node overlay size (width, height)
+    _is_dragging = {}  # Per-node dragging state
+    _drag_offset = {}  # Per-node drag offset from pinch point to overlay corner
     
     # Hand pose estimation model
     _hand_model = None
     
-    # Zoom constants
-    _MIN_ZOOM = 1.0
-    _MAX_ZOOM = 3.0
-    _BASE_PINCH_DISTANCE = 100  # Base pinch distance in pixels for 1x zoom
+    # Overlay constants
+    _MIN_OVERLAY_SIZE = 100  # Minimum overlay size in pixels
+    _MAX_OVERLAY_SIZE = 800  # Maximum overlay size in pixels
+    _BASE_PINCH_DISTANCE = 100  # Base pinch distance in pixels for reference
+    _DEFAULT_OVERLAY_WIDTH = 320  # Default overlay width
+    _DEFAULT_OVERLAY_HEIGHT = 240  # Default overlay height
 
     def __init__(self):
         pass
@@ -213,7 +217,65 @@ class Node(Node):
         
         return is_extended, index_tip
 
-    def _create_grid_buttons(self, frame, num_slots):
+    def _is_pinching(self, keypoints):
+        """Check if hand is in pinch gesture (thumb and index close together)"""
+        if keypoints is None:
+            return False, None
+        
+        pinch_distance = self._calculate_pinch_distance(keypoints)
+        if pinch_distance is None:
+            return False, None
+        
+        # Consider it a pinch if thumb and index are close together (< 40 pixels)
+        is_pinch = pinch_distance < 40
+        
+        # Return midpoint between thumb and index as pinch position
+        if is_pinch and 4 in keypoints and 8 in keypoints:
+            thumb_tip = keypoints[4]
+            index_tip = keypoints[8]
+            pinch_pos = (
+                (thumb_tip[0] + index_tip[0]) // 2,
+                (thumb_tip[1] + index_tip[1]) // 2
+            )
+            return True, pinch_pos
+        
+        return False, None
+
+    def _draw_overlay(self, master_frame, overlay_frame, position, size):
+        """Draw overlay frame on master frame at specified position and size"""
+        if overlay_frame is None:
+            return master_frame
+        
+        x, y = position
+        width, height = size
+        
+        # Ensure overlay size is within bounds
+        width = max(self._MIN_OVERLAY_SIZE, min(width, self._MAX_OVERLAY_SIZE))
+        height = max(self._MIN_OVERLAY_SIZE, min(height, self._MAX_OVERLAY_SIZE))
+        
+        # Resize overlay to target size
+        resized_overlay = cv2.resize(overlay_frame, (width, height))
+        
+        # Get master frame dimensions
+        master_h, master_w = master_frame.shape[:2]
+        
+        # Ensure position keeps overlay within bounds
+        x = max(0, min(x, master_w - width))
+        y = max(0, min(y, master_h - height))
+        
+        # Create a copy of master frame
+        result = master_frame.copy()
+        
+        # Draw border around overlay
+        border_thickness = 3
+        cv2.rectangle(result, (x-border_thickness, y-border_thickness), 
+                     (x+width+border_thickness, y+height+border_thickness), 
+                     (0, 255, 255), border_thickness)
+        
+        # Overlay the frame
+        result[y:y+height, x:x+width] = resized_overlay
+        
+        return result
         """Create visual button grid based on number of slots"""
         height, width = frame.shape[:2]
         
@@ -248,8 +310,8 @@ class Node(Node):
         
         return buttons
 
-    def _draw_buttons_and_check_click(self, frame, buttons, hand_keypoints, selected_index):
-        """Draw button grid and check for hand clicks"""
+    def _draw_buttons_and_check_click(self, frame, buttons, hand_keypoints, active_overlay_index):
+        """Draw button grid and check for hand clicks to activate overlays"""
         clicked_index = None
         is_pointing, point_pos = self._is_pointing(hand_keypoints)
         
@@ -258,11 +320,11 @@ class Node(Node):
             index = button['index']
             
             # Determine button color
-            if index == selected_index:
-                color = (0, 255, 0)  # Green for selected
+            if index == active_overlay_index:
+                color = (0, 255, 0)  # Green for active overlay
                 thickness = 3
             else:
-                color = (255, 255, 255)  # White for unselected
+                color = (255, 255, 255)  # White for inactive
                 thickness = 2
             
             # Draw button rectangle
@@ -299,35 +361,6 @@ class Node(Node):
         
         return frame, clicked_index
 
-    def _apply_zoom(self, frame, zoom_scale, center):
-        """Apply zoom to frame based on pinch gesture"""
-        if zoom_scale <= 1.0:
-            return frame
-        
-        height, width = frame.shape[:2]
-        cx, cy = center
-        
-        # Calculate crop region
-        crop_width = int(width / zoom_scale)
-        crop_height = int(height / zoom_scale)
-        
-        # Ensure center is within bounds
-        cx = max(crop_width // 2, min(cx, width - crop_width // 2))
-        cy = max(crop_height // 2, min(cy, height - crop_height // 2))
-        
-        # Crop
-        x1 = cx - crop_width // 2
-        y1 = cy - crop_height // 2
-        x2 = x1 + crop_width
-        y2 = y1 + crop_height
-        
-        cropped = frame[y1:y2, x1:x2]
-        
-        # Resize back to original size
-        zoomed = cv2.resize(cropped, (width, height))
-        
-        return zoomed
-
     def update(
         self,
         node_id,
@@ -346,12 +379,16 @@ class Node(Node):
         self._init_hand_model()
 
         # Initialize state for this node if needed
-        if self.tag_node_name not in self._selected_stream_index:
-            self._selected_stream_index[self.tag_node_name] = 0
-        if self.tag_node_name not in self._zoom_scale:
-            self._zoom_scale[self.tag_node_name] = 1.0
-        if self.tag_node_name not in self._zoom_center:
-            self._zoom_center[self.tag_node_name] = (small_window_w // 2, small_window_h // 2)
+        if self.tag_node_name not in self._active_overlay_index:
+            self._active_overlay_index[self.tag_node_name] = None
+        if self.tag_node_name not in self._overlay_position:
+            self._overlay_position[self.tag_node_name] = (50, 50)
+        if self.tag_node_name not in self._overlay_size:
+            self._overlay_size[self.tag_node_name] = (self._DEFAULT_OVERLAY_WIDTH, self._DEFAULT_OVERLAY_HEIGHT)
+        if self.tag_node_name not in self._is_dragging:
+            self._is_dragging[self.tag_node_name] = False
+        if self.tag_node_name not in self._drag_offset:
+            self._drag_offset[self.tag_node_name] = (0, 0)
 
         # Parse connections to get input streams
         connection_info_src_dict = {}
@@ -371,6 +408,8 @@ class Node(Node):
         slot_num = self._slot_id[self.tag_node_name]
 
         # Get all input frames
+        # Slot 0 is the MASTER stream (background with hand detection)
+        # Slots 1+ are OVERLAY streams (can be activated as picture-in-picture)
         frames = {}
         for slot_index in range(slot_num):
             node_id_name = connection_info_src_dict.get(slot_index, None)
@@ -379,75 +418,123 @@ class Node(Node):
                 if frame is not None:
                     frames[slot_index] = copy.deepcopy(frame)
 
-        # Process frames
+        # Process frames with new master + overlay architecture
         output_frame = None
         if len(frames) > 0:
-            # Get selected stream
-            selected_index = self._selected_stream_index[self.tag_node_name]
+            # Get master stream (slot 0)
+            master_frame = frames.get(0, None)
             
-            # Ensure selected index is valid
-            if selected_index >= len(frames):
-                selected_index = 0
-                self._selected_stream_index[self.tag_node_name] = 0
+            if master_frame is None and len(frames) > 0:
+                # If no master stream, use first available frame as master
+                master_frame = frames[min(frames.keys())]
             
-            # Get the currently selected frame
-            selected_frame = frames.get(selected_index, None)
-            
-            if selected_frame is None and len(frames) > 0:
-                # If selected frame is not available, use the first available frame
-                selected_index = min(frames.keys())
-                selected_frame = frames[selected_index]
-                self._selected_stream_index[self.tag_node_name] = selected_index
-            
-            if selected_frame is not None:
-                # Detect hand in selected frame
-                hand_landmarks = self._detect_hands(selected_frame)
-                height, width = selected_frame.shape[:2]
+            if master_frame is not None:
+                # Detect hand in master frame
+                hand_landmarks = self._detect_hands(master_frame)
+                height, width = master_frame.shape[:2]
                 hand_keypoints = self._get_hand_keypoints(hand_landmarks, width, height)
                 
-                # Create button grid
-                buttons = self._create_grid_buttons(selected_frame, len(frames))
+                # Create button grid (for slots 1+, overlay streams)
+                num_overlay_slots = max(0, slot_num - 1)  # Exclude master stream
+                buttons = []
+                if num_overlay_slots > 0:
+                    buttons = self._create_grid_buttons(master_frame, num_overlay_slots)
                 
-                # Draw buttons and check for clicks
-                display_frame = copy.deepcopy(selected_frame)
-                display_frame, clicked_index = self._draw_buttons_and_check_click(
-                    display_frame, buttons, hand_keypoints, selected_index
-                )
+                # Draw buttons on master frame
+                display_frame = copy.deepcopy(master_frame)
                 
-                # Handle button click (stream selection)
-                if clicked_index is not None and clicked_index in frames:
-                    self._selected_stream_index[self.tag_node_name] = clicked_index
-                    # Reset zoom when switching streams
-                    self._zoom_scale[self.tag_node_name] = 1.0
+                # Check for button clicks to activate overlays
+                active_overlay = self._active_overlay_index[self.tag_node_name]
+                if num_overlay_slots > 0:
+                    display_frame, clicked_index = self._draw_buttons_and_check_click(
+                        display_frame, buttons, hand_keypoints, active_overlay
+                    )
+                    
+                    # Handle button click (overlay activation)
+                    if clicked_index is not None:
+                        # Map button index to slot index (add 1 to skip master slot)
+                        overlay_slot = clicked_index + 1
+                        if overlay_slot in frames:
+                            # Toggle overlay: if already active, deactivate it
+                            if active_overlay == clicked_index:
+                                self._active_overlay_index[self.tag_node_name] = None
+                            else:
+                                self._active_overlay_index[self.tag_node_name] = clicked_index
+                                # Reset overlay to default position and size
+                                self._overlay_position[self.tag_node_name] = (50, 50)
+                                self._overlay_size[self.tag_node_name] = (
+                                    self._DEFAULT_OVERLAY_WIDTH, 
+                                    self._DEFAULT_OVERLAY_HEIGHT
+                                )
                 
-                # Handle pinch-to-zoom
-                if hand_keypoints:
-                    pinch_distance = self._calculate_pinch_distance(hand_keypoints)
-                    if pinch_distance is not None:
-                        # Map pinch distance to zoom scale
-                        # Pinch distance maps proportionally to zoom level
-                        zoom = max(self._MIN_ZOOM, min(self._MAX_ZOOM, 
-                                                       pinch_distance / self._BASE_PINCH_DISTANCE))
-                        self._zoom_scale[self.tag_node_name] = zoom
+                # Handle pinch gestures for dragging and resizing overlay
+                active_overlay = self._active_overlay_index[self.tag_node_name]
+                if active_overlay is not None and hand_keypoints:
+                    is_pinch, pinch_pos = self._is_pinching(hand_keypoints)
+                    
+                    if is_pinch and pinch_pos:
+                        # Get pinch distance for resizing
+                        pinch_distance = self._calculate_pinch_distance(hand_keypoints)
                         
-                        # Update zoom center to index finger position
-                        if 8 in hand_keypoints:
-                            self._zoom_center[self.tag_node_name] = hand_keypoints[8]
+                        if not self._is_dragging[self.tag_node_name]:
+                            # Start dragging
+                            self._is_dragging[self.tag_node_name] = True
+                            # Calculate offset from pinch point to overlay position
+                            overlay_pos = self._overlay_position[self.tag_node_name]
+                            self._drag_offset[self.tag_node_name] = (
+                                overlay_pos[0] - pinch_pos[0],
+                                overlay_pos[1] - pinch_pos[1]
+                            )
+                        
+                        # Update overlay position (drag)
+                        offset_x, offset_y = self._drag_offset[self.tag_node_name]
+                        new_x = pinch_pos[0] + offset_x
+                        new_y = pinch_pos[1] + offset_y
+                        self._overlay_position[self.tag_node_name] = (new_x, new_y)
+                        
+                        # Update overlay size based on pinch distance (resize)
+                        if pinch_distance is not None:
+                            # Map pinch distance to overlay size
+                            # Small pinch (50px) -> MIN_SIZE, Large pinch (200px) -> MAX_SIZE
+                            size_ratio = (pinch_distance - 50) / (200 - 50)
+                            size_ratio = max(0, min(1, size_ratio))  # Clamp to [0, 1]
+                            
+                            new_width = int(self._MIN_OVERLAY_SIZE + 
+                                          size_ratio * (self._MAX_OVERLAY_SIZE - self._MIN_OVERLAY_SIZE))
+                            # Maintain aspect ratio based on original overlay
+                            overlay_slot = active_overlay + 1
+                            if overlay_slot in frames:
+                                overlay_frame = frames[overlay_slot]
+                                oh, ow = overlay_frame.shape[:2]
+                                aspect_ratio = ow / oh
+                                new_height = int(new_width / aspect_ratio)
+                                self._overlay_size[self.tag_node_name] = (new_width, new_height)
+                    else:
+                        # Stop dragging when pinch is released
+                        self._is_dragging[self.tag_node_name] = False
                 
-                # Apply zoom
-                zoom_scale = self._zoom_scale[self.tag_node_name]
-                zoom_center = self._zoom_center[self.tag_node_name]
-                display_frame = self._apply_zoom(display_frame, zoom_scale, zoom_center)
-                
-                # Add zoom indicator
-                zoom_text = f"Zoom: {zoom_scale:.1f}x"
-                cv2.putText(display_frame, zoom_text, (10, 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 0), 2)
-                
-                # Add selected stream indicator
-                stream_text = f"Stream: {selected_index + 1}/{len(frames)}"
-                cv2.putText(display_frame, stream_text, (10, 60),
-                           cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 0), 2)
+                # Draw active overlay on master frame
+                active_overlay = self._active_overlay_index[self.tag_node_name]
+                if active_overlay is not None:
+                    overlay_slot = active_overlay + 1
+                    if overlay_slot in frames:
+                        overlay_frame = frames[overlay_slot]
+                        overlay_pos = self._overlay_position[self.tag_node_name]
+                        overlay_size = self._overlay_size[self.tag_node_name]
+                        display_frame = self._draw_overlay(
+                            display_frame, overlay_frame, overlay_pos, overlay_size
+                        )
+                        
+                        # Add overlay info text
+                        info_text = f"Overlay: {active_overlay + 1} | Size: {overlay_size[0]}x{overlay_size[1]}"
+                        cv2.putText(display_frame, info_text, (10, 30),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                else:
+                    # No overlay active
+                    if num_overlay_slots > 0:
+                        info_text = "Point at button to activate overlay"
+                        cv2.putText(display_frame, info_text, (10, 30),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                 
                 output_frame = display_frame
 
@@ -467,12 +554,16 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         
         # Clean up state
-        if tag_node_name in self._selected_stream_index:
-            del self._selected_stream_index[tag_node_name]
-        if tag_node_name in self._zoom_scale:
-            del self._zoom_scale[tag_node_name]
-        if tag_node_name in self._zoom_center:
-            del self._zoom_center[tag_node_name]
+        if tag_node_name in self._active_overlay_index:
+            del self._active_overlay_index[tag_node_name]
+        if tag_node_name in self._overlay_position:
+            del self._overlay_position[tag_node_name]
+        if tag_node_name in self._overlay_size:
+            del self._overlay_size[tag_node_name]
+        if tag_node_name in self._is_dragging:
+            del self._is_dragging[tag_node_name]
+        if tag_node_name in self._drag_offset:
+            del self._drag_offset[tag_node_name]
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag

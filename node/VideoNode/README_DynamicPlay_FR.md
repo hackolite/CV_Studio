@@ -3,75 +3,88 @@
 ## Aperçu
 
 Le nœud **DynamicPlay** est un nœud vidéo interactif qui vous permet de :
-- Afficher plusieurs flux vidéo/image
-- Basculer entre les flux en utilisant des gestes de pointage de la main
-- Zoomer/dézoomer en utilisant des gestes de pincement avec le pouce et l'index
+- Afficher un flux vidéo maître (background) avec détection de la main
+- Activer des flux vidéo en overlay (picture-in-picture) avec des gestes de pointage
+- Déplacer et redimensionner l'overlay en utilisant des gestes de pincement avec le pouce et l'index
 
-Ce nœud combine la vision par ordinateur (MediaPipe Hands) avec des contrôles interactifs pour créer une interface de lecteur vidéo sans les mains.
+Ce nœud combine la vision par ordinateur (MediaPipe Hands) avec des contrôles interactifs pour créer une interface de lecteur vidéo sans les mains avec gestion d'overlay.
 
 ## Fonctionnalités
 
-### Flux d'Entrée Multiples
-- Supporte jusqu'à 9 flux vidéo/image simultanés
-- Ajout dynamique de slots (comme le nœud ImageConcat)
+### Architecture Flux Maître + Overlay
+- **Flux Maître** (Input01) : Flux vidéo de fond qui exécute toujours la détection de la main
+- **Flux Overlay** (Input02-Input09) : Flux vidéo qui peuvent être activés en picture-in-picture
+- Jusqu'à 8 flux overlay simultanés disponibles
 - La disposition en grille s'ajuste automatiquement selon le nombre de flux
 
 ### Contrôles par Gestes de la Main
 
-#### Sélection de Flux
-- Utilisez votre **geste de pointage avec l'index** pour sélectionner un flux
+#### Activation d'Overlay
+- Utilisez votre **geste de pointage avec l'index** pour activer un flux overlay
 - Pointez sur le bouton numéroté superposé à l'écran
-- Le flux sélectionné est surligné en vert
-- Les autres flux sont affichés avec des bordures blanches
+- Le flux overlay activé apparaît en picture-in-picture sur le flux maître
+- Pointez à nouveau sur le même bouton pour désactiver l'overlay
 
-#### Pincement pour Zoomer
-- Utilisez le **pincement pouce et index** pour zoomer
-- Doigts rapprochés = moins de zoom (1x)
-- Doigts écartés = plus de zoom (jusqu'à 3x)
-- Le centre du zoom suit la position de votre index
+#### Déplacement de l'Overlay (Drag)
+- Utilisez le **pincement pouce et index** pour saisir l'overlay
+- Maintenez le pincement et déplacez votre main pour déplacer l'overlay
+- L'overlay suit la position de votre main en temps réel
+
+#### Redimensionnement de l'Overlay
+- Utilisez la **distance pouce-index** pour redimensionner l'overlay
+- Doigts rapprochés = overlay plus petit (100px minimum)
+- Doigts écartés = overlay plus grand (800px maximum)
+- Le redimensionnement maintient le rapport d'aspect de l'overlay
 
 ## Interface du Nœud
 
 ### Entrées
-- **Input01-Input09** : Entrées d'images BGR multiples (ajoutez des slots selon besoin)
+- **Input01** : Flux maître (background) - Toujours visible avec détection de la main
+- **Input02-Input09** : Flux overlay (ajoutez des slots selon besoin)
 - Chaque entrée peut recevoir un flux vidéo ou une image statique
 
 ### Sorties
-- **Output01** : Le flux vidéo actuellement sélectionné et zoomé avec superposition
+- **Output01** : Le flux maître avec overlay incrusté et contrôles visuels
 
 ### Contrôles
-- **Bouton Add Slot** : Cliquez pour ajouter plus de slots d'entrée (jusqu'à 9)
+- **Bouton Add Slot** : Cliquez pour ajouter plus de slots d'overlay (jusqu'à 8 overlays)
 
 ## Exemple d'Utilisation
 
 ### Configuration de Base
 1. Ajoutez le nœud DynamicPlay depuis le menu **Video**
-2. Connectez des sources vidéo aux slots d'entrée
-   - Exemple : Connectez des nœuds WebCam, Video, ou tout nœud produisant des images
-3. Le nœud affichera une grille de boutons numérotés de 1 à 9
+2. Connectez un flux maître au slot Input01 (par exemple, une WebCam)
+3. Connectez des flux overlay aux slots Input02, Input03, etc. (par exemple, des nœuds Video)
+4. Le nœud affichera une grille de boutons numérotés sur le flux maître
 
 ### Contrôles par Gestes
-1. **Sélection d'un Flux** :
+1. **Activation d'un Overlay** :
    - Étendez votre index
-   - Pointez sur le bouton numéroté correspondant au flux que vous souhaitez voir
-   - Le flux sélectionné sera affiché en plein écran avec les contrôles de zoom
+   - Pointez sur le bouton numéroté correspondant au flux overlay que vous souhaitez activer
+   - L'overlay apparaîtra en picture-in-picture sur le flux maître
+   - Pointez à nouveau sur le même bouton pour le désactiver
 
-2. **Zoom** :
-   - Faites un geste de pincement avec le pouce et l'index
-   - Ajustez la distance entre vos doigts :
-     - Rapprochés : Zoom arrière (1x)
-     - Écartés : Zoom avant (jusqu'à 3x)
-   - Déplacez votre index pour changer le centre du zoom
+2. **Déplacement de l'Overlay** :
+   - Pincez avec le pouce et l'index (rapprochez-les à moins de 40 pixels)
+   - Maintenez le pincement et déplacez votre main
+   - L'overlay suit votre main en temps réel
+   - Relâchez le pincement pour arrêter le déplacement
+
+3. **Redimensionnement de l'Overlay** :
+   - Tout en maintenant le pincement, variez la distance entre le pouce et l'index
+   - Écartez les doigts pour agrandir l'overlay (jusqu'à 800px)
+   - Rapprochez les doigts pour rétrécir l'overlay (minimum 100px)
+   - Le rapport d'aspect est maintenu automatiquement
 
 ## Indicateurs Visuels
 
 ### Affichage à l'Écran
-- **Numéro de Flux** : Affiche le flux actuel (ex : "Stream: 1/4")
-- **Niveau de Zoom** : Affiche le facteur de zoom actuel (ex : "Zoom: 2.5x")
-- **Grille de Boutons** : Superposition de boutons numérotés (1-9)
-  - Bordure verte : Flux actuellement sélectionné
-  - Bordure blanche : Flux disponibles
+- **Info Overlay** : Affiche l'overlay actif et sa taille (ex : "Overlay: 2 | Size: 320x240")
+- **Grille de Boutons** : Superposition de boutons numérotés (1-8)
+  - Bordure verte : Overlay actuellement actif
+  - Bordure blanche : Overlays disponibles
   - Bordure rouge : Bouton pointé
+- **Bordure Cyan** : Bordure autour de l'overlay actif pour le rendre visible
 
 ### Visualisation de la Main
 - **Cercles jaunes** : Bout du pouce et de l'index (points de suivi clés)
@@ -79,22 +92,29 @@ Ce nœud combine la vision par ordinateur (MediaPipe Hands) avec des contrôles 
 
 ## Détails Techniques
 
+### Architecture
+- **Slot 0 (Input01)** : Flux maître (toujours visible)
+- **Slots 1-8 (Input02-09)** : Flux overlay (activables)
+- Seul un overlay peut être actif à la fois
+
 ### Disposition de la Grille
-La grille de boutons s'ajuste automatiquement selon le nombre de flux d'entrée :
+La grille de boutons s'ajuste automatiquement selon le nombre de flux overlay :
 
-| Flux | Disposition |
-|------|-------------|
-| 1    | 1x1         |
-| 2    | 2x1         |
-| 3-4  | 2x2         |
-| 5-6  | 3x2         |
-| 7-9  | 3x3         |
+| Overlays | Disposition |
+|----------|-------------|
+| 1        | 1x1         |
+| 2        | 2x1         |
+| 3-4      | 2x2         |
+| 5-6      | 3x2         |
+| 7-8      | 3x3         |
 
-### Paramètres de Zoom
-- **Zoom Minimum** : 1.0x (pas de zoom)
-- **Zoom Maximum** : 3.0x
-- **Distance de Pincement de Base** : 100 pixels (pour zoom 1x)
-- Le zoom est proportionnel à la distance de pincement
+### Paramètres d'Overlay
+- **Taille Minimum** : 100x100 pixels
+- **Taille Maximum** : 800x800 pixels
+- **Taille par Défaut** : 320x240 pixels
+- **Distance de Pincement de Base** : 100 pixels (pour référence)
+- **Seuil de Pincement** : 40 pixels (pour détecter le pincement)
+- Le redimensionnement maintient le rapport d'aspect de la source
 
 ### Détection de la Main
 - Utilise **MediaPipe Hands** (Complexité 0)
@@ -142,33 +162,35 @@ La grille de boutons s'ajuste automatiquement selon le nombre de flux d'entrée 
 ## Exemple de Workflow
 
 ```
-[WebCam] → [DynamicPlay]
-[Video1] → [Input01]   
-[Video2] → [Input02]    → [Output] → [Display/VideoWriter]
-[Video3] → [Input03]    
+[WebCam]    → [Input01 - Flux Maître]
+[Video1]    → [Input02]   
+[Video2]    → [Input03]    → [DynamicPlay] → [Output] → [Display/VideoWriter]
+[Video3]    → [Input04]    
 ```
 
 Cette configuration vous permet de :
-1. Sélectionner entre la webcam et plusieurs sources vidéo
-2. Zoomer dans des zones d'intérêt spécifiques
-3. Enregistrer la sortie sélectionnée et zoomée
+1. Voir en permanence le flux de la webcam (avec détection de la main)
+2. Activer des vidéos en overlay avec des gestes de pointage
+3. Déplacer et redimensionner l'overlay avec des gestes de pincement
+4. Enregistrer la sortie composite (maître + overlay)
 
 ## Limitations
 
-- Maximum 9 flux d'entrée
+- Maximum 1 flux maître + 8 flux overlay
+- Un seul overlay actif à la fois
 - Suivi d'une seule main
-- Plage de zoom limitée à 1x-3x
+- Taille d'overlay limitée à 100-800 pixels
 - Nécessite l'installation de MediaPipe
 
 ## Améliorations Futures
 
 Les améliorations potentielles pourraient inclure :
-- Support de gestes multi-mains
-- Mappage de gestes personnalisés
-- Limites de zoom ajustables
-- Mode picture-in-picture
-- Rotation basée sur les gestes
-- Zoom à deux mains (comme le pincement sur écran tactile)
+- Support de plusieurs overlays simultanés
+- Gestes personnalisés pour différentes actions
+- Mode picture-in-picture multiple
+- Rotation de l'overlay basée sur les gestes
+- Transparence d'overlay ajustable
+- Zoom dans l'overlay lui-même
 
 ## Licence
 
