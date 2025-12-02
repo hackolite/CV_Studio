@@ -3,75 +3,88 @@
 ## Overview
 
 The **DynamicPlay** node is an interactive video node that allows you to:
-- Display multiple video/image streams
-- Switch between streams using hand pointing gestures
-- Zoom in/out using pinch gestures with your thumb and index finger
+- Display a master video stream (background) with hand detection
+- Activate overlay video streams (picture-in-picture) using pointing gestures
+- Move and resize the overlay using pinch gestures with thumb and index finger
 
-This node combines computer vision (MediaPipe Hands) with interactive controls to create a hands-free video player interface.
+This node combines computer vision (MediaPipe Hands) with interactive controls to create a hands-free video player interface with overlay management.
 
 ## Features
 
-### Multiple Input Streams
-- Supports up to 9 simultaneous video/image streams
-- Dynamic slot addition (like ImageConcat node)
+### Master Stream + Overlay Architecture
+- **Master Stream** (Input01): Background video stream that always runs hand detection
+- **Overlay Streams** (Input02-Input09): Video streams that can be activated as picture-in-picture
+- Up to 8 overlay streams available simultaneously
 - Grid layout automatically adjusts based on number of streams
 
 ### Hand Gesture Controls
 
-#### Stream Selection
-- Use your **index finger pointing gesture** to select a stream
+#### Overlay Activation
+- Use your **index finger pointing gesture** to activate an overlay stream
 - Point at the numbered button overlay on the screen
-- Selected stream is highlighted in green
-- Other streams shown with white borders
+- The activated overlay stream appears as picture-in-picture on the master stream
+- Point at the same button again to deactivate the overlay
 
-#### Pinch-to-Zoom
-- Use **thumb and index finger pinch** to zoom
-- Closer fingers = less zoom (1x)
-- Wider fingers = more zoom (up to 3x)
-- Zoom center follows your index finger position
+#### Overlay Movement (Drag)
+- Use **thumb and index finger pinch** to grab the overlay
+- Hold the pinch and move your hand to move the overlay
+- The overlay follows your hand position in real-time
+
+#### Overlay Resizing
+- Use **thumb-index distance** to resize the overlay
+- Closer fingers = smaller overlay (100px minimum)
+- Wider fingers = larger overlay (800px maximum)
+- Resizing maintains the overlay's aspect ratio
 
 ## Node Interface
 
 ### Inputs
-- **Input01-Input09**: Multiple BGR image inputs (add slots as needed)
+- **Input01**: Master stream (background) - Always visible with hand detection
+- **Input02-Input09**: Overlay streams (add slots as needed)
 - Each input can receive a video stream or static image
 
 ### Outputs
-- **Output01**: The currently selected and zoomed video stream with overlay
+- **Output01**: The master stream with embedded overlay and visual controls
 
 ### Controls
-- **Add Slot Button**: Click to add more input slots (up to 9)
+- **Add Slot Button**: Click to add more overlay slots (up to 8 overlays)
 
 ## Usage Example
 
 ### Basic Setup
 1. Add the DynamicPlay node from the **Video** menu
-2. Connect video sources to the input slots
-   - Example: Connect WebCam nodes, Video nodes, or any image-producing nodes
-3. The node will display a grid of buttons numbered 1-9
+2. Connect a master stream to Input01 (e.g., a WebCam)
+3. Connect overlay streams to Input02, Input03, etc. (e.g., Video nodes)
+4. The node will display a grid of buttons on the master stream
 
 ### Gesture Controls
-1. **Selecting a Stream**:
+1. **Activating an Overlay**:
    - Extend your index finger
-   - Point at the numbered button corresponding to the stream you want to view
-   - The selected stream will be displayed full-screen with zoom controls
+   - Point at the numbered button corresponding to the overlay stream you want to activate
+   - The overlay will appear as picture-in-picture on the master stream
+   - Point at the same button again to deactivate it
 
-2. **Zooming**:
-   - Make a pinch gesture with thumb and index finger
-   - Adjust the distance between your fingers:
-     - Close together: Zoom out (1x)
-     - Far apart: Zoom in (up to 3x)
-   - Move your index finger to change the zoom center
+2. **Moving the Overlay**:
+   - Pinch with thumb and index finger (bring them within 40 pixels)
+   - Hold the pinch and move your hand
+   - The overlay follows your hand in real-time
+   - Release the pinch to stop moving
+
+3. **Resizing the Overlay**:
+   - While holding the pinch, vary the distance between thumb and index finger
+   - Wider fingers = larger overlay (up to 800px)
+   - Closer fingers = smaller overlay (minimum 100px)
+   - Aspect ratio is maintained automatically
 
 ## Visual Indicators
 
 ### On-Screen Display
-- **Stream Number**: Shows current stream (e.g., "Stream: 1/4")
-- **Zoom Level**: Shows current zoom factor (e.g., "Zoom: 2.5x")
-- **Button Grid**: Numbered buttons overlay (1-9)
-  - Green border: Currently selected stream
-  - White border: Available streams
+- **Overlay Info**: Shows active overlay and its size (e.g., "Overlay: 2 | Size: 320x240")
+- **Button Grid**: Numbered buttons overlay (1-8)
+  - Green border: Currently active overlay
+  - White border: Available overlays
   - Red border: Button being pointed at
+- **Cyan Border**: Border around the active overlay to make it visible
 
 ### Hand Visualization
 - **Yellow circles**: Thumb tip and index finger tip (key tracking points)
@@ -79,22 +92,29 @@ This node combines computer vision (MediaPipe Hands) with interactive controls t
 
 ## Technical Details
 
+### Architecture
+- **Slot 0 (Input01)**: Master stream (always visible)
+- **Slots 1-8 (Input02-09)**: Overlay streams (activatable)
+- Only one overlay can be active at a time
+
 ### Grid Layout
-The button grid automatically adjusts based on the number of input streams:
+The button grid automatically adjusts based on the number of overlay streams:
 
-| Streams | Grid Layout |
-|---------|-------------|
-| 1       | 1x1         |
-| 2       | 2x1         |
-| 3-4     | 2x2         |
-| 5-6     | 3x2         |
-| 7-9     | 3x3         |
+| Overlays | Grid Layout |
+|----------|-------------|
+| 1        | 1x1         |
+| 2        | 2x1         |
+| 3-4      | 2x2         |
+| 5-6      | 3x2         |
+| 7-8      | 3x3         |
 
-### Zoom Parameters
-- **Minimum Zoom**: 1.0x (no zoom)
-- **Maximum Zoom**: 3.0x
-- **Base Pinch Distance**: 100 pixels (for 1x zoom)
-- Zoom is proportional to pinch distance
+### Overlay Parameters
+- **Minimum Size**: 100x100 pixels
+- **Maximum Size**: 800x800 pixels
+- **Default Size**: 320x240 pixels
+- **Base Pinch Distance**: 100 pixels (for reference)
+- **Pinch Threshold**: 40 pixels (to detect pinching)
+- Resizing maintains the source aspect ratio
 
 ### Hand Detection
 - Uses **MediaPipe Hands** (Complexity 0)
@@ -116,7 +136,7 @@ The button grid automatically adjusts based on the number of input streams:
 
 ## Performance Considerations
 
-- Hand detection runs on each frame of the selected stream
+- Hand detection runs on each frame of the master stream
 - For better performance:
   - Use lower resolution input streams
   - Reduce the number of concurrent streams
@@ -142,33 +162,35 @@ The button grid automatically adjusts based on the number of input streams:
 ## Example Workflow
 
 ```
-[WebCam] → [DynamicPlay]
-[Video1] → [Input01]   
-[Video2] → [Input02]    → [Output] → [Display/VideoWriter]
-[Video3] → [Input03]    
+[WebCam]    → [Input01 - Master Stream]
+[Video1]    → [Input02]   
+[Video2]    → [Input03]    → [DynamicPlay] → [Output] → [Display/VideoWriter]
+[Video3]    → [Input04]    
 ```
 
 This setup allows you to:
-1. Select between webcam and multiple video sources
-2. Zoom into specific areas of interest
-3. Record the selected and zoomed output
+1. Always see the webcam stream (with hand detection)
+2. Activate videos as overlays using pointing gestures
+3. Move and resize the overlay using pinch gestures
+4. Record the composite output (master + overlay)
 
 ## Limitations
 
-- Maximum 9 input streams
-- Single hand tracking only
-- Zoom range limited to 1x-3x
+- Maximum 1 master stream + 8 overlay streams
+- Only one overlay active at a time
+- Single hand tracking
+- Overlay size limited to 100-800 pixels
 - Requires MediaPipe installation
 
 ## Future Enhancements
 
 Potential improvements could include:
-- Multi-hand gesture support
-- Custom gesture mapping
-- Adjustable zoom limits
-- Picture-in-picture mode
-- Gesture-based rotation
-- Two-hand zoom (like touchscreen pinch)
+- Support for multiple simultaneous overlays
+- Custom gestures for different actions
+- Multiple picture-in-picture mode
+- Overlay rotation based on gestures
+- Adjustable overlay transparency
+- Zoom within the overlay itself
 
 ## License
 

@@ -76,18 +76,21 @@ def test_dynamic_play_button_creation():
     # Test with a dummy frame
     frame = np.zeros((480, 640, 3), dtype=np.uint8)
     
-    # Test different slot numbers
+    # Note: In the new architecture, buttons represent OVERLAY streams (slots 1+)
+    # So for num_slots total streams, we have num_slots-1 overlay buttons
     test_cases = [
-        (1, 1, 1),  # 1 slot -> 1 col, 1 row
-        (2, 2, 1),  # 2 slots -> 2 cols, 1 row
-        (4, 2, 2),  # 4 slots -> 2 cols, 2 rows
-        (6, 3, 2),  # 6 slots -> 3 cols, 2 rows
-        (9, 3, 3),  # 9 slots -> 3 cols, 3 rows
+        (2, 1, 1),  # 2 slots (1 master + 1 overlay) -> 1 col, 1 row
+        (3, 2, 1),  # 3 slots (1 master + 2 overlays) -> 2 cols, 1 row
+        (5, 2, 2),  # 5 slots (1 master + 4 overlays) -> 2 cols, 2 rows
+        (7, 3, 2),  # 7 slots (1 master + 6 overlays) -> 3 cols, 2 rows
+        (9, 3, 3),  # 9 slots (1 master + 8 overlays) -> 3 cols, 3 rows
     ]
     
     for num_slots, expected_cols, expected_rows in test_cases:
-        buttons = node._create_grid_buttons(frame, num_slots)
-        assert len(buttons) == num_slots, f"Should create {num_slots} buttons"
+        # Create buttons for overlay streams (num_slots - 1 for master)
+        num_overlays = num_slots - 1
+        buttons = node._create_grid_buttons(frame, num_overlays)
+        assert len(buttons) == num_overlays, f"Should create {num_overlays} buttons for {num_slots} total slots"
         
         # Verify all buttons have required fields
         for button in buttons:
@@ -118,25 +121,53 @@ def test_dynamic_play_pinch_distance():
     assert distance is None, "Should return None for incomplete keypoints"
 
 
-def test_dynamic_play_zoom_application():
-    """Test zoom application to frame"""
+def test_dynamic_play_pinch_gesture():
+    """Test pinch gesture detection"""
     from node.VideoNode.node_dynamic_play import Node
     
     node = Node()
     
-    # Create test frame
-    frame = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+    # Test with close fingers (pinch)
+    close_keypoints = {
+        4: (100, 100),  # Thumb tip
+        8: (130, 100),  # Index tip (30 pixels away - pinch detected)
+    }
     
-    # Apply 2x zoom
-    zoom_scale = 2.0
-    center = (320, 240)
-    zoomed = node._apply_zoom(frame, zoom_scale, center)
+    is_pinch, pinch_pos = node._is_pinching(close_keypoints)
+    assert is_pinch is True, "Should detect pinch when fingers are close"
+    assert pinch_pos is not None, "Should return pinch position"
+    assert pinch_pos == (115, 100), "Pinch position should be midpoint"
     
-    assert zoomed.shape == frame.shape, "Zoomed frame should have same dimensions"
+    # Test with far fingers (no pinch)
+    far_keypoints = {
+        4: (100, 100),  # Thumb tip
+        8: (200, 100),  # Index tip (100 pixels away - no pinch)
+    }
     
-    # Test with no zoom (scale = 1.0)
-    no_zoom = node._apply_zoom(frame, 1.0, center)
-    np.testing.assert_array_equal(no_zoom, frame, "No zoom should return original frame")
+    is_pinch, pinch_pos = node._is_pinching(far_keypoints)
+    assert is_pinch is False, "Should not detect pinch when fingers are far"
+
+
+def test_dynamic_play_overlay_drawing():
+    """Test overlay drawing on master stream"""
+    from node.VideoNode.node_dynamic_play import Node
+    
+    node = Node()
+    
+    # Create test frames
+    master_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    overlay_frame = np.ones((240, 320, 3), dtype=np.uint8) * 255
+    
+    # Draw overlay at position
+    position = (50, 50)
+    size = (320, 240)
+    result = node._draw_overlay(master_frame, overlay_frame, position, size)
+    
+    assert result.shape == master_frame.shape, "Result should have same dimensions as master"
+    
+    # Test with None overlay
+    result_none = node._draw_overlay(master_frame, None, position, size)
+    np.testing.assert_array_equal(result_none, master_frame, "None overlay should return original master frame")
 
 
 if __name__ == '__main__':
