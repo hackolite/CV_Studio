@@ -308,7 +308,9 @@ class Node(Node):
         height, width = frame.shape[:2]
         
         # Initialize random colors for squares if not already done
-        if node_tag not in self._square_colors or len(self._square_colors[node_tag]) < num_slots:
+        needs_init = (node_tag not in self._square_colors or 
+                      len(self._square_colors[node_tag]) < num_slots)
+        if needs_init:
             self._square_colors[node_tag] = []
             for i in range(num_slots):
                 # Generate random bright color (BGR format)
