@@ -76,27 +76,31 @@ def test_dynamic_play_button_creation():
     # Test with a dummy frame
     frame = np.zeros((480, 640, 3), dtype=np.uint8)
     
-    # Note: In the new architecture, buttons represent OVERLAY streams (slots 1+)
+    # Create a fake node tag for color initialization
+    fake_tag = "test_node:DynamicPlay"
+    
+    # Note: In the new architecture, squares represent OVERLAY streams (slots 1+)
     # So for num_slots total streams, we have num_slots-1 overlay buttons
     test_cases = [
-        (2, 1, 1),  # 2 slots (1 master + 1 overlay) -> 1 col, 1 row
-        (3, 2, 1),  # 3 slots (1 master + 2 overlays) -> 2 cols, 1 row
-        (5, 2, 2),  # 5 slots (1 master + 4 overlays) -> 2 cols, 2 rows
-        (7, 3, 2),  # 7 slots (1 master + 6 overlays) -> 3 cols, 2 rows
-        (9, 3, 3),  # 9 slots (1 master + 8 overlays) -> 3 cols, 3 rows
+        (2, 1),  # 2 slots (1 master + 1 overlay) -> 1 square
+        (3, 2),  # 3 slots (1 master + 2 overlays) -> 2 squares
+        (5, 4),  # 5 slots (1 master + 4 overlays) -> 4 squares
+        (7, 6),  # 7 slots (1 master + 6 overlays) -> 6 squares
+        (9, 8),  # 9 slots (1 master + 8 overlays) -> 8 squares
     ]
     
-    for num_slots, expected_cols, expected_rows in test_cases:
-        # Create buttons for overlay streams (num_slots - 1 for master)
+    for num_slots, expected_num_squares in test_cases:
+        # Create squares for overlay streams (num_slots - 1 for master)
         num_overlays = num_slots - 1
-        buttons = node._create_grid_buttons(frame, num_overlays)
-        assert len(buttons) == num_overlays, f"Should create {num_overlays} buttons for {num_slots} total slots"
+        buttons = node._create_bottom_squares(frame, num_overlays, fake_tag)
+        assert len(buttons) == num_overlays, f"Should create {num_overlays} squares for {num_slots} total slots"
         
         # Verify all buttons have required fields
         for button in buttons:
             assert 'index' in button
             assert 'bounds' in button
             assert 'center' in button
+            assert 'color' in button  # New: verify color field exists
 
 
 def test_dynamic_play_pinch_distance():

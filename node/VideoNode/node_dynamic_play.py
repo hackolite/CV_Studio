@@ -3,6 +3,8 @@
 import re
 import copy
 import math
+import time
+import random
 
 import cv2
 import numpy as np
@@ -132,6 +134,12 @@ class Node(Node):
     _is_dragging = {}  # Per-node dragging state
     _drag_offset = {}  # Per-node drag offset from pinch point to overlay corner
     
+    # Timer-based state for follow and resize modes
+    _follow_mode_active = {}  # Per-node: True when following index finger
+    _follow_mode_start_time = {}  # Per-node: Time when follow mode started
+    _resize_mode_start_time = {}  # Per-node: Time when resize mode started
+    _square_colors = {}  # Per-node: Random colors for each square
+    
     # Hand pose estimation model
     _hand_model = None
     
@@ -141,6 +149,9 @@ class Node(Node):
     _BASE_PINCH_DISTANCE = 100  # Base pinch distance in pixels for reference
     _DEFAULT_OVERLAY_WIDTH = 320  # Default overlay width
     _DEFAULT_OVERLAY_HEIGHT = 240  # Default overlay height
+    _FOLLOW_MODE_DURATION = 3.0  # Duration in seconds for follow mode
+    _RESIZE_MODE_DURATION = 3.0  # Duration in seconds for resize mode
+    _SQUARE_HEIGHT = 80  # Height of squares at the bottom
 
     def __init__(self):
         pass
@@ -241,6 +252,21 @@ class Node(Node):
         
         return False, None
 
+    def _is_index_over_overlay(self, keypoints, overlay_position, overlay_size):
+        """Check if index finger is hovering over the overlay"""
+        if keypoints is None or 8 not in keypoints:
+            return False, None
+        
+        index_tip = keypoints[8]
+        x, y = overlay_position
+        width, height = overlay_size
+        
+        # Check if index tip is within overlay bounds
+        if x <= index_tip[0] <= x + width and y <= index_tip[1] <= y + height:
+            return True, index_tip
+        
+        return False, None
+
     def _draw_overlay(self, master_frame, overlay_frame, position, size):
         """Draw overlay frame on master frame at specified position and size"""
         if overlay_frame is None:
@@ -277,81 +303,87 @@ class Node(Node):
         
         return result
 
-    def _create_grid_buttons(self, frame, num_slots):
-        """Create visual button grid based on number of slots"""
+    def _create_bottom_squares(self, frame, num_slots, node_tag):
+        """Create visual squares at the bottom of the frame"""
         height, width = frame.shape[:2]
         
-        # Calculate grid layout
-        if num_slots <= 1:
-            cols, rows = 1, 1
-        elif num_slots <= 2:
-            cols, rows = min(num_slots, 2), 1
-        elif num_slots <= 4:
-            cols, rows = 2, 2
-        elif num_slots <= 6:
-            cols, rows = 3, 2
-        else:
-            cols, rows = 3, 3
+        # Initialize random colors for squares if not already done
+        if node_tag not in self._square_colors or len(self._square_colors[node_tag]) < num_slots:
+            self._square_colors[node_tag] = []
+            for i in range(num_slots):
+                # Generate random bright color (BGR format)
+                color = (
+                    random.randint(100, 255),
+                    random.randint(100, 255),
+                    random.randint(100, 255)
+                )
+                self._square_colors[node_tag].append(color)
         
-        button_width = width // cols
-        button_height = height // rows
+        # Calculate square dimensions - positioned at the bottom
+        square_height = self._SQUARE_HEIGHT
+        square_width = width // max(num_slots, 1)  # Divide width equally
+        
+        # Y position for squares (at the bottom of the frame)
+        y1 = height - square_height
+        y2 = height
         
         buttons = []
         for i in range(num_slots):
-            row = i // cols
-            col = i % cols
-            
-            x1 = col * button_width
-            y1 = row * button_height
-            x2 = x1 + button_width
-            y2 = y1 + button_height
+            x1 = i * square_width
+            x2 = x1 + square_width
             
             buttons.append({
                 'index': i,
                 'bounds': (x1, y1, x2, y2),
-                'center': (x1 + button_width // 2, y1 + button_height // 2)
+                'center': (x1 + square_width // 2, y1 + square_height // 2),
+                'color': self._square_colors[node_tag][i]
             })
         
         return buttons
 
-    def _draw_buttons_and_check_click(self, frame, buttons, hand_keypoints, active_overlay_index):
-        """Draw button grid and check for hand clicks to activate overlays"""
+    def _draw_squares_and_check_click(self, frame, buttons, hand_keypoints, active_overlay_index):
+        """Draw colored squares at bottom and check for hand clicks to activate overlays"""
         clicked_index = None
         is_pointing, point_pos = self._is_pointing(hand_keypoints)
         
         for button in buttons:
             x1, y1, x2, y2 = button['bounds']
             index = button['index']
+            bg_color = button['color']
             
-            # Determine button color
+            # Fill square with random background color
+            cv2.rectangle(frame, (x1, y1), (x2, y2), bg_color, -1)
+            
+            # Determine border color
             if index == active_overlay_index:
-                color = (0, 255, 0)  # Green for active overlay
-                thickness = 3
+                border_color = (0, 255, 0)  # Green for active overlay
+                border_thickness = 5
             else:
-                color = (255, 255, 255)  # White for inactive
-                thickness = 2
+                border_color = (255, 255, 255)  # White for inactive
+                border_thickness = 2
             
-            # Draw button rectangle
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
+            # Draw border
+            cv2.rectangle(frame, (x1, y1), (x2, y2), border_color, border_thickness)
             
-            # Draw button label
+            # Draw number label in the square
             label = f"{index + 1}"
             font_scale = 1.5
-            text_thickness = 2
+            text_thickness = 3
             (text_width, text_height), _ = cv2.getTextSize(
                 label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_thickness
             )
             text_x = x1 + (x2 - x1 - text_width) // 2
             text_y = y1 + (y2 - y1 + text_height) // 2
+            # Draw text in black for visibility
             cv2.putText(frame, label, (text_x, text_y), 
-                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, text_thickness)
+                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), text_thickness)
             
-            # Check if pointing at this button
+            # Check if pointing at this square
             if is_pointing and point_pos:
                 px, py = point_pos
                 if x1 <= px <= x2 and y1 <= py <= y2:
-                    # Highlight button being pointed at
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), thickness + 2)
+                    # Highlight square being pointed at with red border
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), border_thickness + 2)
                     clicked_index = index
         
         # Draw hand landmarks
@@ -393,6 +425,12 @@ class Node(Node):
             self._is_dragging[self.tag_node_name] = False
         if self.tag_node_name not in self._drag_offset:
             self._drag_offset[self.tag_node_name] = (0, 0)
+        if self.tag_node_name not in self._follow_mode_active:
+            self._follow_mode_active[self.tag_node_name] = False
+        if self.tag_node_name not in self._follow_mode_start_time:
+            self._follow_mode_start_time[self.tag_node_name] = None
+        if self.tag_node_name not in self._resize_mode_start_time:
+            self._resize_mode_start_time[self.tag_node_name] = None
 
         # Parse connections to get input streams
         connection_info_src_dict = {}
@@ -438,23 +476,23 @@ class Node(Node):
                 height, width = master_frame.shape[:2]
                 hand_keypoints = self._get_hand_keypoints(hand_landmarks, width, height)
                 
-                # Create button grid (for slots 1+, overlay streams)
+                # Create squares at bottom (for slots 1+, overlay streams)
                 num_overlay_slots = max(0, slot_num - 1)  # Exclude master stream
                 buttons = []
                 if num_overlay_slots > 0:
-                    buttons = self._create_grid_buttons(master_frame, num_overlay_slots)
+                    buttons = self._create_bottom_squares(master_frame, num_overlay_slots, self.tag_node_name)
                 
-                # Draw buttons on master frame
+                # Draw squares on master frame
                 display_frame = copy.deepcopy(master_frame)
                 
-                # Check for button clicks to activate overlays
+                # Check for square clicks to activate overlays
                 active_overlay = self._active_overlay_index[self.tag_node_name]
                 if num_overlay_slots > 0:
-                    display_frame, clicked_index = self._draw_buttons_and_check_click(
+                    display_frame, clicked_index = self._draw_squares_and_check_click(
                         display_frame, buttons, hand_keypoints, active_overlay
                     )
                     
-                    # Handle button click (overlay activation)
+                    # Handle square click (overlay activation)
                     if clicked_index is not None:
                         # Map button index to slot index (add 1 to skip master slot)
                         overlay_slot = clicked_index + 1
@@ -462,6 +500,10 @@ class Node(Node):
                             # Toggle overlay: if already active, deactivate it
                             if active_overlay == clicked_index:
                                 self._active_overlay_index[self.tag_node_name] = None
+                                # Reset timers
+                                self._follow_mode_active[self.tag_node_name] = False
+                                self._follow_mode_start_time[self.tag_node_name] = None
+                                self._resize_mode_start_time[self.tag_node_name] = None
                             else:
                                 self._active_overlay_index[self.tag_node_name] = clicked_index
                                 # Reset overlay to default position and size
@@ -470,52 +512,100 @@ class Node(Node):
                                     self._DEFAULT_OVERLAY_WIDTH, 
                                     self._DEFAULT_OVERLAY_HEIGHT
                                 )
+                                # Reset timers
+                                self._follow_mode_active[self.tag_node_name] = False
+                                self._follow_mode_start_time[self.tag_node_name] = None
+                                self._resize_mode_start_time[self.tag_node_name] = None
                 
-                # Handle pinch gestures for dragging and resizing overlay
+                # Handle follow mode and pinch gestures for overlay
                 active_overlay = self._active_overlay_index[self.tag_node_name]
                 if active_overlay is not None and hand_keypoints:
+                    current_time = time.time()
+                    overlay_pos = self._overlay_position[self.tag_node_name]
+                    overlay_size = self._overlay_size[self.tag_node_name]
+                    
+                    # Check if index finger is over the overlay
+                    is_over_overlay, index_pos = self._is_index_over_overlay(
+                        hand_keypoints, overlay_pos, overlay_size
+                    )
+                    
+                    # Check for pinch gesture
                     is_pinch, pinch_pos = self._is_pinching(hand_keypoints)
                     
-                    if is_pinch and pinch_pos:
-                        # Get pinch distance for resizing
-                        pinch_distance = self._calculate_pinch_distance(hand_keypoints)
+                    # Follow mode: index over overlay (not pinching)
+                    if is_over_overlay and not is_pinch:
+                        if not self._follow_mode_active[self.tag_node_name]:
+                            # Start follow mode
+                            self._follow_mode_active[self.tag_node_name] = True
+                            self._follow_mode_start_time[self.tag_node_name] = current_time
                         
-                        if not self._is_dragging[self.tag_node_name]:
-                            # Start dragging
-                            self._is_dragging[self.tag_node_name] = True
-                            # Calculate offset from pinch point to overlay position
-                            overlay_pos = self._overlay_position[self.tag_node_name]
-                            self._drag_offset[self.tag_node_name] = (
-                                overlay_pos[0] - pinch_pos[0],
-                                overlay_pos[1] - pinch_pos[1]
-                            )
-                        
-                        # Update overlay position (drag)
-                        offset_x, offset_y = self._drag_offset[self.tag_node_name]
-                        new_x = pinch_pos[0] + offset_x
-                        new_y = pinch_pos[1] + offset_y
-                        self._overlay_position[self.tag_node_name] = (new_x, new_y)
-                        
-                        # Update overlay size based on pinch distance (resize)
-                        if pinch_distance is not None:
-                            # Map pinch distance to overlay size
-                            # Small pinch (50px) -> MIN_SIZE, Large pinch (200px) -> MAX_SIZE
-                            size_ratio = (pinch_distance - 50) / (200 - 50)
-                            size_ratio = max(0, min(1, size_ratio))  # Clamp to [0, 1]
-                            
-                            new_width = int(self._MIN_OVERLAY_SIZE + 
-                                          size_ratio * (self._MAX_OVERLAY_SIZE - self._MIN_OVERLAY_SIZE))
-                            # Maintain aspect ratio based on original overlay
-                            overlay_slot = active_overlay + 1
-                            if overlay_slot in frames:
-                                overlay_frame = frames[overlay_slot]
-                                oh, ow = overlay_frame.shape[:2]
-                                aspect_ratio = ow / oh
-                                new_height = int(new_width / aspect_ratio)
-                                self._overlay_size[self.tag_node_name] = (new_width, new_height)
+                        # Check if follow mode duration has elapsed
+                        elapsed_time = current_time - self._follow_mode_start_time[self.tag_node_name]
+                        if elapsed_time < self._FOLLOW_MODE_DURATION:
+                            # Update overlay position to follow index finger
+                            # Center overlay on index finger
+                            new_x = index_pos[0] - overlay_size[0] // 2
+                            new_y = index_pos[1] - overlay_size[1] // 2
+                            self._overlay_position[self.tag_node_name] = (new_x, new_y)
                     else:
-                        # Stop dragging when pinch is released
+                        # Not over overlay or pinching, reset follow mode
+                        if not is_pinch:
+                            self._follow_mode_active[self.tag_node_name] = False
+                            self._follow_mode_start_time[self.tag_node_name] = None
+                    
+                    # Resize mode: pinch gesture
+                    if is_pinch and pinch_pos:
+                        if self._resize_mode_start_time[self.tag_node_name] is None:
+                            # Start resize mode
+                            self._resize_mode_start_time[self.tag_node_name] = current_time
+                        
+                        # Check if resize mode duration has elapsed
+                        elapsed_time = current_time - self._resize_mode_start_time[self.tag_node_name]
+                        if elapsed_time < self._RESIZE_MODE_DURATION:
+                            # Get pinch distance for resizing
+                            pinch_distance = self._calculate_pinch_distance(hand_keypoints)
+                            
+                            if not self._is_dragging[self.tag_node_name]:
+                                # Start dragging
+                                self._is_dragging[self.tag_node_name] = True
+                                # Calculate offset from pinch point to overlay position
+                                self._drag_offset[self.tag_node_name] = (
+                                    overlay_pos[0] - pinch_pos[0],
+                                    overlay_pos[1] - pinch_pos[1]
+                                )
+                            
+                            # Update overlay position (drag)
+                            offset_x, offset_y = self._drag_offset[self.tag_node_name]
+                            new_x = pinch_pos[0] + offset_x
+                            new_y = pinch_pos[1] + offset_y
+                            self._overlay_position[self.tag_node_name] = (new_x, new_y)
+                            
+                            # Update overlay size based on pinch distance (resize)
+                            if pinch_distance is not None:
+                                # Map pinch distance to overlay size
+                                # Small pinch (50px) -> MIN_SIZE, Large pinch (200px) -> MAX_SIZE
+                                size_ratio = (pinch_distance - 50) / (200 - 50)
+                                size_ratio = max(0, min(1, size_ratio))  # Clamp to [0, 1]
+                                
+                                new_width = int(self._MIN_OVERLAY_SIZE + 
+                                              size_ratio * (self._MAX_OVERLAY_SIZE - self._MIN_OVERLAY_SIZE))
+                                # Maintain aspect ratio based on original overlay
+                                overlay_slot = active_overlay + 1
+                                if overlay_slot in frames:
+                                    overlay_frame = frames[overlay_slot]
+                                    oh, ow = overlay_frame.shape[:2]
+                                    aspect_ratio = ow / oh
+                                    new_height = int(new_width / aspect_ratio)
+                                    self._overlay_size[self.tag_node_name] = (new_width, new_height)
+                        else:
+                            # Resize mode duration elapsed, release
+                            self._is_dragging[self.tag_node_name] = False
+                            self._resize_mode_start_time[self.tag_node_name] = None
+                    else:
+                        # Stop dragging and reset resize mode when pinch is released
                         self._is_dragging[self.tag_node_name] = False
+                        if not is_over_overlay:  # Only reset if not in follow mode
+                            self._resize_mode_start_time[self.tag_node_name] = None
                 
                 # Draw active overlay on master frame
                 active_overlay = self._active_overlay_index[self.tag_node_name]
@@ -529,8 +619,23 @@ class Node(Node):
                             display_frame, overlay_frame, overlay_pos, overlay_size
                         )
                         
-                        # Add overlay info text
+                        # Add overlay info text with timer information
                         info_text = f"Overlay: {active_overlay + 1} | Size: {overlay_size[0]}x{overlay_size[1]}"
+                        
+                        # Show follow mode timer
+                        if self._follow_mode_active[self.tag_node_name] and self._follow_mode_start_time[self.tag_node_name]:
+                            current_time = time.time()
+                            elapsed = current_time - self._follow_mode_start_time[self.tag_node_name]
+                            remaining = max(0, self._FOLLOW_MODE_DURATION - elapsed)
+                            info_text += f" | Follow: {remaining:.1f}s"
+                        
+                        # Show resize mode timer
+                        if self._resize_mode_start_time[self.tag_node_name]:
+                            current_time = time.time()
+                            elapsed = current_time - self._resize_mode_start_time[self.tag_node_name]
+                            remaining = max(0, self._RESIZE_MODE_DURATION - elapsed)
+                            info_text += f" | Resize: {remaining:.1f}s"
+                        
                         cv2.putText(display_frame, info_text, (10, 30),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
                 else:
@@ -568,6 +673,14 @@ class Node(Node):
             del self._is_dragging[tag_node_name]
         if tag_node_name in self._drag_offset:
             del self._drag_offset[tag_node_name]
+        if tag_node_name in self._follow_mode_active:
+            del self._follow_mode_active[tag_node_name]
+        if tag_node_name in self._follow_mode_start_time:
+            del self._follow_mode_start_time[tag_node_name]
+        if tag_node_name in self._resize_mode_start_time:
+            del self._resize_mode_start_time[tag_node_name]
+        if tag_node_name in self._square_colors:
+            del self._square_colors[tag_node_name]
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
