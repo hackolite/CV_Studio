@@ -152,6 +152,13 @@ class Node(Node):
     _FOLLOW_MODE_DURATION = 3.0  # Duration in seconds for follow mode
     _RESIZE_MODE_DURATION = 3.0  # Duration in seconds for resize mode
     _SQUARE_HEIGHT = 80  # Height of squares at the bottom
+    
+    # UI text constants
+    _INFO_TEXT_POS = (10, 30)  # Position for info text
+    _INFO_TEXT_FONT_SCALE = 0.7  # Font scale for info text
+    _INFO_TEXT_THICKNESS = 2  # Text thickness for info text
+    _INFO_TEXT_COLOR_ACTIVE = (0, 255, 255)  # Cyan for active overlay info
+    _INFO_TEXT_COLOR_INACTIVE = (255, 255, 255)  # White for inactive info
 
     def __init__(self):
         pass
@@ -498,26 +505,27 @@ class Node(Node):
                     if clicked_index is not None:
                         # Map button index to slot index (add 1 to skip master slot)
                         overlay_slot = clicked_index + 1
-                        if overlay_slot in frames:
-                            # Toggle overlay: if already active, deactivate it
-                            if active_overlay == clicked_index:
-                                self._active_overlay_index[self.tag_node_name] = None
-                                # Reset timers
-                                self._follow_mode_active[self.tag_node_name] = False
-                                self._follow_mode_start_time[self.tag_node_name] = None
-                                self._resize_mode_start_time[self.tag_node_name] = None
-                            else:
-                                self._active_overlay_index[self.tag_node_name] = clicked_index
-                                # Reset overlay to default position and size
-                                self._overlay_position[self.tag_node_name] = (50, 50)
-                                self._overlay_size[self.tag_node_name] = (
-                                    self._DEFAULT_OVERLAY_WIDTH, 
-                                    self._DEFAULT_OVERLAY_HEIGHT
-                                )
-                                # Reset timers
-                                self._follow_mode_active[self.tag_node_name] = False
-                                self._follow_mode_start_time[self.tag_node_name] = None
-                                self._resize_mode_start_time[self.tag_node_name] = None
+                        # Toggle overlay: if already active, deactivate it
+                        if active_overlay == clicked_index:
+                            self._active_overlay_index[self.tag_node_name] = None
+                            # Reset timers
+                            self._follow_mode_active[self.tag_node_name] = False
+                            self._follow_mode_start_time[self.tag_node_name] = None
+                            self._resize_mode_start_time[self.tag_node_name] = None
+                        else:
+                            # Activate overlay even if frame not available yet
+                            # The frame will be displayed when it becomes available
+                            self._active_overlay_index[self.tag_node_name] = clicked_index
+                            # Reset overlay to default position and size
+                            self._overlay_position[self.tag_node_name] = (50, 50)
+                            self._overlay_size[self.tag_node_name] = (
+                                self._DEFAULT_OVERLAY_WIDTH, 
+                                self._DEFAULT_OVERLAY_HEIGHT
+                            )
+                            # Reset timers
+                            self._follow_mode_active[self.tag_node_name] = False
+                            self._follow_mode_start_time[self.tag_node_name] = None
+                            self._resize_mode_start_time[self.tag_node_name] = None
                 
                 # Handle follow mode and pinch gestures for overlay
                 active_overlay = self._active_overlay_index[self.tag_node_name]
@@ -638,14 +646,22 @@ class Node(Node):
                             remaining = max(0, self._RESIZE_MODE_DURATION - elapsed)
                             info_text += f" | Resize: {remaining:.1f}s"
                         
-                        cv2.putText(display_frame, info_text, (10, 30),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                        cv2.putText(display_frame, info_text, self._INFO_TEXT_POS,
+                                   cv2.FONT_HERSHEY_SIMPLEX, self._INFO_TEXT_FONT_SCALE, 
+                                   self._INFO_TEXT_COLOR_ACTIVE, self._INFO_TEXT_THICKNESS)
+                    else:
+                        # Overlay activated but stream not available yet
+                        info_text = f"Overlay {active_overlay + 1} activated - waiting for stream..."
+                        cv2.putText(display_frame, info_text, self._INFO_TEXT_POS,
+                                   cv2.FONT_HERSHEY_SIMPLEX, self._INFO_TEXT_FONT_SCALE, 
+                                   self._INFO_TEXT_COLOR_ACTIVE, self._INFO_TEXT_THICKNESS)
                 else:
                     # No overlay active
                     if num_overlay_slots > 0:
                         info_text = "Point at button to activate overlay"
-                        cv2.putText(display_frame, info_text, (10, 30),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                        cv2.putText(display_frame, info_text, self._INFO_TEXT_POS,
+                                   cv2.FONT_HERSHEY_SIMPLEX, self._INFO_TEXT_FONT_SCALE, 
+                                   self._INFO_TEXT_COLOR_INACTIVE, self._INFO_TEXT_THICKNESS)
                 
                 output_frame = display_frame
 

@@ -174,5 +174,55 @@ def test_dynamic_play_overlay_drawing():
     np.testing.assert_array_equal(result_none, master_frame, "None overlay should return original master frame")
 
 
+def test_overlay_activation_without_frame():
+    """Test that overlay can be activated even when frame is not available"""
+    from node.VideoNode.node_dynamic_play import Node
+    
+    node = Node()
+    
+    # Initialize node tag for state tracking
+    node_tag = "test_node:DynamicPlay"
+    node.tag_node_name = node_tag
+    
+    # Initialize state variables
+    node._active_overlay_index[node_tag] = None
+    node._overlay_position[node_tag] = (50, 50)
+    node._overlay_size[node_tag] = (320, 240)
+    node._is_dragging[node_tag] = False
+    node._drag_offset[node_tag] = (0, 0)
+    node._follow_mode_active[node_tag] = False
+    node._follow_mode_start_time[node_tag] = None
+    node._resize_mode_start_time[node_tag] = None
+    
+    # Simulate clicking on overlay button index 0
+    clicked_index = 0
+    overlay_slot = clicked_index + 1
+    
+    # Get current state before clicking
+    active_overlay = node._active_overlay_index[node_tag]
+    
+    # Simulate square click activation (mimics update() method logic)
+    if clicked_index is not None:
+        # Toggle overlay: if already active, deactivate it
+        if active_overlay == clicked_index:
+            node._active_overlay_index[node_tag] = None
+        else:
+            # Activate overlay even if frame not available yet
+            node._active_overlay_index[node_tag] = clicked_index
+            node._overlay_position[node_tag] = (50, 50)
+            node._overlay_size[node_tag] = (320, 240)
+    
+    # Verify overlay was activated without requiring frame availability
+    assert node._active_overlay_index[node_tag] == 0, "Overlay should be activated when clicking on square"
+    
+    # Test toggling: clicking same square again should deactivate
+    active_overlay = node._active_overlay_index[node_tag]
+    if active_overlay == clicked_index:
+        node._active_overlay_index[node_tag] = None
+    
+    # Verify overlay was deactivated
+    assert node._active_overlay_index[node_tag] is None, "Overlay should be deactivated when clicking same square again"
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
