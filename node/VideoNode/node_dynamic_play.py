@@ -152,7 +152,7 @@ class Node(Node):
     _FOLLOW_MODE_DURATION = 3.0  # Duration in seconds for follow mode
     _RESIZE_MODE_DURATION = 3.0  # Duration in seconds for resize mode
     _SQUARE_HEIGHT = 80  # Height of squares at the bottom
-    _THUMB_EXTENSION_THRESHOLD = 30  # Minimum distance for thumb extension detection
+    _THUMB_EXTENSION_THRESHOLD = 30  # Minimum distance in pixels for thumb extension detection
     
     # UI text constants
     _INFO_TEXT_POS = (10, 30)  # Position for info text
@@ -231,13 +231,14 @@ class Node(Node):
         thumb_tip = keypoints[4]
         thumb_ip = keypoints[3]
         
-        # Check if thumb is extended using Euclidean distance
-        # Calculate distance between thumb tip and IP joint
-        distance = math.sqrt(
+        # Check if thumb is extended using squared distance (avoids sqrt for performance)
+        # Calculate squared distance between thumb tip and IP joint
+        distance_squared = (
             (thumb_tip[0] - thumb_ip[0])**2 + 
             (thumb_tip[1] - thumb_ip[1])**2
         )
-        is_extended = distance > self._THUMB_EXTENSION_THRESHOLD
+        threshold_squared = self._THUMB_EXTENSION_THRESHOLD ** 2
+        is_extended = distance_squared > threshold_squared
         
         return is_extended, thumb_tip
 
