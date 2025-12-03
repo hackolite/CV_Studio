@@ -210,6 +210,7 @@ def main():
             "Tracking": "TrackerNode",
             "Visual": "VisualNode",
             "Video": "VideoNode",
+            "System": "SystemNode",
         }
     )
 
