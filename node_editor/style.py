@@ -25,6 +25,7 @@ TRACKING = ["MultiObjectTracking"]
 OVERLAY = ["DrawInformation", "PutText"]
 VIZ = ["Heatmap", "ObjChart", "Visual"]
 TIMESERIES = ["PositionPrediction"]
+SYSTEM = ["SyncQueue"]
 
 
 
@@ -84,6 +85,10 @@ STYLE = {
     "Visual": {
         "names": VIZ,
         "style": [(255, 182, 193, 255)]  # rose clair (light pink)
+    },
+    "System": {
+        "names": SYSTEM,
+        "style": [(192, 192, 192, 255)]  # silver gray pastel
     }
 }
 
