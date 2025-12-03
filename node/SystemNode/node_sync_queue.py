@@ -122,7 +122,13 @@ class Node(Node):
             if len(parts) >= 4:
                 slot_str = parts[-1]  # InputXX or OutputXX
                 # Extract number from Input01, Input02, etc.
-                slot_number = int(''.join(filter(str.isdigit, slot_str)))
+                digits = ''.join(filter(str.isdigit, slot_str))
+                if not digits:
+                    continue  # Skip if no digits found
+                try:
+                    slot_number = int(digits)
+                except ValueError:
+                    continue  # Skip malformed slot numbers
                 
                 connection_type = parts[2]  # IMAGE, JSON, AUDIO, etc.
                 
@@ -218,7 +224,13 @@ class Node(Node):
         """Restore node configuration."""
         tag_node_name = str(node_id) + ':' + self.node_tag
         
-        slot_number = int(setting_dict.get('slot_id', 0))
+        # Safely get slot_id with validation
+        slot_id_value = setting_dict.get('slot_id', 0)
+        try:
+            slot_number = int(slot_id_value)
+        except (ValueError, TypeError):
+            slot_number = 0  # Default to 0 if conversion fails
+        
         # Recreate slots
         for _ in range(slot_number):
             self._add_slot(None, None, tag_node_name)
@@ -232,6 +244,10 @@ class Node(Node):
         - One output attribute of each type (IMAGE, JSON, AUDIO)
         """
         tag_node_name = user_data
+        
+        # Ensure tag_node_name is initialized in _slot_id
+        if tag_node_name not in self._slot_id:
+            self._slot_id[tag_node_name] = 0
         
         if self._max_slot_number > self._slot_id[tag_node_name]:
             self._slot_id[tag_node_name] += 1
