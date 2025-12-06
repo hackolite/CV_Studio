@@ -393,6 +393,8 @@ class Node(Node):
             image_slot_count = len(image_slot_indices)
             
             # Determine grid size based on IMAGE slot count
+            # Grid layout mapping: 1→1x1, 2→1x2(centered), 3-4→2x2, 5-6→2x3, 7-9→3x3
+            # This list maps slot count to display grid size
             display_num_list = [1, 2, 4, 4, 6, 6, 9, 9, 9]
             if image_slot_count > 0:
                 if image_slot_count <= len(display_num_list):
@@ -523,9 +525,11 @@ class Node(Node):
         if len(connection_info_src_dict) > 0 and frame_dict is not None:
             # Calculate number of IMAGE slots for concat
             slot_types_dict = self._slot_types.get(self.tag_node_name, {})
-            if slot_types_dict:
+            # Check if slot_types_dict has content (not just that it exists)
+            if slot_types_dict and len(slot_types_dict) > 0:
                 image_slot_count = sum(1 for slot_type in slot_types_dict.values() if slot_type == self.TYPE_IMAGE)
             else:
+                # Fallback to total slot count if no type info available
                 image_slot_count = slot_num
             frame, display_frame = create_concat_image(frame_dict, image_slot_count)
 
