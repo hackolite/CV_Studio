@@ -389,10 +389,29 @@ class Node(Node):
                 if is_image_slot:
                     image_slot_indices.append(index)
             
-            # Build frame_dict based on IMAGE slots only
-            # Reverse the list so that slots are numbered from bottom to top in the UI
+            # Count IMAGE type slots for display grid
+            image_slot_count = len(image_slot_indices)
+            
+            # Determine grid size based on IMAGE slot count
+            display_num_list = [1, 2, 4, 4, 6, 6, 9, 9, 9]
+            if image_slot_count > 0:
+                if image_slot_count <= len(display_num_list):
+                    grid_size = display_num_list[image_slot_count - 1]
+                else:
+                    # For more than 9 slots, use the maximum 9-slot grid
+                    grid_size = display_num_list[-1]
+                
+                # Only process the first grid_size IMAGE slots
+                slots_to_process = image_slot_indices[:grid_size]
+            else:
+                grid_size = 0
+                slots_to_process = []
+            
+            # Build frame_dict based on IMAGE slots to display
+            # Reverse the list to match the original slot order in the concat grid
+            # (last slot added appears first in the reversed iteration)
             frame_dict = {}
-            for output_index, input_index in enumerate(reversed(image_slot_indices)):
+            for output_index, input_index in enumerate(reversed(slots_to_process)):
                 node_id_name = connection_info_src_dict.get(input_index, None)
                 frame = copy.deepcopy(node_image_dict.get(node_id_name, None))
                 if frame is not None:
@@ -408,19 +427,13 @@ class Node(Node):
 
                     frame_exist_flag = True
                 else:
-                    # Only add black frame for IMAGE slots
+                    # Add black frame for IMAGE slots with no data
                     frame_dict[output_index] = copy.deepcopy(black_image)
-
-            # Count IMAGE type slots for display grid
-            image_slot_count = len(image_slot_indices)
-                
-            display_num_list = [1, 2, 4, 4, 6, 6, 9, 9, 9]
-            # Only fill missing slots for the display grid based on IMAGE slot count
-            if image_slot_count > 0 and image_slot_count <= len(display_num_list):
-                grid_size = display_num_list[image_slot_count - 1]
-                for index in range(grid_size):
-                    if frame_dict.get(index, None) is None:
-                        frame_dict[index] = copy.deepcopy(black_image)
+            
+            # Fill remaining grid positions with black frames
+            for index in range(grid_size):
+                if frame_dict.get(index, None) is None:
+                    frame_dict[index] = copy.deepcopy(black_image)
 
             if not frame_exist_flag:
                 frame_dict = None
