@@ -457,7 +457,7 @@ class Node(BaseNode):
                 dpg.configure_item(mid_treble_level_tag, overlay=f"Mid-Treble: {band_levels.get('mid_treble', 0.0):.2f}")
                 dpg_set_value(treble_level_tag, band_levels.get('treble', 0.0))
                 dpg.configure_item(treble_level_tag, overlay=f"Treble: {band_levels.get('treble', 0.0):.2f}")
-            except (SystemError, ValueError, Exception) as e:
+            except Exception as e:
                 # Log error but don't fail the audio processing
                 logger.debug(f"Error updating band level meters: {e}")
         else:
@@ -473,7 +473,7 @@ class Node(BaseNode):
                 dpg.configure_item(mid_treble_level_tag, overlay="Mid-Treble: 0.00")
                 dpg_set_value(treble_level_tag, 0.0)
                 dpg.configure_item(treble_level_tag, overlay="Treble: 0.00")
-            except (SystemError, ValueError, Exception):
+            except Exception:
                 # DPG may not be initialized or widgets may not exist yet
                 pass
 
