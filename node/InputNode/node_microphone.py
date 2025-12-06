@@ -173,7 +173,7 @@ class FactoryNode:
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_text(
-                    "Audio: ",
+                    default_value="Audio: ",
                     tag=node.tag_node_indicator_name,
                     color=(128, 128, 128, 255),  # Gray by default
                 )
@@ -268,7 +268,8 @@ class MicrophoneNode(Node):
         if not self._is_recording or not device_str or device_str in ['No microphone detected', 'sounddevice not available']:
             # Reset indicator when not recording
             try:
-                dpg.configure_item(indicator_tag, default_value="Audio: ", color=(128, 128, 128, 255))
+                dpg.set_value(indicator_tag, "Audio: ")
+                dpg.configure_item(indicator_tag, color=(128, 128, 128, 255))
                 self._previous_rms = 0.0
                 self._indicator_state = False
             except (SystemError, ValueError, Exception):
@@ -310,13 +311,16 @@ class MicrophoneNode(Node):
                     self._indicator_state = not self._indicator_state
                     if self._indicator_state:
                         # Bright green when on
-                        dpg.configure_item(indicator_tag, default_value="Audio: ●", color=(0, 255, 0, 255))
+                        dpg.set_value(indicator_tag, "Audio: ●")
+                        dpg.configure_item(indicator_tag, color=(0, 255, 0, 255))
                     else:
                         # Darker green when off (creates blink effect)
-                        dpg.configure_item(indicator_tag, default_value="Audio: ○", color=(0, 180, 0, 255))
+                        dpg.set_value(indicator_tag, "Audio: ○")
+                        dpg.configure_item(indicator_tag, color=(0, 180, 0, 255))
                 else:
                     # No increase or very quiet - show dim indicator
-                    dpg.configure_item(indicator_tag, default_value="Audio: ○", color=(128, 128, 128, 255))
+                    dpg.set_value(indicator_tag, "Audio: ○")
+                    dpg.configure_item(indicator_tag, color=(128, 128, 128, 255))
                     self._indicator_state = False
             except (SystemError, ValueError, Exception) as e:
                 # Log error but don't fail the audio capture
