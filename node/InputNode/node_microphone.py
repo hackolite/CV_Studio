@@ -62,9 +62,8 @@ class FactoryNode:
         node.tag_node_button_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Button'
         node.tag_node_button_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':ButtonValue'
         
-        # Volume meters (using consistent naming pattern)
-        node.tag_node_rms_meter_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':RMSMeter'
-        node.tag_node_peak_meter_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':PeakMeter'
+        # Audio indicator (blinking light)
+        node.tag_node_indicator_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Indicator'
 
         node.opencv_setting_dict = opencv_setting_dict
         node.small_window_w = opencv_setting_dict['input_window_width']
@@ -168,25 +167,15 @@ class FactoryNode:
                 )
                 dpg.bind_item_theme(btn_start, yellow_button_theme)
 
-            # Volume meters (RMS and Peak)
+            # Audio indicator (blinking light)
             with dpg.node_attribute(
-                    tag=node.tag_node_name + ':VolumeMeter',
+                    tag=node.tag_node_name + ':AudioIndicator',
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
-                dpg.add_text("Volume Levels:")
-                dpg.add_progress_bar(
-                    label="RMS",
-                    tag=node.tag_node_rms_meter_name,
-                    default_value=0.0,
-                    overlay="RMS: 0.00",
-                    width=node._small_window_w - 20,
-                )
-                dpg.add_progress_bar(
-                    label="Peak",
-                    tag=node.tag_node_peak_meter_name,
-                    default_value=0.0,
-                    overlay="Peak: 0.00",
-                    width=node._small_window_w - 20,
+                dpg.add_text(
+                    default_value="Audio: ",
+                    tag=node.tag_node_indicator_name,
+                    color=(128, 128, 128, 255),  # Gray by default
                 )
 
             # Audio output
@@ -237,6 +226,8 @@ class MicrophoneNode(Node):
         self.node_label = "Microphone"
         self.input_device_indices = []
         self._is_recording = False
+        self._previous_rms = 0.0
+        self._indicator_state = False  # False = off, True = on
 
     def _button_callback(self, sender, app_data, user_data):
         """Toggle recording on/off"""
@@ -261,8 +252,7 @@ class MicrophoneNode(Node):
         input_value01_tag = tag_node_name + ':' + self.TYPE_INT + ':Input01Value'
         input_value02_tag = tag_node_name + ':' + self.TYPE_INT + ':Input02Value'
         input_value03_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
-        rms_meter_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':RMSMeter'
-        peak_meter_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':PeakMeter'
+        indicator_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Indicator'
 
         # Get settings
         device_str = dpg_get_value(input_value01_tag)
@@ -276,12 +266,12 @@ class MicrophoneNode(Node):
             return {"image": None, "json": None, "audio": None}
         
         if not self._is_recording or not device_str or device_str in ['No microphone detected', 'sounddevice not available']:
-            # Reset meters when not recording
+            # Reset indicator when not recording
             try:
-                dpg_set_value(rms_meter_tag, 0.0)
-                dpg.configure_item(rms_meter_tag, overlay="RMS: 0.00")
-                dpg_set_value(peak_meter_tag, 0.0)
-                dpg.configure_item(peak_meter_tag, overlay="Peak: 0.00")
+                dpg.set_value(indicator_tag, "Audio: ")
+                dpg.configure_item(indicator_tag, color=(128, 128, 128, 255))
+                self._previous_rms = 0.0
+                self._indicator_state = False
             except (SystemError, ValueError, Exception):
                 # DPG may not be initialized or widget may not exist yet
                 pass
@@ -308,26 +298,36 @@ class MicrophoneNode(Node):
             # Convert to mono if needed and flatten
             audio_data = recording.flatten()
             
-            # Calculate volume levels for meters
-            # RMS (Root Mean Square) - average volume level
+            # Calculate RMS level to detect changes
             rms_level = np.sqrt(np.mean(audio_data ** 2))
             
-            # Peak level - maximum absolute amplitude
-            peak_level = np.max(np.abs(audio_data))
+            # Check if decibels increased (RMS increased)
+            decibels_increased = rms_level > self._previous_rms
             
-            # Normalize to 0.0-1.0 range (assuming audio is already normalized to -1.0 to 1.0)
-            rms_normalized = min(rms_level, 1.0)
-            peak_normalized = min(peak_level, 1.0)
-            
-            # Update volume meters
+            # Update indicator: blink when decibels increase
             try:
-                dpg_set_value(rms_meter_tag, rms_normalized)
-                dpg.configure_item(rms_meter_tag, overlay=f"RMS: {rms_normalized:.2f}")
-                dpg_set_value(peak_meter_tag, peak_normalized)
-                dpg.configure_item(peak_meter_tag, overlay=f"Peak: {peak_normalized:.2f}")
+                if decibels_increased and rms_level > 0.01:  # Threshold to ignore very quiet noise
+                    # Toggle indicator state for blinking effect
+                    self._indicator_state = not self._indicator_state
+                    if self._indicator_state:
+                        # Bright green when on
+                        dpg.set_value(indicator_tag, "Audio: ●")
+                        dpg.configure_item(indicator_tag, color=(0, 255, 0, 255))
+                    else:
+                        # Darker green when off (creates blink effect)
+                        dpg.set_value(indicator_tag, "Audio: ○")
+                        dpg.configure_item(indicator_tag, color=(0, 180, 0, 255))
+                else:
+                    # No increase or very quiet - show dim indicator
+                    dpg.set_value(indicator_tag, "Audio: ○")
+                    dpg.configure_item(indicator_tag, color=(128, 128, 128, 255))
+                    self._indicator_state = False
             except (SystemError, ValueError, Exception) as e:
                 # Log error but don't fail the audio capture
-                print(f"⚠️ Error updating volume meters: {e}")
+                print(f"⚠️ Error updating audio indicator: {e}")
+            
+            # Store current RMS for next comparison
+            self._previous_rms = rms_level
             
             # Create audio dict in the expected format
             audio_output = {
