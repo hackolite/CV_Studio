@@ -30,14 +30,25 @@ def apply_equalizer(audio_data, sample_rate, gains):
                      Values are gain adjustments in dB (typically -20 to +20)
     
     Returns:
-        np.ndarray or None: Processed audio data as float32 numpy array, normalized to [-1.0, 1.0].
-                           Returns None if input is None, or empty array if input is empty.
+        tuple: (processed_audio, band_levels)
+            - processed_audio (np.ndarray or None): Processed audio data as float32 numpy array, normalized to [-1.0, 1.0].
+                                                    Returns None if input is None, or empty array if input is empty.
+            - band_levels (dict): Dictionary with RMS levels for each band (0.0 to 1.0)
+                                 Keys: 'bass', 'mid_bass', 'mid', 'mid_treble', 'treble'
     
     Raises:
-        No exceptions are raised. Invalid inputs return the original data or None.
+        No exceptions are raised. Invalid inputs return the original data or None with zero levels.
     """
     if audio_data is None or len(audio_data) == 0:
-        return audio_data
+        # Return zero levels for all bands
+        zero_levels = {
+            'bass': 0.0,
+            'mid_bass': 0.0,
+            'mid': 0.0,
+            'mid_treble': 0.0,
+            'treble': 0.0
+        }
+        return audio_data, zero_levels
     
     # Define frequency bands (in Hz)
     # Bass: 20-250 Hz
@@ -57,6 +68,9 @@ def apply_equalizer(audio_data, sample_rate, gains):
     # Start with the original signal
     output = np.zeros_like(audio_data, dtype=np.float32)
     
+    # Dictionary to store band levels (RMS)
+    band_levels = {}
+    
     for band_name, low_freq, high_freq in bands:
         gain_db = gains.get(band_name, 0.0)
         
@@ -75,6 +89,10 @@ def apply_equalizer(audio_data, sample_rate, gains):
             
             filtered = signal.sosfilt(sos, audio_data)
             output += filtered
+            
+            # Calculate RMS level for this band
+            rms_level = np.sqrt(np.mean(filtered ** 2))
+            band_levels[band_name] = min(rms_level, 1.0)
         else:
             # Convert dB to linear gain
             gain_linear = 10 ** (gain_db / 20.0)
@@ -93,13 +111,17 @@ def apply_equalizer(audio_data, sample_rate, gains):
             # Apply filter and gain
             filtered = signal.sosfilt(sos, audio_data)
             output += filtered * gain_linear
+            
+            # Calculate RMS level for this band (after gain applied)
+            rms_level = np.sqrt(np.mean((filtered * gain_linear) ** 2))
+            band_levels[band_name] = min(rms_level, 1.0)
     
     # Normalize to prevent clipping
     max_val = np.max(np.abs(output))
     if max_val > 1.0:
         output = output / max_val
     
-    return output.astype(np.float32)
+    return output.astype(np.float32), band_levels
 
 
 class FactoryNode:
@@ -143,6 +165,13 @@ class FactoryNode:
         # Treble gain
         node.tag_node_input06_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input06'
         node.tag_node_input06_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input06Value'
+        
+        # Band level meters (using consistent naming pattern)
+        node.tag_node_bass_level_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':BassLevel'
+        node.tag_node_mid_bass_level_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':MidBassLevel'
+        node.tag_node_mid_level_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':MidLevel'
+        node.tag_node_mid_treble_level_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':MidTrebleLevel'
+        node.tag_node_treble_level_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':TrebleLevel'
         
         # Audio output
         node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':Output01'
@@ -248,6 +277,48 @@ class FactoryNode:
                     callback=callback,
                 )
 
+            # Band level meters
+            with dpg.node_attribute(
+                    tag=node.tag_node_name + ':BandLevels',
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_text("Band Levels:")
+                dpg.add_progress_bar(
+                    label="Bass",
+                    tag=node.tag_node_bass_level_name,
+                    default_value=0.0,
+                    overlay="Bass: 0.00",
+                    width=small_window_w - 20,
+                )
+                dpg.add_progress_bar(
+                    label="Mid-Bass",
+                    tag=node.tag_node_mid_bass_level_name,
+                    default_value=0.0,
+                    overlay="Mid-Bass: 0.00",
+                    width=small_window_w - 20,
+                )
+                dpg.add_progress_bar(
+                    label="Mid",
+                    tag=node.tag_node_mid_level_name,
+                    default_value=0.0,
+                    overlay="Mid: 0.00",
+                    width=small_window_w - 20,
+                )
+                dpg.add_progress_bar(
+                    label="Mid-Treble",
+                    tag=node.tag_node_mid_treble_level_name,
+                    default_value=0.0,
+                    overlay="Mid-Treble: 0.00",
+                    width=small_window_w - 20,
+                )
+                dpg.add_progress_bar(
+                    label="Treble",
+                    tag=node.tag_node_treble_level_name,
+                    default_value=0.0,
+                    overlay="Treble: 0.00",
+                    width=small_window_w - 20,
+                )
+
             # Audio output
             with dpg.node_attribute(
                     tag=node.tag_node_output01_name,
@@ -296,6 +367,13 @@ class Node(BaseNode):
         input_value05_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input05Value'  # Mid-Treble
         input_value06_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input06Value'  # Treble
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
+        
+        # Band level meter tags
+        bass_level_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':BassLevel'
+        mid_bass_level_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':MidBassLevel'
+        mid_level_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':MidLevel'
+        mid_treble_level_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':MidTrebleLevel'
+        treble_level_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':TrebleLevel'
 
         # Handle case when _opencv_setting_dict is None
         if self._opencv_setting_dict is None:
@@ -342,6 +420,7 @@ class Node(BaseNode):
                 break
 
         processed_audio = None
+        band_levels = None
         
         if audio_data is not None and use_pref_counter:
             start_time = time.monotonic()
@@ -357,12 +436,46 @@ class Node(BaseNode):
                     'treble': treble_gain
                 }
                 
-                # Apply equalizer
-                processed_audio = apply_equalizer(audio_data, sample_rate, gains)
+                # Apply equalizer - now returns both processed audio and band levels
+                processed_audio, band_levels = apply_equalizer(audio_data, sample_rate, gains)
                 
             except Exception as e:
                 logger.error(f"Error applying equalizer: {e}", exc_info=True)
                 processed_audio = audio_data  # Fall back to original audio
+                band_levels = None
+        
+        # Update band level meters
+        if band_levels is not None:
+            try:
+                dpg_set_value(bass_level_tag, band_levels.get('bass', 0.0))
+                dpg.configure_item(bass_level_tag, overlay=f"Bass: {band_levels.get('bass', 0.0):.2f}")
+                dpg_set_value(mid_bass_level_tag, band_levels.get('mid_bass', 0.0))
+                dpg.configure_item(mid_bass_level_tag, overlay=f"Mid-Bass: {band_levels.get('mid_bass', 0.0):.2f}")
+                dpg_set_value(mid_level_tag, band_levels.get('mid', 0.0))
+                dpg.configure_item(mid_level_tag, overlay=f"Mid: {band_levels.get('mid', 0.0):.2f}")
+                dpg_set_value(mid_treble_level_tag, band_levels.get('mid_treble', 0.0))
+                dpg.configure_item(mid_treble_level_tag, overlay=f"Mid-Treble: {band_levels.get('mid_treble', 0.0):.2f}")
+                dpg_set_value(treble_level_tag, band_levels.get('treble', 0.0))
+                dpg.configure_item(treble_level_tag, overlay=f"Treble: {band_levels.get('treble', 0.0):.2f}")
+            except Exception as e:
+                # Log error but don't fail the audio processing
+                logger.debug(f"Error updating band level meters: {e}")
+        else:
+            # Reset meters to zero when no audio or error
+            try:
+                dpg_set_value(bass_level_tag, 0.0)
+                dpg.configure_item(bass_level_tag, overlay="Bass: 0.00")
+                dpg_set_value(mid_bass_level_tag, 0.0)
+                dpg.configure_item(mid_bass_level_tag, overlay="Mid-Bass: 0.00")
+                dpg_set_value(mid_level_tag, 0.0)
+                dpg.configure_item(mid_level_tag, overlay="Mid: 0.00")
+                dpg_set_value(mid_treble_level_tag, 0.0)
+                dpg.configure_item(mid_treble_level_tag, overlay="Mid-Treble: 0.00")
+                dpg_set_value(treble_level_tag, 0.0)
+                dpg.configure_item(treble_level_tag, overlay="Treble: 0.00")
+            except Exception:
+                # DPG may not be initialized or widgets may not exist yet
+                pass
 
         if processed_audio is not None and use_pref_counter:
             elapsed_time = time.monotonic() - start_time

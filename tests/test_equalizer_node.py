@@ -66,18 +66,30 @@ def test_equalizer_function():
         'treble': 0.0
     }
     
-    processed = apply_equalizer(audio_data, sample_rate, gains_zero)
+    processed, band_levels = apply_equalizer(audio_data, sample_rate, gains_zero)
     assert processed is not None, "Processed audio should not be None"
     assert len(processed) == len(audio_data), "Output length should match input length"
     assert processed.dtype == np.float32, "Output should be float32"
+    assert band_levels is not None, "Band levels should not be None"
+    assert isinstance(band_levels, dict), "Band levels should be a dictionary"
+    assert 'bass' in band_levels, "Band levels should contain bass"
+    assert 'mid_bass' in band_levels, "Band levels should contain mid_bass"
+    assert 'mid' in band_levels, "Band levels should contain mid"
+    assert 'mid_treble' in band_levels, "Band levels should contain mid_treble"
+    assert 'treble' in band_levels, "Band levels should contain treble"
     
     # Check that output is not all zeros
     assert np.max(np.abs(processed)) > 0.01, "Output should contain signal"
+    
+    # Check that band levels are in valid range [0, 1]
+    for band, level in band_levels.items():
+        assert 0.0 <= level <= 1.0, f"{band} level should be in [0, 1], got {level}"
     
     print("✓ Equalizer with zero gains works")
     print(f"  - Input length: {len(audio_data)}")
     print(f"  - Output length: {len(processed)}")
     print(f"  - Output max amplitude: {np.max(np.abs(processed)):.4f}")
+    print(f"  - Band levels: {', '.join([f'{k}: {v:.2f}' for k, v in band_levels.items()])}")
     
     # Test 2: Boost bass
     gains_bass_boost = {
@@ -88,13 +100,15 @@ def test_equalizer_function():
         'treble': 0.0
     }
     
-    processed_bass = apply_equalizer(audio_data, sample_rate, gains_bass_boost)
+    processed_bass, band_levels_bass = apply_equalizer(audio_data, sample_rate, gains_bass_boost)
     assert processed_bass is not None, "Processed audio with bass boost should not be None"
     assert len(processed_bass) == len(audio_data), "Output length should match input length"
+    assert band_levels_bass['bass'] > 0, "Bass level should be positive with bass boost"
     
     # Bass boost should increase amplitude (due to gain on bass frequencies)
     print("✓ Equalizer with bass boost works")
     print(f"  - Output max amplitude: {np.max(np.abs(processed_bass)):.4f}")
+    print(f"  - Bass level: {band_levels_bass['bass']:.2f}")
     
     # Test 3: Cut treble
     gains_treble_cut = {
@@ -105,11 +119,13 @@ def test_equalizer_function():
         'treble': -20.0
     }
     
-    processed_treble_cut = apply_equalizer(audio_data, sample_rate, gains_treble_cut)
+    processed_treble_cut, band_levels_treble = apply_equalizer(audio_data, sample_rate, gains_treble_cut)
     assert processed_treble_cut is not None, "Processed audio with treble cut should not be None"
+    assert band_levels_treble['treble'] < band_levels['treble'], "Treble level should decrease with cut"
     
     print("✓ Equalizer with treble cut works")
     print(f"  - Output max amplitude: {np.max(np.abs(processed_treble_cut)):.4f}")
+    print(f"  - Treble level: {band_levels_treble['treble']:.2f}")
     
     # Test 4: Normalization prevents clipping
     gains_extreme = {
@@ -120,7 +136,7 @@ def test_equalizer_function():
         'treble': 20.0
     }
     
-    processed_extreme = apply_equalizer(audio_data, sample_rate, gains_extreme)
+    processed_extreme, band_levels_extreme = apply_equalizer(audio_data, sample_rate, gains_extreme)
     assert np.max(np.abs(processed_extreme)) <= 1.0, "Output should be normalized to prevent clipping"
     
     print("✓ Equalizer normalization prevents clipping")
@@ -136,13 +152,17 @@ def test_equalizer_edge_cases():
     # Test empty audio
     empty_audio = np.array([], dtype=np.float32)
     gains = {'bass': 0.0, 'mid_bass': 0.0, 'mid': 0.0, 'mid_treble': 0.0, 'treble': 0.0}
-    processed = apply_equalizer(empty_audio, sample_rate, gains)
+    processed, band_levels = apply_equalizer(empty_audio, sample_rate, gains)
     assert len(processed) == 0, "Empty audio should return empty array"
+    assert band_levels is not None, "Band levels should not be None for empty audio"
+    assert all(level == 0.0 for level in band_levels.values()), "All band levels should be 0.0 for empty audio"
     print("✓ Equalizer handles empty audio")
     
     # Test None audio
-    processed_none = apply_equalizer(None, sample_rate, gains)
+    processed_none, band_levels_none = apply_equalizer(None, sample_rate, gains)
     assert processed_none is None, "None audio should return None"
+    assert band_levels_none is not None, "Band levels should not be None for None audio"
+    assert all(level == 0.0 for level in band_levels_none.values()), "All band levels should be 0.0 for None audio"
     print("✓ Equalizer handles None audio")
 
 
