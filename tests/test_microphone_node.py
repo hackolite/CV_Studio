@@ -66,7 +66,7 @@ def test_microphone_node_attributes():
     
     # Verify internal state attributes
     assert hasattr(node, '_is_recording'), "Node missing _is_recording attribute"
-    assert node._is_recording == False, "Node should start with _is_recording = False"
+    assert not node._is_recording, "Node should start with _is_recording = False"
     
     print("✓ Microphone node attributes verified")
     print(f"  _is_recording: {node._is_recording}")

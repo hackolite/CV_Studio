@@ -201,15 +201,15 @@ class MicrophoneNode(Node):
 
     def __init__(self):
         super().__init__()
-        # Set node-specific labels after parent init
-        self.node_label = 'Microphone'
-        self.node_tag = 'Microphone'
         # Window dimensions
         self._small_window_w = 240
         self._small_window_h = 135
         self.small_window_w = 240
         self.small_window_h = 135
         self._start_label = "Start"
+        # Override parent class defaults
+        self.node_tag = "Microphone"
+        self.node_label = "Microphone"
         self.input_device_indices = []
         self._is_recording = False
 
