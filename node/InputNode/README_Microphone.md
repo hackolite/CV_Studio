@@ -11,6 +11,7 @@ The Microphone node captures real-time audio input from your system's microphone
 - **Adjustable Chunk Size**: Configure audio chunk duration from 0.1s to 5.0s
 - **Multiple Device Support**: Select from all available audio input devices
 - **Start/Stop Control**: Easy toggle button to control recording
+- **Volume Level Indicators**: Real-time visual meters showing RMS and Peak audio levels
 
 ## Outputs
 
@@ -18,6 +19,26 @@ The Microphone node captures real-time audio input from your system's microphone
 |--------|------|-------------|
 | Audio | AUDIO | Audio data as numpy array with sample rate |
 | JSON | JSON | Metadata about the audio capture (reserved for future use) |
+
+## Volume Meters
+
+The Microphone node includes two real-time volume level indicators:
+
+- **RMS Meter**: Shows the Root Mean Square (average) volume level
+  - Useful for monitoring overall loudness
+  - Updates in real-time during recording
+  - Range: 0.00 to 1.00
+
+- **Peak Meter**: Shows the peak (maximum) volume level
+  - Useful for monitoring clipping and maximum amplitude
+  - Updates in real-time during recording
+  - Range: 0.00 to 1.00
+
+These meters help you:
+- Verify that the microphone is recording audio
+- Monitor input levels to avoid clipping (values should stay below 1.0)
+- Ensure adequate signal strength for processing
+- Adjust microphone gain/position for optimal recording
 
 ## Configuration
 

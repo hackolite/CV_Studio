@@ -61,6 +61,10 @@ class FactoryNode:
         # Button control
         node.tag_node_button_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Button'
         node.tag_node_button_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':ButtonValue'
+        
+        # Volume meters (using consistent naming pattern)
+        node.tag_node_rms_meter_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':RMSMeter'
+        node.tag_node_peak_meter_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':PeakMeter'
 
         node.opencv_setting_dict = opencv_setting_dict
         node.small_window_w = opencv_setting_dict['input_window_width']
@@ -164,6 +168,27 @@ class FactoryNode:
                 )
                 dpg.bind_item_theme(btn_start, yellow_button_theme)
 
+            # Volume meters (RMS and Peak)
+            with dpg.node_attribute(
+                    tag=node.tag_node_name + ':VolumeMeter',
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_text("Volume Levels:")
+                dpg.add_progress_bar(
+                    label="RMS",
+                    tag=node.tag_node_rms_meter_name,
+                    default_value=0.0,
+                    overlay="RMS: 0.00",
+                    width=node._small_window_w - 20,
+                )
+                dpg.add_progress_bar(
+                    label="Peak",
+                    tag=node.tag_node_peak_meter_name,
+                    default_value=0.0,
+                    overlay="Peak: 0.00",
+                    width=node._small_window_w - 20,
+                )
+
             # Audio output
             with dpg.node_attribute(
                     tag=node.tag_node_output_audio_name,
@@ -236,6 +261,8 @@ class MicrophoneNode(Node):
         input_value01_tag = tag_node_name + ':' + self.TYPE_INT + ':Input01Value'
         input_value02_tag = tag_node_name + ':' + self.TYPE_INT + ':Input02Value'
         input_value03_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
+        rms_meter_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':RMSMeter'
+        peak_meter_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':PeakMeter'
 
         # Get settings
         device_str = dpg_get_value(input_value01_tag)
@@ -249,6 +276,15 @@ class MicrophoneNode(Node):
             return {"image": None, "json": None, "audio": None}
         
         if not self._is_recording or not device_str or device_str in ['No microphone detected', 'sounddevice not available']:
+            # Reset meters when not recording
+            try:
+                dpg_set_value(rms_meter_tag, 0.0)
+                dpg.configure_item(rms_meter_tag, overlay="RMS: 0.00")
+                dpg_set_value(peak_meter_tag, 0.0)
+                dpg.configure_item(peak_meter_tag, overlay="Peak: 0.00")
+            except (SystemError, ValueError, Exception):
+                # DPG may not be initialized or widget may not exist yet
+                pass
             return {"image": None, "json": None, "audio": None}
         
         try:
@@ -271,6 +307,27 @@ class MicrophoneNode(Node):
             
             # Convert to mono if needed and flatten
             audio_data = recording.flatten()
+            
+            # Calculate volume levels for meters
+            # RMS (Root Mean Square) - average volume level
+            rms_level = np.sqrt(np.mean(audio_data ** 2))
+            
+            # Peak level - maximum absolute amplitude
+            peak_level = np.max(np.abs(audio_data))
+            
+            # Normalize to 0.0-1.0 range (assuming audio is already normalized to -1.0 to 1.0)
+            rms_normalized = min(rms_level, 1.0)
+            peak_normalized = min(peak_level, 1.0)
+            
+            # Update volume meters
+            try:
+                dpg_set_value(rms_meter_tag, rms_normalized)
+                dpg.configure_item(rms_meter_tag, overlay=f"RMS: {rms_normalized:.2f}")
+                dpg_set_value(peak_meter_tag, peak_normalized)
+                dpg.configure_item(peak_meter_tag, overlay=f"Peak: {peak_normalized:.2f}")
+            except (SystemError, ValueError, Exception) as e:
+                # Log error but don't fail the audio capture
+                print(f"⚠️ Error updating volume meters: {e}")
             
             # Create audio dict in the expected format
             audio_output = {
