@@ -116,11 +116,19 @@ def update_node_info(
             source_timestamp = None
             
             for connection_info in connection_list:
-                connection_type = connection_info[0].split(":")[2]
+                # Validate connection_info structure before accessing
+                if not connection_info or len(connection_info) < 2:
+                    continue
+                
+                connection_parts = connection_info[0].split(":")
+                if len(connection_parts) < 3:
+                    continue
+                    
+                connection_type = connection_parts[2]
                 if connection_type in ["IMAGE", "AUDIO", "JSON"]:
                     has_data_input = True
                     # Get the timestamp from the source node
-                    source_node_id = ":".join(connection_info[0].split(":")[:2])
+                    source_node_id = ":".join(connection_parts[:2])
                     
                     # Try to get timestamp based on connection type
                     if connection_type == "IMAGE":
