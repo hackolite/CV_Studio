@@ -396,22 +396,21 @@ class Node(Node):
             # Grid layout mapping: 1→1x1, 2→1x2(centered), 3-4→2x2, 5-6→2x3, 7-9→3x3
             # This list maps slot count to display grid size
             display_num_list = [1, 2, 4, 4, 6, 6, 9, 9, 9]
-            if image_slot_count > 0:
-                if image_slot_count <= len(display_num_list):
-                    grid_size = display_num_list[image_slot_count - 1]
-                else:
-                    # For more than 9 slots, use the maximum 9-slot grid
-                    grid_size = display_num_list[-1]
-                
-                # Only process the first grid_size IMAGE slots
-                slots_to_process = image_slot_indices[:grid_size]
+            if 0 < image_slot_count <= len(display_num_list):
+                grid_size = display_num_list[image_slot_count - 1]
+            elif image_slot_count > len(display_num_list):
+                # For more than 9 slots, use the maximum 9-slot grid
+                grid_size = display_num_list[-1]
             else:
+                # image_slot_count is 0 or negative
                 grid_size = 0
-                slots_to_process = []
+            
+            # Only process the first grid_size IMAGE slots
+            slots_to_process = image_slot_indices[:grid_size] if grid_size > 0 else []
             
             # Build frame_dict based on IMAGE slots to display
-            # Reverse the list to match the original slot order in the concat grid
-            # (last slot added appears first in the reversed iteration)
+            # Process in reverse order to maintain compatibility with original grid layout
+            # where slots are positioned from the newest (last added) to oldest (first added)
             frame_dict = {}
             for output_index, input_index in enumerate(reversed(slots_to_process)):
                 node_id_name = connection_info_src_dict.get(input_index, None)
@@ -525,8 +524,8 @@ class Node(Node):
         if len(connection_info_src_dict) > 0 and frame_dict is not None:
             # Calculate number of IMAGE slots for concat
             slot_types_dict = self._slot_types.get(self.tag_node_name, {})
-            # Check if slot_types_dict has content (not just that it exists)
-            if slot_types_dict and len(slot_types_dict) > 0:
+            # Check if slot_types_dict has content (empty dict is falsy in Python)
+            if slot_types_dict:
                 image_slot_count = sum(1 for slot_type in slot_types_dict.values() if slot_type == self.TYPE_IMAGE)
             else:
                 # Fallback to total slot count if no type info available
