@@ -227,16 +227,17 @@ class Node(Node):
                                         'received_at': current_time
                                     })
         
-        # Clean up old data from buffers (older than retention time)
+        # Clean up old data from buffers
+        # Keep items for a reasonable window (retention_time + 1 second buffer)
+        max_buffer_age = max(retention_time + 1.0, 2.0)
         for slot_idx in slot_buffers:
             for data_type in ['image', 'json', 'audio']:
                 slot_buffers[slot_idx][data_type] = [
                     item for item in slot_buffers[slot_idx][data_type]
-                    if (current_time - item['received_at']) <= max(retention_time, 1.0)
+                    if (current_time - item['received_at']) <= max_buffer_age
                 ]
         
         # Synchronize data based on timestamps
-        # Find common timestamps across all slots that have data
         synced_count = 0
         output_data = {
             'image': {},
@@ -244,54 +245,23 @@ class Node(Node):
             'audio': {}
         }
         
-        if slot_num > 0:
-            # Get timestamps from first slot as reference
-            reference_timestamps = set()
-            first_slot_with_data = None
-            
-            for slot_idx in range(1, slot_num + 1):
-                if slot_idx in slot_buffers:
-                    for data_type in ['image', 'json', 'audio']:
-                        if slot_buffers[slot_idx][data_type]:
-                            first_slot_with_data = slot_idx
-                            reference_timestamps = {
-                                item['timestamp'] 
-                                for item in slot_buffers[slot_idx][data_type]
-                            }
-                            break
-                if first_slot_with_data:
-                    break
-            
-            # For each slot, find data matching reference timestamps (within tolerance)
-            timestamp_tolerance = 0.05  # 50ms tolerance for sync
-            
-            for slot_idx in range(1, slot_num + 1):
-                if slot_idx in slot_buffers:
-                    # Check if retention time has elapsed
-                    if retention_time > 0:
-                        # Only sync data that has been retained long enough
-                        has_old_enough_data = any(
-                            (current_time - item['received_at']) >= retention_time
-                            for data_type in ['image', 'json', 'audio']
-                            for item in slot_buffers[slot_idx][data_type]
-                        )
-                        if not has_old_enough_data:
-                            continue
-                    
-                    for data_type in ['image', 'json', 'audio']:
-                        if slot_buffers[slot_idx][data_type]:
-                            # Get the most recent data that has been retained long enough
-                            valid_items = [
-                                item for item in slot_buffers[slot_idx][data_type]
-                                if (current_time - item['received_at']) >= retention_time
-                            ]
-                            
-                            if valid_items:
-                                # Sort by timestamp and get most recent
-                                valid_items.sort(key=lambda x: x['timestamp'], reverse=True)
-                                synced_data = valid_items[0]['data']
-                                output_data[data_type][slot_idx] = synced_data
-                                synced_count += 1
+        # For each slot, find data that has been retained long enough
+        for slot_idx in range(1, slot_num + 1):
+            if slot_idx in slot_buffers:
+                for data_type in ['image', 'json', 'audio']:
+                    if slot_buffers[slot_idx][data_type]:
+                        # Get items that have been retained long enough
+                        valid_items = [
+                            item for item in slot_buffers[slot_idx][data_type]
+                            if (current_time - item['received_at']) >= retention_time
+                        ]
+                        
+                        if valid_items:
+                            # Sort by timestamp and get most recent
+                            valid_items.sort(key=lambda x: x['timestamp'], reverse=True)
+                            synced_data = valid_items[0]['data']
+                            output_data[data_type][slot_idx] = synced_data
+                            synced_count += 1
         
         # Update output text values for each slot (no visual display)
         for slot_idx in range(1, slot_num + 1):
