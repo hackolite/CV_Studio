@@ -246,6 +246,18 @@ class VideoWriterNode(Node):
 
         return {"image":frame, "json":None, "audio":None}
 
+    def _close_metadata_handles(self, metadata):
+        """Helper method to close all metadata file handles"""
+        # Close all audio handles
+        for handle in metadata.get('audio_handles', {}).values():
+            if not handle.closed:
+                handle.close()
+        
+        # Close all JSON handles
+        for handle in metadata.get('json_handles', {}).values():
+            if not handle.closed:
+                handle.close()
+
     def close(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
         if tag_node_name in self._video_writer_dict:
@@ -255,17 +267,7 @@ class VideoWriterNode(Node):
         # Clean up MKV metadata if exists
         if tag_node_name in self._mkv_metadata_dict:
             metadata = self._mkv_metadata_dict[tag_node_name]
-            
-            # Close all audio handles
-            for handle in metadata.get('audio_handles', {}).values():
-                if not handle.closed:
-                    handle.close()
-            
-            # Close all JSON handles
-            for handle in metadata.get('json_handles', {}).values():
-                if not handle.closed:
-                    handle.close()
-            
+            self._close_metadata_handles(metadata)
             self._mkv_metadata_dict.pop(tag_node_name)
 
     def get_setting_dict(self, node_id):
@@ -360,15 +362,7 @@ class VideoWriterNode(Node):
             # Close metadata file handles if MKV
             if tag_node_name in self._mkv_metadata_dict:
                 metadata = self._mkv_metadata_dict[tag_node_name]
-                
-                # Close all audio handles
-                for handle in metadata.get('audio_handles', {}).values():
-                    handle.close()
-                
-                # Close all JSON handles
-                for handle in metadata.get('json_handles', {}).values():
-                    handle.close()
-                
+                self._close_metadata_handles(metadata)
                 self._mkv_metadata_dict.pop(tag_node_name)
 
             dpg.set_item_label(tag_node_button_value_name, self._start_label)

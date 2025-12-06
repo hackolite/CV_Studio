@@ -11,10 +11,15 @@ import shutil
 
 def test_video_format_selection():
     """Test that different video formats can be selected"""
-    formats = ['MP4', 'AVI', 'MKV']
+    supported_formats = ['MP4', 'AVI', 'MKV']
+    selected_format = 'AVI'
     
-    for fmt in formats:
-        assert fmt in formats
+    # Verify the selected format is supported
+    assert selected_format in supported_formats
+    
+    # Verify all expected formats are in the list
+    for fmt in ['MP4', 'AVI', 'MKV']:
+        assert fmt in supported_formats
 
 
 def test_codec_selection():

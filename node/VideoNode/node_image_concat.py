@@ -580,8 +580,11 @@ class Node(Node):
             self._slot_types[tag_node_name][slot_number] = slot_type
 
             # Find the correct position to insert (before previous slot)
-            before_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Input'
-            before_tag += str(slot_number - 1).zfill(2)
+            # Get the type of the previous slot to construct the correct tag
+            prev_slot_number = slot_number - 1
+            prev_slot_type = self._slot_types[tag_node_name].get(prev_slot_number, self.TYPE_IMAGE)
+            before_tag = tag_node_name + ':' + prev_slot_type + ':Input'
+            before_tag += str(prev_slot_number).zfill(2)
 
             # Create tag names for the new slot
             tag_node_inputXX_name = tag_node_name + ':' + slot_type + ':Input'
