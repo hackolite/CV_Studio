@@ -3,6 +3,8 @@
 import os
 import copy
 import datetime
+import json
+import subprocess
 
 import cv2
 import numpy as np
@@ -13,6 +15,12 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 #from node_editor.util import convert_cv_to_dpg
 from node.basenode import Node
+
+try:
+    import ffmpeg
+    FFMPEG_AVAILABLE = True
+except ImportError:
+    FFMPEG_AVAILABLE = False
 
 def slow_motion_interpolation(prev_frame, next_frame, alpha):
     """ Generates smooth intermediate frame between 2 images """
@@ -82,6 +90,18 @@ class FactoryNode:
             ):
                 dpg.add_image(node.tag_node_input01_value_name)
 
+            # Add format selector
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_name + ':Format',
+                    items=['MP4', 'AVI', 'MKV'],
+                    default_value='MP4',
+                    width=small_window_w,
+                    label='Format',
+                )
+
             with dpg.node_attribute(
                     tag=node.tag_node_button_name,
                     attribute_type=dpg.mvNode_Attr_Static,
@@ -99,7 +119,7 @@ class FactoryNode:
 
 
 class VideoWriterNode(Node):
-    _ver = '0.0.1'
+    _ver = '0.0.2'
 
     node_label = 'VideoWriter'
     node_tag = 'VideoWriter'
@@ -107,6 +127,8 @@ class VideoWriterNode(Node):
     _opencv_setting_dict = None
 
     _video_writer_dict = {}
+    _mkv_metadata_dict = {}  # Store audio and JSON metadata for MKV files
+    _mkv_file_handles = {}  # Store file handles for MKV metadata tracks
     _start_label = 'Start'
     _stop_label = 'Stop'
 
@@ -143,6 +165,10 @@ class VideoWriterNode(Node):
         writer_height = self._opencv_setting_dict['video_writer_height']
 
         frame = node_image_dict.get(connection_info_src, None)
+        
+        # Get audio and JSON data if available
+        audio_data = node_audio_dict.get(connection_info_src, None)
+        json_data = node_result_dict.get(connection_info_src, None)
 
 
         if frame is not None:
@@ -154,6 +180,38 @@ class VideoWriterNode(Node):
                                           (writer_width, writer_height),
                                           interpolation=cv2.INTER_CUBIC)
                 self._video_writer_dict[tag_node_name].write(writer_frame)
+                
+                # Write audio and JSON data to MKV metadata tracks if applicable
+                if tag_node_name in self._mkv_metadata_dict:
+                    metadata = self._mkv_metadata_dict[tag_node_name]
+                    file_base = metadata['file_path'].rsplit('.', 1)[0]
+                    metadata_dir = file_base + '_metadata'
+                    
+                    # Write audio chunks if available
+                    if audio_data is not None:
+                        for slot_idx, audio_chunk in (audio_data.items() if isinstance(audio_data, dict) else enumerate([audio_data])):
+                            # Create audio track file if not exists
+                            if slot_idx not in metadata['audio_handles']:
+                                audio_file = os.path.join(metadata_dir, f'audio_slot_{slot_idx}.jsonl')
+                                metadata['audio_handles'][slot_idx] = open(audio_file, 'a')
+                            
+                            handle = metadata['audio_handles'][slot_idx]
+                            # Store audio chunk as JSON (will be written to file)
+                            handle.write(json.dumps({'slot': slot_idx, 'data': audio_chunk.tolist() if hasattr(audio_chunk, 'tolist') else str(audio_chunk)}) + '\n')
+                            handle.flush()  # Ensure data is written
+                    
+                    # Write JSON data if available
+                    if json_data is not None:
+                        for slot_idx, json_chunk in (json_data.items() if isinstance(json_data, dict) else enumerate([json_data])):
+                            # Create JSON track file if not exists
+                            if slot_idx not in metadata['json_handles']:
+                                json_file = os.path.join(metadata_dir, f'json_slot_{slot_idx}.jsonl')
+                                metadata['json_handles'][slot_idx] = open(json_file, 'a')
+                            
+                            handle = metadata['json_handles'][slot_idx]
+                            # Write JSON chunk
+                            handle.write(json.dumps({'slot': slot_idx, 'data': json_chunk}) + '\n')
+                            handle.flush()  # Ensure data is written
 
 
                 rec_frame = cv2.circle(rec_frame, (10, 10),
@@ -193,6 +251,22 @@ class VideoWriterNode(Node):
         if tag_node_name in self._video_writer_dict:
             self._video_writer_dict[tag_node_name].release()
             self._video_writer_dict.pop(tag_node_name)
+        
+        # Clean up MKV metadata if exists
+        if tag_node_name in self._mkv_metadata_dict:
+            metadata = self._mkv_metadata_dict[tag_node_name]
+            
+            # Close all audio handles
+            for handle in metadata.get('audio_handles', {}).values():
+                if not handle.closed:
+                    handle.close()
+            
+            # Close all JSON handles
+            for handle in metadata.get('json_handles', {}).values():
+                if not handle.closed:
+                    handle.close()
+            
+            self._mkv_metadata_dict.pop(tag_node_name)
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
@@ -230,19 +304,71 @@ class VideoWriterNode(Node):
 
             os.makedirs(video_writer_directory, exist_ok=True)
 
+            # Get selected format
+            format_tag = tag_node_name + ':Format'
+            video_format = dpg_get_value(format_tag)
 
             if tag_node_name not in self._video_writer_dict:
-                self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
-                    video_writer_directory + '/' + startup_time_text + '.mp4',
-                    cv2.VideoWriter_fourcc(*"mp4v"),
-                    writer_fps,
-                    (writer_width, writer_height),
-                )
+                if video_format == 'AVI':
+                    # Use MJPEG codec for AVI
+                    file_path = os.path.join(video_writer_directory, f'{startup_time_text}.avi')
+                    self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
+                        file_path,
+                        cv2.VideoWriter_fourcc(*"MJPG"),
+                        writer_fps,
+                        (writer_width, writer_height),
+                    )
+                elif video_format == 'MKV':
+                    # Use FFV1 lossless codec for MKV (better for archival)
+                    file_path = os.path.join(video_writer_directory, f'{startup_time_text}.mkv')
+                    self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
+                        file_path,
+                        cv2.VideoWriter_fourcc(*"FFV1"),
+                        writer_fps,
+                        (writer_width, writer_height),
+                    )
+                    
+                    # Initialize metadata tracking for MKV
+                    self._mkv_metadata_dict[tag_node_name] = {
+                        'audio_handles': {},
+                        'json_handles': {},
+                        'file_path': file_path,
+                    }
+                    
+                    # Create metadata track files (will be stored alongside video)
+                    metadata_dir = os.path.join(video_writer_directory, f'{startup_time_text}_metadata')
+                    os.makedirs(metadata_dir, exist_ok=True)
+                    
+                    # Note: Audio and JSON tracks will be created dynamically when data arrives
+                    # This allows us to support variable number of slots from concat node
+                    
+                else:  # MP4 (default)
+                    file_path = os.path.join(video_writer_directory, f'{startup_time_text}.mp4')
+                    self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
+                        file_path,
+                        cv2.VideoWriter_fourcc(*"mp4v"),
+                        writer_fps,
+                        (writer_width, writer_height),
+                    )
 
             dpg.set_item_label(tag_node_button_value_name, self._stop_label)
         elif label == self._stop_label:
 
             self._video_writer_dict[tag_node_name].release()
             self._video_writer_dict.pop(tag_node_name)
+            
+            # Close metadata file handles if MKV
+            if tag_node_name in self._mkv_metadata_dict:
+                metadata = self._mkv_metadata_dict[tag_node_name]
+                
+                # Close all audio handles
+                for handle in metadata.get('audio_handles', {}).values():
+                    handle.close()
+                
+                # Close all JSON handles
+                for handle in metadata.get('json_handles', {}).values():
+                    handle.close()
+                
+                self._mkv_metadata_dict.pop(tag_node_name)
 
             dpg.set_item_label(tag_node_button_value_name, self._start_label)

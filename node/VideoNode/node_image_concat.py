@@ -115,6 +115,7 @@ class FactoryNode:
 
         if node.tag_node_name not in node._slot_id:
             node._slot_id[node.tag_node_name] = 1
+            node._slot_types[node.tag_node_name] = {1: node.TYPE_IMAGE}  # First slot is IMAGE by default
 
 
         with dpg.node(
@@ -134,6 +135,13 @@ class FactoryNode:
                     tag=node.tag_node_input00_name,
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
+                dpg.add_combo(
+                    tag=node.tag_node_name + ':SlotType',
+                    items=['IMAGE', 'AUDIO', 'JSON'],
+                    default_value='IMAGE',
+                    width=int(small_window_w / 3),
+                    label='Slot Type',
+                )
                 dpg.add_button(
                     label='Add Slot',
                     width=int(small_window_w / 3),
@@ -155,7 +163,7 @@ class FactoryNode:
 
 
 class Node(Node):
-    _ver = '0.0.1'
+    _ver = '0.0.2'
 
     node_label = 'ImageConcat'
     node_tag = 'ImageConcat'
@@ -164,6 +172,7 @@ class Node(Node):
 
     _max_slot_number = 9
     _slot_id = {}
+    _slot_types = {}  # Track the type of each slot (IMAGE, AUDIO, JSON)
     
     # Reference height for classification text scaling (in pixels)
     _REFERENCE_HEIGHT = 480.0
@@ -418,6 +427,8 @@ class Node(Node):
         node_name_dict = {}
         connection_info_src = ''
         connection_info_src_dict = {}
+        slot_data_dict = {}  # Store all slot data (images, audio, json)
+        
         for connection_info in connection_list:
 
             slot_number = re.sub(r'\D', '', connection_info[1].split(':')[-1])
@@ -427,7 +438,9 @@ class Node(Node):
 
             connection_type = connection_info[0].split(':')[2]
             print("type :", connection_type)
-            if connection_type == self.TYPE_IMAGE:
+            
+            # Support IMAGE, AUDIO, and JSON types
+            if connection_type in [self.TYPE_IMAGE, self.TYPE_AUDIO, self.TYPE_JSON]:
 
                 connection_info_src = connection_info[0]
                 connection_info_src = connection_info_src.split(':')[:2]
@@ -435,7 +448,16 @@ class Node(Node):
                 connection_info_src = ':'.join(connection_info_src)
 
                 node_name_dict[slot_number] = node_name
-                connection_info_src_dict[slot_number] = connection_info_src
+                
+                # Store connection info with type
+                if slot_number not in slot_data_dict:
+                    slot_data_dict[slot_number] = {}
+                slot_data_dict[slot_number]['type'] = connection_type
+                slot_data_dict[slot_number]['source'] = connection_info_src
+                
+                # Only add to connection_info_src_dict if it's an IMAGE (for backward compatibility)
+                if connection_type == self.TYPE_IMAGE:
+                    connection_info_src_dict[slot_number] = connection_info_src
 
         slot_num = self._slot_id[self.tag_node_name]
 
@@ -456,8 +478,33 @@ class Node(Node):
 
         frame = None
         display_frame = None
+        audio_data = None
+        json_data = None
+        
         if len(connection_info_src_dict) > 0 and frame_dict is not None:
             frame, display_frame = create_concat_image(frame_dict, slot_num)
+
+        # Collect audio and JSON data from slots
+        audio_chunks = {}
+        json_chunks = {}
+        
+        for slot_idx, slot_info in slot_data_dict.items():
+            if slot_info['type'] == self.TYPE_AUDIO:
+                # Get audio from node_audio_dict
+                audio_chunk = node_audio_dict.get(slot_info['source'], None)
+                if audio_chunk is not None:
+                    audio_chunks[slot_idx] = audio_chunk
+            elif slot_info['type'] == self.TYPE_JSON:
+                # Get JSON from node_result_dict
+                json_chunk = node_result_dict.get(slot_info['source'], None)
+                if json_chunk is not None:
+                    json_chunks[slot_idx] = json_chunk
+        
+        # Prepare output data
+        if len(audio_chunks) > 0:
+            audio_data = audio_chunks
+        if len(json_chunks) > 0:
+            json_data = json_chunks
 
         print("display :", display_frame)
         if display_frame is not None:
@@ -469,7 +516,7 @@ class Node(Node):
             dpg_set_value(self.output_value01_tag, texture)
 
 
-        return {"image" : frame, "json" : None, "audio" : None}
+        return {"image": frame, "json": json_data, "audio": audio_data}
 
     def close(self, node_id):
         pass
@@ -483,7 +530,8 @@ class Node(Node):
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
-        setting_dict['slot_id'] = self._slot_id[self.tag_node_name]
+        setting_dict['slot_id'] = self._slot_id[tag_node_name]
+        setting_dict['slot_types'] = self._slot_types.get(tag_node_name, {})
 
         return setting_dict
 
@@ -493,8 +541,25 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
 
         slot_number = int(setting_dict['slot_id'])
-        for _ in range(slot_number - 1):
-            self._add_slot(None, None, self.tag_node_name)
+        slot_types = setting_dict.get('slot_types', {})
+        
+        # Initialize slot types if not present
+        if tag_node_name not in self._slot_types:
+            self._slot_types[tag_node_name] = {}
+        
+        # Restore slot types from settings
+        for slot_idx_str, slot_type in slot_types.items():
+            slot_idx = int(slot_idx_str) if isinstance(slot_idx_str, str) else slot_idx_str
+            self._slot_types[tag_node_name][slot_idx] = slot_type
+        
+        # Add slots with their types
+        for slot_idx in range(2, slot_number + 1):
+            # Set the combo to the correct type before adding
+            slot_type = slot_types.get(slot_idx, self.TYPE_IMAGE)
+            slot_type_tag = tag_node_name + ':SlotType'
+            if dpg.does_item_exist(slot_type_tag):
+                dpg_set_value(slot_type_tag, slot_type)
+            self._add_slot(None, None, tag_node_name)
 
     
 
@@ -503,29 +568,47 @@ class Node(Node):
 
         if self._max_slot_number > self._slot_id[tag_node_name]:
             self._slot_id[tag_node_name] += 1
+            slot_number = self._slot_id[tag_node_name]
 
+            # Get selected slot type from combo
+            slot_type_tag = tag_node_name + ':SlotType'
+            slot_type = dpg_get_value(slot_type_tag)
+            
+            # Store slot type
+            if tag_node_name not in self._slot_types:
+                self._slot_types[tag_node_name] = {}
+            self._slot_types[tag_node_name][slot_number] = slot_type
 
+            # Find the correct position to insert (before previous slot)
             before_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Input'
-            before_tag += str(self._slot_id[tag_node_name] - 1).zfill(2)
+            before_tag += str(slot_number - 1).zfill(2)
 
+            # Create tag names for the new slot
+            tag_node_inputXX_name = tag_node_name + ':' + slot_type + ':Input'
+            tag_node_inputXX_name += str(slot_number).zfill(2)
 
-            tag_node_inputXX_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Input'
-            tag_node_inputXX_name += str(self._slot_id[tag_node_name]).zfill(2)
+            tag_node_inputXX_value_name = tag_node_name + ':' + slot_type + ':Input'
+            tag_node_inputXX_value_name += str(slot_number).zfill(2) + 'Value'
 
-            tag_node_inputXX_value_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Input'
-            tag_node_inputXX_value_name += str(
-                self._slot_id[self.tag_node_name]).zfill(2) + 'Value'
-
+            # Set appropriate label based on slot type
+            if slot_type == self.TYPE_IMAGE:
+                label_text = 'Input BGR image'
+            elif slot_type == self.TYPE_AUDIO:
+                label_text = 'Input Audio chunk'
+            elif slot_type == self.TYPE_JSON:
+                label_text = 'Input JSON data'
+            else:
+                label_text = 'Input data'
 
             with dpg.node_attribute(
                     tag=tag_node_inputXX_name,
                     attribute_type=dpg.mvNode_Attr_Input,
-                    parent=self.tag_node_name,
+                    parent=tag_node_name,
                     before=before_tag,
             ):
                 dpg.add_text(
                     tag=tag_node_inputXX_value_name,
-                    default_value='Input BGR image',
+                    default_value=label_text,
                 )
 
 
