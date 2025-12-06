@@ -11,7 +11,7 @@ The Microphone node captures real-time audio input from your system's microphone
 - **Adjustable Chunk Size**: Configure audio chunk duration from 0.1s to 5.0s
 - **Multiple Device Support**: Select from all available audio input devices
 - **Start/Stop Control**: Easy toggle button to control recording
-- **Volume Level Indicators**: Real-time visual meters showing RMS and Peak audio levels
+- **Audio Activity Indicator**: Visual indicator that blinks when audio levels increase
 
 ## Outputs
 
@@ -20,25 +20,23 @@ The Microphone node captures real-time audio input from your system's microphone
 | Audio | AUDIO | Audio data as numpy array with sample rate |
 | JSON | JSON | Metadata about the audio capture (reserved for future use) |
 
-## Volume Meters
+## Audio Activity Indicator
 
-The Microphone node includes two real-time volume level indicators:
+The Microphone node includes a visual indicator that shows when audio is being captured:
 
-- **RMS Meter**: Shows the Root Mean Square (average) volume level
-  - Useful for monitoring overall loudness
-  - Updates in real-time during recording
-  - Range: 0.00 to 1.00
+- **"Audio: ○"** (gray): Not recording or very quiet audio
+- **"Audio: ●"** (bright green): Blinking when audio level increases
+- **"Audio: ○"** (darker green): Alternates with bright green for blinking effect
 
-- **Peak Meter**: Shows the peak (maximum) volume level
-  - Useful for monitoring clipping and maximum amplitude
-  - Updates in real-time during recording
-  - Range: 0.00 to 1.00
+The indicator blinks green whenever the audio level (RMS) increases from the previous chunk, helping you:
+- Verify that the microphone is actively capturing sound
+- See real-time feedback when speaking or making sounds
+- Confirm audio input is working without needing numerical values
+- Know when the decibel level is rising
 
-These meters help you:
-- Verify that the microphone is recording audio
-- Monitor input levels to avoid clipping (values should stay below 1.0)
-- Ensure adequate signal strength for processing
-- Adjust microphone gain/position for optimal recording
+The blinking occurs when:
+1. Audio level increases compared to the previous chunk
+2. Audio level is above the minimum threshold (0.01) to ignore background noise
 
 ## Configuration
 
@@ -207,6 +205,11 @@ This format is compatible with all AudioProcess nodes including:
 
 ## Version History
 
+- **0.0.2** (Current)
+  - Replaced RMS and Peak volume meters with single blinking indicator
+  - Indicator blinks green when audio level increases
+  - Simplified visual feedback for audio activity
+  
 - **0.0.1** (Initial Release)
   - Basic microphone capture functionality
   - Configurable sample rate and chunk duration
