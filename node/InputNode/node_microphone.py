@@ -62,9 +62,9 @@ class FactoryNode:
         node.tag_node_button_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Button'
         node.tag_node_button_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':ButtonValue'
         
-        # Volume meters
-        node.tag_node_rms_meter_name = node.tag_node_name + ':' + 'RMSMeter'
-        node.tag_node_peak_meter_name = node.tag_node_name + ':' + 'PeakMeter'
+        # Volume meters (using consistent naming pattern)
+        node.tag_node_rms_meter_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':RMSMeter'
+        node.tag_node_peak_meter_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':PeakMeter'
 
         node.opencv_setting_dict = opencv_setting_dict
         node.small_window_w = opencv_setting_dict['input_window_width']
@@ -261,8 +261,8 @@ class MicrophoneNode(Node):
         input_value01_tag = tag_node_name + ':' + self.TYPE_INT + ':Input01Value'
         input_value02_tag = tag_node_name + ':' + self.TYPE_INT + ':Input02Value'
         input_value03_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
-        rms_meter_tag = tag_node_name + ':' + 'RMSMeter'
-        peak_meter_tag = tag_node_name + ':' + 'PeakMeter'
+        rms_meter_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':RMSMeter'
+        peak_meter_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':PeakMeter'
 
         # Get settings
         device_str = dpg_get_value(input_value01_tag)
@@ -282,7 +282,8 @@ class MicrophoneNode(Node):
                 dpg.configure_item(rms_meter_tag, overlay="RMS: 0.00")
                 dpg_set_value(peak_meter_tag, 0.0)
                 dpg.configure_item(peak_meter_tag, overlay="Peak: 0.00")
-            except:
+            except (SystemError, ValueError, Exception):
+                # DPG may not be initialized or widget may not exist yet
                 pass
             return {"image": None, "json": None, "audio": None}
         
@@ -324,7 +325,8 @@ class MicrophoneNode(Node):
                 dpg.configure_item(rms_meter_tag, overlay=f"RMS: {rms_normalized:.2f}")
                 dpg_set_value(peak_meter_tag, peak_normalized)
                 dpg.configure_item(peak_meter_tag, overlay=f"Peak: {peak_normalized:.2f}")
-            except Exception as e:
+            except (SystemError, ValueError, Exception) as e:
+                # Log error but don't fail the audio capture
                 print(f"⚠️ Error updating volume meters: {e}")
             
             # Create audio dict in the expected format

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Test for the Microphone node volume meters.
+Tests for the Microphone node volume meters.
 Verifies that RMS and Peak volume calculations work correctly.
 """
 import sys
