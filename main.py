@@ -109,9 +109,54 @@ def update_node_info(
             )
 
         try:
-            node_image_dict[node_id_name] = copy.deepcopy(data["image"])
-            node_result_dict[node_id_name] = copy.deepcopy(data["json"])
-            node_audio_dict[node_id_name] = copy.deepcopy(data["audio"])
+            # Determine if this is an input node or a processing node
+            # Input nodes have no IMAGE/AUDIO/JSON input connections
+            # Processing nodes have at least one IMAGE/AUDIO/JSON input connection
+            has_data_input = False
+            source_timestamp = None
+            
+            for connection_info in connection_list:
+                # Validate connection_info structure before accessing
+                if not connection_info or len(connection_info) < 2:
+                    continue
+                
+                connection_parts = connection_info[0].split(":")
+                if len(connection_parts) < 3:
+                    continue
+                    
+                connection_type = connection_parts[2]
+                if connection_type in ["IMAGE", "AUDIO", "JSON"]:
+                    has_data_input = True
+                    # Get the timestamp from the source node
+                    source_node_id = ":".join(connection_parts[:2])
+                    
+                    # Try to get timestamp based on connection type
+                    if connection_type == "IMAGE":
+                        source_timestamp = node_image_dict.get_timestamp(source_node_id)
+                    elif connection_type == "AUDIO":
+                        source_timestamp = node_audio_dict.get_timestamp(source_node_id)
+                    elif connection_type == "JSON":
+                        source_timestamp = node_result_dict.get_timestamp(source_node_id)
+                    
+                    # Use the first data connection's timestamp
+                    if source_timestamp is not None:
+                        break
+            
+            # Store data with appropriate timestamp
+            # Input nodes (no data input) create new timestamps
+            # Processing nodes preserve source timestamp
+            if has_data_input and source_timestamp is not None:
+                # Processing node - preserve source timestamp
+                node_image_dict.set_with_timestamp(node_id_name, copy.deepcopy(data["image"]), source_timestamp)
+                node_result_dict.set_with_timestamp(node_id_name, copy.deepcopy(data["json"]), source_timestamp)
+                node_audio_dict.set_with_timestamp(node_id_name, copy.deepcopy(data["audio"]), source_timestamp)
+                logger.debug(f"Node {node_id_name} preserved timestamp {source_timestamp:.6f} from source")
+            else:
+                # Input node - create new timestamp
+                node_image_dict[node_id_name] = copy.deepcopy(data["image"])
+                node_result_dict[node_id_name] = copy.deepcopy(data["json"])
+                node_audio_dict[node_id_name] = copy.deepcopy(data["audio"])
+                logger.debug(f"Node {node_id_name} created new timestamp (input node)")
         except Exception as e:
             logger.error(f"Error processing node {node_id_name} results: {e}")
 
