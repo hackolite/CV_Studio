@@ -13,3 +13,4 @@ pymongo
 librosa
 matplotlib
 soundfile
+sounddevice

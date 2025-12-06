@@ -3,7 +3,16 @@
 import time
 import numpy as np
 import dearpygui.dearpygui as dpg
-import sounddevice as sd
+
+# Try to import sounddevice, but handle gracefully if not available
+try:
+    import sounddevice as sd
+    SOUNDDEVICE_AVAILABLE = True
+except (ImportError, OSError) as e:
+    SOUNDDEVICE_AVAILABLE = False
+    print(f"⚠️ sounddevice not available: {e}")
+    print("   Microphone node will be available but non-functional.")
+    print("   Install PortAudio library to enable microphone support.")
 
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
@@ -67,18 +76,25 @@ class FactoryNode:
         use_pref_counter = opencv_setting_dict['use_pref_counter']
 
         # Get available audio input devices
-        devices = sd.query_devices()
         input_devices = []
         input_device_indices = []
         
-        for idx, device in enumerate(devices):
-            if device['max_input_channels'] > 0:
-                input_devices.append(f"{idx}: {device['name']}")
-                input_device_indices.append(idx)
+        if SOUNDDEVICE_AVAILABLE:
+            try:
+                devices = sd.query_devices()
+                for idx, device in enumerate(devices):
+                    if device['max_input_channels'] > 0:
+                        input_devices.append(f"{idx}: {device['name']}")
+                        input_device_indices.append(idx)
+            except Exception as e:
+                print(f"⚠️ Error querying audio devices: {e}")
         
         # If no input devices found, add a default entry
         if not input_devices:
-            input_devices = ['No microphone detected']
+            if SOUNDDEVICE_AVAILABLE:
+                input_devices = ['No microphone detected']
+            else:
+                input_devices = ['sounddevice not available']
             input_device_indices = [-1]
         
         # Store device indices in node
@@ -233,7 +249,10 @@ class MicrophoneNode(Node):
         audio_data = None
         sample_rate = 44100  # Default
         
-        if not self._is_recording or not device_str or device_str == 'No microphone detected':
+        if not SOUNDDEVICE_AVAILABLE:
+            return {"image": None, "json": None, "audio": None}
+        
+        if not self._is_recording or not device_str or device_str in ['No microphone detected', 'sounddevice not available']:
             return {"image": None, "json": None, "audio": None}
         
         try:
