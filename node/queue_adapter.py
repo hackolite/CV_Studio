@@ -63,6 +63,30 @@ class QueueBackedDict:
                 f"QueueAdapter [{self._data_type}] - Node [{node_id_name}] set value of type={data_type_name}"
             )
     
+    def set_with_timestamp(self, node_id_name: str, value: Any, timestamp: Optional[float] = None) -> None:
+        """
+        Set a value for a node with an explicit timestamp.
+        This allows preserving timestamps from source input nodes.
+        
+        Args:
+            node_id_name: The node identifier
+            value: The data value to store
+            timestamp: Optional explicit timestamp (if None, creates new timestamp)
+        """
+        # Update cache for immediate retrieval
+        self._cache[node_id_name] = value
+        
+        # Also add to queue with timestamp
+        if value is not None:
+            self._queue_manager.put_data(node_id_name, self._data_type, value, timestamp)
+            
+            # Log the data insertion via adapter
+            data_type_name = type(value).__name__
+            ts_source = "preserved" if timestamp is not None else "new"
+            logger.info(
+                f"QueueAdapter [{self._data_type}] - Node [{node_id_name}] set value of type={data_type_name} with {ts_source} timestamp"
+            )
+    
     def __getitem__(self, node_id_name: str) -> Any:
         """
         Get the value for a node (returns latest from buffer, falls back to cache).
@@ -163,3 +187,17 @@ class QueueBackedDict:
             Dictionary with queue statistics
         """
         return self._queue_manager.get_queue_info(node_id_name, self._data_type)
+    
+    def get_timestamp(self, node_id_name: str) -> Optional[float]:
+        """
+        Get the timestamp of the latest data for a node.
+        
+        Args:
+            node_id_name: The node identifier
+        
+        Returns:
+            The timestamp of the latest data, or None if not available
+        """
+        queue = self._queue_manager.get_queue(node_id_name, self._data_type)
+        latest = queue.get_latest()
+        return latest.timestamp if latest else None
