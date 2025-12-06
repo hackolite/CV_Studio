@@ -71,7 +71,8 @@ class QueueBackedDict:
         Args:
             node_id_name: The node identifier
             value: The data value to store
-            timestamp: Optional explicit timestamp (if None, creates new timestamp)
+            timestamp: Optional explicit timestamp. If None, the underlying queue manager
+                      will create a new timestamp automatically.
         """
         # Update cache for immediate retrieval
         self._cache[node_id_name] = value
