@@ -370,14 +370,29 @@ class Node(Node):
             resize_width,
             resize_height,
             draw_info_on_result,
+            slot_types_dict=None,
         ):
             frame_exist_flag = False
 
             black_image = np.zeros((resize_height, resize_width, 3)).astype(np.uint8)
 
+            # Build a list of IMAGE slot indices (0-indexed)
+            image_slot_indices = []
+            for index in range(slot_num):
+                # Check if this slot is an IMAGE type slot
+                is_image_slot = True
+                if slot_types_dict is not None:
+                    # slot_number is 1-indexed in slot_types_dict
+                    slot_type = slot_types_dict.get(index + 1, self.TYPE_IMAGE)
+                    is_image_slot = (slot_type == self.TYPE_IMAGE)
+                
+                if is_image_slot:
+                    image_slot_indices.append(index)
+            
+            # Build frame_dict based on IMAGE slots only
             frame_dict = {}
-            for index in range(slot_num - 1, -1, -1):
-                node_id_name = connection_info_src_dict.get(index, None)
+            for output_index, input_index in enumerate(reversed(image_slot_indices)):
+                node_id_name = connection_info_src_dict.get(input_index, None)
                 frame = copy.deepcopy(node_image_dict.get(node_id_name, None))
                 if frame is not None:
                     if draw_info_on_result:
@@ -388,16 +403,23 @@ class Node(Node):
                             target_height=resize_height, target_width=resize_width
                         )
                     resize_frame = cv2.resize(frame, (resize_width, resize_height))
-                    frame_dict[slot_num - index - 1] = copy.deepcopy(resize_frame)
+                    frame_dict[output_index] = copy.deepcopy(resize_frame)
 
                     frame_exist_flag = True
                 else:
-                    frame_dict[slot_num - index - 1] = copy.deepcopy(black_image)
+                    # Only add black frame for IMAGE slots
+                    frame_dict[output_index] = copy.deepcopy(black_image)
 
+            # Count IMAGE type slots for display grid
+            image_slot_count = len(image_slot_indices)
+                
             display_num_list = [1, 2, 4, 4, 6, 6, 9, 9, 9]
-            for index in range(display_num_list[slot_num - 1]):
-                if frame_dict.get(index, None) is None:
-                    frame_dict[index] = copy.deepcopy(black_image)
+            # Only fill missing slots for the display grid based on IMAGE slot count
+            if image_slot_count > 0:
+                grid_size = display_num_list[min(image_slot_count, len(display_num_list)) - 1]
+                for index in range(grid_size):
+                    if frame_dict.get(index, None) is None:
+                        frame_dict[index] = copy.deepcopy(black_image)
 
             if not frame_exist_flag:
                 frame_dict = None
@@ -464,6 +486,8 @@ class Node(Node):
 
         frame_dict = {}
         if len(connection_info_src_dict) > 0:
+            # Get slot types for this node
+            slot_types_dict = self._slot_types.get(self.tag_node_name, {})
             frame_dict = self.create_image_dict(
                 slot_num,
                 connection_info_src_dict,
@@ -473,6 +497,7 @@ class Node(Node):
                 resize_width,
                 resize_height,
                 draw_info_on_result,
+                slot_types_dict,
             )
 
 
@@ -482,7 +507,13 @@ class Node(Node):
         json_data = None
         
         if len(connection_info_src_dict) > 0 and frame_dict is not None:
-            frame, display_frame = create_concat_image(frame_dict, slot_num)
+            # Calculate number of IMAGE slots for concat
+            slot_types_dict = self._slot_types.get(self.tag_node_name, {})
+            if slot_types_dict:
+                image_slot_count = sum(1 for slot_type in slot_types_dict.values() if slot_type == self.TYPE_IMAGE)
+            else:
+                image_slot_count = slot_num
+            frame, display_frame = create_concat_image(frame_dict, image_slot_count)
 
         # Collect audio and JSON data from slots
         audio_chunks = {}

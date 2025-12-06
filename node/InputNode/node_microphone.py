@@ -226,8 +226,6 @@ class MicrophoneNode(Node):
         self.node_label = "Microphone"
         self.input_device_indices = []
         self._is_recording = False
-        self._previous_rms = 0.0
-        self._indicator_state = False  # False = off, True = on
 
     def _button_callback(self, sender, app_data, user_data):
         """Toggle recording on/off"""
@@ -270,8 +268,6 @@ class MicrophoneNode(Node):
             try:
                 dpg.set_value(indicator_tag, "Audio: ")
                 dpg.configure_item(indicator_tag, color=(128, 128, 128, 255))
-                self._previous_rms = 0.0
-                self._indicator_state = False
             except (SystemError, ValueError, Exception):
                 # DPG may not be initialized or widget may not exist yet
                 pass
@@ -298,36 +294,13 @@ class MicrophoneNode(Node):
             # Convert to mono if needed and flatten
             audio_data = recording.flatten()
             
-            # Calculate RMS level to detect changes
-            rms_level = np.sqrt(np.mean(audio_data ** 2))
-            
-            # Check if decibels increased (RMS increased)
-            decibels_increased = rms_level > self._previous_rms
-            
-            # Update indicator: blink when decibels increase
+            # Update indicator to show recording is active
             try:
-                if decibels_increased and rms_level > 0.01:  # Threshold to ignore very quiet noise
-                    # Toggle indicator state for blinking effect
-                    self._indicator_state = not self._indicator_state
-                    if self._indicator_state:
-                        # Bright green when on
-                        dpg.set_value(indicator_tag, "Audio: ●")
-                        dpg.configure_item(indicator_tag, color=(0, 255, 0, 255))
-                    else:
-                        # Darker green when off (creates blink effect)
-                        dpg.set_value(indicator_tag, "Audio: ○")
-                        dpg.configure_item(indicator_tag, color=(0, 180, 0, 255))
-                else:
-                    # No increase or very quiet - show dim indicator
-                    dpg.set_value(indicator_tag, "Audio: ○")
-                    dpg.configure_item(indicator_tag, color=(128, 128, 128, 255))
-                    self._indicator_state = False
+                dpg.set_value(indicator_tag, "Audio: ●")
+                dpg.configure_item(indicator_tag, color=(0, 255, 0, 255))
             except (SystemError, ValueError, Exception) as e:
                 # Log error but don't fail the audio capture
                 print(f"⚠️ Error updating audio indicator: {e}")
-            
-            # Store current RMS for next comparison
-            self._previous_rms = rms_level
             
             # Create audio dict in the expected format
             audio_output = {
