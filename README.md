@@ -795,6 +795,22 @@ python -m pytest tests/ --cov=src --cov=node --cov-report=html
     </tr>
     <tr>
         <td width="200">
+            Microphone
+        </td>
+        <td width="320">
+            (Audio Input Node)
+        </td>
+        <td width="760">
+            A node that captures real-time audio from a microphone and outputs audio data<br>
+            Select audio device from the dropdown list<br>
+            Configure sample rate (8kHz to 48kHz) and chunk duration (0.1s to 5.0s)<br>
+            Click "Start" to begin recording, "Stop" to pause<br>
+            Outputs audio data compatible with Spectrogram and other audio processing nodes<br>
+            See <a href="node/InputNode/README_Microphone.md">README_Microphone.md</a> for details
+        </td>
+    </tr>
+    <tr>
+        <td width="200">
             Int Value
         </td>
         <td width="320">
