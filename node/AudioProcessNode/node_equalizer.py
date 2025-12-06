@@ -12,19 +12,29 @@ from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+# Constants
+DEFAULT_SAMPLE_RATE = 22050
+GAIN_THRESHOLD = 0.01  # Minimum gain value (in dB) to apply filtering
+NYQUIST_MARGIN = 100  # Frequency margin from Nyquist frequency for filter stability
+
 
 def apply_equalizer(audio_data, sample_rate, gains):
     """
     Apply a standard 5-band equalizer to audio data.
     
     Args:
-        audio_data: numpy array of audio samples
-        sample_rate: sample rate in Hz
-        gains: dict with keys 'bass', 'mid_bass', 'mid', 'mid_treble', 'treble'
-               values are in dB (-20 to +20)
+        audio_data (np.ndarray or None): Mono audio samples as float32 numpy array.
+                                         Can be None or empty array.
+        sample_rate (int): Sample rate in Hz (e.g., 22050, 44100)
+        gains (dict): Dictionary with keys 'bass', 'mid_bass', 'mid', 'mid_treble', 'treble'
+                     Values are gain adjustments in dB (typically -20 to +20)
     
     Returns:
-        processed audio data
+        np.ndarray or None: Processed audio data as float32 numpy array, normalized to [-1.0, 1.0].
+                           Returns None if input is None, or empty array if input is empty.
+    
+    Raises:
+        No exceptions are raised. Invalid inputs return the original data or None.
     """
     if audio_data is None or len(audio_data) == 0:
         return audio_data
@@ -41,7 +51,7 @@ def apply_equalizer(audio_data, sample_rate, gains):
         ('mid_bass', 250, 500),
         ('mid', 500, 2000),
         ('mid_treble', 2000, 6000),
-        ('treble', 6000, min(20000, sample_rate // 2 - 100))
+        ('treble', 6000, min(20000, sample_rate // 2 - NYQUIST_MARGIN))
     ]
     
     # Start with the original signal
@@ -51,12 +61,12 @@ def apply_equalizer(audio_data, sample_rate, gains):
         gain_db = gains.get(band_name, 0.0)
         
         # Skip if gain is zero (no change)
-        if abs(gain_db) < 0.01:
+        if abs(gain_db) < GAIN_THRESHOLD:
             # Add the original band without modification
             if low_freq == 20:
                 # Low-pass for bass
                 sos = signal.butter(4, high_freq, btype='low', fs=sample_rate, output='sos')
-            elif high_freq >= sample_rate // 2 - 100:
+            elif high_freq >= sample_rate // 2 - NYQUIST_MARGIN:
                 # High-pass for treble
                 sos = signal.butter(4, low_freq, btype='high', fs=sample_rate, output='sos')
             else:
@@ -73,7 +83,7 @@ def apply_equalizer(audio_data, sample_rate, gains):
             if low_freq == 20:
                 # Low-pass filter for bass
                 sos = signal.butter(4, high_freq, btype='low', fs=sample_rate, output='sos')
-            elif high_freq >= sample_rate // 2 - 100:
+            elif high_freq >= sample_rate // 2 - NYQUIST_MARGIN:
                 # High-pass filter for treble
                 sos = signal.butter(4, low_freq, btype='high', fs=sample_rate, output='sos')
             else:
@@ -268,10 +278,8 @@ class Node(BaseNode):
     node_label = 'Equalizer'
     node_tag = 'Equalizer'
 
-    _opencv_setting_dict = None
-
     def __init__(self):
-        pass
+        self._opencv_setting_dict = None
 
     def update(
         self,
@@ -312,7 +320,7 @@ class Node(BaseNode):
 
         # Get audio input
         audio_data = None
-        sample_rate = 22050  # Default sample rate
+        sample_rate = DEFAULT_SAMPLE_RATE
         
         for connection_info in connection_list:
             connection_type = connection_info[0].split(':')[2]
@@ -325,7 +333,7 @@ class Node(BaseNode):
                         audio_data = audio_dict_entry.get('data', None)
                         if audio_data is None:
                             logger.warning("Audio dictionary missing 'data' key")
-                        sample_rate = audio_dict_entry.get('sample_rate', 22050)
+                        sample_rate = audio_dict_entry.get('sample_rate', DEFAULT_SAMPLE_RATE)
                     # Handle legacy tuple format for backward compatibility
                     elif isinstance(audio_dict_entry, (list, tuple)) and len(audio_dict_entry) == 2:
                         audio_data, sample_rate = audio_dict_entry

@@ -158,10 +158,14 @@ def test_equalizer_node_instantiation():
     print("✓ Equalizer Node can be instantiated")
 
 
+# Constants
+SEPARATOR_LENGTH = 70
+
+
 if __name__ == '__main__':
-    print("=" * 70)
+    print("=" * SEPARATOR_LENGTH)
     print("Testing Equalizer Node")
-    print("=" * 70)
+    print("=" * SEPARATOR_LENGTH)
     
     test_equalizer_node_exists()
     print()
@@ -178,6 +182,6 @@ if __name__ == '__main__':
     test_equalizer_node_instantiation()
     print()
     
-    print("=" * 70)
+    print("=" * SEPARATOR_LENGTH)
     print("All tests passed! ✓")
-    print("=" * 70)
+    print("=" * SEPARATOR_LENGTH)
