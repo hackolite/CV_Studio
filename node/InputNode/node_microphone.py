@@ -58,10 +58,6 @@ class FactoryNode:
         node.tag_node_output_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJson'
         node.tag_node_output_json_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJsonValue'
         
-        # Time output
-        node.tag_node_output02_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
-        node.tag_node_output02_value_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02Value'
-        
         # Button control
         node.tag_node_button_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Button'
         node.tag_node_button_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':ButtonValue'
@@ -205,16 +201,17 @@ class MicrophoneNode(Node):
 
     def __init__(self):
         super().__init__()
+        # Set node-specific labels after parent init
+        self.node_label = 'Microphone'
+        self.node_tag = 'Microphone'
+        # Window dimensions
         self._small_window_w = 240
         self._small_window_h = 135
         self.small_window_w = 240
         self.small_window_h = 135
         self._start_label = "Start"
-        self.node_tag = "Microphone"
-        self.node_label = "Microphone"
         self.input_device_indices = []
         self._is_recording = False
-        self._audio_buffer = []
 
     def _button_callback(self, sender, app_data, user_data):
         """Toggle recording on/off"""
@@ -222,7 +219,6 @@ class MicrophoneNode(Node):
         
         if self._is_recording:
             dpg.set_item_label(sender, "Stop")
-            self._audio_buffer = []  # Clear buffer when starting
             print(f"🎤 Microphone recording started for node {user_data}")
         else:
             dpg.set_item_label(sender, "Start")
@@ -291,7 +287,6 @@ class MicrophoneNode(Node):
     def close(self, node_id):
         """Clean up when node is deleted"""
         self._is_recording = False
-        self._audio_buffer = []
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
