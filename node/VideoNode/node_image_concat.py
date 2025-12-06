@@ -390,6 +390,7 @@ class Node(Node):
                     image_slot_indices.append(index)
             
             # Build frame_dict based on IMAGE slots only
+            # Reverse the list so that slots are numbered from bottom to top in the UI
             frame_dict = {}
             for output_index, input_index in enumerate(reversed(image_slot_indices)):
                 node_id_name = connection_info_src_dict.get(input_index, None)
@@ -415,8 +416,8 @@ class Node(Node):
                 
             display_num_list = [1, 2, 4, 4, 6, 6, 9, 9, 9]
             # Only fill missing slots for the display grid based on IMAGE slot count
-            if image_slot_count > 0:
-                grid_size = display_num_list[min(image_slot_count, len(display_num_list)) - 1]
+            if image_slot_count > 0 and image_slot_count <= len(display_num_list):
+                grid_size = display_num_list[image_slot_count - 1]
                 for index in range(grid_size):
                     if frame_dict.get(index, None) is None:
                         frame_dict[index] = copy.deepcopy(black_image)
