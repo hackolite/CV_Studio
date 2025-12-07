@@ -155,6 +155,11 @@ class VideoWriterNode(Node):
     _merge_progress_dict = {}  # Store merge progress (0.0 to 1.0)
     _start_label = 'Start'
     _stop_label = 'Stop'
+    
+    # Constants for file wait logic
+    _FILE_WAIT_TIMEOUT = 5.0  # Maximum seconds to wait for video file
+    _FILE_WAIT_INTERVAL = 0.1  # Check interval in seconds
+    _FILE_FLUSH_DELAY = 0.1  # Additional delay after file exists to ensure flush
 
     _prev_frame_flag = False
 
@@ -502,19 +507,17 @@ class VideoWriterNode(Node):
             self._merge_progress_dict[tag_node_name] = 0.0
             
             # Wait for video file to be fully written (with timeout)
-            max_wait = 5  # seconds
-            wait_interval = 0.1  # seconds
             elapsed = 0
-            while not os.path.exists(temp_path) and elapsed < max_wait:
-                time.sleep(wait_interval)
-                elapsed += wait_interval
+            while not os.path.exists(temp_path) and elapsed < self._FILE_WAIT_TIMEOUT:
+                time.sleep(self._FILE_WAIT_INTERVAL)
+                elapsed += self._FILE_WAIT_INTERVAL
             
             if not os.path.exists(temp_path):
                 print(f"Error: Temporary video file not found: {temp_path}")
                 raise FileNotFoundError(f"Temporary video file not found: {temp_path}")
             
             # Additional small wait to ensure file is fully flushed
-            time.sleep(0.1)
+            time.sleep(self._FILE_FLUSH_DELAY)
             
             # Perform the merge with progress reporting
             success = self._merge_audio_video_ffmpeg(

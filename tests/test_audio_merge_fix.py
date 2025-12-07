@@ -12,6 +12,7 @@ import os
 import numpy as np
 import tempfile
 import time
+import threading
 
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -74,7 +75,8 @@ def test_video_file_wait_logic():
     os.remove(temp_path)
     
     # Simulate the wait logic from _async_merge_thread
-    max_wait = 1  # seconds (shorter for test)
+    # Use shorter timeout for test to avoid long test runtime
+    max_wait = 1  # seconds (shorter for test, production uses 5)
     wait_interval = 0.1  # seconds
     elapsed = 0
     file_created = False
@@ -85,7 +87,6 @@ def test_video_file_wait_logic():
         with open(temp_path, 'wb') as f:
             f.write(b'test video data')
     
-    import threading
     create_thread = threading.Thread(target=create_file_delayed, daemon=True)
     create_thread.start()
     
