@@ -686,8 +686,23 @@ class VideoNode(Node):
         if str(node_id) in self._audio_chunk_paths:
             audio_chunk_data = self._get_audio_chunk_for_frame(str(node_id), current_frame_num)
 
+        # Calculate FPS-based timestamp for this frame
+        # The timestamp is based on the frame number and the target FPS
+        # This ensures consistent timestamps regardless of processing speed
+        frame_timestamp = None
+        if frame is not None and target_fps > 0:
+            # Timestamp = frame_number / target_fps
+            # This gives us the time position of this frame in the video
+            frame_timestamp = current_frame_num / target_fps
+        
         # Return frame via IMAGE output and audio chunk data via AUDIO output
-        return {"image": frame, "json": None, "audio": audio_chunk_data}
+        # Include the FPS-based timestamp so it can be used for synchronization
+        return {
+            "image": frame, 
+            "json": None, 
+            "audio": audio_chunk_data,
+            "timestamp": frame_timestamp
+        }
 
     def close(self, node_id):
         """Clean up audio chunks and temporary files when node is closed."""
