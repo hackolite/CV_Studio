@@ -7,6 +7,7 @@ import json
 import subprocess
 import tempfile
 import traceback
+import threading
 
 import cv2
 import numpy as np
@@ -57,6 +58,7 @@ class FactoryNode:
 
         node.tag_node_button_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Button'
         node.tag_node_button_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':ButtonValue'
+        node.tag_node_progress_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Progress'
 
 
         node._opencv_setting_dict = opencv_setting_dict
@@ -117,6 +119,19 @@ class FactoryNode:
                     callback=node._recording_button,
                     user_data=node.tag_node_name,
                 )
+            
+            # Add progress bar for merge operation
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_progress_bar(
+                    label="Merge Progress",
+                    tag=node.tag_node_progress_name,
+                    default_value=0.0,
+                    overlay="",
+                    width=small_window_w,
+                    show=False,  # Hidden by default
+                )
 
         return node
 
@@ -135,6 +150,8 @@ class VideoWriterNode(Node):
     _mkv_file_handles = {}  # Store file handles for MKV metadata tracks
     _audio_samples_dict = {}  # Store audio samples during recording for merging
     _recording_metadata_dict = {}  # Store metadata about ongoing recordings
+    _merge_threads_dict = {}  # Store merge threads for async operations
+    _merge_progress_dict = {}  # Store merge progress (0.0 to 1.0)
     _start_label = 'Start'
     _stop_label = 'Stop'
 
@@ -156,7 +173,27 @@ class VideoWriterNode(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01Value'
         tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
+        tag_node_progress_name = tag_node_name + ':' + self.TYPE_TEXT + ':Progress'
 
+        # Update merge progress bar if merge is in progress
+        if tag_node_name in self._merge_progress_dict:
+            progress = self._merge_progress_dict[tag_node_name]
+            if dpg.does_item_exist(tag_node_progress_name):
+                dpg.configure_item(tag_node_progress_name, show=True)
+                dpg.set_value(tag_node_progress_name, progress)
+                dpg.configure_item(tag_node_progress_name, overlay=f"Merging: {int(progress * 100)}%")
+            
+            # Check if merge thread has completed
+            if tag_node_name in self._merge_threads_dict:
+                thread = self._merge_threads_dict[tag_node_name]
+                if not thread.is_alive():
+                    # Thread completed, clean up
+                    self._merge_threads_dict.pop(tag_node_name)
+                    self._merge_progress_dict.pop(tag_node_name)
+                    if dpg.does_item_exist(tag_node_progress_name):
+                        dpg.configure_item(tag_node_progress_name, show=False)
+                        dpg.set_value(tag_node_progress_name, 0.0)
+                        dpg.configure_item(tag_node_progress_name, overlay="")
 
         connection_info_src = ''
         print(connection_list)
@@ -308,7 +345,7 @@ class VideoWriterNode(Node):
             if not handle.closed:
                 handle.close()
 
-    def _merge_audio_video_ffmpeg(self, video_path, audio_samples, sample_rate, output_path):
+    def _merge_audio_video_ffmpeg(self, video_path, audio_samples, sample_rate, output_path, progress_callback=None):
         """
         Merge video and audio using ffmpeg.
         
@@ -317,6 +354,7 @@ class VideoWriterNode(Node):
             audio_samples: List of numpy arrays containing audio samples
             sample_rate: Audio sample rate (e.g., 22050, 44100)
             output_path: Path to the final output file with audio
+            progress_callback: Optional callback function to report progress (0.0 to 1.0)
         
         Returns:
             True if successful, False otherwise
@@ -326,12 +364,20 @@ class VideoWriterNode(Node):
             return False
         
         try:
+            # Report progress: Starting concatenation
+            if progress_callback:
+                progress_callback(0.1)
+            
             # Concatenate all audio samples
             if not audio_samples:
                 print("Warning: No audio samples collected, merging only video")
                 return False
             
             full_audio = np.concatenate(audio_samples)
+            
+            # Report progress: Audio concatenated
+            if progress_callback:
+                progress_callback(0.3)
             
             # Create temporary audio file
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_audio:
@@ -340,6 +386,10 @@ class VideoWriterNode(Node):
             try:
                 # Write audio to temporary WAV file
                 sf.write(temp_audio_path, full_audio, sample_rate)
+                
+                # Report progress: Audio file written
+                if progress_callback:
+                    progress_callback(0.5)
                 
                 # Use ffmpeg to merge video and audio
                 video_input = ffmpeg.input(video_path)
@@ -358,8 +408,16 @@ class VideoWriterNode(Node):
                 # Overwrite output file if it exists
                 output = ffmpeg.overwrite_output(output)
                 
+                # Report progress: Starting ffmpeg merge
+                if progress_callback:
+                    progress_callback(0.7)
+                
                 # Run ffmpeg
                 ffmpeg.run(output, capture_stdout=True, capture_stderr=True)
+                
+                # Report progress: Merge complete
+                if progress_callback:
+                    progress_callback(1.0)
                 
                 print(f"Successfully merged audio and video to {output_path}")
                 return True
@@ -376,6 +434,19 @@ class VideoWriterNode(Node):
 
     def close(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
+        
+        # Wait for any ongoing merge threads to complete
+        if tag_node_name in self._merge_threads_dict:
+            thread = self._merge_threads_dict[tag_node_name]
+            if thread.is_alive():
+                print(f"Waiting for merge to complete for {tag_node_name}...")
+                thread.join(timeout=30)  # Wait up to 30 seconds
+            self._merge_threads_dict.pop(tag_node_name, None)
+        
+        # Clean up merge progress
+        if tag_node_name in self._merge_progress_dict:
+            self._merge_progress_dict.pop(tag_node_name)
+        
         if tag_node_name in self._video_writer_dict:
             self._video_writer_dict[tag_node_name].release()
             self._video_writer_dict.pop(tag_node_name)
@@ -400,6 +471,54 @@ class VideoWriterNode(Node):
     def set_setting_dict(self, node_id, setting_dict):
         pass
 
+    def _async_merge_thread(self, tag_node_name, temp_path, audio_samples, sample_rate, final_path):
+        """
+        Thread worker function to merge audio and video asynchronously.
+        This runs in a separate thread to prevent UI freezing.
+        """
+        def progress_callback(progress):
+            """Update progress in the shared dict"""
+            self._merge_progress_dict[tag_node_name] = progress
+        
+        try:
+            # Initialize progress
+            self._merge_progress_dict[tag_node_name] = 0.0
+            
+            # Perform the merge with progress reporting
+            success = self._merge_audio_video_ffmpeg(
+                temp_path,
+                audio_samples,
+                sample_rate,
+                final_path,
+                progress_callback=progress_callback
+            )
+            
+            if success:
+                # Remove temporary video file
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                print(f"Video with audio saved to: {final_path}")
+            else:
+                # If merge failed, rename temp file to final name
+                if os.path.exists(temp_path):
+                    os.rename(temp_path, final_path)
+                print(f"Warning: Audio merge failed. Video without audio saved to: {final_path}")
+                
+        except Exception as e:
+            print(f"Error in async merge thread: {e}")
+            traceback.print_exc()
+            # Try to save the temp file as final on error
+            if os.path.exists(temp_path):
+                try:
+                    os.rename(temp_path, final_path)
+                    print(f"Video saved to: {final_path} (merge failed)")
+                except:
+                    pass
+        finally:
+            # Clean up merge progress indicator
+            if tag_node_name in self._merge_progress_dict:
+                # Set to 1.0 to indicate completion before cleanup
+                self._merge_progress_dict[tag_node_name] = 1.0
     
 
 
@@ -488,24 +607,21 @@ class VideoWriterNode(Node):
                     final_path = metadata['final_path']
                     sample_rate = metadata['sample_rate']
                     
-                    # Merge audio and video using ffmpeg
-                    success = self._merge_audio_video_ffmpeg(
-                        temp_path,
-                        self._audio_samples_dict[tag_node_name],
-                        sample_rate,
-                        final_path
-                    )
+                    # Copy audio samples for the thread (to avoid race conditions)
+                    audio_samples_copy = copy.deepcopy(self._audio_samples_dict[tag_node_name])
                     
-                    if success:
-                        # Remove temporary video file
-                        if os.path.exists(temp_path):
-                            os.remove(temp_path)
-                        print(f"Video with audio saved to: {final_path}")
-                    else:
-                        # If merge failed, rename temp file to final name
-                        if os.path.exists(temp_path):
-                            os.rename(temp_path, final_path)
-                        print(f"Warning: Audio merge failed. Video without audio saved to: {final_path}")
+                    # Start merge in a separate thread to prevent UI freezing
+                    merge_thread = threading.Thread(
+                        target=self._async_merge_thread,
+                        args=(tag_node_name, temp_path, audio_samples_copy, sample_rate, final_path),
+                        daemon=True
+                    )
+                    merge_thread.start()
+                    
+                    # Store thread reference for tracking
+                    self._merge_threads_dict[tag_node_name] = merge_thread
+                    
+                    print(f"Started async merge for: {final_path}")
                     
                     # Clean up metadata
                     self._recording_metadata_dict.pop(tag_node_name)
