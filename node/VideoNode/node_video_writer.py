@@ -322,13 +322,13 @@ class VideoWriterNode(Node):
             True if successful, False otherwise
         """
         if not FFMPEG_AVAILABLE or sf is None:
-            print("Warning: ffmpeg-python or soundfile not available, cannot merge audio")
+            print("Warning: ffmpeg-python and soundfile are required for audio merging. Video will be saved without audio.")
             return False
         
         try:
             # Concatenate all audio samples
             if not audio_samples:
-                print("Warning: No audio samples to merge")
+                print("Warning: No audio samples collected, merging only video")
                 return False
             
             full_audio = np.concatenate(audio_samples)
@@ -427,32 +427,29 @@ class VideoWriterNode(Node):
             video_format = dpg_get_value(format_tag)
 
             if tag_node_name not in self._video_writer_dict:
-                # Create temporary video file path (will be used for merging with audio)
-                temp_file_path = None
+                # Determine file extension and codec based on format
+                format_config = {
+                    'AVI': {'ext': '.avi', 'codec': 'MJPG'},
+                    'MKV': {'ext': '.mkv', 'codec': 'FFV1'},
+                    'MP4': {'ext': '.mp4', 'codec': 'mp4v'}
+                }
                 
-                if video_format == 'AVI':
-                    # Use MJPEG codec for AVI
-                    file_path = os.path.join(video_writer_directory, f'{startup_time_text}.avi')
-                    # Create temp path for video-only file if we'll be merging audio
-                    temp_file_path = os.path.join(video_writer_directory, f'{startup_time_text}_temp.avi')
-                    self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
-                        temp_file_path,
-                        cv2.VideoWriter_fourcc(*"MJPG"),
-                        writer_fps,
-                        (writer_width, writer_height),
-                    )
-                elif video_format == 'MKV':
-                    # Use FFV1 lossless codec for MKV (better for archival)
-                    file_path = os.path.join(video_writer_directory, f'{startup_time_text}.mkv')
-                    temp_file_path = os.path.join(video_writer_directory, f'{startup_time_text}_temp.mkv')
-                    self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
-                        temp_file_path,
-                        cv2.VideoWriter_fourcc(*"FFV1"),
-                        writer_fps,
-                        (writer_width, writer_height),
-                    )
-                    
-                    # Initialize metadata tracking for MKV
+                config = format_config.get(video_format, format_config['MP4'])
+                
+                # Create file paths (temp and final)
+                file_path = os.path.join(video_writer_directory, f'{startup_time_text}{config["ext"]}')
+                temp_file_path = os.path.join(video_writer_directory, f'{startup_time_text}_temp{config["ext"]}')
+                
+                # Create video writer with temporary path
+                self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
+                    temp_file_path,
+                    cv2.VideoWriter_fourcc(*config['codec']),
+                    writer_fps,
+                    (writer_width, writer_height),
+                )
+                
+                # Initialize metadata tracking for MKV
+                if video_format == 'MKV':
                     self._mkv_metadata_dict[tag_node_name] = {
                         'audio_handles': {},
                         'json_handles': {},
@@ -465,16 +462,6 @@ class VideoWriterNode(Node):
                     
                     # Note: Audio and JSON tracks will be created dynamically when data arrives
                     # This allows us to support variable number of slots from concat node
-                    
-                else:  # MP4 (default)
-                    file_path = os.path.join(video_writer_directory, f'{startup_time_text}.mp4')
-                    temp_file_path = os.path.join(video_writer_directory, f'{startup_time_text}_temp.mp4')
-                    self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
-                        temp_file_path,
-                        cv2.VideoWriter_fourcc(*"mp4v"),
-                        writer_fps,
-                        (writer_width, writer_height),
-                    )
                 
                 # Initialize audio sample collection
                 self._audio_samples_dict[tag_node_name] = []
