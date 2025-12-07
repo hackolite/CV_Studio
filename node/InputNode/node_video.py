@@ -296,6 +296,7 @@ class VideoNode(Node):
     _prev_movie_filepath = {}
     _frame_count = {}
     _last_frame_time = {}
+    _loop_elapsed_time = {}  # Track cumulative time across loops for continuous timestamps
 
     _min_val = 1
     _max_val = 10
@@ -608,6 +609,7 @@ class VideoNode(Node):
             self._prev_movie_filepath[str(node_id)] = movie_path
             self._frame_count[str(node_id)] = 0
             self._last_frame_time[str(node_id)] = None
+            self._loop_elapsed_time[str(node_id)] = 0.0  # Reset loop elapsed time for new video
 
         video_capture = self._video_capture.get(str(node_id), None)
 
@@ -644,10 +646,28 @@ class VideoNode(Node):
             )
 
             if should_read_frame:
+                # Track frame count before reading for loop detection
+                prev_frame_count = self._frame_count.get(str(node_id), 0)
+                
                 while True:
                     ret, frame = video_capture.read()
                     if not ret:
                         if loop_flag:
+                            # Before looping, add the video duration to elapsed time
+                            # to ensure continuous timestamps across loops
+                            if str(node_id) in self._chunk_metadata:
+                                # Get video duration from metadata
+                                metadata = self._chunk_metadata[str(node_id)]
+                                num_frames = metadata.get('num_frames', 0)
+                                fps = metadata.get('fps', target_fps)
+                                video_duration = num_frames / fps if fps > 0 else 0
+                                
+                                # Add duration to elapsed time
+                                if str(node_id) not in self._loop_elapsed_time:
+                                    self._loop_elapsed_time[str(node_id)] = 0.0
+                                self._loop_elapsed_time[str(node_id)] += video_duration
+                            
+                            # Reset to beginning
                             video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
                             self._frame_count[str(node_id)] = 0
                             _, frame = video_capture.read()
@@ -689,11 +709,15 @@ class VideoNode(Node):
         # Calculate FPS-based timestamp for this frame
         # The timestamp is based on the frame number and the target FPS
         # This ensures consistent timestamps regardless of processing speed
+        # For looping videos, we add the cumulative elapsed time from previous loops
         frame_timestamp = None
         if frame is not None and target_fps > 0:
-            # Timestamp = frame_number / target_fps
-            # This gives us the time position of this frame in the video
-            frame_timestamp = current_frame_num / target_fps
+            # Base timestamp = frame_number / target_fps
+            base_timestamp = current_frame_num / target_fps
+            
+            # Add elapsed time from previous loops to maintain continuous timestamps
+            loop_offset = self._loop_elapsed_time.get(str(node_id), 0.0)
+            frame_timestamp = base_timestamp + loop_offset
         
         # Return frame via IMAGE output and audio chunk data via AUDIO output
         # Include the FPS-based timestamp so it can be used for synchronization

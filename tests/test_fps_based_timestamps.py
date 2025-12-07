@@ -139,6 +139,56 @@ class TestFPSBasedTimestamps(unittest.TestCase):
         # In the actual code, this is protected by: if target_fps > 0
         with self.assertRaises(ZeroDivisionError):
             _ = frame_number / 0
+    
+    def test_looping_video_continuous_timestamps(self):
+        """Test that timestamps continue across video loops instead of resetting."""
+        # Simulate a 3-second video at 30 FPS (90 frames total)
+        video_duration = 3.0
+        fps = 30
+        total_frames = int(video_duration * fps)  # 90 frames
+        
+        # First loop: frames 0-89
+        # Timestamps should be 0.0 to 2.966... seconds
+        loop_offset = 0.0
+        for frame_num in range(total_frames):
+            timestamp = (frame_num / fps) + loop_offset
+            # Verify timestamp is in expected range for first loop
+            self.assertGreaterEqual(timestamp, 0.0)
+            self.assertLess(timestamp, video_duration)
+        
+        # After first loop completes, offset should increase by video duration
+        loop_offset += video_duration  # Now 3.0 seconds
+        
+        # Second loop: frames 0-89 again
+        # Timestamps should be 3.0 to 5.966... seconds (continuing from first loop)
+        for frame_num in range(total_frames):
+            timestamp = (frame_num / fps) + loop_offset
+            # Verify timestamp is in expected range for second loop
+            self.assertGreaterEqual(timestamp, video_duration)
+            self.assertLess(timestamp, video_duration * 2)
+        
+        # After second loop
+        loop_offset += video_duration  # Now 6.0 seconds
+        
+        # Third loop: frames 0-89
+        # Timestamps should be 6.0 to 8.966... seconds
+        for frame_num in range(total_frames):
+            timestamp = (frame_num / fps) + loop_offset
+            # Verify timestamp is in expected range for third loop
+            self.assertGreaterEqual(timestamp, video_duration * 2)
+            self.assertLess(timestamp, video_duration * 3)
+        
+        # Verify no timestamp discontinuities at loop boundaries
+        # End of first loop
+        end_first_loop = ((total_frames - 1) / fps) + 0.0  # ~2.967 seconds
+        # Start of second loop
+        start_second_loop = (0 / fps) + video_duration  # 3.0 seconds
+        
+        # The gap should be minimal (just one frame)
+        gap = start_second_loop - end_first_loop
+        expected_gap = 1 / fps  # One frame duration
+        self.assertAlmostEqual(gap, expected_gap, places=6,
+                             msg="Timestamp gap at loop boundary should be one frame duration")
 
 
 if __name__ == "__main__":
