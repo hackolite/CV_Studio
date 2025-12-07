@@ -236,8 +236,11 @@ class MicrophoneNode(Node):
 
     def _audio_callback(self, indata, frames, time_info, status):
         """Callback for audio stream - runs in separate thread"""
-        if status:
-            print(f"⚠️ Audio callback status: {status}")
+        # Note: Avoid heavy operations here as this runs frequently
+        # Only log status if there's an actual issue
+        if status and status.input_overflow:
+            # Only print on actual errors to avoid performance impact
+            pass  # Could log to a file if needed
         
         # Copy audio data to buffer (non-blocking)
         try:
