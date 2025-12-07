@@ -60,16 +60,20 @@ class MicrophoneNode(Node):
         # Only update UI every N frames to prevent lag
         self._ui_update_counter += 1
         
-        # Skip update if state hasn't changed and we're not at update interval
-        if self._last_indicator_state == state and self._ui_update_counter < self._ui_update_interval:
-            return
+        # Determine if we should update
+        should_update = False
         
-        # Reset counter and update state
-        if self._ui_update_counter >= self._ui_update_interval:
-            self._ui_update_counter = 0
+        # Update if state has changed (immediate feedback)
+        if self._last_indicator_state != state:
+            should_update = True
+            self._ui_update_counter = 0  # Reset counter on state change
+        # Update if we've reached the interval (periodic refresh)
+        elif self._ui_update_counter >= self._ui_update_interval:
+            should_update = True
+            self._ui_update_counter = 0  # Reset counter after periodic update
         
-        # Only update if state changed or interval reached
-        if self._last_indicator_state != state or self._ui_update_counter == 0:
+        # Perform the UI update if needed
+        if should_update:
             try:
                 if state == 'active':
                     dpg.set_value(indicator_tag, "Audio: ●")
