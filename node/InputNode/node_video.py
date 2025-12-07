@@ -646,25 +646,31 @@ class VideoNode(Node):
             )
 
             if should_read_frame:
-                # Track frame count before reading for loop detection
-                prev_frame_count = self._frame_count.get(str(node_id), 0)
-                
                 while True:
                     ret, frame = video_capture.read()
                     if not ret:
                         if loop_flag:
                             # Before looping, add the video duration to elapsed time
                             # to ensure continuous timestamps across loops
+                            
+                            # Try to get duration from metadata first
                             if str(node_id) in self._chunk_metadata:
-                                # Get video duration from metadata
-                                # Use actual video FPS from metadata, not target_fps
+                                # Use actual video FPS from metadata for accurate duration
                                 metadata = self._chunk_metadata[str(node_id)]
                                 num_frames = metadata.get('num_frames', 0)
-                                actual_fps = metadata.get('fps', 30.0)  # Use actual FPS from video
+                                actual_fps = metadata.get('fps', 30.0)
                                 video_duration = num_frames / actual_fps if actual_fps > 0 else 0
+                            else:
+                                # Fallback: get duration from OpenCV video properties
+                                # This ensures loop timestamps work even without audio preprocessing
+                                total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+                                actual_fps = video_capture.get(cv2.CAP_PROP_FPS)
+                                if actual_fps <= 0:
+                                    actual_fps = target_fps  # Final fallback
+                                video_duration = total_frames / actual_fps if actual_fps > 0 else 0
                                 
-                                # Add duration to elapsed time (already initialized at line 612)
-                                self._loop_elapsed_time[str(node_id)] += video_duration
+                            # Add duration to elapsed time (initialized when video is loaded)
+                            self._loop_elapsed_time[str(node_id)] += video_duration
                             
                             # Reset to beginning
                             video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)

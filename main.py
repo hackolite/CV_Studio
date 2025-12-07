@@ -158,11 +158,11 @@ def update_node_info(
                 node_audio_dict.set_with_timestamp(node_id_name, copy.deepcopy(data["audio"]), source_timestamp)
                 logger.debug(f"Node {node_id_name} preserved timestamp {source_timestamp:.6f} from source")
             elif node_provided_timestamp is not None:
-                # Input node with explicit timestamp (e.g., FPS-based timestamp)
+                # Input node with explicit timestamp (e.g., Video node with FPS-based timing)
                 node_image_dict.set_with_timestamp(node_id_name, copy.deepcopy(data["image"]), node_provided_timestamp)
                 node_result_dict.set_with_timestamp(node_id_name, copy.deepcopy(data["json"]), node_provided_timestamp)
                 node_audio_dict.set_with_timestamp(node_id_name, copy.deepcopy(data["audio"]), node_provided_timestamp)
-                logger.debug(f"Node {node_id_name} used explicit timestamp {node_provided_timestamp:.6f} (FPS-based)")
+                logger.debug(f"Node {node_id_name} used explicit timestamp {node_provided_timestamp:.6f}")
             else:
                 # Input node without explicit timestamp - create new timestamp automatically
                 node_image_dict[node_id_name] = copy.deepcopy(data["image"])
