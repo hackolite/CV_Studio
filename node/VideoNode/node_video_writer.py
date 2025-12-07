@@ -157,9 +157,11 @@ class VideoWriterNode(Node):
     _stop_label = 'Stop'
     
     # Constants for file wait logic
-    _FILE_WAIT_TIMEOUT = 5.0  # Maximum seconds to wait for video file
-    _FILE_WAIT_INTERVAL = 0.1  # Check interval in seconds
-    _FILE_FLUSH_DELAY = 0.1  # Additional delay after file exists to ensure flush
+    # These control the behavior when waiting for the video file to be written to disk
+    # before starting the audio/video merge operation
+    _FILE_WAIT_TIMEOUT = 5.0  # Maximum seconds to wait for video file (range: 1.0-10.0)
+    _FILE_WAIT_INTERVAL = 0.1  # Check interval in seconds (range: 0.05-0.5)
+    _FILE_FLUSH_DELAY = 0.1  # Additional delay after file exists to ensure flush (range: 0.05-0.5)
 
     _prev_frame_flag = False
 
@@ -385,10 +387,8 @@ class VideoWriterNode(Node):
                 return False
             
             # Filter out empty or invalid arrays
-            valid_samples = []
-            for sample in audio_samples:
-                if isinstance(sample, np.ndarray) and sample.size > 0:
-                    valid_samples.append(sample)
+            valid_samples = [sample for sample in audio_samples 
+                           if isinstance(sample, np.ndarray) and sample.size > 0]
             
             if not valid_samples:
                 print("Warning: No valid audio samples to merge")

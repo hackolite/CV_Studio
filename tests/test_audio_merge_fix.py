@@ -17,6 +17,10 @@ import threading
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+# Test constants
+TEST_FILE_WAIT_TIMEOUT = 1.0  # Shorter than production (5.0s) for faster tests
+TEST_FILE_CREATION_DELAY = 0.3  # Delay before creating test file
+
 
 def test_empty_audio_samples_handling():
     """Test that empty audio samples are properly handled without crashing"""
@@ -76,14 +80,14 @@ def test_video_file_wait_logic():
     
     # Simulate the wait logic from _async_merge_thread
     # Use shorter timeout for test to avoid long test runtime
-    max_wait = 1  # seconds (shorter for test, production uses 5)
+    max_wait = TEST_FILE_WAIT_TIMEOUT
     wait_interval = 0.1  # seconds
     elapsed = 0
     file_created = False
     
     # Create file after a short delay in background
     def create_file_delayed():
-        time.sleep(0.3)  # Wait 300ms before creating file
+        time.sleep(TEST_FILE_CREATION_DELAY)
         with open(temp_path, 'wb') as f:
             f.write(b'test video data')
     
