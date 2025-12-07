@@ -320,10 +320,11 @@ class MicrophoneNode(Node):
         # Update if state has changed (immediate feedback)
         if self._last_indicator_state != state:
             should_update = True
+            self._ui_update_counter = 0  # Reset counter on state change
         # Update if we've reached the interval (periodic refresh)
         elif self._ui_update_counter >= self._ui_update_interval:
             should_update = True
-            self._ui_update_counter = 0  # Reset counter after update
+            self._ui_update_counter = 0  # Reset counter after periodic update
         
         # Perform the UI update if needed
         if should_update:
