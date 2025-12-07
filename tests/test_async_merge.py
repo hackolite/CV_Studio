@@ -3,6 +3,7 @@
 """
 Test for async video merge functionality in VideoWriter node.
 """
+import copy
 import time
 import threading
 import numpy as np
@@ -76,7 +77,6 @@ def test_thread_safety_with_copy():
     original_data = [np.array([1, 2, 3]), np.array([4, 5, 6])]
     
     # Make a deep copy for the thread
-    import copy
     thread_data = copy.deepcopy(original_data)
     
     # Modify original data
