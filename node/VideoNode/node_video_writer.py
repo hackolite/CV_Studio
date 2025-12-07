@@ -5,6 +5,8 @@ import copy
 import datetime
 import json
 import subprocess
+import tempfile
+import traceback
 
 import cv2
 import numpy as np
@@ -324,8 +326,6 @@ class VideoWriterNode(Node):
             return False
         
         try:
-            import tempfile
-            
             # Concatenate all audio samples
             if not audio_samples:
                 print("Warning: No audio samples to merge")
@@ -346,14 +346,12 @@ class VideoWriterNode(Node):
                 audio_input = ffmpeg.input(temp_audio_path)
                 
                 # Merge video and audio streams
-                # Use shortest option to handle length mismatches
                 output = ffmpeg.output(
                     video_input,
                     audio_input,
                     output_path,
                     vcodec='copy',  # Copy video codec (no re-encoding)
                     acodec='aac',   # Use AAC for audio (widely compatible)
-                    shortest=None,  # Use shortest stream duration
                     loglevel='error'  # Only show errors
                 )
                 
@@ -373,7 +371,6 @@ class VideoWriterNode(Node):
                     
         except Exception as e:
             print(f"Error merging audio and video: {e}")
-            import traceback
             traceback.print_exc()
             return False
 

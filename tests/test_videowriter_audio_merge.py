@@ -74,7 +74,6 @@ def test_merge_audio_video_function():
             output_path,
             vcodec='copy',
             acodec='aac',
-            shortest=None,
             loglevel='error'
         )
         
