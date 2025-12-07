@@ -666,8 +666,8 @@ class VideoNode(Node):
                                 total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
                                 actual_fps = video_capture.get(cv2.CAP_PROP_FPS)
                                 if actual_fps <= 0:
-                                    actual_fps = target_fps  # Final fallback
-                                video_duration = total_frames / actual_fps if actual_fps > 0 else 0
+                                    actual_fps = target_fps  # Final fallback to user setting
+                                video_duration = total_frames / actual_fps
                                 
                             # Add duration to elapsed time (initialized when video is loaded)
                             self._loop_elapsed_time[str(node_id)] += video_duration
@@ -717,7 +717,9 @@ class VideoNode(Node):
         # For looping videos, we add the cumulative elapsed time from previous loops
         frame_timestamp = None
         if frame is not None and target_fps > 0:
-            # Base timestamp = frame_number / target_fps
+            # Base timestamp = current_frame_num / target_fps
+            # Note: current_frame_num is 1-indexed (incremented before use in line 683)
+            # so frame 1 has timestamp ~0.033s at 30 FPS, not 0s
             base_timestamp = current_frame_num / target_fps
             
             # Add elapsed time from previous loops to maintain continuous timestamps
