@@ -233,6 +233,10 @@ class MicrophoneNode(Node):
         self._audio_buffer = queue.Queue(maxsize=10)  # Limit buffer size to prevent memory issues
         self._current_sample_rate = 44100
         self._lock = threading.Lock()
+        # UI update throttling to prevent lag
+        self._ui_update_counter = 0
+        self._ui_update_interval = 15  # Update UI every N frames
+        self._last_indicator_state = None  # Track last state to avoid redundant updates
 
     def _audio_callback(self, indata, frames, time_info, status):
         """Callback for audio stream - runs in separate thread"""
@@ -300,6 +304,38 @@ class MicrophoneNode(Node):
             except queue.Empty:
                 break
     
+    def _update_indicator_throttled(self, indicator_tag, state):
+        """Update the visual indicator with throttling to prevent lag
+        
+        Args:
+            indicator_tag: Tag of the indicator widget
+            state: 'active' for green recording state, 'inactive' for gray idle state
+        """
+        # Only update UI every N frames to prevent lag
+        self._ui_update_counter += 1
+        
+        # Skip update if state hasn't changed and we're not at update interval
+        if self._last_indicator_state == state and self._ui_update_counter < self._ui_update_interval:
+            return
+        
+        # Reset counter and update state
+        if self._ui_update_counter >= self._ui_update_interval:
+            self._ui_update_counter = 0
+        
+        # Only update if state changed or interval reached
+        if self._last_indicator_state != state or self._ui_update_counter == 0:
+            try:
+                if state == 'active':
+                    dpg.set_value(indicator_tag, "Audio: ●")
+                    dpg.configure_item(indicator_tag, color=(0, 255, 0, 255))
+                else:  # inactive
+                    dpg.set_value(indicator_tag, "Audio: ")
+                    dpg.configure_item(indicator_tag, color=(128, 128, 128, 255))
+                self._last_indicator_state = state
+            except (SystemError, ValueError, Exception):
+                # DPG may not be initialized or widget may not exist yet
+                pass
+    
     def _button_callback(self, sender, app_data, user_data):
         """Toggle recording on/off"""
         self._is_recording = not self._is_recording
@@ -339,13 +375,8 @@ class MicrophoneNode(Node):
             return {"image": None, "json": None, "audio": None}
         
         if not self._is_recording or not device_str or device_str in ['No microphone detected', 'sounddevice not available']:
-            # Reset indicator when not recording
-            try:
-                dpg.set_value(indicator_tag, "Audio: ")
-                dpg.configure_item(indicator_tag, color=(128, 128, 128, 255))
-            except (SystemError, ValueError, Exception):
-                # DPG may not be initialized or widget may not exist yet
-                pass
+            # Reset indicator when not recording (throttled)
+            self._update_indicator_throttled(indicator_tag, 'inactive')
             return {"image": None, "json": None, "audio": None}
         
         try:
@@ -370,13 +401,8 @@ class MicrophoneNode(Node):
                 # Flatten to ensure it's 1D
                 audio_data = audio_data.flatten()
                 
-                # Update indicator to show recording is active
-                try:
-                    dpg.set_value(indicator_tag, "Audio: ●")
-                    dpg.configure_item(indicator_tag, color=(0, 255, 0, 255))
-                except (SystemError, ValueError, Exception) as e:
-                    # Log error but don't fail the audio capture
-                    print(f"⚠️ Error updating audio indicator: {e}")
+                # Update indicator to show recording is active (throttled to prevent lag)
+                self._update_indicator_throttled(indicator_tag, 'active')
                 
                 # Create audio dict in the expected format
                 audio_output = {
