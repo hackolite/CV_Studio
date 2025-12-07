@@ -370,14 +370,50 @@ class Node(Node):
             resize_width,
             resize_height,
             draw_info_on_result,
+            slot_types_dict=None,
         ):
             frame_exist_flag = False
 
             black_image = np.zeros((resize_height, resize_width, 3)).astype(np.uint8)
 
+            # Build a list of IMAGE slot indices (0-indexed)
+            image_slot_indices = []
+            for index in range(slot_num):
+                # Check if this slot is an IMAGE type slot
+                is_image_slot = True
+                if slot_types_dict is not None:
+                    # slot_number is 1-indexed in slot_types_dict
+                    slot_type = slot_types_dict.get(index + 1, self.TYPE_IMAGE)
+                    is_image_slot = (slot_type == self.TYPE_IMAGE)
+                
+                if is_image_slot:
+                    image_slot_indices.append(index)
+            
+            # Count IMAGE type slots for display grid
+            image_slot_count = len(image_slot_indices)
+            
+            # Determine grid size based on IMAGE slot count
+            # Grid layout mapping: 1→1x1, 2→1x2(centered), 3-4→2x2, 5-6→2x3, 7-9→3x3
+            # This list maps slot count to display grid size
+            display_num_list = [1, 2, 4, 4, 6, 6, 9, 9, 9]
+            if 0 < image_slot_count <= len(display_num_list):
+                grid_size = display_num_list[image_slot_count - 1]
+            elif image_slot_count > len(display_num_list):
+                # For more than 9 slots, use the maximum 9-slot grid
+                grid_size = display_num_list[-1]
+            else:
+                # image_slot_count is 0 or negative
+                grid_size = 0
+            
+            # Only process the first grid_size IMAGE slots
+            slots_to_process = image_slot_indices[:grid_size] if grid_size > 0 else []
+            
+            # Build frame_dict based on IMAGE slots to display
+            # Process in reverse order to maintain compatibility with original grid layout
+            # where slots are positioned from the newest (last added) to oldest (first added)
             frame_dict = {}
-            for index in range(slot_num - 1, -1, -1):
-                node_id_name = connection_info_src_dict.get(index, None)
+            for output_index, input_index in enumerate(reversed(slots_to_process)):
+                node_id_name = connection_info_src_dict.get(input_index, None)
                 frame = copy.deepcopy(node_image_dict.get(node_id_name, None))
                 if frame is not None:
                     if draw_info_on_result:
@@ -388,14 +424,15 @@ class Node(Node):
                             target_height=resize_height, target_width=resize_width
                         )
                     resize_frame = cv2.resize(frame, (resize_width, resize_height))
-                    frame_dict[slot_num - index - 1] = copy.deepcopy(resize_frame)
+                    frame_dict[output_index] = copy.deepcopy(resize_frame)
 
                     frame_exist_flag = True
                 else:
-                    frame_dict[slot_num - index - 1] = copy.deepcopy(black_image)
-
-            display_num_list = [1, 2, 4, 4, 6, 6, 9, 9, 9]
-            for index in range(display_num_list[slot_num - 1]):
+                    # Add black frame for IMAGE slots with no data
+                    frame_dict[output_index] = copy.deepcopy(black_image)
+            
+            # Fill remaining grid positions with black frames
+            for index in range(grid_size):
                 if frame_dict.get(index, None) is None:
                     frame_dict[index] = copy.deepcopy(black_image)
 
@@ -464,6 +501,8 @@ class Node(Node):
 
         frame_dict = {}
         if len(connection_info_src_dict) > 0:
+            # Get slot types for this node
+            slot_types_dict = self._slot_types.get(self.tag_node_name, {})
             frame_dict = self.create_image_dict(
                 slot_num,
                 connection_info_src_dict,
@@ -473,6 +512,7 @@ class Node(Node):
                 resize_width,
                 resize_height,
                 draw_info_on_result,
+                slot_types_dict,
             )
 
 
@@ -482,7 +522,15 @@ class Node(Node):
         json_data = None
         
         if len(connection_info_src_dict) > 0 and frame_dict is not None:
-            frame, display_frame = create_concat_image(frame_dict, slot_num)
+            # Calculate number of IMAGE slots for concat
+            slot_types_dict = self._slot_types.get(self.tag_node_name, {})
+            # Check if slot_types_dict has content (empty dict is falsy in Python)
+            if slot_types_dict:
+                image_slot_count = sum(1 for slot_type in slot_types_dict.values() if slot_type == self.TYPE_IMAGE)
+            else:
+                # Fallback to total slot count if no type info available
+                image_slot_count = slot_num
+            frame, display_frame = create_concat_image(frame_dict, image_slot_count)
 
         # Collect audio and JSON data from slots
         audio_chunks = {}
