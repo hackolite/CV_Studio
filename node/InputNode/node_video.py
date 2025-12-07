@@ -296,6 +296,7 @@ class VideoNode(Node):
     _prev_movie_filepath = {}
     _frame_count = {}
     _last_frame_time = {}
+    _loop_elapsed_time = {}  # Track cumulative time across loops for continuous timestamps
 
     _min_val = 1
     _max_val = 10
@@ -608,6 +609,7 @@ class VideoNode(Node):
             self._prev_movie_filepath[str(node_id)] = movie_path
             self._frame_count[str(node_id)] = 0
             self._last_frame_time[str(node_id)] = None
+            self._loop_elapsed_time[str(node_id)] = 0.0  # Reset loop elapsed time for new video
 
         video_capture = self._video_capture.get(str(node_id), None)
 
@@ -648,6 +650,29 @@ class VideoNode(Node):
                     ret, frame = video_capture.read()
                     if not ret:
                         if loop_flag:
+                            # Before looping, add the video duration to elapsed time
+                            # to ensure continuous timestamps across loops
+                            
+                            # Try to get duration from metadata first
+                            if str(node_id) in self._chunk_metadata:
+                                # Use actual video FPS from metadata for accurate duration
+                                metadata = self._chunk_metadata[str(node_id)]
+                                num_frames = metadata.get('num_frames', 0)
+                                actual_fps = metadata.get('fps', 30.0)
+                                video_duration = num_frames / actual_fps if actual_fps > 0 else 0
+                            else:
+                                # Fallback: get duration from OpenCV video properties
+                                # This ensures loop timestamps work even without audio preprocessing
+                                total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+                                actual_fps = video_capture.get(cv2.CAP_PROP_FPS)
+                                if actual_fps <= 0:
+                                    actual_fps = target_fps  # Final fallback to user setting
+                                video_duration = total_frames / actual_fps
+                                
+                            # Add duration to elapsed time (initialized when video is loaded)
+                            self._loop_elapsed_time[str(node_id)] += video_duration
+                            
+                            # Reset to beginning
                             video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
                             self._frame_count[str(node_id)] = 0
                             _, frame = video_capture.read()
@@ -686,8 +711,29 @@ class VideoNode(Node):
         if str(node_id) in self._audio_chunk_paths:
             audio_chunk_data = self._get_audio_chunk_for_frame(str(node_id), current_frame_num)
 
+        # Calculate FPS-based timestamp for this frame
+        # The timestamp is based on the frame number and the target FPS
+        # This ensures consistent timestamps regardless of processing speed
+        # For looping videos, we add the cumulative elapsed time from previous loops
+        frame_timestamp = None
+        if frame is not None and target_fps > 0:
+            # Base timestamp = current_frame_num / target_fps
+            # Note: current_frame_num is 1-indexed (incremented before use in line 683)
+            # so frame 1 has timestamp ~0.033s at 30 FPS, not 0s
+            base_timestamp = current_frame_num / target_fps
+            
+            # Add elapsed time from previous loops to maintain continuous timestamps
+            loop_offset = self._loop_elapsed_time.get(str(node_id), 0.0)
+            frame_timestamp = base_timestamp + loop_offset
+        
         # Return frame via IMAGE output and audio chunk data via AUDIO output
-        return {"image": frame, "json": None, "audio": audio_chunk_data}
+        # Include the FPS-based timestamp so it can be used for synchronization
+        return {
+            "image": frame, 
+            "json": None, 
+            "audio": audio_chunk_data,
+            "timestamp": frame_timestamp
+        }
 
     def close(self, node_id):
         """Clean up audio chunks and temporary files when node is closed."""
