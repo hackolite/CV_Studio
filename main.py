@@ -43,6 +43,8 @@ def get_args():
 
 
 def async_main(node_editor, queue_manager):
+    import time
+    
     # Create queue-backed dictionaries for backward compatibility
     node_image_dict = QueueBackedDict(queue_manager, "image")
     node_result_dict = QueueBackedDict(queue_manager, "json")
@@ -54,6 +56,8 @@ def async_main(node_editor, queue_manager):
         update_node_info(
             node_editor, node_image_dict, node_result_dict, node_audio_dict
         )
+        # Small sleep to prevent CPU hogging and keep UI responsive
+        time.sleep(0.001)  # 1ms sleep to yield CPU and maintain ~1000 FPS max
 
 
 def update_node_info(
