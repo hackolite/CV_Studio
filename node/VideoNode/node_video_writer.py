@@ -18,9 +18,11 @@ from node.basenode import Node
 
 try:
     import ffmpeg
+    import soundfile as sf
     FFMPEG_AVAILABLE = True
 except ImportError:
     FFMPEG_AVAILABLE = False
+    sf = None
 
 def slow_motion_interpolation(prev_frame, next_frame, alpha):
     """ Generates smooth intermediate frame between 2 images """
@@ -129,6 +131,8 @@ class VideoWriterNode(Node):
     _video_writer_dict = {}
     _mkv_metadata_dict = {}  # Store audio and JSON metadata for MKV files
     _mkv_file_handles = {}  # Store file handles for MKV metadata tracks
+    _audio_samples_dict = {}  # Store audio samples during recording for merging
+    _recording_metadata_dict = {}  # Store metadata about ongoing recordings
     _start_label = 'Start'
     _stop_label = 'Stop'
 
@@ -180,6 +184,50 @@ class VideoWriterNode(Node):
                                           (writer_width, writer_height),
                                           interpolation=cv2.INTER_CUBIC)
                 self._video_writer_dict[tag_node_name].write(writer_frame)
+                
+                # Collect audio samples for final merge (for all formats)
+                if audio_data is not None and tag_node_name in self._audio_samples_dict:
+                    # audio_data can be a dict (from concat node with multiple slots) or a single chunk
+                    if isinstance(audio_data, dict):
+                        # Check if this is a multi-slot concat output or single audio chunk from video node
+                        # Multi-slot: {0: audio_chunk, 1: audio_chunk, ...}
+                        # Single chunk: {'data': array, 'sample_rate': int}
+                        
+                        if 'data' in audio_data and 'sample_rate' in audio_data:
+                            # Single audio chunk from video node
+                            self._audio_samples_dict[tag_node_name].append(audio_data['data'])
+                            # Update sample rate if provided
+                            if tag_node_name in self._recording_metadata_dict:
+                                self._recording_metadata_dict[tag_node_name]['sample_rate'] = audio_data['sample_rate']
+                        else:
+                            # Concat node output: {slot_idx: audio_chunk}
+                            # For now, merge all slots into a single audio track
+                            # Get all audio chunks and concatenate them
+                            audio_chunks = []
+                            sample_rate = None
+                            
+                            for slot_idx in sorted(audio_data.keys()):
+                                audio_chunk = audio_data[slot_idx]
+                                # Handle dict format from video node: {'data': array, 'sample_rate': int}
+                                if isinstance(audio_chunk, dict) and 'data' in audio_chunk:
+                                    audio_chunks.append(audio_chunk['data'])
+                                    if sample_rate is None and 'sample_rate' in audio_chunk:
+                                        sample_rate = audio_chunk['sample_rate']
+                                elif isinstance(audio_chunk, np.ndarray):
+                                    audio_chunks.append(audio_chunk)
+                            
+                            if audio_chunks:
+                                # Concatenate all chunks
+                                merged_chunk = np.concatenate(audio_chunks)
+                                self._audio_samples_dict[tag_node_name].append(merged_chunk)
+                                
+                                # Update sample rate if found
+                                if sample_rate is not None and tag_node_name in self._recording_metadata_dict:
+                                    self._recording_metadata_dict[tag_node_name]['sample_rate'] = sample_rate
+                    else:
+                        # Single audio chunk as numpy array
+                        if isinstance(audio_data, np.ndarray):
+                            self._audio_samples_dict[tag_node_name].append(audio_data)
                 
                 # Write audio and JSON data to MKV metadata tracks if applicable
                 if tag_node_name in self._mkv_metadata_dict:
@@ -258,6 +306,77 @@ class VideoWriterNode(Node):
             if not handle.closed:
                 handle.close()
 
+    def _merge_audio_video_ffmpeg(self, video_path, audio_samples, sample_rate, output_path):
+        """
+        Merge video and audio using ffmpeg.
+        
+        Args:
+            video_path: Path to the temporary video file (no audio)
+            audio_samples: List of numpy arrays containing audio samples
+            sample_rate: Audio sample rate (e.g., 22050, 44100)
+            output_path: Path to the final output file with audio
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        if not FFMPEG_AVAILABLE or sf is None:
+            print("Warning: ffmpeg-python or soundfile not available, cannot merge audio")
+            return False
+        
+        try:
+            import tempfile
+            
+            # Concatenate all audio samples
+            if not audio_samples:
+                print("Warning: No audio samples to merge")
+                return False
+            
+            full_audio = np.concatenate(audio_samples)
+            
+            # Create temporary audio file
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_audio:
+                temp_audio_path = temp_audio.name
+            
+            try:
+                # Write audio to temporary WAV file
+                sf.write(temp_audio_path, full_audio, sample_rate)
+                
+                # Use ffmpeg to merge video and audio
+                video_input = ffmpeg.input(video_path)
+                audio_input = ffmpeg.input(temp_audio_path)
+                
+                # Merge video and audio streams
+                # Use shortest option to handle length mismatches
+                output = ffmpeg.output(
+                    video_input,
+                    audio_input,
+                    output_path,
+                    vcodec='copy',  # Copy video codec (no re-encoding)
+                    acodec='aac',   # Use AAC for audio (widely compatible)
+                    shortest=None,  # Use shortest stream duration
+                    loglevel='error'  # Only show errors
+                )
+                
+                # Overwrite output file if it exists
+                output = ffmpeg.overwrite_output(output)
+                
+                # Run ffmpeg
+                ffmpeg.run(output, capture_stdout=True, capture_stderr=True)
+                
+                print(f"Successfully merged audio and video to {output_path}")
+                return True
+                
+            finally:
+                # Clean up temporary audio file
+                if os.path.exists(temp_audio_path):
+                    os.remove(temp_audio_path)
+                    
+        except Exception as e:
+            print(f"Error merging audio and video: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
     def close(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
         if tag_node_name in self._video_writer_dict:
@@ -311,11 +430,16 @@ class VideoWriterNode(Node):
             video_format = dpg_get_value(format_tag)
 
             if tag_node_name not in self._video_writer_dict:
+                # Create temporary video file path (will be used for merging with audio)
+                temp_file_path = None
+                
                 if video_format == 'AVI':
                     # Use MJPEG codec for AVI
                     file_path = os.path.join(video_writer_directory, f'{startup_time_text}.avi')
+                    # Create temp path for video-only file if we'll be merging audio
+                    temp_file_path = os.path.join(video_writer_directory, f'{startup_time_text}_temp.avi')
                     self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
-                        file_path,
+                        temp_file_path,
                         cv2.VideoWriter_fourcc(*"MJPG"),
                         writer_fps,
                         (writer_width, writer_height),
@@ -323,8 +447,9 @@ class VideoWriterNode(Node):
                 elif video_format == 'MKV':
                     # Use FFV1 lossless codec for MKV (better for archival)
                     file_path = os.path.join(video_writer_directory, f'{startup_time_text}.mkv')
+                    temp_file_path = os.path.join(video_writer_directory, f'{startup_time_text}_temp.mkv')
                     self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
-                        file_path,
+                        temp_file_path,
                         cv2.VideoWriter_fourcc(*"FFV1"),
                         writer_fps,
                         (writer_width, writer_height),
@@ -346,18 +471,76 @@ class VideoWriterNode(Node):
                     
                 else:  # MP4 (default)
                     file_path = os.path.join(video_writer_directory, f'{startup_time_text}.mp4')
+                    temp_file_path = os.path.join(video_writer_directory, f'{startup_time_text}_temp.mp4')
                     self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
-                        file_path,
+                        temp_file_path,
                         cv2.VideoWriter_fourcc(*"mp4v"),
                         writer_fps,
                         (writer_width, writer_height),
                     )
+                
+                # Initialize audio sample collection
+                self._audio_samples_dict[tag_node_name] = []
+                
+                # Store recording metadata for final merge
+                self._recording_metadata_dict[tag_node_name] = {
+                    'final_path': file_path,
+                    'temp_path': temp_file_path,
+                    'format': video_format,
+                    'sample_rate': 22050  # Default sample rate, can be adjusted based on input
+                }
 
             dpg.set_item_label(tag_node_button_value_name, self._stop_label)
         elif label == self._stop_label:
 
             self._video_writer_dict[tag_node_name].release()
             self._video_writer_dict.pop(tag_node_name)
+            
+            # Merge audio and video if audio samples were collected
+            if tag_node_name in self._audio_samples_dict and len(self._audio_samples_dict[tag_node_name]) > 0:
+                if tag_node_name in self._recording_metadata_dict:
+                    metadata = self._recording_metadata_dict[tag_node_name]
+                    temp_path = metadata['temp_path']
+                    final_path = metadata['final_path']
+                    sample_rate = metadata['sample_rate']
+                    
+                    # Merge audio and video using ffmpeg
+                    success = self._merge_audio_video_ffmpeg(
+                        temp_path,
+                        self._audio_samples_dict[tag_node_name],
+                        sample_rate,
+                        final_path
+                    )
+                    
+                    if success:
+                        # Remove temporary video file
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+                        print(f"Video with audio saved to: {final_path}")
+                    else:
+                        # If merge failed, rename temp file to final name
+                        if os.path.exists(temp_path):
+                            os.rename(temp_path, final_path)
+                        print(f"Warning: Audio merge failed. Video without audio saved to: {final_path}")
+                    
+                    # Clean up metadata
+                    self._recording_metadata_dict.pop(tag_node_name)
+            else:
+                # No audio samples, just rename temp file to final name
+                if tag_node_name in self._recording_metadata_dict:
+                    metadata = self._recording_metadata_dict[tag_node_name]
+                    temp_path = metadata['temp_path']
+                    final_path = metadata['final_path']
+                    
+                    if os.path.exists(temp_path):
+                        os.rename(temp_path, final_path)
+                    print(f"Video without audio saved to: {final_path}")
+                    
+                    self._recording_metadata_dict.pop(tag_node_name)
+            
+            # Clean up audio samples
+            if tag_node_name in self._audio_samples_dict:
+                self._audio_samples_dict.pop(tag_node_name)
             
             # Close metadata file handles if MKV
             if tag_node_name in self._mkv_metadata_dict:
