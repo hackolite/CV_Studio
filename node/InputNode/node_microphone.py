@@ -3,6 +3,8 @@
 import time
 import numpy as np
 import dearpygui.dearpygui as dpg
+import queue
+import threading
 
 # Try to import sounddevice, but handle gracefully if not available
 try:
@@ -226,7 +228,75 @@ class MicrophoneNode(Node):
         self.node_label = "Microphone"
         self.input_device_indices = []
         self._is_recording = False
+        # Non-blocking audio stream
+        self._audio_stream = None
+        self._audio_buffer = queue.Queue(maxsize=10)  # Limit buffer size to prevent memory issues
+        self._current_sample_rate = 44100
+        self._lock = threading.Lock()
 
+    def _audio_callback(self, indata, frames, time_info, status):
+        """Callback for audio stream - runs in separate thread"""
+        if status:
+            print(f"⚠️ Audio callback status: {status}")
+        
+        # Copy audio data to buffer (non-blocking)
+        try:
+            # Make a copy to avoid issues with the buffer being reused
+            audio_copy = indata.copy()
+            self._audio_buffer.put_nowait(audio_copy)
+        except queue.Full:
+            # Buffer is full, discard oldest data by clearing and adding new
+            try:
+                self._audio_buffer.get_nowait()  # Remove oldest
+                self._audio_buffer.put_nowait(audio_copy)
+            except queue.Empty:
+                pass
+    
+    def _start_stream(self, device_idx, sample_rate, chunk_duration):
+        """Start the non-blocking audio stream"""
+        with self._lock:
+            # Stop existing stream if any
+            self._stop_stream()
+            
+            try:
+                # Calculate blocksize for the chunk duration
+                blocksize = int(sample_rate * chunk_duration)
+                
+                # Create and start the input stream
+                self._audio_stream = sd.InputStream(
+                    device=device_idx,
+                    channels=1,
+                    samplerate=sample_rate,
+                    blocksize=blocksize,
+                    dtype='float32',
+                    callback=self._audio_callback,
+                )
+                self._current_sample_rate = sample_rate
+                self._audio_stream.start()
+                print(f"🎤 Audio stream started (device: {device_idx}, sample_rate: {sample_rate}, blocksize: {blocksize})")
+            except Exception as e:
+                print(f"⚠️ Error starting audio stream: {e}")
+                self._audio_stream = None
+    
+    def _stop_stream(self):
+        """Stop the audio stream and clear the buffer"""
+        if self._audio_stream is not None:
+            try:
+                self._audio_stream.stop()
+                self._audio_stream.close()
+                print("🛑 Audio stream stopped")
+            except Exception as e:
+                print(f"⚠️ Error stopping audio stream: {e}")
+            finally:
+                self._audio_stream = None
+        
+        # Clear the buffer
+        while not self._audio_buffer.empty():
+            try:
+                self._audio_buffer.get_nowait()
+            except queue.Empty:
+                break
+    
     def _button_callback(self, sender, app_data, user_data):
         """Toggle recording on/off"""
         self._is_recording = not self._is_recording
@@ -236,6 +306,8 @@ class MicrophoneNode(Node):
             print(f"🎤 Microphone recording started for node {user_data}")
         else:
             dpg.set_item_label(sender, "Start")
+            # Stop the stream when recording is stopped
+            self._stop_stream()
             print(f"🛑 Microphone recording stopped for node {user_data}")
     
     def update(
@@ -278,45 +350,52 @@ class MicrophoneNode(Node):
             device_idx = int(device_str.split(':')[0])
             sample_rate = int(sample_rate_str)
             
-            # Calculate number of samples for the chunk duration
-            num_samples = int(sample_rate * chunk_duration)
+            # Start stream if not already running or settings changed
+            with self._lock:
+                stream_needs_restart = (
+                    self._audio_stream is None or 
+                    not self._audio_stream.active or
+                    self._current_sample_rate != sample_rate
+                )
             
-            # Record audio chunk
-            recording = sd.rec(
-                frames=num_samples,
-                samplerate=sample_rate,
-                channels=1,
-                dtype='float32',
-                device=device_idx,
-            )
-            sd.wait()  # Wait until recording is finished
+            if stream_needs_restart:
+                self._start_stream(device_idx, sample_rate, chunk_duration)
             
-            # Convert to mono if needed and flatten
-            audio_data = recording.flatten()
-            
-            # Update indicator to show recording is active
+            # Try to get audio data from buffer (non-blocking)
             try:
-                dpg.set_value(indicator_tag, "Audio: ●")
-                dpg.configure_item(indicator_tag, color=(0, 255, 0, 255))
-            except (SystemError, ValueError, Exception) as e:
-                # Log error but don't fail the audio capture
-                print(f"⚠️ Error updating audio indicator: {e}")
-            
-            # Create audio dict in the expected format
-            audio_output = {
-                'data': audio_data,
-                'sample_rate': sample_rate
-            }
+                audio_data = self._audio_buffer.get_nowait()
+                # Flatten to ensure it's 1D
+                audio_data = audio_data.flatten()
+                
+                # Update indicator to show recording is active
+                try:
+                    dpg.set_value(indicator_tag, "Audio: ●")
+                    dpg.configure_item(indicator_tag, color=(0, 255, 0, 255))
+                except (SystemError, ValueError, Exception) as e:
+                    # Log error but don't fail the audio capture
+                    print(f"⚠️ Error updating audio indicator: {e}")
+                
+                # Create audio dict in the expected format
+                audio_output = {
+                    'data': audio_data,
+                    'sample_rate': sample_rate
+                }
+                
+                return {"image": None, "json": None, "audio": audio_output}
+                
+            except queue.Empty:
+                # No audio data available yet, return None
+                # This is normal during startup or if processing is faster than recording
+                return {"image": None, "json": None, "audio": None}
             
         except Exception as e:
-            print(f"⚠️ Error recording from microphone: {e}")
+            print(f"⚠️ Error in microphone update: {e}")
             return {"image": None, "json": None, "audio": None}
-
-        return {"image": None, "json": None, "audio": audio_output}
 
     def close(self, node_id):
         """Clean up when node is deleted"""
         self._is_recording = False
+        self._stop_stream()
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
