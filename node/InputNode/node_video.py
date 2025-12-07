@@ -657,14 +657,13 @@ class VideoNode(Node):
                             # to ensure continuous timestamps across loops
                             if str(node_id) in self._chunk_metadata:
                                 # Get video duration from metadata
+                                # Use actual video FPS from metadata, not target_fps
                                 metadata = self._chunk_metadata[str(node_id)]
                                 num_frames = metadata.get('num_frames', 0)
-                                fps = metadata.get('fps', target_fps)
-                                video_duration = num_frames / fps if fps > 0 else 0
+                                actual_fps = metadata.get('fps', 30.0)  # Use actual FPS from video
+                                video_duration = num_frames / actual_fps if actual_fps > 0 else 0
                                 
-                                # Add duration to elapsed time
-                                if str(node_id) not in self._loop_elapsed_time:
-                                    self._loop_elapsed_time[str(node_id)] = 0.0
+                                # Add duration to elapsed time (already initialized at line 612)
                                 self._loop_elapsed_time[str(node_id)] += video_duration
                             
                             # Reset to beginning
