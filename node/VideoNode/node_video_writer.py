@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import traceback
 import threading
+import time
 
 import cv2
 import numpy as np
@@ -364,16 +365,32 @@ class VideoWriterNode(Node):
             return False
         
         try:
+            # Verify video file exists
+            if not os.path.exists(video_path):
+                print(f"Error: Video file not found: {video_path}")
+                return False
+            
             # Report progress: Starting concatenation
             if progress_callback:
                 progress_callback(0.1)
             
-            # Concatenate all audio samples
+            # Validate and filter audio samples
             if not audio_samples:
                 print("Warning: No audio samples collected, merging only video")
                 return False
             
-            full_audio = np.concatenate(audio_samples)
+            # Filter out empty or invalid arrays
+            valid_samples = []
+            for sample in audio_samples:
+                if isinstance(sample, np.ndarray) and sample.size > 0:
+                    valid_samples.append(sample)
+            
+            if not valid_samples:
+                print("Warning: No valid audio samples to merge")
+                return False
+            
+            # Concatenate all valid audio samples
+            full_audio = np.concatenate(valid_samples)
             
             # Report progress: Audio concatenated
             if progress_callback:
@@ -484,6 +501,21 @@ class VideoWriterNode(Node):
             # Initialize progress
             self._merge_progress_dict[tag_node_name] = 0.0
             
+            # Wait for video file to be fully written (with timeout)
+            max_wait = 5  # seconds
+            wait_interval = 0.1  # seconds
+            elapsed = 0
+            while not os.path.exists(temp_path) and elapsed < max_wait:
+                time.sleep(wait_interval)
+                elapsed += wait_interval
+            
+            if not os.path.exists(temp_path):
+                print(f"Error: Temporary video file not found: {temp_path}")
+                raise FileNotFoundError(f"Temporary video file not found: {temp_path}")
+            
+            # Additional small wait to ensure file is fully flushed
+            time.sleep(0.1)
+            
             # Perform the merge with progress reporting
             success = self._merge_audio_video_ffmpeg(
                 temp_path,
@@ -512,8 +544,8 @@ class VideoWriterNode(Node):
                 try:
                     os.rename(temp_path, final_path)
                     print(f"Video saved to: {final_path} (merge failed)")
-                except:
-                    pass
+                except Exception as rename_error:
+                    print(f"Error renaming temp file: {rename_error}")
         finally:
             # Clean up merge progress indicator
             if tag_node_name in self._merge_progress_dict:
@@ -596,8 +628,10 @@ class VideoWriterNode(Node):
             dpg.set_item_label(tag_node_button_value_name, self._stop_label)
         elif label == self._stop_label:
 
-            self._video_writer_dict[tag_node_name].release()
-            self._video_writer_dict.pop(tag_node_name)
+            # Release video writer and ensure file is flushed to disk
+            if tag_node_name in self._video_writer_dict:
+                self._video_writer_dict[tag_node_name].release()
+                self._video_writer_dict.pop(tag_node_name)
             
             # Merge audio and video if audio samples were collected
             if tag_node_name in self._audio_samples_dict and len(self._audio_samples_dict[tag_node_name]) > 0:
