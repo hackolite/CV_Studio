@@ -8,6 +8,7 @@ import argparse
 from collections import OrderedDict
 import os
 import serial
+import time
 import cv2
 import dearpygui.dearpygui as dpg
 
@@ -43,8 +44,6 @@ def get_args():
 
 
 def async_main(node_editor, queue_manager):
-    import time
-    
     # Create queue-backed dictionaries for backward compatibility
     node_image_dict = QueueBackedDict(queue_manager, "image")
     node_result_dict = QueueBackedDict(queue_manager, "json")
@@ -57,6 +56,8 @@ def async_main(node_editor, queue_manager):
             node_editor, node_image_dict, node_result_dict, node_audio_dict
         )
         # Small sleep to prevent CPU hogging and keep UI responsive
+        # Note: This function runs in a thread executor (not asyncio coroutine),
+        # so time.sleep() is appropriate here to yield CPU to other threads
         time.sleep(0.001)  # 1ms sleep to yield CPU and maintain ~1000 FPS max
 
 
