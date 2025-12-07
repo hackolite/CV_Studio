@@ -58,7 +58,7 @@ class FactoryNode:
         small_window_h = node._opencv_setting_dict['process_height']
         use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
-        black_image = np.zeros((small_window_w, small_window_h, 3))
+        black_image = np.zeros((small_window_h, small_window_w, 3))
         black_texture = node.convert_cv_to_dpg(
             black_image,
             small_window_w,
@@ -263,7 +263,7 @@ class Node(Node):
             for keypoint_id in range(21):
                 if keypoint_id in hand_result:
                     landmark_x, landmark_y = hand_result[keypoint_id][0], hand_result[keypoint_id][1]
-                    cv2.circle(image, (landmark_x, landmark_y), 4, color, -1)
+                    cv2.circle(image, (int(landmark_x), int(landmark_y)), 4, color, -1)
             
             # Draw skeleton connections
             connections = [
@@ -283,8 +283,8 @@ class Node(Node):
             
             for start_idx, end_idx in connections:
                 if start_idx in hand_result and end_idx in hand_result:
-                    start_pt = tuple(hand_result[start_idx][:2])
-                    end_pt = tuple(hand_result[end_idx][:2])
+                    start_pt = tuple(map(int, hand_result[start_idx][:2]))
+                    end_pt = tuple(map(int, hand_result[end_idx][:2]))
                     cv2.line(image, start_pt, end_pt, color, 2)
             
             # Draw hand ID and label
@@ -294,7 +294,7 @@ class Node(Node):
             
             cv2.putText(
                 image, text, 
-                (palm_center[0] - 30, palm_center[1] - 10),
+                (int(palm_center[0]) - 30, int(palm_center[1]) - 10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA
             )
         
