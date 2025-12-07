@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import traceback
 import threading
+import time
 
 import cv2
 import numpy as np
@@ -154,6 +155,13 @@ class VideoWriterNode(Node):
     _merge_progress_dict = {}  # Store merge progress (0.0 to 1.0)
     _start_label = 'Start'
     _stop_label = 'Stop'
+    
+    # Constants for file wait logic
+    # These control the behavior when waiting for the video file to be written to disk
+    # before starting the audio/video merge operation
+    _FILE_WAIT_TIMEOUT = 5.0  # Maximum seconds to wait for video file (range: 1.0-10.0)
+    _FILE_WAIT_INTERVAL = 0.1  # Check interval in seconds (range: 0.05-0.5)
+    _FILE_FLUSH_DELAY = 0.1  # Additional delay after file exists to ensure flush (range: 0.05-0.5)
 
     _prev_frame_flag = False
 
@@ -364,16 +372,30 @@ class VideoWriterNode(Node):
             return False
         
         try:
+            # Verify video file exists
+            if not os.path.exists(video_path):
+                print(f"Error: Video file not found: {video_path}")
+                return False
+            
             # Report progress: Starting concatenation
             if progress_callback:
                 progress_callback(0.1)
             
-            # Concatenate all audio samples
+            # Validate and filter audio samples
             if not audio_samples:
                 print("Warning: No audio samples collected, merging only video")
                 return False
             
-            full_audio = np.concatenate(audio_samples)
+            # Filter out empty or invalid arrays
+            valid_samples = [sample for sample in audio_samples 
+                           if isinstance(sample, np.ndarray) and sample.size > 0]
+            
+            if not valid_samples:
+                print("Warning: No valid audio samples to merge")
+                return False
+            
+            # Concatenate all valid audio samples
+            full_audio = np.concatenate(valid_samples)
             
             # Report progress: Audio concatenated
             if progress_callback:
@@ -484,6 +506,19 @@ class VideoWriterNode(Node):
             # Initialize progress
             self._merge_progress_dict[tag_node_name] = 0.0
             
+            # Wait for video file to be fully written (with timeout)
+            elapsed = 0
+            while not os.path.exists(temp_path) and elapsed < self._FILE_WAIT_TIMEOUT:
+                time.sleep(self._FILE_WAIT_INTERVAL)
+                elapsed += self._FILE_WAIT_INTERVAL
+            
+            if not os.path.exists(temp_path):
+                print(f"Error: Temporary video file not found: {temp_path}")
+                raise FileNotFoundError(f"Temporary video file not found: {temp_path}")
+            
+            # Additional small wait to ensure file is fully flushed
+            time.sleep(self._FILE_FLUSH_DELAY)
+            
             # Perform the merge with progress reporting
             success = self._merge_audio_video_ffmpeg(
                 temp_path,
@@ -512,8 +547,8 @@ class VideoWriterNode(Node):
                 try:
                     os.rename(temp_path, final_path)
                     print(f"Video saved to: {final_path} (merge failed)")
-                except:
-                    pass
+                except Exception as rename_error:
+                    print(f"Error renaming temp file: {rename_error}")
         finally:
             # Clean up merge progress indicator
             if tag_node_name in self._merge_progress_dict:
@@ -596,8 +631,10 @@ class VideoWriterNode(Node):
             dpg.set_item_label(tag_node_button_value_name, self._stop_label)
         elif label == self._stop_label:
 
-            self._video_writer_dict[tag_node_name].release()
-            self._video_writer_dict.pop(tag_node_name)
+            # Release video writer and ensure file is flushed to disk
+            if tag_node_name in self._video_writer_dict:
+                self._video_writer_dict[tag_node_name].release()
+                self._video_writer_dict.pop(tag_node_name)
             
             # Merge audio and video if audio samples were collected
             if tag_node_name in self._audio_samples_dict and len(self._audio_samples_dict[tag_node_name]) > 0:
