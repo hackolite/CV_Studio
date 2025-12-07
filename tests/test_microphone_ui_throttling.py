@@ -115,24 +115,20 @@ def test_no_direct_dpg_calls_in_update():
     # Get the source code of the update method
     source = inspect.getsource(MicrophoneNode.update)
     
-    # Check that dpg.set_value and dpg.configure_item are not called directly
+    # Check that dpg.set_value and dpg.configure_item are not called directly on indicator_tag
     # They should only be called within _update_indicator_throttled
     lines = source.split('\n')
     
-    in_throttled_call = False
     for line in lines:
-        # Skip the throttled method calls
+        # Skip lines that call the throttled method (these are OK)
         if '_update_indicator_throttled' in line:
-            in_throttled_call = True
             continue
         
-        # Check for direct DPG calls that should be throttled
-        if not in_throttled_call:
-            # These patterns would indicate non-throttled UI updates
-            assert 'dpg.set_value(indicator_tag' not in line, \
-                "Direct dpg.set_value on indicator_tag should be throttled"
-            assert 'dpg.configure_item(indicator_tag' not in line, \
-                "Direct dpg.configure_item on indicator_tag should be throttled"
+        # These patterns would indicate non-throttled UI updates to indicator
+        assert 'dpg.set_value(indicator_tag' not in line, \
+            "Direct dpg.set_value on indicator_tag should be throttled"
+        assert 'dpg.configure_item(indicator_tag' not in line, \
+            "Direct dpg.configure_item on indicator_tag should be throttled"
     
     print("✓ No direct DPG calls to indicator in update() - all are throttled")
     return True
