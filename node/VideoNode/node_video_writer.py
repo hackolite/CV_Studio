@@ -672,6 +672,9 @@ class VideoWriterNode(Node):
                     slot_audio_dict = self._audio_samples_dict[tag_node_name]
                     
                     # Sort slots by timestamp (finite timestamps first), then by slot index
+                    # Note: Tuple sorting in Python sorts by first element (timestamp), then second element (slot_idx)
+                    # Finite timestamps (e.g., 99.9, 100.0) come before float('inf'), ensuring
+                    # synchronized slots are ordered correctly before falling back to slot order
                     sorted_slots = sorted(
                         slot_audio_dict.items(),
                         key=lambda x: (x[1]['timestamp'], x[0])
@@ -679,14 +682,23 @@ class VideoWriterNode(Node):
                     
                     # Build final audio sample list in timestamp order
                     audio_samples_list = []
+                    # Track if we encounter mixed sample rates (use the first valid one)
+                    final_sample_rate = None
+                    
                     for slot_idx, slot_data in sorted_slots:
                         # Concatenate all samples for this slot
                         if slot_data['samples']:
                             slot_concatenated = np.concatenate(slot_data['samples'])
                             audio_samples_list.append(slot_concatenated)
-                        # Update sample rate if available
-                        if 'sample_rate' in slot_data and slot_data['sample_rate'] is not None:
-                            sample_rate = slot_data['sample_rate']
+                        
+                        # Use the first valid sample rate we encounter
+                        # Note: All slots should have the same sample rate for proper merging
+                        if final_sample_rate is None and 'sample_rate' in slot_data and slot_data['sample_rate'] is not None:
+                            final_sample_rate = slot_data['sample_rate']
+                    
+                    # Use the detected sample rate, fallback to metadata default
+                    if final_sample_rate is not None:
+                        sample_rate = final_sample_rate
                     
                     # Start merge in a separate thread to prevent UI freezing
                     merge_thread = threading.Thread(
