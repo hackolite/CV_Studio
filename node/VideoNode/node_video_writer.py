@@ -248,24 +248,40 @@ class VideoWriterNode(Node):
                                 self._recording_metadata_dict[tag_node_name]['sample_rate'] = audio_data['sample_rate']
                         else:
                             # Concat node output: {slot_idx: audio_chunk}
-                            # For now, merge all slots into a single audio track
-                            # Get all audio chunks and concatenate them
-                            audio_chunks = []
+                            # Merge all slots into a single audio track, synchronized by timestamp
+                            # Get all audio chunks with their timestamps for synchronization
+                            audio_chunks_with_ts = []
                             sample_rate = None
                             
                             for slot_idx in sorted(audio_data.keys()):
                                 audio_chunk = audio_data[slot_idx]
-                                # Handle dict format from video node: {'data': array, 'sample_rate': int}
+                                # Handle dict format from video node: {'data': array, 'sample_rate': int, 'timestamp': float}
                                 if isinstance(audio_chunk, dict) and 'data' in audio_chunk:
-                                    audio_chunks.append(audio_chunk['data'])
+                                    # Use float('inf') for missing timestamps to ensure they are sorted
+                                    # after chunks with valid timestamps when using tuple sorting (timestamp, slot)
+                                    timestamp = audio_chunk.get('timestamp', float('inf'))
+                                    audio_chunks_with_ts.append({
+                                        'data': audio_chunk['data'],
+                                        'timestamp': timestamp,
+                                        'slot': slot_idx
+                                    })
                                     if sample_rate is None and 'sample_rate' in audio_chunk:
                                         sample_rate = audio_chunk['sample_rate']
                                 elif isinstance(audio_chunk, np.ndarray):
-                                    audio_chunks.append(audio_chunk)
+                                    # Plain numpy array - use inf timestamp (sorted by slot at end)
+                                    audio_chunks_with_ts.append({
+                                        'data': audio_chunk,
+                                        'timestamp': float('inf'),
+                                        'slot': slot_idx
+                                    })
                             
-                            if audio_chunks:
-                                # Concatenate all chunks
-                                merged_chunk = np.concatenate(audio_chunks)
+                            if audio_chunks_with_ts:
+                                # Sort by timestamp first (finite timestamps first), then by slot index
+                                # This ensures synchronized audio chunks are in correct temporal order
+                                audio_chunks_with_ts.sort(key=lambda x: (x['timestamp'], x['slot']))
+                                
+                                # Concatenate all chunks in synchronized order
+                                merged_chunk = np.concatenate([chunk['data'] for chunk in audio_chunks_with_ts])
                                 self._audio_samples_dict[tag_node_name].append(merged_chunk)
                                 
                                 # Update sample rate if found
