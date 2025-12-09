@@ -541,6 +541,22 @@ class Node(Node):
                 # Get audio from node_audio_dict
                 audio_chunk = node_audio_dict.get(slot_info['source'], None)
                 if audio_chunk is not None:
+                    # Also retrieve timestamp for synchronization
+                    timestamp = node_audio_dict.get_timestamp(slot_info['source'])
+                    
+                    # Preserve timestamp in audio chunk for downstream synchronization
+                    if isinstance(audio_chunk, dict):
+                        # Already a dict, add timestamp if not present
+                        if 'timestamp' not in audio_chunk and timestamp is not None:
+                            audio_chunk = audio_chunk.copy()
+                            audio_chunk['timestamp'] = timestamp
+                    elif timestamp is not None:
+                        # Convert to dict format with timestamp
+                        audio_chunk = {
+                            'data': audio_chunk,
+                            'timestamp': timestamp
+                        }
+                    
                     audio_chunks[slot_idx] = audio_chunk
             elif slot_info['type'] == self.TYPE_JSON:
                 # Get JSON from node_result_dict
