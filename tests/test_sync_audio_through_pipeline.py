@@ -11,8 +11,9 @@ import sys
 import os
 import numpy as np
 import time
+import traceback
 
-# Add parent directory to path
+# Add parent directory to path for test imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from node.timestamped_queue import NodeDataQueueManager
@@ -259,6 +260,5 @@ if __name__ == '__main__':
         
     except Exception as e:
         print(f"\n✗ Test failed: {e}")
-        import traceback
         traceback.print_exc()
         sys.exit(1)

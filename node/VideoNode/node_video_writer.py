@@ -257,7 +257,9 @@ class VideoWriterNode(Node):
                                 audio_chunk = audio_data[slot_idx]
                                 # Handle dict format from video node: {'data': array, 'sample_rate': int, 'timestamp': float}
                                 if isinstance(audio_chunk, dict) and 'data' in audio_chunk:
-                                    timestamp = audio_chunk.get('timestamp', float('inf'))  # Use inf for chunks without timestamp
+                                    # Use float('inf') for missing timestamps to ensure they are sorted
+                                    # after chunks with valid timestamps when using tuple sorting (timestamp, slot)
+                                    timestamp = audio_chunk.get('timestamp', float('inf'))
                                     audio_chunks_with_ts.append({
                                         'data': audio_chunk['data'],
                                         'timestamp': timestamp,
