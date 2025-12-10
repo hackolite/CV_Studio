@@ -212,8 +212,8 @@ class Node(Node):
         total_available_elements = 0
         
         for slot_idx in range(1, slot_num + 1):
-            # Get the slot's configured type
-            slot_type = slot_types.get(slot_idx, 'image')
+            # Get the slot's configured type (use 'or' to handle None values)
+            slot_type = slot_types.get(slot_idx) or 'image'
             
             if slot_idx not in slot_buffers:
                 slot_buffers[slot_idx] = {
@@ -286,7 +286,7 @@ class Node(Node):
         
         # For each slot, find data that has been retained long enough
         for slot_idx in range(1, slot_num + 1):
-            slot_type = slot_types.get(slot_idx, 'image')
+            slot_type = slot_types.get(slot_idx) or 'image'
             
             if slot_idx in slot_buffers:
                 buffer_data = slot_buffers[slot_idx].get('data', [])
@@ -324,7 +324,7 @@ class Node(Node):
         
         # Update output text values for each slot
         for slot_idx in range(1, slot_num + 1):
-            slot_type = slot_types.get(slot_idx, 'image')
+            slot_type = slot_types.get(slot_idx) or 'image'
             
             # Update output text based on slot type
             output_tag = f"{tag_node_name}:{self._get_type_constant(slot_type)}:Output{slot_idx:02d}Value"
@@ -348,7 +348,7 @@ class Node(Node):
         # Return aggregated data for each slot
         result = {}
         for slot_idx in range(1, slot_num + 1):
-            slot_type = slot_types.get(slot_idx, 'image')
+            slot_type = slot_types.get(slot_idx) or 'image'
             result[f'slot_{slot_idx}'] = {
                 'image': output_data['image'].get(slot_idx) if slot_type == 'image' else None,
                 'json': output_data['json'].get(slot_idx) if slot_type == 'json' else None,
@@ -356,7 +356,7 @@ class Node(Node):
             }
         
         # Also return first slot for backward compatibility
-        first_slot_type = slot_types.get(1, 'image')
+        first_slot_type = slot_types.get(1) or 'image'
         result['image'] = output_data['image'].get(1) if first_slot_type == 'image' else None
         result['json'] = output_data['json'].get(1) if first_slot_type == 'json' else None
         result['audio'] = output_data['audio'].get(1) if first_slot_type == 'audio' else None
@@ -461,8 +461,8 @@ class Node(Node):
             self._slot_id[tag_node_name] += 1
             slot_idx = self._slot_id[tag_node_name]
             
-            # Store the initial slot type
-            self._slot_types[tag_node_name][slot_idx] = initial_type
+            # Store the initial slot type (ensure it's never None)
+            self._slot_types[tag_node_name][slot_idx] = initial_type or 'image'
             
             # Determine where to insert (before the Add Slot button)
             before_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input00'
