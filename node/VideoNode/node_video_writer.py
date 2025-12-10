@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import os
+import sys
 import copy
 import datetime
 import json
@@ -20,6 +21,16 @@ from node.node_abc import DpgNodeABC
 #from node_editor.util import convert_cv_to_dpg
 from node.basenode import Node
 
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+try:
+    from src.utils.logging import get_logger
+    logger = get_logger(__name__)
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
+
 try:
     import ffmpeg
     import soundfile as sf
@@ -27,6 +38,7 @@ try:
 except ImportError:
     FFMPEG_AVAILABLE = False
     sf = None
+    logger.warning("FFmpeg or soundfile not available")
 
 # Import background worker
 try:
@@ -34,7 +46,7 @@ try:
     WORKER_AVAILABLE = True
 except ImportError:
     WORKER_AVAILABLE = False
-    print("Warning: video_worker module not available, using legacy sync mode")
+    logger.warning("video_worker module not available, using legacy sync mode")
 
 def slow_motion_interpolation(prev_frame, next_frame, alpha):
     """ Generates smooth intermediate frame between 2 images """
