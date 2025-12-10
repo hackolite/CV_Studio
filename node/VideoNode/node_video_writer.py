@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import os
+import sys
 import copy
 import datetime
 import json
@@ -20,6 +21,16 @@ from node.node_abc import DpgNodeABC
 #from node_editor.util import convert_cv_to_dpg
 from node.basenode import Node
 
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+try:
+    from src.utils.logging import get_logger
+    logger = get_logger(__name__)
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
+
 try:
     import ffmpeg
     import soundfile as sf
@@ -27,6 +38,7 @@ try:
 except ImportError:
     FFMPEG_AVAILABLE = False
     sf = None
+    logger.warning("FFmpeg or soundfile not available")
 
 # Import background worker
 try:
@@ -34,7 +46,7 @@ try:
     WORKER_AVAILABLE = True
 except ImportError:
     WORKER_AVAILABLE = False
-    print("Warning: video_worker module not available, using legacy sync mode")
+    logger.warning("video_worker module not available, using legacy sync mode")
 
 def slow_motion_interpolation(prev_frame, next_frame, alpha):
     """ Generates smooth intermediate frame between 2 images """
@@ -137,9 +149,9 @@ class FactoryNode:
                     label="Progress",
                     tag=node.tag_node_progress_name,
                     default_value=0.0,
-                    overlay="",
+                    overlay="Ready",
                     width=small_window_w,
-                    show=False,  # Hidden by default
+                    show=True,  # Always visible for state feedback
                 )
             
             # Add detailed progress info text
@@ -151,6 +163,34 @@ class FactoryNode:
                     default_value="",
                     show=False,  # Hidden by default
                 )
+            
+            # Add control buttons for pause/resume/cancel (hidden by default)
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                with dpg.group(tag=node.tag_node_name + ':ControlGroup', horizontal=True, show=False):
+                    dpg.add_button(
+                        label="Pause",
+                        tag=node.tag_node_name + ':PauseButton',
+                        width=int(small_window_w / 3) - 5,
+                        callback=node._pause_button,
+                        user_data=node.tag_node_name,
+                    )
+                    dpg.add_button(
+                        label="Resume",
+                        tag=node.tag_node_name + ':ResumeButton',
+                        width=int(small_window_w / 3) - 5,
+                        callback=node._resume_button,
+                        user_data=node.tag_node_name,
+                        show=False,
+                    )
+                    dpg.add_button(
+                        label="Cancel",
+                        tag=node.tag_node_name + ':CancelButton',
+                        width=int(small_window_w / 3) - 5,
+                        callback=node._cancel_button,
+                        user_data=node.tag_node_name,
+                    )
 
         return node
 
@@ -260,15 +300,28 @@ class VideoWriterNode(Node):
                 self._background_workers.pop(tag_node_name, None)
                 self._worker_mode.pop(tag_node_name, None)
                 
-                # Hide progress UI
-                if dpg.does_item_exist(tag_node_progress_name):
-                    dpg.configure_item(tag_node_progress_name, show=False)
-                    dpg.set_value(tag_node_progress_name, 0.0)
-                    dpg.configure_item(tag_node_progress_name, overlay="")
+                # Hide control buttons
+                control_group_tag = tag_node_name + ':ControlGroup'
+                if dpg.does_item_exist(control_group_tag):
+                    dpg.configure_item(control_group_tag, show=False)
                 
+                # Update progress bar with final state
+                if dpg.does_item_exist(tag_node_progress_name):
+                    if worker.get_state() == WorkerState.COMPLETED:
+                        dpg.configure_item(tag_node_progress_name, overlay="Complete")
+                        dpg.set_value(tag_node_progress_name, 1.0)
+                    elif worker.get_state() == WorkerState.ERROR:
+                        dpg.configure_item(tag_node_progress_name, overlay="Error")
+                    elif worker.get_state() == WorkerState.CANCELLED:
+                        dpg.configure_item(tag_node_progress_name, overlay="Cancelled")
+                
+                # Hide detailed info
                 if dpg.does_item_exist(tag_progress_info_name):
                     dpg.configure_item(tag_progress_info_name, show=False)
                     dpg.set_value(tag_progress_info_name, "")
+                
+                # Reset button label
+                dpg.set_item_label(tag_node_button_value_name, self._start_label)
         
         # Update merge progress bar for legacy mode if merge is in progress
         if not using_worker and tag_node_name in self._merge_progress_dict:
@@ -791,11 +844,24 @@ class VideoWriterNode(Node):
                     self._background_workers[tag_node_name] = worker
                     self._worker_mode[tag_node_name] = 'worker'
                     
-                    print(f"[VideoWriter] Started background worker for: {file_path}")
+                    logger.info(f"[VideoWriter] Started background worker for: {file_path}")
+                    
+                    # Show control buttons for pause/cancel
+                    control_group_tag = tag_node_name + ':ControlGroup'
+                    if dpg.does_item_exist(control_group_tag):
+                        dpg.configure_item(control_group_tag, show=True)
+                    
+                    # Show pause button, hide resume button
+                    pause_button_tag = tag_node_name + ':PauseButton'
+                    resume_button_tag = tag_node_name + ':ResumeButton'
+                    if dpg.does_item_exist(pause_button_tag):
+                        dpg.configure_item(pause_button_tag, show=True)
+                    if dpg.does_item_exist(resume_button_tag):
+                        dpg.configure_item(resume_button_tag, show=False)
                     
                 except Exception as e:
-                    print(f"[VideoWriter] Failed to start background worker: {e}")
-                    traceback.print_exc()
+                    logger.error(f"[VideoWriter] Failed to start background worker: {e}")
+                    logger.error(traceback.format_exc())
                     use_worker = False
             
             # Fallback to legacy mode if worker not available or failed
@@ -931,3 +997,75 @@ class VideoWriterNode(Node):
                 self._mkv_metadata_dict.pop(tag_node_name)
 
             dpg.set_item_label(tag_node_button_value_name, self._start_label)
+    
+    def _pause_button(self, sender, data, user_data):
+        """Pause the background video encoding"""
+        tag_node_name = user_data
+        
+        if tag_node_name in self._background_workers:
+            worker = self._background_workers[tag_node_name]
+            worker.pause()
+            
+            logger.info(f"[VideoWriter] Paused encoding for: {tag_node_name}")
+            
+            # Update UI - show resume button, hide pause button
+            pause_button_tag = tag_node_name + ':PauseButton'
+            resume_button_tag = tag_node_name + ':ResumeButton'
+            
+            if dpg.does_item_exist(pause_button_tag):
+                dpg.configure_item(pause_button_tag, show=False)
+            if dpg.does_item_exist(resume_button_tag):
+                dpg.configure_item(resume_button_tag, show=True)
+    
+    def _resume_button(self, sender, data, user_data):
+        """Resume the background video encoding"""
+        tag_node_name = user_data
+        
+        if tag_node_name in self._background_workers:
+            worker = self._background_workers[tag_node_name]
+            worker.resume()
+            
+            logger.info(f"[VideoWriter] Resumed encoding for: {tag_node_name}")
+            
+            # Update UI - show pause button, hide resume button
+            pause_button_tag = tag_node_name + ':PauseButton'
+            resume_button_tag = tag_node_name + ':ResumeButton'
+            
+            if dpg.does_item_exist(pause_button_tag):
+                dpg.configure_item(pause_button_tag, show=True)
+            if dpg.does_item_exist(resume_button_tag):
+                dpg.configure_item(resume_button_tag, show=False)
+    
+    def _cancel_button(self, sender, data, user_data):
+        """Cancel the background video encoding"""
+        tag_node_name = user_data
+        tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
+        
+        if tag_node_name in self._background_workers:
+            worker = self._background_workers[tag_node_name]
+            worker.cancel()
+            
+            logger.info(f"[VideoWriter] Cancelled encoding for: {tag_node_name}")
+            
+            # Clean up worker
+            self._background_workers.pop(tag_node_name, None)
+            self._worker_mode.pop(tag_node_name, None)
+            
+            # Update UI
+            dpg.set_item_label(tag_node_button_value_name, self._start_label)
+            
+            # Hide control buttons
+            control_group_tag = tag_node_name + ':ControlGroup'
+            if dpg.does_item_exist(control_group_tag):
+                dpg.configure_item(control_group_tag, show=False)
+            
+            # Reset progress bar
+            tag_node_progress_name = tag_node_name + ':' + self.TYPE_TEXT + ':Progress'
+            if dpg.does_item_exist(tag_node_progress_name):
+                dpg.set_value(tag_node_progress_name, 0.0)
+                dpg.configure_item(tag_node_progress_name, overlay="Cancelled")
+            
+            # Hide progress info
+            tag_progress_info_name = tag_node_name + ':ProgressInfo'
+            if dpg.does_item_exist(tag_progress_info_name):
+                dpg.configure_item(tag_progress_info_name, show=False)

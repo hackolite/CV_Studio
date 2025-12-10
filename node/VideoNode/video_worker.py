@@ -23,12 +23,23 @@ import queue
 import time
 import traceback
 import os
+import sys
 import tempfile
 from dataclasses import dataclass
 from typing import Optional, Callable, Dict, Any, List
 from enum import Enum
 
 import numpy as np
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+try:
+    from src.utils.logging import get_logger
+    logger = get_logger(__name__)
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
 
 try:
     import ffmpeg
@@ -37,6 +48,7 @@ try:
 except ImportError:
     FFMPEG_AVAILABLE = False
     sf = None
+    logger.warning("FFmpeg or soundfile not available - video encoding features will be limited")
 
 
 class WorkerState(Enum):
@@ -100,10 +112,10 @@ class ThreadSafeQueue:
             if drop_on_full:
                 with self._lock:
                     self._dropped_count += 1
-                print(f"[{self._name}] Queue full, dropped item (total dropped: {self._dropped_count})")
+                logger.warning(f"[{self._name}] Queue full, dropped item (total dropped: {self._dropped_count})")
                 return False
             else:
-                print(f"[{self._name}] Queue full, timeout waiting to push")
+                logger.debug(f"[{self._name}] Queue full, timeout waiting to push")
                 return False
     
     def pop(self, timeout: float = 0.1) -> Optional[Any]:
@@ -305,7 +317,7 @@ class VideoBackgroundWorker:
     def start(self):
         """Start the background encoding process"""
         if self._get_state() != WorkerState.IDLE:
-            print(f"[VideoWorker] Cannot start, state is {self._get_state()}")
+            logger.warning(f"[VideoWorker] Cannot start, state is {self._get_state()}")
             return
         
         self._set_state(WorkerState.STARTING)
@@ -334,7 +346,7 @@ class VideoBackgroundWorker:
         self._muxer_thread.start()
         
         self._set_state(WorkerState.ENCODING)
-        print(f"[VideoWorker] Started background encoding for {self.output_path}")
+        logger.info(f"[VideoWorker] Started background encoding for {self.output_path}")
     
     def push_frame(self, frame: np.ndarray, audio_chunk: Optional[np.ndarray] = None) -> bool:
         """
@@ -429,7 +441,7 @@ class VideoBackgroundWorker:
             try:
                 self.progress_callback(progress)
             except Exception as e:
-                print(f"[VideoWorker] Error in progress callback: {e}")
+                logger.error(f"[VideoWorker] Error in progress callback: {e}")
     
     def _encoder_worker(self):
         """
@@ -444,6 +456,8 @@ class VideoBackgroundWorker:
         try:
             import cv2
             
+            logger.info(f"[VideoWorker] Initializing encoder for {self.width}x{self.height} @ {self.fps} fps")
+            
             # Initialize video writer
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             video_writer = cv2.VideoWriter(
@@ -454,17 +468,24 @@ class VideoBackgroundWorker:
             )
             
             if not video_writer.isOpened():
+                logger.error(f"[VideoWorker] Failed to open video writer for {self._temp_video_path}")
                 raise RuntimeError("Failed to open video writer")
             
             # Accumulate audio samples
             audio_samples = []
             
-            print(f"[VideoWorker] Encoder started")
+            logger.info(f"[VideoWorker] Encoder started")
+            
+            # Metrics for logging
+            frames_processed = 0
+            audio_chunks_processed = 0
+            last_metric_log = time.time()
+            metric_log_interval = 5.0  # Log metrics every 5 seconds
             
             while True:
                 # Check for cancellation
                 if self._cancel_flag.is_set():
-                    print(f"[VideoWorker] Encoder cancelled")
+                    logger.info(f"[VideoWorker] Encoder cancelled")
                     break
                 
                 # Check for pause
@@ -476,7 +497,7 @@ class VideoBackgroundWorker:
                 
                 if item is None:
                     # End of stream
-                    print(f"[VideoWorker] End of stream signal received")
+                    logger.info(f"[VideoWorker] End of stream signal received")
                     break
                 
                 if item:
@@ -487,34 +508,48 @@ class VideoBackgroundWorker:
                     if frame is not None:
                         video_writer.write(frame)
                         self.progress_tracker.update_frames(1)
+                        frames_processed += 1
                     
                     # Accumulate audio
                     if audio is not None and len(audio) > 0:
                         audio_samples.append(audio)
                         self.progress_tracker.update_audio_samples(len(audio))
                         self.audio_samples_written_total += len(audio)
+                        audio_chunks_processed += 1
                     
                     # Emit progress update
                     self._emit_progress()
+                    
+                    # Log metrics periodically
+                    current_time = time.time()
+                    if current_time - last_metric_log >= metric_log_interval:
+                        queue_size = self.queue_frames.size()
+                        dropped = self.queue_frames.get_dropped_count()
+                        logger.info(
+                            f"[VideoWorker] Metrics - Frames: {frames_processed}, "
+                            f"Audio chunks: {audio_chunks_processed}, "
+                            f"Queue size: {queue_size}, Dropped: {dropped}"
+                        )
+                        last_metric_log = current_time
             
             # Flush and release video writer
             video_writer.release()
-            print(f"[VideoWorker] Video encoding complete, {self.progress_tracker.frames_encoded} frames")
+            logger.info(f"[VideoWorker] Video encoding complete, {self.progress_tracker.frames_encoded} frames")
             
             # Write audio file if we have samples
             if audio_samples and FFMPEG_AVAILABLE and sf is not None and not self._cancel_flag.is_set():
-                print(f"[VideoWorker] Writing audio file with {len(audio_samples)} chunks")
+                logger.info(f"[VideoWorker] Writing audio file with {len(audio_samples)} chunks")
                 full_audio = np.concatenate(audio_samples)
                 sf.write(self._temp_audio_path, full_audio, self.sample_rate)
-                print(f"[VideoWorker] Audio file written: {self._temp_audio_path}")
+                logger.info(f"[VideoWorker] Audio file written: {self._temp_audio_path}")
             
             # Signal muxer that encoding is done (only if not cancelled)
             if not self._cancel_flag.is_set():
                 self._set_state(WorkerState.FLUSHING)
             
         except Exception as e:
-            print(f"[VideoWorker] Error in encoder thread: {e}")
-            traceback.print_exc()
+            logger.error(f"[VideoWorker] Error in encoder thread: {e}")
+            logger.error(traceback.format_exc())
             if not self._cancel_flag.is_set():
                 self._set_state(WorkerState.ERROR)
     
@@ -529,15 +564,17 @@ class VideoBackgroundWorker:
         4. Cleans up temporary files
         """
         try:
+            logger.info(f"[VideoWorker] Muxer thread started")
+            
             # Wait for encoder to finish
             while self._get_state() not in [WorkerState.FLUSHING, WorkerState.ERROR, WorkerState.CANCELLED]:
                 time.sleep(0.1)
             
             if self._get_state() in [WorkerState.ERROR, WorkerState.CANCELLED]:
-                print(f"[VideoWorker] Muxer exiting due to state: {self._get_state()}")
+                logger.info(f"[VideoWorker] Muxer exiting due to state: {self._get_state()}")
                 return
             
-            print(f"[VideoWorker] Muxer starting merge process")
+            logger.info(f"[VideoWorker] Muxer starting merge process")
             
             # Wait for video file to exist
             timeout = 5.0
@@ -547,13 +584,14 @@ class VideoBackgroundWorker:
                 elapsed += 0.1
             
             if not os.path.exists(self._temp_video_path):
+                logger.error(f"[VideoWorker] Temporary video file not found: {self._temp_video_path}")
                 raise FileNotFoundError(f"Temporary video file not found: {self._temp_video_path}")
             
             # Check if we have audio
             has_audio = os.path.exists(self._temp_audio_path)
             
             if has_audio and FFMPEG_AVAILABLE:
-                print(f"[VideoWorker] Merging video and audio with ffmpeg")
+                logger.info(f"[VideoWorker] Merging video and audio with ffmpeg")
                 
                 # Use ffmpeg to merge
                 video_input = ffmpeg.input(self._temp_video_path)
@@ -569,31 +607,46 @@ class VideoBackgroundWorker:
                 )
                 
                 output = ffmpeg.overwrite_output(output)
-                ffmpeg.run(output, capture_stdout=True, capture_stderr=True)
                 
-                print(f"[VideoWorker] Merge complete: {self.output_path}")
+                # Run ffmpeg and capture output
+                start_time = time.time()
+                stdout, stderr = ffmpeg.run(output, capture_stdout=True, capture_stderr=True)
+                merge_time = time.time() - start_time
+                
+                logger.info(f"[VideoWorker] Merge complete in {merge_time:.2f}s: {self.output_path}")
+                
+                if stderr:
+                    logger.debug(f"[VideoWorker] FFmpeg stderr: {stderr.decode('utf-8', errors='ignore')}")
+                
+                # Get file size for logging
+                file_size = os.path.getsize(self.output_path)
+                logger.info(f"[VideoWorker] Output file size: {file_size / (1024*1024):.2f} MB")
                 
                 # Clean up temp files
                 if os.path.exists(self._temp_video_path):
                     os.remove(self._temp_video_path)
+                    logger.debug(f"[VideoWorker] Removed temp video: {self._temp_video_path}")
                 if os.path.exists(self._temp_audio_path):
                     os.remove(self._temp_audio_path)
+                    logger.debug(f"[VideoWorker] Removed temp audio: {self._temp_audio_path}")
                 
             else:
                 # No audio or ffmpeg not available, just rename video file
-                print(f"[VideoWorker] No audio merge needed, moving video file")
+                logger.info(f"[VideoWorker] No audio merge needed, moving video file")
                 if os.path.exists(self._temp_video_path):
                     os.rename(self._temp_video_path, self.output_path)
+                    file_size = os.path.getsize(self.output_path)
+                    logger.info(f"[VideoWorker] Video file size: {file_size / (1024*1024):.2f} MB")
             
             # Update final progress
             self._set_state(WorkerState.COMPLETED)
             self._emit_progress(force=True)
             
-            print(f"[VideoWorker] Encoding completed successfully")
+            logger.info(f"[VideoWorker] Encoding completed successfully")
             
         except Exception as e:
-            print(f"[VideoWorker] Error in muxer thread: {e}")
-            traceback.print_exc()
+            logger.error(f"[VideoWorker] Error in muxer thread: {e}")
+            logger.error(traceback.format_exc())
             self._set_state(WorkerState.ERROR)
     
     def get_state(self) -> WorkerState:

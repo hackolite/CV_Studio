@@ -9,11 +9,13 @@ from collections import OrderedDict
 import os
 import serial
 import time
+import logging
 import cv2
 import dearpygui.dearpygui as dpg
 
-from src.utils.logging import setup_logging, get_logger
+from src.utils.logging import setup_logging, get_logger, get_logs_directory, cleanup_old_logs
 from src.utils.gpu_utils import log_gpu_info
+from src.utils.system_verification import run_system_verification
 
 from node_editor.util import check_camera_connection
 from node_editor.node_editor import DpgNodeEditor
@@ -22,8 +24,18 @@ from node_editor.node_editor import DpgNodeEditor
 from node.timestamped_queue import NodeDataQueueManager
 from node.queue_adapter import QueueBackedDict
 
-# Setup logging
+# Setup logging with file rotation (default level: ERROR for production)
+# Use ERROR level by default to log only critical issues
+logger = setup_logging(
+    level=logging.ERROR,
+    enable_file_logging=True
+)
 logger = get_logger(__name__)
+
+# Log startup
+logger.info("=" * 60)
+logger.info("CV Studio Starting")
+logger.info("=" * 60)
 
 
 def get_args():
@@ -184,10 +196,22 @@ def main():
     unuse_async_draw = args.unuse_async_draw
     use_debug_print = args.use_debug_print
 
-    # Setup logging based on debug flag
-    log_level = "DEBUG" if use_debug_print else "INFO"
-    setup_logging(level=getattr(__import__("logging"), log_level))
-
+    # Cleanup old logs (older than 30 days)
+    try:
+        cleanup_old_logs(max_age_days=30)
+    except Exception as e:
+        logger.warning(f"Failed to cleanup old logs: {e}")
+    
+    # Run system verification at startup
+    logger.info("Running system verification...")
+    try:
+        verification_passed = run_system_verification()
+        if not verification_passed:
+            logger.warning("System verification detected issues - some features may not work correctly")
+    except Exception as e:
+        logger.error(f"System verification failed with error: {e}")
+        logger.warning("Continuing startup despite verification failure")
+    
     logger.info("=" * 60)
     logger.info("CV_STUDIO Starting")
     logger.info("=" * 60)
@@ -206,7 +230,10 @@ def main():
 
     # Log GPU information
     if opencv_setting_dict.get("use_gpu", False):
-        log_gpu_info()
+        try:
+            log_gpu_info()
+        except Exception as e:
+            logger.warning(f"Failed to log GPU info: {e}")
 
     logger.info("Checking camera connections")
     device_no_list = check_camera_connection()
