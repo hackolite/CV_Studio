@@ -93,6 +93,10 @@ class ThreadSafeQueue:
         self._dropped_count = 0
         self._lock = threading.Lock()
     
+    def get_max_size(self) -> int:
+        """Get the maximum size of the queue"""
+        return self._queue.maxsize
+    
     def push(self, item, timeout: float = 0.1, drop_on_full: bool = False) -> bool:
         """
         Push item to queue.
@@ -272,12 +276,21 @@ class VideoBackgroundWorker:
             output_path: Path to output video file
             width: Video width in pixels
             height: Video height in pixels
-            fps: Target frames per second
+            fps: Target frames per second (must be > 0)
             sample_rate: Audio sample rate
             total_frames: Total frames to encode (if known)
             progress_callback: Callback for progress updates
-            chunk_duration: Audio chunk duration in seconds (default: 5.0)
+            chunk_duration: Audio chunk duration in seconds (must be > 0, default: 5.0)
+            
+        Raises:
+            ValueError: If fps or chunk_duration is not positive
         """
+        # Validate inputs
+        if fps <= 0:
+            raise ValueError(f"fps must be positive, got {fps}")
+        if chunk_duration <= 0:
+            raise ValueError(f"chunk_duration must be positive, got {chunk_duration}")
+        
         self.output_path = output_path
         self.width = width
         self.height = height
