@@ -830,6 +830,10 @@ class VideoWriterNode(Node):
             if use_worker and tag_node_name not in self._background_workers:
                 # Start background worker
                 try:
+                    # Use default chunk duration of 5.0 seconds (matches node_video.py default)
+                    # This ensures queue size is fps * chunk_duration for proper audio/video sync
+                    chunk_duration = 5.0
+                    
                     worker = VideoBackgroundWorker(
                         output_path=file_path,
                         width=writer_width,
@@ -837,7 +841,8 @@ class VideoWriterNode(Node):
                         fps=writer_fps,
                         sample_rate=22050,  # Default, will be updated from incoming audio
                         total_frames=None,  # Unknown initially
-                        progress_callback=None  # Progress is polled in update()
+                        progress_callback=None,  # Progress is polled in update()
+                        chunk_duration=chunk_duration  # Queue sizing based on chunk duration
                     )
                     worker.start()
                     
