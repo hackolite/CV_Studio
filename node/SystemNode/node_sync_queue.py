@@ -124,6 +124,19 @@ class Node(Node):
     _slot_id = {}  # Track number of slots per node instance
     _slot_types = {}  # Track input type per slot {node_tag: {slot_idx: 'image'|'audio'|'json'}}
     _sync_state = {}  # Track synchronization state per node instance
+    
+    # Type mapping constants
+    _TYPE_DISPLAY_TO_INTERNAL = {
+        'Image': 'image',
+        'Audio': 'audio',
+        'JSON': 'json'
+    }
+    
+    _TYPE_INTERNAL_TO_DISPLAY = {
+        'image': 'Image',
+        'audio': 'Audio',
+        'json': 'JSON'
+    }
 
     def __init__(self):
         pass
@@ -156,13 +169,7 @@ class Node(Node):
         selected_type = dpg_get_value(sender)
         
         # Map combo selection to internal type
-        type_map = {
-            'Image': 'image',
-            'Audio': 'audio',
-            'JSON': 'json'
-        }
-        
-        new_slot_type = type_map.get(selected_type, 'image')
+        new_slot_type = self._TYPE_DISPLAY_TO_INTERNAL.get(selected_type, 'image')
         
         if tag_node_name in self._slot_types:
             # Get old slot type to delete old attributes
@@ -191,16 +198,10 @@ class Node(Node):
                 
                 # Create new input/output attributes with the new type
                 new_type_constant = self._get_type_constant(new_slot_type)
-                type_display_map = {
-                    'image': 'Image',
-                    'audio': 'Audio',
-                    'json': 'JSON'
-                }
-                new_display = type_display_map.get(new_slot_type, 'Image')
+                new_display = self._TYPE_INTERNAL_TO_DISPLAY.get(new_slot_type, 'Image')
                 
                 # Find the position to insert (before the Add Slot button)
                 before_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input00'
-                type_selector_attr_tag = f"{tag_node_name}:TypeSelectorAttr{slot_idx:02d}"
                 
                 # Create new input attribute (after the type selector)
                 input_tag = f"{tag_node_name}:{new_type_constant}:Input{slot_idx:02d}"
@@ -558,12 +559,7 @@ class Node(Node):
             before_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input00'
             
             # Map initial type to combo display value
-            type_display_map = {
-                'image': 'Image',
-                'audio': 'Audio',
-                'json': 'JSON'
-            }
-            initial_display = type_display_map.get(initial_type, 'Image')
+            initial_display = self._TYPE_INTERNAL_TO_DISPLAY.get(initial_type, 'Image')
             
             # Get the type constant for input/output tags
             type_constant = self._get_type_constant(initial_type)
