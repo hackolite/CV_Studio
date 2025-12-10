@@ -17,6 +17,17 @@ import threading
 # Set up logger for this module
 logger = logging.getLogger(__name__)
 
+# Default queue size for the system
+# Calculated based on:
+# - SyncQueue max retention time: 10s
+# - Buffer overhead: 1s (max_buffer_age = retention_time + 1.0)
+# - Max buffer age: 11s
+# - At 60 FPS: 11s * 60 = 660 frames minimum
+# - With 20% safety margin: 800 frames
+# This ensures SyncQueue, VideoWriter multi-slot audio, and ImageConcat 
+# can properly synchronize/collect data without loss
+DEFAULT_QUEUE_SIZE = 800
+
 
 @dataclass
 class TimestampedData:
@@ -154,11 +165,11 @@ class NodeDataQueueManager:
     Manages timestamped buffers for all nodes in the system.
     
     This class maintains a collection of buffers, one for each node that produces data.
-    Each buffer keeps the most recent items (default 10) with timestamps for synchronization.
+    Each buffer keeps the most recent items (default 800) with timestamps for synchronization.
     It provides methods to access and manage these buffers centrally.
     """
     
-    def __init__(self, default_maxsize: int = 10):
+    def __init__(self, default_maxsize: int = DEFAULT_QUEUE_SIZE):
         """
         Initialize the queue manager.
         
