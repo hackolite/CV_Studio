@@ -137,8 +137,73 @@ class Node(Node):
             'JSON': 'json'
         }
         
+        new_slot_type = type_map.get(selected_type, 'image')
+        
         if tag_node_name in self._slot_types:
-            self._slot_types[tag_node_name][slot_idx] = type_map.get(selected_type, 'image')
+            # Get old slot type to delete old attributes
+            old_slot_type = self._slot_types[tag_node_name].get(slot_idx, 'image')
+            
+            # Only update if type actually changed
+            if old_slot_type != new_slot_type:
+                # Update the slot type
+                self._slot_types[tag_node_name][slot_idx] = new_slot_type
+                
+                # Clear the slot buffer since the data type changed
+                if tag_node_name in self._sync_state:
+                    slot_buffers = self._sync_state[tag_node_name].get('slot_buffers', {})
+                    if slot_idx in slot_buffers:
+                        slot_buffers[slot_idx]['data'] = []
+                
+                # Delete old input/output attributes
+                old_type_constant = self._get_type_constant(old_slot_type)
+                old_input_tag = f"{tag_node_name}:{old_type_constant}:Input{slot_idx:02d}"
+                old_output_tag = f"{tag_node_name}:{old_type_constant}:Output{slot_idx:02d}"
+                
+                if dpg.does_item_exist(old_input_tag):
+                    dpg.delete_item(old_input_tag)
+                if dpg.does_item_exist(old_output_tag):
+                    dpg.delete_item(old_output_tag)
+                
+                # Create new input/output attributes with the new type
+                new_type_constant = self._get_type_constant(new_slot_type)
+                type_display_map = {
+                    'image': 'Image',
+                    'audio': 'Audio',
+                    'json': 'JSON'
+                }
+                new_display = type_display_map.get(new_slot_type, 'Image')
+                
+                # Find the position to insert (before the Add Slot button)
+                before_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input00'
+                type_selector_attr_tag = f"{tag_node_name}:TypeSelectorAttr{slot_idx:02d}"
+                
+                # Create new input attribute (after the type selector)
+                input_tag = f"{tag_node_name}:{new_type_constant}:Input{slot_idx:02d}"
+                input_value_tag = f"{input_tag}Value"
+                with dpg.node_attribute(
+                        tag=input_tag,
+                        attribute_type=dpg.mvNode_Attr_Input,
+                        parent=tag_node_name,
+                        before=before_tag,
+                ):
+                    dpg.add_text(
+                        tag=input_value_tag,
+                        default_value=f'In{slot_idx}: {new_display}',
+                    )
+                
+                # Create new output attribute
+                output_tag = f"{tag_node_name}:{new_type_constant}:Output{slot_idx:02d}"
+                output_value_tag = f"{output_tag}Value"
+                with dpg.node_attribute(
+                        tag=output_tag,
+                        attribute_type=dpg.mvNode_Attr_Output,
+                        parent=tag_node_name,
+                        before=before_tag,
+                ):
+                    dpg.add_text(
+                        tag=output_value_tag,
+                        default_value=f'Out{slot_idx}: {new_display} (0)',
+                    )
 
     def update(
         self,
