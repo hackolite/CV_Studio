@@ -323,8 +323,11 @@ class VideoBackgroundWorker:
         # Queues with dynamic sizing
         # Image/frame queue: fps * chunk_duration * audio_queue_size
         self.queue_frames = ThreadSafeQueue(frame_queue_size, "FrameQueue")
-        # Audio queue: DEFAULT_AUDIO_QUEUE_SIZE (3 elements)
+        # Video packet queue for encoded video data
         self.queue_video_packets = ThreadSafeQueue(200, "VideoPacketQueue")
+        # Audio packet queue: DEFAULT_AUDIO_QUEUE_SIZE (3 elements)
+        # Each element is an audio chunk of chunk_duration seconds, so total buffer = 3 * 3s = 9s
+        # This is sufficient for synchronization without excessive memory usage
         self.queue_audio_packets = ThreadSafeQueue(self.DEFAULT_AUDIO_QUEUE_SIZE, "AudioPacketQueue")
         
         # Progress tracking
