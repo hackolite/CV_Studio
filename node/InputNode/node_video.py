@@ -10,11 +10,15 @@ import subprocess
 import tempfile
 import os
 import shutil
+import logging
 
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
 from node.basenode import Node
+
+# Set up logger for this module
+logger = logging.getLogger(__name__)
 
 
 class FactoryNode:
@@ -335,17 +339,17 @@ class VideoNode(Node):
             step_duration: Step size between chunks in seconds (default: 1.0)
         """
         if not movie_path or not os.path.exists(movie_path):
-            print(f"Video file not found: {movie_path}")
+            logger.warning(f"[Video] Video file not found: {movie_path}")
             return
         
-        print(f"🎬 Pre-processing video: {movie_path}")
+        logger.info(f"[Video] Pre-processing video: {movie_path}")
         
         # Clean up any previous chunks for this node
         self._cleanup_audio_chunks(node_id)
         
         try:
             # Step 1: Extract video metadata only (not frames to avoid memory issues)
-            print("📹 Extracting video metadata...")
+            logger.debug("[Video] Extracting video metadata...")
             cap = cv2.VideoCapture(movie_path)
             fps = cap.get(cv2.CAP_PROP_FPS)
             if fps <= 0:
@@ -353,10 +357,10 @@ class VideoNode(Node):
             
             frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             cap.release()
-            print(f"✅ Video metadata extracted (FPS: {fps}, Frames: {frame_count})")
+            logger.info(f"[Video] Metadata: FPS={fps}, Frames={frame_count}")
             
             # Step 2: Extract audio using ffmpeg directly to WAV (faster than librosa)
-            print("🎵 Extracting audio with ffmpeg to WAV format...")
+            logger.debug("[Video] Extracting audio with ffmpeg...")
             
             # Create temporary WAV file for full audio extraction
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio:
@@ -380,13 +384,13 @@ class VideoNode(Node):
                 
                 # Load audio to get samples and sample rate
                 y, sr = sf.read(tmp_audio_path)
-                print(f"✅ Audio extracted (SR: {sr} Hz, Duration: {len(y)/sr:.2f}s)")
+                logger.info(f"[Video] Audio extracted: SR={sr}Hz, Duration={len(y)/sr:.2f}s")
                 
             except subprocess.CalledProcessError as e:
-                print(f"⚠️ ffmpeg extraction failed, trying librosa: {e}")
+                logger.warning(f"[Video] ffmpeg extraction failed, trying librosa: {e}")
                 # Fallback to librosa if ffmpeg fails
                 y, sr = librosa.load(movie_path, sr=44100)
-                print(f"✅ Audio extracted with librosa (SR: {sr} Hz, Duration: {len(y)/sr:.2f}s)")
+                logger.info(f"[Video] Audio extracted with librosa: SR={sr}Hz, Duration={len(y)/sr:.2f}s")
             finally:
                 # Clean up temporary full audio file
                 if os.path.exists(tmp_audio_path):
@@ -395,11 +399,11 @@ class VideoNode(Node):
             # Step 3: Create temporary directory for audio chunks
             chunk_temp_dir = tempfile.mkdtemp(prefix=f"cv_studio_audio_{node_id}_")
             self._chunk_temp_dirs[node_id] = chunk_temp_dir
-            print(f"📁 Created temp directory for chunks: {chunk_temp_dir}")
+            logger.debug(f"[Video] Created temp directory: {chunk_temp_dir}")
             
             try:
                 # Step 4: Chunk audio with sliding window and save each as WAV
-                print(f"✂️ Chunking audio and saving as WAV files (chunk: {chunk_duration}s, step: {step_duration}s)...")
+                logger.debug(f"[Video] Chunking audio: chunk={chunk_duration}s, step={step_duration}s")
                 chunk_samples = int(chunk_duration * sr)
                 step_samples = int(step_duration * sr)
                 
@@ -436,7 +440,7 @@ class VideoNode(Node):
                     
                     chunk_paths.append(chunk_path)
                     chunk_start_times.append(start / sr)
-                    print(f"⚠️ Padded last chunk: {remaining_samples/sr:.2f}s → {chunk_duration}s (added {padding_needed/sr:.2f}s of silence)")
+                    logger.debug(f"[Video] Padded last chunk: {remaining_samples/sr:.2f}s → {chunk_duration}s")
                 
                 # Store chunk paths instead of numpy arrays
                 self._audio_chunk_paths[node_id] = chunk_paths
@@ -449,9 +453,9 @@ class VideoNode(Node):
                     last_duration = len(last_chunk) / sr
                     
                     if abs(first_duration - chunk_duration) > 0.001 or abs(last_duration - chunk_duration) > 0.001:
-                        print(f"⚠️ Warning: Chunk duration mismatch - first: {first_duration:.3f}s, last: {last_duration:.3f}s")
+                        logger.warning(f"[Video] Chunk duration mismatch - first: {first_duration:.3f}s, last: {last_duration:.3f}s")
                         
-                print(f"✅ Created {len(chunk_paths)} audio chunks as WAV files (all {chunk_duration}s each)")
+                logger.info(f"[Video] Created {len(chunk_paths)} audio chunks")
                 
                 # Step 5: Store metadata
                 self._chunk_metadata[node_id] = {
@@ -464,20 +468,16 @@ class VideoNode(Node):
                     'num_chunks': len(chunk_paths),
                 }
                 
-                print(f"🎉 Pre-processing complete!")
-                print(f"   Frames: {frame_count}, Chunks: {len(chunk_paths)}, FPS: {fps}")
-                print(f"   All chunks saved as WAV files for efficient spectrogram conversion")
+                logger.info(f"[Video] Pre-processing complete: Frames={frame_count}, Chunks={len(chunk_paths)}, FPS={fps}")
             
             except Exception as chunk_error:
                 # If chunking fails, clean up the temp directory
-                print(f"❌ Failed during audio chunking: {chunk_error}")
+                logger.error(f"[Video] Failed during audio chunking: {chunk_error}")
                 self._cleanup_audio_chunks(node_id)
                 raise
             
         except Exception as e:
-            print(f"❌ Failed to pre-process video: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"[Video] Failed to pre-process video: {e}", exc_info=True)
     
     def _cleanup_audio_chunks(self, node_id):
         """
@@ -493,7 +493,7 @@ class VideoNode(Node):
                 try:
                     shutil.rmtree(temp_dir)
                 except Exception as e:
-                    print(f"⚠️ Failed to delete temp directory {temp_dir}: {e}")
+                    logger.warning(f"[Video] Failed to delete temp directory {temp_dir}: {e}")
             del self._chunk_temp_dirs[node_id]
         
         # Clean up chunk paths reference
@@ -546,9 +546,9 @@ class VideoNode(Node):
                 }
         except Exception as e:
             if chunk_path:
-                print(f"⚠️ Failed to load audio chunk {chunk_index} from {chunk_path}: {e}")
+                logger.warning(f"[Video] Failed to load audio chunk {chunk_index} from {chunk_path}: {e}")
             else:
-                print(f"⚠️ Failed to load audio chunk {chunk_index}: {e}")
+                logger.warning(f"[Video] Failed to load audio chunk {chunk_index}: {e}")
         
         return None
 
@@ -556,7 +556,7 @@ class VideoNode(Node):
 
 
     def _button(self, sender, app_data, user_data):
-        print(f"Button clicked for {user_data}")
+        logger.debug(f"[Video] Button clicked for {user_data}")
 
     def update(
         self,
