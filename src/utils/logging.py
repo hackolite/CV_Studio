@@ -31,7 +31,7 @@ def get_logs_directory() -> Path:
 
 
 def setup_logging(
-    level: int = logging.ERROR,
+    level: int = logging.ERROR,  # Default to ERROR for production - only logs critical issues, minimizes disk I/O and performance impact
     log_file: Optional[str] = None,
     format_string: Optional[str] = None,
     enable_file_logging: bool = True,
@@ -42,7 +42,7 @@ def setup_logging(
     Setup logging configuration for the application
     
     Args:
-        level: Logging level (default: ERROR for production)
+        level: Logging level (default: ERROR for production - balances diagnostics with performance)
         log_file: Optional specific file path to write logs (if None, creates timestamped log)
         format_string: Custom format string for log messages
         enable_file_logging: Whether to enable file logging (default: True)

@@ -318,13 +318,10 @@ class VideoWriterNode(Node):
                 # Hide detailed info
                 if dpg.does_item_exist(tag_progress_info_name):
                     dpg.configure_item(tag_progress_info_name, show=False)
+                    dpg.set_value(tag_progress_info_name, "")
                 
                 # Reset button label
                 dpg.set_item_label(tag_node_button_value_name, self._start_label)
-                
-                if dpg.does_item_exist(tag_progress_info_name):
-                    dpg.configure_item(tag_progress_info_name, show=False)
-                    dpg.set_value(tag_progress_info_name, "")
         
         # Update merge progress bar for legacy mode if merge is in progress
         if not using_worker and tag_node_name in self._merge_progress_dict:
