@@ -217,9 +217,17 @@ def main():
     logger.info("=" * 60)
     
     # Initialize timestamped buffer system
+    # Queue size calculation:
+    # - SyncQueue max retention time: 10s
+    # - Buffer overhead: 1s (max_buffer_age = retention_time + 1.0)
+    # - Max buffer age: 11s
+    # - At 60 FPS: 11s * 60 = 660 frames minimum
+    # - With 20% safety margin: 800 frames
+    # This ensures SyncQueue, VideoWriter multi-slot audio, and ImageConcat 
+    # can properly synchronize/collect data without loss
     logger.info("Initializing timestamped buffer system")
-    queue_manager = NodeDataQueueManager(default_maxsize=10)
-    logger.info("Buffer system initialized: keeps last 10 timestamped items per node for synchronization")
+    queue_manager = NodeDataQueueManager(default_maxsize=800)
+    logger.info("Buffer system initialized: keeps last 800 timestamped items per node for synchronization")
 
     logger.info("Loading configuration")
     opencv_setting_dict = None
