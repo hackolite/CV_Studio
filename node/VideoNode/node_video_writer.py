@@ -167,7 +167,7 @@ class VideoWriterNode(Node):
     _video_writer_dict = {}
     _mkv_metadata_dict = {}  # Store audio and JSON metadata for MKV files
     _mkv_file_handles = {}  # Store file handles for MKV metadata tracks
-    _audio_samples_dict = {}  # Store audio samples during recording for merging
+    _audio_samples_dict = {}  # Store audio samples per slot: {node: {slot_idx: {'samples': [], 'timestamp': float, 'sample_rate': int}}}
     _recording_metadata_dict = {}  # Store metadata about ongoing recordings
     _merge_threads_dict = {}  # Store merge threads for async operations
     _merge_progress_dict = {}  # Store merge progress (0.0 to 1.0)
@@ -370,7 +370,7 @@ class VideoWriterNode(Node):
                                           interpolation=cv2.INTER_CUBIC)
                 self._video_writer_dict[tag_node_name].write(writer_frame)
                 
-                # Collect audio samples for final merge (for all formats)
+                # Collect audio samples per slot for final merge (for all formats)
                 if audio_data is not None and tag_node_name in self._audio_samples_dict:
                     # audio_data can be a dict (from concat node with multiple slots) or a single chunk
                     if isinstance(audio_data, dict):
@@ -379,73 +379,65 @@ class VideoWriterNode(Node):
                         # Single chunk: {'data': array, 'sample_rate': int, 'timestamp': float}
                         
                         if 'data' in audio_data and 'sample_rate' in audio_data:
-                            # Single audio chunk from video node
-                            self._audio_samples_dict[tag_node_name].append(audio_data['data'])
+                            # Single audio chunk from video node (slot 0)
+                            slot_idx = 0
+                            if slot_idx not in self._audio_samples_dict[tag_node_name]:
+                                self._audio_samples_dict[tag_node_name][slot_idx] = {
+                                    'samples': [],
+                                    'timestamp': audio_data.get('timestamp', float('inf')),
+                                    'sample_rate': audio_data['sample_rate']
+                                }
+                            self._audio_samples_dict[tag_node_name][slot_idx]['samples'].append(audio_data['data'])
                             # Update sample rate if provided
                             if tag_node_name in self._recording_metadata_dict:
                                 self._recording_metadata_dict[tag_node_name]['sample_rate'] = audio_data['sample_rate']
                             print(f"[VideoWriter] Collected single audio chunk, sample_rate={audio_data['sample_rate']}")
                         else:
                             # Concat node output: {slot_idx: audio_chunk}
-                            # Merge all slots into a single audio track, synchronized by timestamp
-                            # Get all audio chunks with their timestamps for synchronization
-                            audio_chunks_with_ts = []
-                            sample_rate = None
-                            
-                            for slot_idx in sorted(audio_data.keys()):
+                            # Collect audio samples per slot (will be merged by timestamp at recording end)
+                            for slot_idx in audio_data.keys():
                                 audio_chunk = audio_data[slot_idx]
-                                # Handle dict format from video/sync nodes: {'data': array, 'sample_rate': int, 'timestamp': float}
+                                
+                                # Handle dict format from video node: {'data': array, 'sample_rate': int, 'timestamp': float}
                                 if isinstance(audio_chunk, dict) and 'data' in audio_chunk:
                                     timestamp = audio_chunk.get('timestamp', float('inf'))
-                                    audio_chunks_with_ts.append({
-                                        'data': audio_chunk['data'],
-                                        'timestamp': timestamp,
-                                        'slot': slot_idx
-                                    })
-                                    # Extract sample rate from any chunk that has it
-                                    if sample_rate is None and 'sample_rate' in audio_chunk:
-                                        sample_rate = audio_chunk['sample_rate']
-                                elif isinstance(audio_chunk, dict) and isinstance(audio_chunk.get('data'), np.ndarray):
-                                    # Wrapped audio without explicit 'sample_rate' key but has 'data'
-                                    # This can happen if SyncQueue wraps raw audio data
-                                    timestamp = audio_chunk.get('timestamp', float('inf'))
-                                    audio_chunks_with_ts.append({
-                                        'data': audio_chunk['data'],
-                                        'timestamp': timestamp,
-                                        'slot': slot_idx
-                                    })
+                                    sample_rate = audio_chunk.get('sample_rate', 22050)
+                                    
+                                    # Initialize slot if not exists
+                                    if slot_idx not in self._audio_samples_dict[tag_node_name]:
+                                        self._audio_samples_dict[tag_node_name][slot_idx] = {
+                                            'samples': [],
+                                            'timestamp': timestamp,
+                                            'sample_rate': sample_rate
+                                        }
+                                    
+                                    # Append this frame's audio to the slot
+                                    self._audio_samples_dict[tag_node_name][slot_idx]['samples'].append(audio_chunk['data'])
+                                    
+                                    # Update sample rate for recording metadata
+                                    if tag_node_name in self._recording_metadata_dict:
+                                        self._recording_metadata_dict[tag_node_name]['sample_rate'] = sample_rate
+                                        
                                 elif isinstance(audio_chunk, np.ndarray):
-                                    # Plain numpy array - use inf timestamp (sorted by slot at end)
-                                    audio_chunks_with_ts.append({
-                                        'data': audio_chunk,
-                                        'timestamp': float('inf'),
-                                        'slot': slot_idx
-                                    })
-                            
-                            if audio_chunks_with_ts:
-                                # Sort by timestamp first (finite timestamps first), then by slot index
-                                # This ensures synchronized audio chunks are in correct temporal order
-                                audio_chunks_with_ts.sort(key=lambda x: (x['timestamp'], x['slot']))
-                                
-                                # Debug: print timestamp info
-                                timestamps_info = [(c['timestamp'], c['slot']) for c in audio_chunks_with_ts[:3]]
-                                print(f"[VideoWriter] Merging {len(audio_chunks_with_ts)} audio chunks from concat, first timestamps: {timestamps_info}")
-                                
-                                # Concatenate all chunks in synchronized order
-                                merged_chunk = np.concatenate([chunk['data'] for chunk in audio_chunks_with_ts])
-                                self._audio_samples_dict[tag_node_name].append(merged_chunk)
-                                
-                                # Update sample rate if found
-                                if sample_rate is not None and tag_node_name in self._recording_metadata_dict:
-                                    self._recording_metadata_dict[tag_node_name]['sample_rate'] = sample_rate
-                                    print(f"[VideoWriter] Updated sample_rate to {sample_rate}")
-                                else:
-                                    print(f"[VideoWriter] WARNING: No sample_rate found in audio chunks, using default")
+                                    # Plain numpy array - use default timestamp and sample rate
+                                    if slot_idx not in self._audio_samples_dict[tag_node_name]:
+                                        self._audio_samples_dict[tag_node_name][slot_idx] = {
+                                            'samples': [],
+                                            'timestamp': float('inf'),
+                                            'sample_rate': 22050
+                                        }
+                                    self._audio_samples_dict[tag_node_name][slot_idx]['samples'].append(audio_chunk)
                     else:
-                        # Single audio chunk as numpy array
+                        # Single audio chunk as numpy array (slot 0)
                         if isinstance(audio_data, np.ndarray):
-                            self._audio_samples_dict[tag_node_name].append(audio_data)
-                            print(f"[VideoWriter] Collected audio chunk (numpy array), shape={audio_data.shape}")
+                            slot_idx = 0
+                            if slot_idx not in self._audio_samples_dict[tag_node_name]:
+                                self._audio_samples_dict[tag_node_name][slot_idx] = {
+                                    'samples': [],
+                                    'timestamp': float('inf'),
+                                    'sample_rate': 22050
+                                }
+                            self._audio_samples_dict[tag_node_name][slot_idx]['samples'].append(audio_data)
                 
                 # Write audio and JSON data to MKV metadata tracks if applicable
                 if tag_node_name in self._mkv_metadata_dict:
@@ -830,8 +822,8 @@ class VideoWriterNode(Node):
                     metadata_dir = os.path.join(video_writer_directory, f'{startup_time_text}_metadata')
                     os.makedirs(metadata_dir, exist_ok=True)
                 
-                # Initialize audio sample collection
-                self._audio_samples_dict[tag_node_name] = []
+                # Initialize audio sample collection per slot
+                self._audio_samples_dict[tag_node_name] = {}  # Dict of {slot_idx: {'samples': [], 'timestamp': float, 'sample_rate': int}}
                 
                 # Store recording metadata for final merge
                 self._recording_metadata_dict[tag_node_name] = {
@@ -859,58 +851,83 @@ class VideoWriterNode(Node):
                 # Legacy mode - release video writer and merge
                 self._video_writer_dict[tag_node_name].release()
                 self._video_writer_dict.pop(tag_node_name)
-                
-                # Merge audio and video if audio samples were collected
-                if tag_node_name in self._audio_samples_dict and len(self._audio_samples_dict[tag_node_name]) > 0:
-                    if tag_node_name in self._recording_metadata_dict:
-                        metadata = self._recording_metadata_dict[tag_node_name]
-                        temp_path = metadata['temp_path']
-                        final_path = metadata['final_path']
-                        sample_rate = metadata['sample_rate']
+            
+            # Merge audio and video if audio samples were collected
+            if tag_node_name in self._audio_samples_dict and len(self._audio_samples_dict[tag_node_name]) > 0:
+                if tag_node_name in self._recording_metadata_dict:
+                    metadata = self._recording_metadata_dict[tag_node_name]
+                    temp_path = metadata['temp_path']
+                    final_path = metadata['final_path']
+                    sample_rate = metadata['sample_rate']
+                    
+                    # Process audio samples: sort slots by timestamp, concatenate each slot, then merge
+                    slot_audio_dict = self._audio_samples_dict[tag_node_name]
+                    
+                    # Sort slots by timestamp (finite timestamps first), then by slot index
+                    # Note: Tuple sorting in Python sorts by first element (timestamp), then second element (slot_idx)
+                    # Finite timestamps (e.g., 99.9, 100.0) come before float('inf'), ensuring
+                    # synchronized slots are ordered correctly before falling back to slot order
+                    sorted_slots = sorted(
+                        slot_audio_dict.items(),
+                        key=lambda x: (x[1]['timestamp'], x[0])
+                    )
+                    
+                    # Build final audio sample list in timestamp order
+                    audio_samples_list = []
+                    # Track if we encounter mixed sample rates (use the first valid one)
+                    final_sample_rate = None
+                    
+                    for slot_idx, slot_data in sorted_slots:
+                        # Concatenate all samples for this slot
+                        if slot_data['samples']:
+                            slot_concatenated = np.concatenate(slot_data['samples'])
+                            audio_samples_list.append(slot_concatenated)
                         
-                        audio_sample_count = len(self._audio_samples_dict[tag_node_name])
-                        print(f"[VideoWriter] Stop: Collected {audio_sample_count} audio chunks, sample_rate={sample_rate}")
-                        
-                        # Copy audio samples for the thread (to avoid race conditions)
-                        audio_samples_copy = copy.deepcopy(self._audio_samples_dict[tag_node_name])
-                        
-                        # Start merge in a separate thread to prevent UI freezing
-                        merge_thread = threading.Thread(
-                            target=self._async_merge_thread,
-                            args=(tag_node_name, temp_path, audio_samples_copy, sample_rate, final_path),
-                            daemon=True
-                        )
-                        merge_thread.start()
-                        
-                        # Store thread reference for tracking
-                        self._merge_threads_dict[tag_node_name] = merge_thread
-                        
-                        print(f"[VideoWriter] Stop: Started async merge for: {final_path}")
-                        
-                        # Clean up metadata
-                        self._recording_metadata_dict.pop(tag_node_name)
-                else:
-                    # No audio samples, just rename temp file to final name
-                    print(f"[VideoWriter] Stop: No audio samples collected, saving video without audio")
-                    if tag_node_name in self._recording_metadata_dict:
-                        metadata = self._recording_metadata_dict[tag_node_name]
-                        temp_path = metadata['temp_path']
-                        final_path = metadata['final_path']
-                        
-                        if os.path.exists(temp_path):
-                            os.rename(temp_path, final_path)
-                        print(f"Video without audio saved to: {final_path}")
-                        
-                        self._recording_metadata_dict.pop(tag_node_name)
-                
-                # Clean up audio samples
-                if tag_node_name in self._audio_samples_dict:
-                    self._audio_samples_dict.pop(tag_node_name)
-                
-                # Close metadata file handles if MKV
-                if tag_node_name in self._mkv_metadata_dict:
-                    metadata = self._mkv_metadata_dict[tag_node_name]
-                    self._close_metadata_handles(metadata)
-                    self._mkv_metadata_dict.pop(tag_node_name)
+                        # Use the first valid sample rate we encounter
+                        # Note: All slots should have the same sample rate for proper merging
+                        if final_sample_rate is None and 'sample_rate' in slot_data and slot_data['sample_rate'] is not None:
+                            final_sample_rate = slot_data['sample_rate']
+                    
+                    # Use the detected sample rate, fallback to metadata default
+                    if final_sample_rate is not None:
+                        sample_rate = final_sample_rate
+                    
+                    # Start merge in a separate thread to prevent UI freezing
+                    merge_thread = threading.Thread(
+                        target=self._async_merge_thread,
+                        args=(tag_node_name, temp_path, audio_samples_list, sample_rate, final_path),
+                        daemon=True
+                    )
+                    merge_thread.start()
+                    
+                    # Store thread reference for tracking
+                    self._merge_threads_dict[tag_node_name] = merge_thread
+                    
+                    print(f"Started async merge for: {final_path}")
+                    
+                    # Clean up metadata
+                    self._recording_metadata_dict.pop(tag_node_name)
+            else:
+                # No audio samples, just rename temp file to final name
+                if tag_node_name in self._recording_metadata_dict:
+                    metadata = self._recording_metadata_dict[tag_node_name]
+                    temp_path = metadata['temp_path']
+                    final_path = metadata['final_path']
+                    
+                    if os.path.exists(temp_path):
+                        os.rename(temp_path, final_path)
+                    print(f"Video without audio saved to: {final_path}")
+                    
+                    self._recording_metadata_dict.pop(tag_node_name)
+            
+            # Clean up audio samples
+            if tag_node_name in self._audio_samples_dict:
+                self._audio_samples_dict.pop(tag_node_name)
+            
+            # Close metadata file handles if MKV
+            if tag_node_name in self._mkv_metadata_dict:
+                metadata = self._mkv_metadata_dict[tag_node_name]
+                self._close_metadata_handles(metadata)
+                self._mkv_metadata_dict.pop(tag_node_name)
 
             dpg.set_item_label(tag_node_button_value_name, self._start_label)
