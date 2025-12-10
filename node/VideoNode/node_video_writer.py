@@ -28,6 +28,14 @@ except ImportError:
     FFMPEG_AVAILABLE = False
     sf = None
 
+# Import background worker
+try:
+    from node.VideoNode.video_worker import VideoBackgroundWorker, ProgressEvent, WorkerState
+    WORKER_AVAILABLE = True
+except ImportError:
+    WORKER_AVAILABLE = False
+    print("Warning: video_worker module not available, using legacy sync mode")
+
 def slow_motion_interpolation(prev_frame, next_frame, alpha):
     """ Generates smooth intermediate frame between 2 images """
     return cv2.addWeighted(prev_frame, 1 - alpha, next_frame, alpha, 0)
@@ -121,16 +129,26 @@ class FactoryNode:
                     user_data=node.tag_node_name,
                 )
             
-            # Add progress bar for merge operation
+            # Add progress bar for encoding/merge operation
             with dpg.node_attribute(
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_progress_bar(
-                    label="Merge Progress",
+                    label="Progress",
                     tag=node.tag_node_progress_name,
                     default_value=0.0,
                     overlay="",
                     width=small_window_w,
+                    show=False,  # Hidden by default
+                )
+            
+            # Add detailed progress info text
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_name + ':ProgressInfo',
+                    default_value="",
                     show=False,  # Hidden by default
                 )
 
@@ -139,7 +157,7 @@ class FactoryNode:
 
 
 class VideoWriterNode(Node):
-    _ver = '0.0.2'
+    _ver = '0.0.3'
 
     node_label = 'VideoWriter'
     node_tag = 'VideoWriter'
@@ -153,6 +171,11 @@ class VideoWriterNode(Node):
     _recording_metadata_dict = {}  # Store metadata about ongoing recordings
     _merge_threads_dict = {}  # Store merge threads for async operations
     _merge_progress_dict = {}  # Store merge progress (0.0 to 1.0)
+    
+    # Background worker instances
+    _background_workers = {}  # Store VideoBackgroundWorker instances
+    _worker_mode = {}  # Track which mode each node is using (legacy/worker)
+    
     _start_label = 'Start'
     _stop_label = 'Stop'
     
@@ -182,9 +205,73 @@ class VideoWriterNode(Node):
         input_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01Value'
         tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
         tag_node_progress_name = tag_node_name + ':' + self.TYPE_TEXT + ':Progress'
+        tag_progress_info_name = tag_node_name + ':ProgressInfo'
 
-        # Update merge progress bar if merge is in progress
-        if tag_node_name in self._merge_progress_dict:
+        # Check if using background worker mode
+        using_worker = tag_node_name in self._background_workers
+        
+        # Update progress for background worker
+        if using_worker and tag_node_name in self._background_workers:
+            worker = self._background_workers[tag_node_name]
+            
+            # Get latest progress from worker
+            if worker.is_active():
+                progress_event = worker.progress_tracker.get_progress(worker.get_state())
+                
+                # Update progress bar
+                if dpg.does_item_exist(tag_node_progress_name):
+                    dpg.configure_item(tag_node_progress_name, show=True)
+                    dpg.set_value(tag_node_progress_name, progress_event.percent / 100.0)
+                    
+                    # Create overlay text
+                    if progress_event.state == WorkerState.ENCODING:
+                        overlay = f"Encoding: {progress_event.percent:.1f}%"
+                    elif progress_event.state == WorkerState.FLUSHING:
+                        overlay = "Finalizing..."
+                    elif progress_event.state == WorkerState.PAUSED:
+                        overlay = "Paused"
+                    else:
+                        overlay = f"{progress_event.state.value}: {progress_event.percent:.1f}%"
+                    
+                    dpg.configure_item(tag_node_progress_name, overlay=overlay)
+                
+                # Update detailed info
+                if dpg.does_item_exist(tag_progress_info_name):
+                    dpg.configure_item(tag_progress_info_name, show=True)
+                    
+                    info_lines = []
+                    info_lines.append(f"Frames: {progress_event.frames_encoded}")
+                    if progress_event.total_frames:
+                        info_lines.append(f"/{progress_event.total_frames}")
+                    
+                    if progress_event.encode_speed > 0:
+                        info_lines.append(f" | {progress_event.encode_speed:.1f} fps")
+                    
+                    if progress_event.eta_seconds is not None and progress_event.eta_seconds > 0:
+                        eta_min = int(progress_event.eta_seconds // 60)
+                        eta_sec = int(progress_event.eta_seconds % 60)
+                        info_lines.append(f" | ETA {eta_min}m {eta_sec}s")
+                    
+                    dpg.set_value(tag_progress_info_name, ''.join(info_lines))
+            
+            # Check if worker completed
+            if worker.get_state() in [WorkerState.COMPLETED, WorkerState.ERROR, WorkerState.CANCELLED]:
+                # Clean up worker
+                self._background_workers.pop(tag_node_name, None)
+                self._worker_mode.pop(tag_node_name, None)
+                
+                # Hide progress UI
+                if dpg.does_item_exist(tag_node_progress_name):
+                    dpg.configure_item(tag_node_progress_name, show=False)
+                    dpg.set_value(tag_node_progress_name, 0.0)
+                    dpg.configure_item(tag_node_progress_name, overlay="")
+                
+                if dpg.does_item_exist(tag_progress_info_name):
+                    dpg.configure_item(tag_progress_info_name, show=False)
+                    dpg.set_value(tag_progress_info_name, "")
+        
+        # Update merge progress bar for legacy mode if merge is in progress
+        if not using_worker and tag_node_name in self._merge_progress_dict:
             progress = self._merge_progress_dict[tag_node_name]
             if dpg.does_item_exist(tag_node_progress_name):
                 dpg.configure_item(tag_node_progress_name, show=True)
@@ -225,7 +312,58 @@ class VideoWriterNode(Node):
         if frame is not None:
             rec_frame = copy.deepcopy(frame)
 
-            if tag_node_name in self._video_writer_dict:
+            # Check if using background worker mode
+            if tag_node_name in self._background_workers:
+                # Background worker mode - push frame to worker queue
+                worker = self._background_workers[tag_node_name]
+                
+                # Resize frame for encoding
+                writer_frame = cv2.resize(rec_frame,
+                                          (writer_width, writer_height),
+                                          interpolation=cv2.INTER_CUBIC)
+                
+                # Extract audio data
+                audio_chunk = None
+                if audio_data is not None:
+                    # Handle different audio data formats
+                    if isinstance(audio_data, dict):
+                        if 'data' in audio_data and 'sample_rate' in audio_data:
+                            # Single audio chunk from video node
+                            audio_chunk = audio_data['data']
+                        else:
+                            # Concat node output: {slot_idx: audio_chunk}
+                            # Merge all slots into a single audio track
+                            audio_chunks_with_ts = []
+                            
+                            for slot_idx in sorted(audio_data.keys()):
+                                slot_audio = audio_data[slot_idx]
+                                if isinstance(slot_audio, dict) and 'data' in slot_audio:
+                                    timestamp = slot_audio.get('timestamp', float('inf'))
+                                    audio_chunks_with_ts.append({
+                                        'data': slot_audio['data'],
+                                        'timestamp': timestamp,
+                                        'slot': slot_idx
+                                    })
+                                elif isinstance(slot_audio, np.ndarray):
+                                    audio_chunks_with_ts.append({
+                                        'data': slot_audio,
+                                        'timestamp': float('inf'),
+                                        'slot': slot_idx
+                                    })
+                            
+                            if audio_chunks_with_ts:
+                                # Sort by timestamp
+                                audio_chunks_with_ts.sort(key=lambda x: (x['timestamp'], x['slot']))
+                                # Concatenate
+                                audio_chunk = np.concatenate([chunk['data'] for chunk in audio_chunks_with_ts])
+                    elif isinstance(audio_data, np.ndarray):
+                        audio_chunk = audio_data
+                
+                # Push to worker queue (non-blocking with backpressure)
+                worker.push_frame(writer_frame, audio_chunk)
+                
+            elif tag_node_name in self._video_writer_dict:
+                # Legacy mode - direct write to VideoWriter
 
                 writer_frame = cv2.resize(rec_frame,
                                           (writer_width, writer_height),
@@ -238,7 +376,7 @@ class VideoWriterNode(Node):
                     if isinstance(audio_data, dict):
                         # Check if this is a multi-slot concat output or single audio chunk from video node
                         # Multi-slot: {0: audio_chunk, 1: audio_chunk, ...}
-                        # Single chunk: {'data': array, 'sample_rate': int}
+                        # Single chunk: {'data': array, 'sample_rate': int, 'timestamp': float}
                         
                         if 'data' in audio_data and 'sample_rate' in audio_data:
                             # Single audio chunk from video node (slot 0)
@@ -253,6 +391,7 @@ class VideoWriterNode(Node):
                             # Update sample rate if provided
                             if tag_node_name in self._recording_metadata_dict:
                                 self._recording_metadata_dict[tag_node_name]['sample_rate'] = audio_data['sample_rate']
+                            print(f"[VideoWriter] Collected single audio chunk, sample_rate={audio_data['sample_rate']}")
                         else:
                             # Concat node output: {slot_idx: audio_chunk}
                             # Collect audio samples per slot (will be merged by timestamp at recording end)
@@ -410,6 +549,8 @@ class VideoWriterNode(Node):
                 print("Warning: No audio samples collected, merging only video")
                 return False
             
+            print(f"[VideoWriter] Merge: Received {len(audio_samples)} audio sample chunks")
+            
             # Filter out empty or invalid arrays
             valid_samples = [sample for sample in audio_samples 
                            if isinstance(sample, np.ndarray) and sample.size > 0]
@@ -418,8 +559,13 @@ class VideoWriterNode(Node):
                 print("Warning: No valid audio samples to merge")
                 return False
             
+            print(f"[VideoWriter] Merge: {len(valid_samples)} valid sample chunks after filtering")
+            
             # Concatenate all valid audio samples
             full_audio = np.concatenate(valid_samples)
+            total_duration = len(full_audio) / sample_rate
+            
+            print(f"[VideoWriter] Merge: Total audio duration = {total_duration:.2f}s at {sample_rate}Hz")
             
             # Report progress: Audio concatenated
             if progress_callback:
@@ -480,6 +626,17 @@ class VideoWriterNode(Node):
 
     def close(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
+        
+        # Cancel and wait for background worker if active
+        if tag_node_name in self._background_workers:
+            worker = self._background_workers[tag_node_name]
+            print(f"Cancelling background worker for {tag_node_name}...")
+            worker.cancel()
+            self._background_workers.pop(tag_node_name, None)
+        
+        # Clean up worker mode tracking
+        if tag_node_name in self._worker_mode:
+            self._worker_mode.pop(tag_node_name)
         
         # Wait for any ongoing merge threads to complete
         if tag_node_name in self._merge_threads_dict:
@@ -603,19 +760,46 @@ class VideoWriterNode(Node):
             # Get selected format
             format_tag = tag_node_name + ':Format'
             video_format = dpg_get_value(format_tag)
+            
+            # Determine file extension
+            format_config = {
+                'AVI': {'ext': '.avi', 'codec': 'MJPG'},
+                'MKV': {'ext': '.mkv', 'codec': 'FFV1'},
+                'MP4': {'ext': '.mp4', 'codec': 'mp4v'}
+            }
+            
+            config = format_config.get(video_format, format_config['MP4'])
+            file_path = os.path.join(video_writer_directory, f'{startup_time_text}{config["ext"]}')
 
-            if tag_node_name not in self._video_writer_dict:
-                # Determine file extension and codec based on format
-                format_config = {
-                    'AVI': {'ext': '.avi', 'codec': 'MJPG'},
-                    'MKV': {'ext': '.mkv', 'codec': 'FFV1'},
-                    'MP4': {'ext': '.mp4', 'codec': 'mp4v'}
-                }
-                
-                config = format_config.get(video_format, format_config['MP4'])
-                
-                # Create file paths (temp and final)
-                file_path = os.path.join(video_writer_directory, f'{startup_time_text}{config["ext"]}')
+            # Try to use background worker mode if available
+            use_worker = WORKER_AVAILABLE and FFMPEG_AVAILABLE
+            
+            if use_worker and tag_node_name not in self._background_workers:
+                # Start background worker
+                try:
+                    worker = VideoBackgroundWorker(
+                        output_path=file_path,
+                        width=writer_width,
+                        height=writer_height,
+                        fps=writer_fps,
+                        sample_rate=22050,  # Default, will be updated from incoming audio
+                        total_frames=None,  # Unknown initially
+                        progress_callback=None  # Progress is polled in update()
+                    )
+                    worker.start()
+                    
+                    self._background_workers[tag_node_name] = worker
+                    self._worker_mode[tag_node_name] = 'worker'
+                    
+                    print(f"[VideoWriter] Started background worker for: {file_path}")
+                    
+                except Exception as e:
+                    print(f"[VideoWriter] Failed to start background worker: {e}")
+                    traceback.print_exc()
+                    use_worker = False
+            
+            # Fallback to legacy mode if worker not available or failed
+            if not use_worker and tag_node_name not in self._video_writer_dict:
                 temp_file_path = os.path.join(video_writer_directory, f'{startup_time_text}_temp{config["ext"]}')
                 
                 # Create video writer with temporary path
@@ -637,9 +821,6 @@ class VideoWriterNode(Node):
                     # Create metadata track files (will be stored alongside video)
                     metadata_dir = os.path.join(video_writer_directory, f'{startup_time_text}_metadata')
                     os.makedirs(metadata_dir, exist_ok=True)
-                    
-                    # Note: Audio and JSON tracks will be created dynamically when data arrives
-                    # This allows us to support variable number of slots from concat node
                 
                 # Initialize audio sample collection per slot
                 self._audio_samples_dict[tag_node_name] = {}  # Dict of {slot_idx: {'samples': [], 'timestamp': float, 'sample_rate': int}}
@@ -651,12 +832,23 @@ class VideoWriterNode(Node):
                     'format': video_format,
                     'sample_rate': 22050  # Default sample rate, can be adjusted based on input
                 }
+                
+                self._worker_mode[tag_node_name] = 'legacy'
+                print(f"[VideoWriter] Started legacy mode for: {file_path}")
 
             dpg.set_item_label(tag_node_button_value_name, self._stop_label)
+            
         elif label == self._stop_label:
-
-            # Release video writer and ensure file is flushed to disk
-            if tag_node_name in self._video_writer_dict:
+            
+            # Check which mode we're using
+            if tag_node_name in self._background_workers:
+                # Background worker mode - stop the worker
+                worker = self._background_workers[tag_node_name]
+                worker.stop(wait=False)  # Don't block UI
+                print(f"[VideoWriter] Stopped background worker")
+                
+            elif tag_node_name in self._video_writer_dict:
+                # Legacy mode - release video writer and merge
                 self._video_writer_dict[tag_node_name].release()
                 self._video_writer_dict.pop(tag_node_name)
             

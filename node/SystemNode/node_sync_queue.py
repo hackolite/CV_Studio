@@ -259,7 +259,24 @@ class Node(Node):
                         if valid_items:
                             # Sort by timestamp and get most recent
                             valid_items.sort(key=lambda x: x['timestamp'], reverse=True)
-                            synced_data = valid_items[0]['data']
+                            synced_item = valid_items[0]
+                            synced_data = synced_item['data']
+                            synced_timestamp = synced_item['timestamp']
+                            
+                            # Preserve timestamp in output data for downstream synchronization
+                            # Wrap audio data with timestamp information for VideoWriter
+                            if data_type == 'audio' and isinstance(synced_data, dict):
+                                # Audio data is already a dict (from video node), preserve/update timestamp
+                                if 'timestamp' not in synced_data or synced_data['timestamp'] != synced_timestamp:
+                                    synced_data = synced_data.copy()
+                                    synced_data['timestamp'] = synced_timestamp
+                            elif data_type == 'audio':
+                                # Audio data is raw numpy array, wrap with timestamp
+                                synced_data = {
+                                    'data': synced_data,
+                                    'timestamp': synced_timestamp
+                                }
+                            
                             output_data[data_type][slot_idx] = synced_data
                             synced_count += 1
         
