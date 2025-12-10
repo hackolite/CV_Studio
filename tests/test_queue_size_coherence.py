@@ -14,6 +14,9 @@ import os
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+# Import the default queue size constant
+from node.timestamped_queue import DEFAULT_QUEUE_SIZE
+
 
 def test_queue_size_calculation():
     """Test that queue size is calculated correctly for worst-case scenarios"""
@@ -40,20 +43,14 @@ def test_queue_size_calculation():
     print(f"At {HIGH_FPS} FPS: {min_frames_needed} frames minimum")
     print(f"With 20% margin: {recommended_size} frames")
     
-    # Import the actual default size used in main.py
-    from node.timestamped_queue import NodeDataQueueManager
-    
-    # Create a manager to check default size
-    manager = NodeDataQueueManager(default_maxsize=800)  # Should match main.py
-    
     # Verify that the default size is sufficient
-    assert 800 >= recommended_size, \
-        f"Queue size 800 is insufficient! Need at least {recommended_size} frames"
+    assert DEFAULT_QUEUE_SIZE >= recommended_size, \
+        f"Queue size {DEFAULT_QUEUE_SIZE} is insufficient! Need at least {recommended_size} frames"
     
-    assert 800 >= min_frames_needed, \
-        f"Queue size 800 is insufficient! Need at least {min_frames_needed} frames (without margin)"
+    assert DEFAULT_QUEUE_SIZE >= min_frames_needed, \
+        f"Queue size {DEFAULT_QUEUE_SIZE} is insufficient! Need at least {min_frames_needed} frames (without margin)"
     
-    print(f"✓ Queue size 800 is sufficient (minimum needed: {recommended_size})")
+    print(f"✓ Queue size {DEFAULT_QUEUE_SIZE} is sufficient (minimum needed: {recommended_size})")
     return True
 
 
@@ -70,14 +67,11 @@ def test_syncqueue_retention_coherence():
     # Calculate frames needed for max retention
     frames_for_retention = int((SYNCQUEUE_MAX_RETENTION + BUFFER_OVERHEAD) * TYPICAL_FPS)
     
-    # Queue size from main.py
-    ACTUAL_QUEUE_SIZE = 800
-    
-    assert ACTUAL_QUEUE_SIZE >= frames_for_retention, \
-        f"Queue size {ACTUAL_QUEUE_SIZE} insufficient for SyncQueue retention! " \
+    assert DEFAULT_QUEUE_SIZE >= frames_for_retention, \
+        f"Queue size {DEFAULT_QUEUE_SIZE} insufficient for SyncQueue retention! " \
         f"Need {frames_for_retention} frames at {TYPICAL_FPS} FPS"
     
-    print(f"✓ Queue size {ACTUAL_QUEUE_SIZE} supports SyncQueue retention time")
+    print(f"✓ Queue size {DEFAULT_QUEUE_SIZE} supports SyncQueue retention time")
     print(f"  (Retention needs {frames_for_retention} frames at {TYPICAL_FPS} FPS)")
     return True
 
@@ -100,21 +94,17 @@ def test_multi_slot_support():
     SYNCQUEUE_RETENTION = 11.0  # max 10s + 1s overhead
     total_frames_needed = int((SYNCQUEUE_RETENTION + PROCESSING_DELAY) * TYPICAL_FPS)
     
-    ACTUAL_QUEUE_SIZE = 800
-    
-    assert ACTUAL_QUEUE_SIZE >= total_frames_needed, \
-        f"Queue size {ACTUAL_QUEUE_SIZE} insufficient for multi-slot processing! " \
+    assert DEFAULT_QUEUE_SIZE >= total_frames_needed, \
+        f"Queue size {DEFAULT_QUEUE_SIZE} insufficient for multi-slot processing! " \
         f"Need {total_frames_needed} frames"
     
-    print(f"✓ Queue size {ACTUAL_QUEUE_SIZE} supports {MAX_SLOTS} slots with processing")
+    print(f"✓ Queue size {DEFAULT_QUEUE_SIZE} supports {MAX_SLOTS} slots with processing")
     print(f"  (Processing needs {total_frames_needed} frames)")
     return True
 
 
 def test_memory_impact():
     """Verify that the increased queue size has acceptable memory impact"""
-    
-    QUEUE_SIZE = 800
     
     # Estimate memory per frame (rough estimates)
     # These are upper bounds - actual sizes may be smaller
@@ -123,9 +113,9 @@ def test_memory_impact():
     JSON_SIZE_KB = 1.0   # ~1 KB per JSON metadata
     
     # Calculate total memory per queue (in MB)
-    image_queue_mb = QUEUE_SIZE * IMAGE_SIZE_MB
-    audio_queue_mb = QUEUE_SIZE * (AUDIO_SIZE_KB / 1024)
-    json_queue_mb = QUEUE_SIZE * (JSON_SIZE_KB / 1024)
+    image_queue_mb = DEFAULT_QUEUE_SIZE * IMAGE_SIZE_MB
+    audio_queue_mb = DEFAULT_QUEUE_SIZE * (AUDIO_SIZE_KB / 1024)
+    json_queue_mb = DEFAULT_QUEUE_SIZE * (JSON_SIZE_KB / 1024)
     
     total_per_node_mb = image_queue_mb + audio_queue_mb + json_queue_mb
     

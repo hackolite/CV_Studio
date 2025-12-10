@@ -51,19 +51,22 @@ Based on worst-case scenario analysis:
 
 ### Changes Made
 
-**File**: `main.py` (Line 221)
-
-**Before**:
+**1. Created DEFAULT_QUEUE_SIZE constant** (`node/timestamped_queue.py`)
 ```python
-queue_manager = NodeDataQueueManager(default_maxsize=10)
+DEFAULT_QUEUE_SIZE = 800
 ```
 
-**After**:
-```python
-queue_manager = NodeDataQueueManager(default_maxsize=800)
-```
+**2. Updated NodeDataQueueManager** (`node/timestamped_queue.py`)
+- Changed default parameter from 10 to `DEFAULT_QUEUE_SIZE`
+- Updated documentation
 
-Added comprehensive documentation explaining the calculation.
+**3. Updated main.py**
+- Import and use `DEFAULT_QUEUE_SIZE` constant
+- Updated log messages to use dynamic value
+
+**4. Updated tests** (`tests/test_queue_size_coherence.py`)
+- Use `DEFAULT_QUEUE_SIZE` constant instead of hardcoded values
+- Eliminates duplication and ensures tests stay in sync with actual value
 
 ## Verification
 
@@ -103,6 +106,15 @@ System-wide (10 active nodes):
 4. **High FPS Support**: Supports video up to 60 FPS (and beyond)
 5. **Processing Buffer**: Provides headroom for processing delays
 
+## Code Quality Improvements
+
+### Addressed Code Review Comments
+- ✅ Eliminated hardcoded queue size values in tests
+- ✅ Created `DEFAULT_QUEUE_SIZE` constant in `timestamped_queue.py`
+- ✅ Tests now import and use the constant
+- ✅ Single source of truth for queue size value
+- ✅ Easier maintenance if queue size needs adjustment
+
 ## Performance Characteristics
 
 - Queue size increased from 10 to 800 (80× increase)
@@ -123,11 +135,26 @@ System-wide (10 active nodes):
 - ✅ Calculation explained in comments
 - ✅ Test suite created for verification
 - ✅ No security issues introduced
+- ✅ Single constant eliminates duplication
 
 ## Files Modified
 
-1. **main.py** (1 line changed, 7 lines of documentation added)
-2. **tests/test_queue_size_coherence.py** (new file, 6910 characters)
+1. **node/timestamped_queue.py**:
+   - Added `DEFAULT_QUEUE_SIZE = 800` constant with documentation
+   - Updated `NodeDataQueueManager.__init__()` default parameter
+   - Updated class documentation
+
+2. **main.py**:
+   - Import `DEFAULT_QUEUE_SIZE` constant
+   - Use constant instead of hardcoded value
+   - Updated log message to use dynamic value
+
+3. **tests/test_queue_size_coherence.py**:
+   - Import `DEFAULT_QUEUE_SIZE` constant
+   - Replaced all hardcoded values with constant
+   - Eliminated code duplication
+
+4. **QUEUE_SIZE_COHERENCE_FIX.md**: Implementation documentation
 
 ## Summary
 
@@ -138,4 +165,4 @@ This fix resolves a critical architectural issue where the input queue size was 
 - Multi-slot processing delays
 - Safety margins for real-world conditions
 
-The change enables proper operation of these critical nodes while maintaining acceptable memory usage.
+The change enables proper operation of these critical nodes while maintaining acceptable memory usage. Code quality was improved by introducing a `DEFAULT_QUEUE_SIZE` constant to eliminate duplication and ensure consistency between code and tests.

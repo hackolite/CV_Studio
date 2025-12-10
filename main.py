@@ -21,7 +21,7 @@ from node_editor.util import check_camera_connection
 from node_editor.node_editor import DpgNodeEditor
 
 # Import timestamped queue system
-from node.timestamped_queue import NodeDataQueueManager
+from node.timestamped_queue import NodeDataQueueManager, DEFAULT_QUEUE_SIZE
 from node.queue_adapter import QueueBackedDict
 
 # Setup logging with file rotation (default level: ERROR for production)
@@ -226,8 +226,8 @@ def main():
     # This ensures SyncQueue, VideoWriter multi-slot audio, and ImageConcat 
     # can properly synchronize/collect data without loss
     logger.info("Initializing timestamped buffer system")
-    queue_manager = NodeDataQueueManager(default_maxsize=800)
-    logger.info("Buffer system initialized: keeps last 800 timestamped items per node for synchronization")
+    queue_manager = NodeDataQueueManager(default_maxsize=DEFAULT_QUEUE_SIZE)
+    logger.info(f"Buffer system initialized: keeps last {DEFAULT_QUEUE_SIZE} timestamped items per node for synchronization")
 
     logger.info("Loading configuration")
     opencv_setting_dict = None
