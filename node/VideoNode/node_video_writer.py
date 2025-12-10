@@ -344,7 +344,7 @@ class VideoWriterNode(Node):
                         dpg.configure_item(tag_node_progress_name, overlay="")
 
         connection_info_src = ''
-        print(connection_list)
+        logger.debug(f"[VideoWriter] Processing connections: {connection_list}")
         for connection_info in connection_list:
             connection_info_src = connection_info[0]
             connection_info_src = connection_info_src.split(':')[:2]
@@ -413,7 +413,9 @@ class VideoWriterNode(Node):
                         audio_chunk = audio_data
                 
                 # Push to worker queue (non-blocking with backpressure)
-                worker.push_frame(writer_frame, audio_chunk)
+                success = worker.push_frame(writer_frame, audio_chunk)
+                if not success:
+                    logger.warning(f"[VideoWriter] Frame dropped due to queue backpressure")
                 
             elif tag_node_name in self._video_writer_dict:
                 # Legacy mode - direct write to VideoWriter
@@ -444,7 +446,7 @@ class VideoWriterNode(Node):
                             # Update sample rate if provided
                             if tag_node_name in self._recording_metadata_dict:
                                 self._recording_metadata_dict[tag_node_name]['sample_rate'] = audio_data['sample_rate']
-                            print(f"[VideoWriter] Collected single audio chunk, sample_rate={audio_data['sample_rate']}")
+                            logger.debug(f"[VideoWriter] Collected single audio chunk, sample_rate={audio_data['sample_rate']}")
                         else:
                             # Concat node output: {slot_idx: audio_chunk}
                             # Collect audio samples per slot (will be merged by timestamp at recording end)
@@ -584,13 +586,13 @@ class VideoWriterNode(Node):
             True if successful, False otherwise
         """
         if not FFMPEG_AVAILABLE or sf is None:
-            print("Warning: ffmpeg-python and soundfile are required for audio merging. Video will be saved without audio.")
+            logger.warning("[VideoWriter] ffmpeg-python and soundfile are required for audio merging")
             return False
         
         try:
             # Verify video file exists
             if not os.path.exists(video_path):
-                print(f"Error: Video file not found: {video_path}")
+                logger.error(f"[VideoWriter] Video file not found: {video_path}")
                 return False
             
             # Report progress: Starting concatenation
@@ -599,26 +601,26 @@ class VideoWriterNode(Node):
             
             # Validate and filter audio samples
             if not audio_samples:
-                print("Warning: No audio samples collected, merging only video")
+                logger.warning("[VideoWriter] No audio samples collected, merging only video")
                 return False
             
-            print(f"[VideoWriter] Merge: Received {len(audio_samples)} audio sample chunks")
+            logger.debug(f"[VideoWriter] Merge: Received {len(audio_samples)} audio sample chunks")
             
             # Filter out empty or invalid arrays
             valid_samples = [sample for sample in audio_samples 
                            if isinstance(sample, np.ndarray) and sample.size > 0]
             
             if not valid_samples:
-                print("Warning: No valid audio samples to merge")
+                logger.warning("[VideoWriter] No valid audio samples to merge")
                 return False
             
-            print(f"[VideoWriter] Merge: {len(valid_samples)} valid sample chunks after filtering")
+            logger.debug(f"[VideoWriter] Merge: {len(valid_samples)} valid sample chunks after filtering")
             
             # Concatenate all valid audio samples
             full_audio = np.concatenate(valid_samples)
             total_duration = len(full_audio) / sample_rate
             
-            print(f"[VideoWriter] Merge: Total audio duration = {total_duration:.2f}s at {sample_rate}Hz")
+            logger.info(f"[VideoWriter] Merge: Total audio duration = {total_duration:.2f}s at {sample_rate}Hz")
             
             # Report progress: Audio concatenated
             if progress_callback:
@@ -664,7 +666,7 @@ class VideoWriterNode(Node):
                 if progress_callback:
                     progress_callback(1.0)
                 
-                print(f"Successfully merged audio and video to {output_path}")
+                logger.info(f"[VideoWriter] Successfully merged audio and video to {output_path}")
                 return True
                 
             finally:
@@ -673,8 +675,7 @@ class VideoWriterNode(Node):
                     os.remove(temp_audio_path)
                     
         except Exception as e:
-            print(f"Error merging audio and video: {e}")
-            traceback.print_exc()
+            logger.error(f"[VideoWriter] Error merging audio and video: {e}", exc_info=True)
             return False
 
     def close(self, node_id):
@@ -683,7 +684,7 @@ class VideoWriterNode(Node):
         # Cancel and wait for background worker if active
         if tag_node_name in self._background_workers:
             worker = self._background_workers[tag_node_name]
-            print(f"Cancelling background worker for {tag_node_name}...")
+            logger.info(f"[VideoWriter] Cancelling background worker for {tag_node_name}")
             worker.cancel()
             self._background_workers.pop(tag_node_name, None)
         
@@ -695,7 +696,7 @@ class VideoWriterNode(Node):
         if tag_node_name in self._merge_threads_dict:
             thread = self._merge_threads_dict[tag_node_name]
             if thread.is_alive():
-                print(f"Waiting for merge to complete for {tag_node_name}...")
+                logger.info(f"[VideoWriter] Waiting for merge to complete for {tag_node_name}")
                 thread.join(timeout=30)  # Wait up to 30 seconds
             self._merge_threads_dict.pop(tag_node_name, None)
         
@@ -747,7 +748,7 @@ class VideoWriterNode(Node):
                 elapsed += self._FILE_WAIT_INTERVAL
             
             if not os.path.exists(temp_path):
-                print(f"Error: Temporary video file not found: {temp_path}")
+                logger.error(f"[VideoWriter] Temporary video file not found: {temp_path}")
                 raise FileNotFoundError(f"Temporary video file not found: {temp_path}")
             
             # Additional small wait to ensure file is fully flushed
@@ -766,23 +767,22 @@ class VideoWriterNode(Node):
                 # Remove temporary video file
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
-                print(f"Video with audio saved to: {final_path}")
+                logger.info(f"[VideoWriter] Video with audio saved to: {final_path}")
             else:
                 # If merge failed, rename temp file to final name
                 if os.path.exists(temp_path):
                     os.rename(temp_path, final_path)
-                print(f"Warning: Audio merge failed. Video without audio saved to: {final_path}")
+                logger.warning(f"[VideoWriter] Audio merge failed. Video without audio saved to: {final_path}")
                 
         except Exception as e:
-            print(f"Error in async merge thread: {e}")
-            traceback.print_exc()
+            logger.error(f"[VideoWriter] Error in async merge thread: {e}", exc_info=True)
             # Try to save the temp file as final on error
             if os.path.exists(temp_path):
                 try:
                     os.rename(temp_path, final_path)
-                    print(f"Video saved to: {final_path} (merge failed)")
+                    logger.info(f"[VideoWriter] Video saved to: {final_path} (merge failed)")
                 except Exception as rename_error:
-                    print(f"Error renaming temp file: {rename_error}")
+                    logger.error(f"[VideoWriter] Error renaming temp file: {rename_error}")
         finally:
             # Clean up merge progress indicator
             if tag_node_name in self._merge_progress_dict:
@@ -905,7 +905,7 @@ class VideoWriterNode(Node):
                 }
                 
                 self._worker_mode[tag_node_name] = 'legacy'
-                print(f"[VideoWriter] Started legacy mode for: {file_path}")
+                logger.info(f"[VideoWriter] Started legacy mode for: {file_path}")
 
             dpg.set_item_label(tag_node_button_value_name, self._stop_label)
             
@@ -916,7 +916,7 @@ class VideoWriterNode(Node):
                 # Background worker mode - stop the worker
                 worker = self._background_workers[tag_node_name]
                 worker.stop(wait=False)  # Don't block UI
-                print(f"[VideoWriter] Stopped background worker")
+                logger.info(f"[VideoWriter] Stopped background worker")
                 
             elif tag_node_name in self._video_writer_dict:
                 # Legacy mode - release video writer and merge
@@ -974,7 +974,7 @@ class VideoWriterNode(Node):
                     # Store thread reference for tracking
                     self._merge_threads_dict[tag_node_name] = merge_thread
                     
-                    print(f"Started async merge for: {final_path}")
+                    logger.info(f"[VideoWriter] Started async merge for: {final_path}")
                     
                     # Clean up metadata
                     self._recording_metadata_dict.pop(tag_node_name)
@@ -987,7 +987,7 @@ class VideoWriterNode(Node):
                     
                     if os.path.exists(temp_path):
                         os.rename(temp_path, final_path)
-                    print(f"Video without audio saved to: {final_path}")
+                    logger.info(f"[VideoWriter] Video without audio saved to: {final_path}")
                     
                     self._recording_metadata_dict.pop(tag_node_name)
             

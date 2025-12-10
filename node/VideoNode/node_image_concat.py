@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import re
 import copy
+import logging
 
 import cv2
 import numpy as np
@@ -13,6 +14,9 @@ from node.node_abc import DpgNodeABC
 #from node_editor.util import self.convert_cv_to_dpg
 #from node.draw_node.draw_util.draw_util import draw_info
 from node.basenode import Node
+
+# Set up logger for this module
+logger = logging.getLogger(__name__)
 
 def create_concat_image(frame_dict, slot_num):
     if slot_num == 1:
@@ -474,7 +478,7 @@ class Node(Node):
             slot_number = int(slot_number) - 1
 
             connection_type = connection_info[0].split(':')[2]
-            print("type :", connection_type)
+            logger.debug(f"[ImageConcat] Slot {slot_number}: connection type = {connection_type}")
             
             # Support IMAGE, AUDIO, and JSON types
             if connection_type in [self.TYPE_IMAGE, self.TYPE_AUDIO, self.TYPE_JSON]:
@@ -575,7 +579,7 @@ class Node(Node):
         if len(json_chunks) > 0:
             json_data = json_chunks
 
-        print("display :", display_frame)
+        logger.debug(f"[ImageConcat] Output: frame={display_frame is not None}, audio_slots={len(audio_chunks)}, json_slots={len(json_chunks)}")
         if display_frame is not None:
             texture = self.convert_cv_to_dpg(
                 display_frame,
@@ -688,7 +692,7 @@ class Node(Node):
 
     def draw_info(self, node_name, node_result, image, target_height=None, target_width=None):
         # need some abstraction here
-        print("node name :", node_name, "node_result :", node_result)
+        logger.debug(f"[ImageConcat] draw_info: node={node_name}, result_keys={list(node_result.keys()) if node_result else None}")
         classification_nodes = ['Classification']
         object_detection_nodes = ['ObjectDetection']
         semantic_segmentation_nodes = ['SemanticSegmentation']
