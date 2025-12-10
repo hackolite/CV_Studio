@@ -7,6 +7,16 @@ This node synchronizes data from multiple queues. Each "Add Slot" creates
 an input entry and a corresponding output entry with a selectable input type
 (Image, Audio, or JSON - only one type per slot).
 
+Features:
+- Selectable data type per slot via dropdown (Image/Audio/JSON)
+- Type is displayed in input/output labels (e.g., "In1: Audio", "Out2: Image")
+- Dynamic type switching: changing the type recreates input/output attributes
+  with correct type constants and clears the slot buffer
+- Configurable retention time (default: 3 seconds)
+- Automatic memory cleanup: removes old buffered data beyond retention window
+- Deduplication: prevents duplicate items from consuming memory
+- Timestamp-based synchronization across all slots
+
 The node does NOT display frames visually. It retrieves data from queues,
 buffers it with a configurable retention time (default: 3 seconds), 
 synchronizes based on timestamps, and passes the synchronized data to outputs.
@@ -126,7 +136,22 @@ class Node(Node):
             self._sync_state[tag_node_name]['retention_time'] = retention_time
 
     def _update_slot_type(self, sender, data, user_data):
-        """Update the input type for a slot."""
+        """
+        Update the input type for a slot when changed via dropdown.
+        
+        This method:
+        1. Detects if the type actually changed
+        2. Updates the internal slot type mapping
+        3. Clears the slot buffer to prevent type mismatch
+        4. Deletes old input/output attributes (with old type constant)
+        5. Creates new input/output attributes (with new type constant)
+        6. Updates label text to display the new type
+        
+        This ensures that:
+        - Connections work correctly with the new type
+        - Labels accurately reflect the current type
+        - No invalid data remains in the buffer
+        """
         tag_node_name, slot_idx = user_data
         selected_type = dpg_get_value(sender)
         
