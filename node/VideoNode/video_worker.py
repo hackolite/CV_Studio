@@ -502,19 +502,21 @@ class VideoBackgroundWorker:
             print(f"[VideoWorker] Video encoding complete, {self.progress_tracker.frames_encoded} frames")
             
             # Write audio file if we have samples
-            if audio_samples and FFMPEG_AVAILABLE and sf is not None:
+            if audio_samples and FFMPEG_AVAILABLE and sf is not None and not self._cancel_flag.is_set():
                 print(f"[VideoWorker] Writing audio file with {len(audio_samples)} chunks")
                 full_audio = np.concatenate(audio_samples)
                 sf.write(self._temp_audio_path, full_audio, self.sample_rate)
                 print(f"[VideoWorker] Audio file written: {self._temp_audio_path}")
             
-            # Signal muxer that encoding is done
-            self._set_state(WorkerState.FLUSHING)
+            # Signal muxer that encoding is done (only if not cancelled)
+            if not self._cancel_flag.is_set():
+                self._set_state(WorkerState.FLUSHING)
             
         except Exception as e:
             print(f"[VideoWorker] Error in encoder thread: {e}")
             traceback.print_exc()
-            self._set_state(WorkerState.ERROR)
+            if not self._cancel_flag.is_set():
+                self._set_state(WorkerState.ERROR)
     
     def _muxer_worker(self):
         """
