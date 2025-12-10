@@ -241,7 +241,18 @@ class VideoBackgroundWorker:
     
     This class orchestrates multiple worker threads to encode and mux video/audio
     in the background without blocking the UI.
+    
+    Queue Sizing Strategy:
+    - Frame queue size is calculated as: fps * chunk_duration
+    - This ensures the queue can hold enough frames for synchronization with audio chunks
+    - Maximum queue size is capped at 300 frames to limit memory usage
+    - Minimum queue size is 50 frames for short recordings
     """
+    
+    # Queue size limits to prevent excessive memory usage
+    MIN_FRAME_QUEUE_SIZE = 50    # Minimum queue size for short recordings
+    MAX_FRAME_QUEUE_SIZE = 300   # Maximum to limit memory (10 seconds at 30 fps)
+    DEFAULT_CHUNK_DURATION = 5.0 # Default audio chunk duration in seconds
     
     def __init__(
         self,
@@ -252,6 +263,7 @@ class VideoBackgroundWorker:
         sample_rate: int = 22050,
         total_frames: Optional[int] = None,
         progress_callback: Optional[Callable[[ProgressEvent], None]] = None,
+        chunk_duration: float = DEFAULT_CHUNK_DURATION,
     ):
         """
         Initialize background worker.
@@ -264,6 +276,7 @@ class VideoBackgroundWorker:
             sample_rate: Audio sample rate
             total_frames: Total frames to encode (if known)
             progress_callback: Callback for progress updates
+            chunk_duration: Audio chunk duration in seconds (default: 5.0)
         """
         self.output_path = output_path
         self.width = width
@@ -272,13 +285,27 @@ class VideoBackgroundWorker:
         self.sample_rate = sample_rate
         self.total_frames = total_frames
         self.progress_callback = progress_callback
+        self.chunk_duration = chunk_duration
         
         # State
         self._state = WorkerState.IDLE
         self._state_lock = threading.Lock()
         
-        # Queues
-        self.queue_frames = ThreadSafeQueue(50, "FrameQueue")
+        # Calculate optimal queue sizes based on FPS and chunk duration
+        # Queue must hold at least fps * chunk_duration frames for proper sync
+        calculated_queue_size = int(fps * chunk_duration)
+        frame_queue_size = max(
+            self.MIN_FRAME_QUEUE_SIZE,
+            min(calculated_queue_size, self.MAX_FRAME_QUEUE_SIZE)
+        )
+        
+        logger.info(
+            f"[VideoWorker] Queue sizing: fps={fps}, chunk_duration={chunk_duration}s, "
+            f"calculated={calculated_queue_size}, actual={frame_queue_size} frames"
+        )
+        
+        # Queues with dynamic sizing
+        self.queue_frames = ThreadSafeQueue(frame_queue_size, "FrameQueue")
         self.queue_video_packets = ThreadSafeQueue(200, "VideoPacketQueue")
         self.queue_audio_packets = ThreadSafeQueue(200, "AudioPacketQueue")
         
