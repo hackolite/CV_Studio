@@ -256,7 +256,8 @@ class VideoBackgroundWorker:
     # Queue size limits to prevent excessive memory usage
     MIN_FRAME_QUEUE_SIZE = 50    # Minimum queue size for short recordings
     MAX_FRAME_QUEUE_SIZE = 300   # Maximum to limit memory (10 seconds at 30 fps)
-    DEFAULT_CHUNK_DURATION = 5.0 # Default audio chunk duration in seconds
+    DEFAULT_CHUNK_DURATION = 3.0 # Default audio chunk duration in seconds
+    DEFAULT_AUDIO_QUEUE_SIZE = 3  # Default audio queue size (3 elements)
     
     def __init__(
         self,
@@ -305,8 +306,9 @@ class VideoBackgroundWorker:
         self._state_lock = threading.Lock()
         
         # Calculate optimal queue sizes based on FPS and chunk duration
-        # Queue must hold at least fps * chunk_duration frames for proper sync
-        calculated_queue_size = int(fps * chunk_duration)
+        # Image queue size = fps * chunk_duration * audio_queue_size
+        # This ensures the queue can hold enough frames for synchronization with audio chunks
+        calculated_queue_size = int(fps * chunk_duration * self.DEFAULT_AUDIO_QUEUE_SIZE)
         frame_queue_size = max(
             self.MIN_FRAME_QUEUE_SIZE,
             min(calculated_queue_size, self.MAX_FRAME_QUEUE_SIZE)
@@ -314,13 +316,19 @@ class VideoBackgroundWorker:
         
         logger.info(
             f"[VideoWorker] Queue sizing: fps={fps}, chunk_duration={chunk_duration}s, "
+            f"audio_queue_size={self.DEFAULT_AUDIO_QUEUE_SIZE}, "
             f"calculated={calculated_queue_size}, actual={frame_queue_size} frames"
         )
         
         # Queues with dynamic sizing
+        # Image/frame queue: fps * chunk_duration * audio_queue_size
         self.queue_frames = ThreadSafeQueue(frame_queue_size, "FrameQueue")
+        # Video packet queue for encoded video data
         self.queue_video_packets = ThreadSafeQueue(200, "VideoPacketQueue")
-        self.queue_audio_packets = ThreadSafeQueue(200, "AudioPacketQueue")
+        # Audio packet queue: DEFAULT_AUDIO_QUEUE_SIZE (3 elements)
+        # Each element is an audio chunk of chunk_duration seconds, so total buffer = 3 * 3s = 9s
+        # This is sufficient for synchronization without excessive memory usage
+        self.queue_audio_packets = ThreadSafeQueue(self.DEFAULT_AUDIO_QUEUE_SIZE, "AudioPacketQueue")
         
         # Progress tracking
         self.progress_tracker = ProgressTracker(total_frames, sample_rate)

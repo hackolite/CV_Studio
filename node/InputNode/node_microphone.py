@@ -149,9 +149,9 @@ class FactoryNode:
                     label="Chunk (s)",
                     width=node.small_window_w - 20,
                     tag=node.tag_node_input03_value_name,
-                    default_value=1.0,
+                    default_value=3.0,
                     min_value=0.1,
-                    max_value=5.0,
+                    max_value=10.0,
                     format="%.1f",
                 )
 
