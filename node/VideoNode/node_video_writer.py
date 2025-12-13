@@ -293,6 +293,10 @@ class VideoWriterNode(Node):
     _start_label = 'Start'
     _stop_label = 'Stop'
     
+    # Default values for audio/video parameters
+    _DEFAULT_SAMPLE_RATE = 22050  # Default audio sample rate in Hz
+    _DEFAULT_FPS = 30  # Default video frames per second
+    
     # Constants for file wait logic
     # These control the behavior when waiting for the video file to be written to disk
     # before starting the audio/video merge operation
@@ -1385,7 +1389,7 @@ class VideoWriterNode(Node):
                     slot_audio_dict = self._audio_samples_dict[tag_node_name]
                     total_audio_samples = 0
                     total_audio_chunks = 0
-                    sample_rate = 22050  # Default
+                    sample_rate = self._DEFAULT_SAMPLE_RATE
                     
                     for slot_idx, slot_data in slot_audio_dict.items():
                         if slot_data['samples']:
@@ -1401,26 +1405,27 @@ class VideoWriterNode(Node):
                     # Calculate audio duration in seconds
                     # Protect against division by zero with sensible default
                     if sample_rate <= 0:
-                        logger.warning(f"[VideoWriter] Invalid sample rate {sample_rate}, using default 22050 Hz")
-                        sample_rate = 22050
+                        logger.warning(f"[VideoWriter] Invalid sample rate {sample_rate}, using default {self._DEFAULT_SAMPLE_RATE} Hz")
+                        sample_rate = self._DEFAULT_SAMPLE_RATE
                     
                     audio_duration = total_audio_samples / sample_rate
                     
                     # Get FPS from recording metadata
-                    fps = 30  # Default
+                    fps = self._DEFAULT_FPS
                     if tag_node_name in self._recording_metadata_dict:
-                        fps = self._recording_metadata_dict[tag_node_name].get('fps', 30)
+                        fps = self._recording_metadata_dict[tag_node_name].get('fps', self._DEFAULT_FPS)
                     
                     # Additional validation for FPS
                     if fps <= 0:
-                        logger.warning(f"[VideoWriter] Invalid fps {fps}, using default 30")
-                        fps = 30
+                        logger.warning(f"[VideoWriter] Invalid fps {fps}, using default {self._DEFAULT_FPS}")
+                        fps = self._DEFAULT_FPS
                     
                     # Calculate required frames: audio_duration * fps
-                    # Note: The problem statement mentioned "duration * fps * num_elements", but this would
-                    # incorrectly multiply by the number of audio chunks. The correct formula is simply:
-                    # total_audio_duration * fps, because we need enough video frames to match the total
-                    # audio duration (all chunks concatenated together). This ensures proper A/V sync.
+                    # This ensures we have enough video frames to cover the entire audio duration.
+                    # For example: 3 seconds of audio at 30 fps requires 90 frames.
+                    # Note: An alternative interpretation would multiply by the number of audio chunks,
+                    # but this would be incorrect as it would produce far too many frames. We want to
+                    # match the total duration, not duration per chunk times number of chunks.
                     required_frames = int(audio_duration * fps)
                     current_frames = self._frame_count_dict.get(tag_node_name, 0)
                     
