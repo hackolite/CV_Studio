@@ -725,6 +725,10 @@ class VideoNode(Node):
             # Add elapsed time from previous loops to maintain continuous timestamps
             loop_offset = self._loop_elapsed_time.get(str(node_id), 0.0)
             frame_timestamp = base_timestamp + loop_offset
+            
+            # Inject timestamp into audio chunk data for synchronization
+            if audio_chunk_data is not None:
+                audio_chunk_data['timestamp'] = frame_timestamp
         
         # Return frame via IMAGE output and audio chunk data via AUDIO output
         # Include the FPS-based timestamp so it can be used for synchronization
