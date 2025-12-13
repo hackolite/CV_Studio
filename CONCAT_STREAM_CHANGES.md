@@ -82,21 +82,22 @@ The implementation now properly stores references to all data types when recordi
 
 All three data types are collected during the entire recording session and processed when recording stops.
 
-### 5. Timestamp-Based Concatenation
+### 5. Slot-Based Concatenation
 
-Both audio and JSON samples are sorted by timestamp before concatenation:
+Both audio and JSON samples are sorted by slot index before concatenation:
 
 ```python
 sorted_slots = sorted(
     slot_data_dict.items(),
-    key=lambda x: (x[1]['timestamp'], x[0])
+    key=lambda x: x[0]  # Sort by slot_idx only
 )
 ```
 
 This ensures that:
-- Slots with finite timestamps are processed first (in timestamp order)
-- Slots with `float('inf')` timestamp (no timestamp) are processed last (in slot order)
-- Proper synchronization is maintained across streams
+- Slots are processed in slot index order (0, 1, 2, ...)
+- Timestamps are preserved for informational purposes only
+- Video stream creation is based on actual accumulated data size, not timestamps
+- Proper concatenation is maintained based on slot order
 
 ## File Structure for MKV Recordings
 
