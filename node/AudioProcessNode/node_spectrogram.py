@@ -24,7 +24,7 @@ from node.InputNode.spectrogram_utils import (
 logger = get_logger(__name__)
 
 
-def create_mel_spectrogram(audio_data, sample_rate=22050):
+def create_mel_spectrogram(audio_data, sample_rate=44100):
     """Create mel spectrogram using librosa"""
     mel_spec = librosa.feature.melspectrogram(y=audio_data, sr=sample_rate, n_fft=2048, hop_length=512, n_mels=128)
     mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
@@ -34,7 +34,7 @@ def create_mel_spectrogram(audio_data, sample_rate=22050):
     return spec_image
 
 
-def create_stft_spectrogram(audio_data, sample_rate=22050):
+def create_stft_spectrogram(audio_data, sample_rate=44100):
     """Create STFT spectrogram using librosa"""
     stft = librosa.stft(audio_data, n_fft=2048, hop_length=512)
     stft_db = librosa.amplitude_to_db(np.abs(stft), ref=np.max)
@@ -44,7 +44,7 @@ def create_stft_spectrogram(audio_data, sample_rate=22050):
     return spec_image
 
 
-def create_chromagram(audio_data, sample_rate=22050):
+def create_chromagram(audio_data, sample_rate=44100):
     """Create chromagram using librosa"""
     chroma = librosa.feature.chroma_stft(y=audio_data, sr=sample_rate, n_fft=2048, hop_length=512)
     chroma_transposed = np.transpose(chroma)
@@ -53,7 +53,7 @@ def create_chromagram(audio_data, sample_rate=22050):
     return spec_image
 
 
-def create_mfcc(audio_data, sample_rate=22050):
+def create_mfcc(audio_data, sample_rate=44100):
     """Create MFCC using librosa"""
     mfcc = librosa.feature.mfcc(y=audio_data, sr=sample_rate, n_fft=2048, hop_length=512, n_mfcc=20)
     mfcc_transposed = np.transpose(mfcc)
@@ -62,8 +62,8 @@ def create_mfcc(audio_data, sample_rate=22050):
     return spec_image
 
 
-def create_stft_custom(audio_data, sample_rate=22050, binsize=1024, colormap="jet"):
-    """Create STFT spectrogram using custom fourier_transformation method"""
+def create_stft_custom(audio_data, sample_rate=44100, binsize=1024, colormap="jet"):
+    """Create STFT spectrogram using custom fourier_transformation method (ESC-50 native sample rate)"""
     return create_spectrogram_from_audio(audio_data, sample_rate, binsize, colormap)
 
 
@@ -211,7 +211,7 @@ class Node(BaseNode):
 
         # Get audio input
         audio_data = None
-        sample_rate = 22050  # Default sample rate
+        sample_rate = 44100  # Default sample rate (ESC-50 native, matches video input extraction)
         
         for connection_info in connection_list:
             connection_type = connection_info[0].split(':')[2]
@@ -224,7 +224,7 @@ class Node(BaseNode):
                         audio_data = audio_dict_entry.get('data', None)
                         if audio_data is None:
                             logger.warning("Audio dictionary missing 'data' key")
-                        sample_rate = audio_dict_entry.get('sample_rate', 22050)
+                        sample_rate = audio_dict_entry.get('sample_rate', 44100)
                     # Handle legacy tuple format for backward compatibility
                     elif isinstance(audio_dict_entry, (list, tuple)) and len(audio_dict_entry) == 2:
                         audio_data, sample_rate = audio_dict_entry
