@@ -368,18 +368,22 @@ class VideoNode(Node):
         This method:
         1. Extracts video metadata (FPS, frame count) using OpenCV
         2. Extracts audio using ffmpeg (WAV used temporarily during extraction only)
-        3. Chunks audio into segments and stores all chunks in memory as numpy arrays
+        3. Chunks audio into per-frame segments based on FPS and stores all chunks in memory as numpy arrays
         4. Stores metadata for frame-to-chunk mapping
-        5. Dynamically resizes queues based on num_chunks_to_keep
+        5. Dynamically resizes queues based on FPS (4 seconds = 4 * fps)
         
-        Note: All audio chunks are loaded into memory for fast access during playback.
+        Note: Each audio chunk corresponds to exactly ONE frame for perfect synchronization.
+        Audio chunk size = sample_rate / fps samples per frame.
         
         Args:
             node_id: Node identifier
             movie_path: Path to video file
-            chunk_duration: Duration of each audio chunk in seconds (default: 2.0)
-            step_duration: Step size between chunks in seconds (default: 2.0, no overlap)
-            num_chunks_to_keep: Number of chunks to keep in queue (default: 4)
+            chunk_duration: DEPRECATED (v1.0+) - kept for backward compatibility, not used
+                           Migration: Remove this parameter, chunking is now FPS-based
+            step_duration: DEPRECATED (v1.0+) - kept for backward compatibility, not used
+                          Migration: Remove this parameter, chunking is now FPS-based
+            num_chunks_to_keep: DEPRECATED (v1.0+) - kept for backward compatibility, queue size is now 4 seconds
+                               Migration: Queue size is automatically 4 * target_fps
             target_fps: Target FPS for playback (default: 24)
         """
         if not movie_path or not os.path.exists(movie_path):
@@ -444,75 +448,91 @@ class VideoNode(Node):
                 if os.path.exists(tmp_audio_path):
                     os.unlink(tmp_audio_path)
             
-            # Step 3: Chunk audio with sliding window and store in memory
-            # Calculate number of samples per chunk based on sample rate (Hz = samples/second)
-            # Example: 2.0 seconds * 44100 samples/second = 88200 samples per chunk
-            logger.debug(f"[Video] Chunking audio: chunk={chunk_duration}s, step={step_duration}s")
-            chunk_samples = int(chunk_duration * sr)  # sr is sample rate in Hz
-            step_samples = int(step_duration * sr)    # sr is sample rate in Hz
+            # Step 3: Chunk audio by FPS - one audio chunk per frame
+            # Calculate samples per frame based on sample rate and FPS
+            # Formula: chunk_samples = sample_rate / fps
+            # Example: 44100 Hz / 24 fps = 1837.5 samples per frame
+            # This ensures each audio chunk corresponds to exactly ONE video frame
+            logger.debug(f"[Video] Chunking audio by FPS: {target_fps} fps, {sr} Hz")
+            
+            # Calculate samples per frame (one chunk = one frame worth of audio)
+            # Keep as float to maintain precision and avoid cumulative drift
+            samples_per_frame = sr / target_fps
             
             audio_chunks = []
             chunk_start_times = []
-            start = 0
             chunk_idx = 0
             
-            while (start + chunk_samples) <= len(y):
-                end = start + chunk_samples
-                chunk = y[start:end]
+            # Create one audio chunk per frame
+            # Use frame index to calculate exact boundaries, avoiding cumulative rounding errors
+            # Use frame_count from video metadata to ensure exact number of chunks
+            total_frames = frame_count
+            
+            for frame_idx in range(total_frames):
+                # Calculate exact start and end positions for this frame using fractional precision
+                # This ensures no cumulative drift over many frames
+                start_float = frame_idx * samples_per_frame
+                end_float = (frame_idx + 1) * samples_per_frame
+                
+                start = int(start_float)
+                end = int(end_float)
+                
+                # Extract chunk
+                if end > len(y):
+                    # Last chunk: extract remaining audio
+                    chunk = y[start:]
+                    # Pad with zeros to maintain consistent chunk size
+                    expected_size = int(samples_per_frame)
+                    padding_needed = expected_size - len(chunk)
+                    if padding_needed > 0:
+                        chunk = np.pad(chunk, (0, padding_needed), mode='constant', constant_values=0)
+                else:
+                    chunk = y[start:end]
                 
                 # Store chunk in memory as numpy array
                 audio_chunks.append(chunk)
                 chunk_start_times.append(start / sr)
                 chunk_idx += 1
-                start += step_samples
-            
-            # Handle remaining audio: pad to chunk_duration if necessary
-            remaining_samples = len(y) - start
-            if remaining_samples > 0:
-                # Extract remaining audio
-                remaining_chunk = y[start:]
-                # Pad with zeros to reach chunk_samples
-                padding_needed = chunk_samples - remaining_samples
-                padded_chunk = np.pad(remaining_chunk, (0, padding_needed), mode='constant', constant_values=0)
-                
-                # Store padded chunk in memory
-                audio_chunks.append(padded_chunk)
-                chunk_start_times.append(start / sr)
-                logger.debug(f"[Video] Padded last chunk: {remaining_samples/sr:.2f}s → {chunk_duration}s")
             
             # Store all audio chunks in memory
             self._audio_chunks[node_id] = audio_chunks
             
-            # Verify all chunks are exactly chunk_duration
+            # Verify all chunks have consistent size (allowing for last chunk)
+            expected_chunk_size = int(samples_per_frame)
             if len(audio_chunks) > 0:
-                first_duration = len(audio_chunks[0]) / sr
-                last_duration = len(audio_chunks[-1]) / sr
+                first_size = len(audio_chunks[0])
+                last_size = len(audio_chunks[-1])
                 
-                if abs(first_duration - chunk_duration) > 0.001 or abs(last_duration - chunk_duration) > 0.001:
-                    logger.warning(f"[Video] Chunk duration mismatch - first: {first_duration:.3f}s, last: {last_duration:.3f}s")
+                # Check first chunk (should be expected size or expected size + 1 due to rounding)
+                if first_size < expected_chunk_size or first_size > expected_chunk_size + 1:
+                    logger.warning(f"[Video] First chunk size unexpected - expected: {expected_chunk_size}, got: {first_size}")
+                
+                # Last chunk should be padded to expected size
+                if last_size != expected_chunk_size:
+                    logger.warning(f"[Video] Last chunk size unexpected - expected: {expected_chunk_size} (padded), got: {last_size}")
                     
-            logger.info(f"[Video] Created {len(audio_chunks)} audio chunks in memory")
+            logger.info(f"[Video] Created {len(audio_chunks)} audio chunks (1 per frame) with {expected_chunk_size} samples each")
             
             # Step 4: Calculate dynamic queue sizes
-            # The queue sizes ensure consistent audio/video synchronization throughout the pipeline:
-            # - Image queue: sized to hold (num_chunks * chunk_duration * target_fps) frames
-            #   Example: 4 chunks * 2.0 sec * 24 fps = 192 frames
-            # - Audio queue: sized to hold num_chunks audio chunks
-            #   Example: 4 chunks (each chunk = chunk_duration * sample_rate samples)
-            # The ratio ensures: image_queue_size / audio_queue_size = frames per audio chunk
-            # This guarantees coherent queue population frequency for the workflow:
-            # input/video → concat [audio, image] → videowriter
-            image_queue_size = int(num_chunks_to_keep * chunk_duration * target_fps)
-            audio_queue_size = num_chunks_to_keep
+            # IMPORTANT: Audio and video queues must have the SAME size for synchronization
+            # Queue size = 4 seconds worth of frames = 4 * fps
+            # This ensures:
+            # - Each audio chunk corresponds to exactly one frame
+            # - Audio queue size = Image queue size = 4 * fps
+            # - Consistent queue population frequency throughout the workflow:
+            #   input/video → concat [audio, image] → videowriter
+            # Example: at 24 fps, both queues = 4 * 24 = 96 frames/chunks
+            queue_size_seconds = 4  # 4 seconds of buffer
+            image_queue_size = int(queue_size_seconds * target_fps)
+            audio_queue_size = int(queue_size_seconds * target_fps)  # Same as image queue
             
-            logger.info(f"[Video] Calculated queue sizes: Image={image_queue_size}, Audio={audio_queue_size} (target_fps={target_fps})")
+            logger.info(f"[Video] Calculated queue sizes: Image={image_queue_size}, Audio={audio_queue_size} (both = 4 * {target_fps} fps)")
             
             # Step 5: Store metadata
             self._chunk_metadata[node_id] = {
                 'fps': fps,
                 'sr': sr,
-                'chunk_duration': chunk_duration,
-                'step_duration': step_duration,
+                'samples_per_frame': samples_per_frame,  # NEW: samples per frame for FPS-based chunking
                 'chunk_start_times': chunk_start_times,
                 'num_frames': frame_count,
                 'num_chunks': len(audio_chunks),
@@ -520,7 +540,7 @@ class VideoNode(Node):
                 'audio_queue_size': audio_queue_size,
             }
             
-            logger.info(f"[Video] Pre-processing complete: Frames={frame_count}, Chunks={len(audio_chunks)}, FPS={fps}")
+            logger.info(f"[Video] Pre-processing complete: Frames={frame_count}, Audio Chunks={len(audio_chunks)} (1 per frame), FPS={fps}, Samples/Frame={samples_per_frame:.2f}")
             
         except Exception as e:
             logger.error(f"[Video] Failed to pre-process video: {e}", exc_info=True)
@@ -548,9 +568,12 @@ class VideoNode(Node):
         """
         Get the audio chunk data for a specific frame number from memory.
         
+        With FPS-based chunking, chunk_index = frame_number - 1 (0-indexed chunks).
+        Each audio chunk corresponds to exactly ONE frame.
+        
         Args:
             node_id: Node identifier
-            frame_number: Current frame number
+            frame_number: Current frame number (1-indexed)
             
         Returns:
             Dictionary with 'data' (numpy array) and 'sample_rate' (int), or None if not available
@@ -559,15 +582,11 @@ class VideoNode(Node):
             return None
         
         metadata = self._chunk_metadata[node_id]
-        fps = metadata['fps']
-        step_duration = metadata['step_duration']
         sr = metadata['sr']
         
-        # Calculate current time from frame number
-        current_time = frame_number / fps if fps > 0 else 0
-        
-        # Calculate chunk index based on step duration
-        chunk_index = int(current_time / step_duration)
+        # With FPS-based chunking, chunk index directly corresponds to frame number
+        # frame_number is 1-indexed (first frame = 1), but chunks are 0-indexed
+        chunk_index = frame_number - 1
         
         # Clamp to valid range
         audio_chunks = self._audio_chunks[node_id]
@@ -832,10 +851,10 @@ class VideoNode(Node):
             chunk_meta = self._chunk_metadata[str(node_id)]
             metadata = {
                 'target_fps': target_fps,  # FPS from slider (authoritative for output)
-                'chunk_duration': chunk_meta.get('chunk_duration', chunk_size),
-                'step_duration': chunk_meta.get('step_duration', chunk_size),
+                'samples_per_frame': chunk_meta.get('samples_per_frame', 44100 / target_fps),  # NEW: samples per frame
                 'video_fps': chunk_meta.get('fps', 30.0),  # Actual video FPS
-                'sample_rate': chunk_meta.get('sr', 44100)
+                'sample_rate': chunk_meta.get('sr', 44100),
+                'chunking_mode': 'fps_based'  # NEW: indicates FPS-based chunking (1 chunk per frame)
             }
         
         # Return frame via IMAGE output and audio chunk data via AUDIO output
