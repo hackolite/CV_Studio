@@ -67,14 +67,31 @@ def create_stft_custom(audio_data, sample_rate=44100, binsize=1024, colormap="je
     return create_spectrogram_from_audio(audio_data, sample_rate, binsize, colormap)
 
 
-def create_spectrogram_custom(audio_data, sample_rate=44100, binsize=1024, colormap="jet", n_fft=None):
+def create_spectrogram_custom(audio_data, sample_rate=44100, binsize=1024, colormap="jet", n_fft=1024):
     """
-    Alias for create_stft_custom - for backward compatibility.
-    n_fft parameter is provided for compatibility; if specified, it overrides binsize.
-    Both parameters represent the FFT window size (n_fft=1024 = binsize=1024).
+    Create STFT spectrogram - alias for create_stft_custom (backward compatibility).
+    
+    Args:
+        audio_data: Audio samples as numpy array
+        sample_rate: Sample rate in Hz (default: 44100, ESC-50 native)
+        binsize: FFT window size (default: 1024)
+        colormap: Color map name (default: "jet")
+        n_fft: Alternative name for binsize (if provided, overrides binsize)
+    
+    Returns:
+        Spectrogram image as numpy array (BGR format)
+    
+    Note: Both binsize and n_fft control the FFT window size. Both default to 1024.
+          If different values are provided, n_fft takes precedence for backward compatibility.
     """
-    # Use n_fft if provided, otherwise use binsize
-    effective_binsize = n_fft if n_fft is not None else binsize
+    # Use n_fft (for backward compatibility with code that passes n_fft explicitly)
+    # If user only changed binsize and left n_fft at default, use binsize
+    if n_fft != 1024:  # n_fft was explicitly changed from default
+        effective_binsize = n_fft
+    elif binsize != 1024:  # binsize was explicitly changed from default
+        effective_binsize = binsize
+    else:  # both at default, use either (they're the same)
+        effective_binsize = binsize
     return create_stft_custom(audio_data, sample_rate, effective_binsize, colormap)
 
 
