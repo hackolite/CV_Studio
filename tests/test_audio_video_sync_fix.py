@@ -59,7 +59,7 @@ def test_ffmpeg_sync_parameters():
         '-avoid_negative_ts make_zero': 'avoid_negative_ts make_zero' in cmd_str,
         '-shortest': '-shortest' in cmd_str,
         '-vsync cfr': '-vsync cfr' in cmd_str,
-        '-b:a 192k': '-b:a 192k' in cmd_str or 'audio_bitrate' in cmd_str,
+        '-b:a 192k': '-b:a 192k' in cmd_str,
         '-acodec aac': '-acodec aac' in cmd_str,
         '-vcodec copy': '-vcodec copy' in cmd_str,
     }
