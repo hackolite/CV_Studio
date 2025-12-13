@@ -68,8 +68,10 @@ def test_queue_chunks_slider_removed():
             factory_lines.append(line)
     
     factory_content = '\n'.join(factory_lines)
-    input07_in_factory = 'tag_node_input07_name' in factory_content and '=' in factory_content
-    assert not input07_in_factory, "Input07 name tag should not be defined in FactoryNode.add_node()"
+    # Look for actual tag definitions (lines with '=' assignment)
+    input07_definitions = [line for line in factory_lines if 'tag_node_input07_name' in line and '=' in line]
+    assert len(input07_definitions) == 0, \
+        f"Input07 name tag should not be defined in FactoryNode.add_node(), found {len(input07_definitions)} definitions"
     
     print("✓ Queue Chunks slider removed from Video node")
     print("  - Input07 tags removed from UI")
@@ -170,11 +172,11 @@ def test_update_method_no_manual_queue_sizing():
             update_lines.append(line)
     
     update_content = '\n'.join(update_lines)
-    # Allow tag_node_input07_value_name in old/legacy contexts but not for reading queue chunks
-    if 'tag_node_input07_value_name' in update_content:
-        # Should not be reading it with dpg_get_value
-        assert 'dpg_get_value(tag_node_input07_value_name)' not in update_content, \
-            "update method should not read Input07 (Queue Chunks removed)"
+    # Check that Input07 is not used for reading queue chunks
+    # We specifically look for dpg_get_value calls which indicate active use
+    input07_get_value_calls = [line for line in update_lines if 'dpg_get_value' in line and 'tag_node_input07_value_name' in line]
+    assert len(input07_get_value_calls) == 0, \
+        f"update method should not read Input07 (Queue Chunks removed), found {len(input07_get_value_calls)} calls"
     
     # Check that queue resizing is still called (but sizes come from metadata, not slider)
     assert 'resize_queue' in content, \
