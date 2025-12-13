@@ -650,12 +650,25 @@ class VideoBackgroundWorker:
                 video_input = ffmpeg.input(self._temp_video_path)
                 audio_input = ffmpeg.input(self._temp_audio_path)
                 
+                # Merge with explicit synchronization parameters to fix audio/video sync issues
+                # Issue: Audio was ahead of video and sounded strange ("bizarre")
+                # Root cause: Mismatched PTS (Presentation TimeStamps) between video and audio streams
+                # 
+                # Fix parameters:
+                # - shortest=None: Adds FFmpeg -shortest flag to stop when shortest stream ends
+                # - audio_bitrate='192k': High quality AAC (prevents audio artifacts/distortion)
+                # - vsync='cfr': Constant frame rate (prevents variable frame timing issues)
+                # - avoid_negative_ts='make_zero': Reset timestamps to start at 0 (syncs audio/video start)
                 output = ffmpeg.output(
                     video_input,
                     audio_input,
                     self.output_path,
                     vcodec='copy',
                     acodec='aac',
+                    audio_bitrate='192k',
+                    shortest=None,
+                    vsync='cfr',
+                    avoid_negative_ts='make_zero',  # Critical: aligns audio/video start times
                     loglevel='error'
                 )
                 

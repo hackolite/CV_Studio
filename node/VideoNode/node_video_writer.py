@@ -899,13 +899,25 @@ class VideoWriterNode(Node):
                 video_input = ffmpeg.input(actual_video_path)
                 audio_input = ffmpeg.input(temp_audio_path)
                 
-                # Merge video and audio streams
+                # Merge video and audio streams with explicit synchronization to fix audio/video sync issues
+                # Issue: Audio was ahead of video and sounded strange ("bizarre")
+                # Root cause: Mismatched PTS (Presentation TimeStamps) between video and audio streams
+                # 
+                # Fix parameters:
+                # - shortest=None: Adds FFmpeg -shortest flag to stop when shortest stream ends
+                # - audio_bitrate='192k': High quality AAC (prevents audio artifacts/distortion)
+                # - vsync='cfr': Constant frame rate (prevents variable frame timing issues)
+                # - avoid_negative_ts='make_zero': Reset timestamps to start at 0 (syncs audio/video start)
                 output = ffmpeg.output(
                     video_input,
                     audio_input,
                     output_path,
                     vcodec='copy',  # Copy video codec (no re-encoding)
                     acodec='aac',   # Use AAC for audio (widely compatible)
+                    audio_bitrate='192k',  # Higher quality audio
+                    shortest=None,  # Finish when shortest stream ends (ensures sync)
+                    vsync='cfr',  # Constant frame rate video sync
+                    avoid_negative_ts='make_zero',  # Critical: aligns audio/video start times
                     loglevel='error'  # Only show errors
                 )
                 
