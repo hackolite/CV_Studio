@@ -257,7 +257,12 @@ class VideoBackgroundWorker:
     MIN_FRAME_QUEUE_SIZE = 50    # Minimum queue size for short recordings
     MAX_FRAME_QUEUE_SIZE = 300   # Maximum to limit memory (10 seconds at 30 fps)
     DEFAULT_CHUNK_DURATION = 3.0 # Default audio chunk duration in seconds
-    DEFAULT_AUDIO_QUEUE_SIZE = 3  # Default audio queue size (3 elements)
+    DEFAULT_AUDIO_QUEUE_SIZE = 4  # Default audio queue size (4 elements)
+    # Audio queue size calculation for coherence with SyncQueue:
+    # - SyncQueue max retention: 10s + 1s overhead = 11s
+    # - Total audio duration: audio_queue_size × chunk_duration = 4 × 3.0 = 12s
+    # - This ensures audio retention (12s) >= max SyncQueue retention (11s)
+    # - Total image frames: audio_duration × fps = 12 × fps frames
     
     def __init__(
         self,
@@ -325,9 +330,9 @@ class VideoBackgroundWorker:
         self.queue_frames = ThreadSafeQueue(frame_queue_size, "FrameQueue")
         # Video packet queue for encoded video data
         self.queue_video_packets = ThreadSafeQueue(200, "VideoPacketQueue")
-        # Audio packet queue: DEFAULT_AUDIO_QUEUE_SIZE (3 elements)
-        # Each element is an audio chunk of chunk_duration seconds, so total buffer = 3 * 3s = 9s
-        # This is sufficient for synchronization without excessive memory usage
+        # Audio packet queue: DEFAULT_AUDIO_QUEUE_SIZE (4 elements)
+        # Each element is an audio chunk of chunk_duration seconds, so total buffer = 4 * 3s = 12s
+        # This ensures coherence with SyncQueue max retention (10s + 1s overhead = 11s)
         self.queue_audio_packets = ThreadSafeQueue(self.DEFAULT_AUDIO_QUEUE_SIZE, "AudioPacketQueue")
         
         # Progress tracking

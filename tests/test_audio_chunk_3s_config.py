@@ -5,9 +5,10 @@ Test for audio chunk configuration and queue size changes.
 
 This test verifies:
 1. Default audio chunk duration is 3 seconds
-2. Audio queue size is 3 elements
+2. Audio queue size is 4 elements (for coherence with SyncQueue max retention)
 3. Image queue size formula: fps * chunk_duration * audio_queue_size
 4. SyncQueue default retention time is 3 seconds
+5. Audio retention (4 * 3s = 12s) >= SyncQueue max retention (10s + 1s = 11s)
 """
 import sys
 import os
@@ -26,9 +27,9 @@ class TestAudioChunkConfiguration(unittest.TestCase):
         self.assertEqual(VideoBackgroundWorker.DEFAULT_CHUNK_DURATION, 3.0)
     
     def test_video_worker_audio_queue_size_default(self):
-        """Test that VideoBackgroundWorker default audio queue size is 3 elements."""
+        """Test that VideoBackgroundWorker default audio queue size is 4 elements."""
         from node.VideoNode.video_worker import VideoBackgroundWorker
-        self.assertEqual(VideoBackgroundWorker.DEFAULT_AUDIO_QUEUE_SIZE, 3)
+        self.assertEqual(VideoBackgroundWorker.DEFAULT_AUDIO_QUEUE_SIZE, 4)
 
 
 class TestQueueSizeCalculation(unittest.TestCase):
@@ -40,11 +41,11 @@ class TestQueueSizeCalculation(unittest.TestCase):
         
         # Test with various FPS values
         test_cases = [
-            (30, 270),    # 30 fps * 3s * 3 = 270
-            (60, 300),    # 60 fps * 3s * 3 = 540, but capped at MAX_FRAME_QUEUE_SIZE (300)
-            (24, 216),    # 24 fps * 3s * 3 = 216
-            (10, 90),     # 10 fps * 3s * 3 = 90
-            (5, 50),      # 5 fps * 3s * 3 = 45, but minimum is 50
+            (30, 300),    # 30 fps * 3s * 4 = 360, but capped at MAX_FRAME_QUEUE_SIZE (300)
+            (60, 300),    # 60 fps * 3s * 4 = 720, but capped at MAX_FRAME_QUEUE_SIZE (300)
+            (24, 288),    # 24 fps * 3s * 4 = 288
+            (10, 120),    # 10 fps * 3s * 4 = 120
+            (5, 60),      # 5 fps * 3s * 4 = 60
         ]
         
         for fps, expected_size in test_cases:
@@ -79,7 +80,7 @@ class TestQueueSizeCalculation(unittest.TestCase):
                 fps=30,
             )
             
-            # Audio packet queue should be DEFAULT_AUDIO_QUEUE_SIZE (3)
+            # Audio packet queue should be DEFAULT_AUDIO_QUEUE_SIZE (4)
             self.assertEqual(
                 worker.queue_audio_packets.get_max_size(),
                 VideoBackgroundWorker.DEFAULT_AUDIO_QUEUE_SIZE
