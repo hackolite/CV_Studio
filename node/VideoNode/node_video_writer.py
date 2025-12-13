@@ -284,6 +284,7 @@ class VideoWriterNode(Node):
     _frame_count_dict = {}  # Track number of frames written during recording: {node: frame_count}
     _last_frame_dict = {}  # Store last frame for potential duplication: {node: frame}
     _source_metadata_dict = {}  # Store metadata from source nodes (e.g., target_fps from Video node)
+    _stopping_state_dict = {}  # Track stopping state: {node: {'stopping': bool, 'required_frames': int, 'audio_count': int}}
     
     # Background worker instances
     _background_workers = {}  # Store VideoBackgroundWorker instances
@@ -505,8 +506,26 @@ class VideoWriterNode(Node):
                 self._frame_count_dict[tag_node_name] += 1
                 self._last_frame_dict[tag_node_name] = writer_frame
                 
+                # Check if we're in stopping state and have enough frames
+                if tag_node_name in self._stopping_state_dict:
+                    stopping_info = self._stopping_state_dict[tag_node_name]
+                    current_frames = self._frame_count_dict.get(tag_node_name, 0)
+                    required_frames = stopping_info['required_frames']
+                    
+                    logger.debug(f"[VideoWriter] Stopping state: {current_frames}/{required_frames} frames")
+                    
+                    # Check if we've collected enough frames
+                    if current_frames >= required_frames:
+                        logger.info(f"[VideoWriter] Reached required frame count ({current_frames}/{required_frames}), finalizing recording")
+                        # Trigger the stop recording process
+                        self._recording_button(None, None, tag_node_name)
+                        # Clear stopping state
+                        self._stopping_state_dict.pop(tag_node_name, None)
+                
                 # Collect audio samples per slot for final merge (for all formats)
-                if audio_data is not None and tag_node_name in self._audio_samples_dict:
+                # Only collect audio if we're not in stopping state (audio collection stops when user presses stop)
+                is_stopping = tag_node_name in self._stopping_state_dict
+                if audio_data is not None and tag_node_name in self._audio_samples_dict and not is_stopping:
                     # audio_data can be a dict (from concat node with multiple slots) or a single chunk
                     if isinstance(audio_data, dict):
                         # Check if this is a multi-slot concat output or single audio chunk from video node
@@ -949,6 +968,10 @@ class VideoWriterNode(Node):
             self._video_writer_dict[tag_node_name].release()
             self._video_writer_dict.pop(tag_node_name)
         
+        # Clean up stopping state
+        if tag_node_name in self._stopping_state_dict:
+            self._stopping_state_dict.pop(tag_node_name)
+        
         # Clean up MKV metadata if exists
         if tag_node_name in self._mkv_metadata_dict:
             metadata = self._mkv_metadata_dict[tag_node_name]
@@ -1238,7 +1261,61 @@ class VideoWriterNode(Node):
                 logger.info(f"[VideoWriter] Stopped background worker")
                 
             elif tag_node_name in self._video_writer_dict:
-                # Legacy mode - release video writer and merge
+                # Legacy mode - enter stopping state
+                # Calculate required frames based on collected audio
+                if tag_node_name in self._audio_samples_dict and len(self._audio_samples_dict[tag_node_name]) > 0:
+                    # Count total audio elements across all slots
+                    slot_audio_dict = self._audio_samples_dict[tag_node_name]
+                    total_audio_samples = 0
+                    total_audio_chunks = 0
+                    sample_rate = 22050  # Default
+                    
+                    for slot_idx, slot_data in slot_audio_dict.items():
+                        if slot_data['samples']:
+                            total_audio_chunks += len(slot_data['samples'])
+                            # Calculate total samples
+                            for audio_chunk in slot_data['samples']:
+                                total_audio_samples += len(audio_chunk)
+                            # Get sample rate from first slot
+                            if 'sample_rate' in slot_data and slot_data['sample_rate'] is not None:
+                                sample_rate = slot_data['sample_rate']
+                                break  # Use first valid sample rate
+                    
+                    # Calculate audio duration in seconds
+                    audio_duration = total_audio_samples / sample_rate if sample_rate > 0 else 0
+                    
+                    # Get FPS from recording metadata
+                    fps = 30  # Default
+                    if tag_node_name in self._recording_metadata_dict:
+                        fps = self._recording_metadata_dict[tag_node_name].get('fps', 30)
+                    
+                    # Calculate required frames: audio_duration * fps
+                    # The formula from the problem statement was: duration * fps * num_elements
+                    # But actually, what makes sense is: total_audio_duration * fps
+                    # Because we want enough video frames to cover the entire audio duration
+                    required_frames = int(audio_duration * fps)
+                    current_frames = self._frame_count_dict.get(tag_node_name, 0)
+                    
+                    logger.info(f"[VideoWriter] Stop requested - Audio: {total_audio_chunks} chunks, "
+                               f"{total_audio_samples} samples, {audio_duration:.2f}s at {sample_rate}Hz")
+                    logger.info(f"[VideoWriter] Current frames: {current_frames}, Required frames: {required_frames} (at {fps} fps)")
+                    
+                    if current_frames < required_frames:
+                        # Enter stopping state - continue collecting frames but stop collecting audio
+                        self._stopping_state_dict[tag_node_name] = {
+                            'stopping': True,
+                            'required_frames': required_frames,
+                            'audio_chunks': total_audio_chunks
+                        }
+                        logger.info(f"[VideoWriter] Entering stopping state - need {required_frames - current_frames} more frames")
+                        
+                        # Don't change button label yet - will be changed when we have enough frames
+                        return
+                    else:
+                        # We already have enough frames, proceed with normal stop
+                        logger.info(f"[VideoWriter] Already have enough frames ({current_frames} >= {required_frames}), stopping immediately")
+                
+                # Normal stop: release video writer and merge
                 self._video_writer_dict[tag_node_name].release()
                 self._video_writer_dict.pop(tag_node_name)
             
@@ -1330,6 +1407,10 @@ class VideoWriterNode(Node):
                 self._frame_count_dict.pop(tag_node_name)
             if tag_node_name in self._last_frame_dict:
                 self._last_frame_dict.pop(tag_node_name)
+            
+            # Clean up stopping state
+            if tag_node_name in self._stopping_state_dict:
+                self._stopping_state_dict.pop(tag_node_name)
             
             # Close metadata file handles if MKV
             if tag_node_name in self._mkv_metadata_dict:
