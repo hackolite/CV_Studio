@@ -422,7 +422,7 @@ class VideoNode(Node):
                         "-i", movie_path,
                         "-vn",  # No video
                         "-acodec", "pcm_s16le",  # WAV codec
-                        "-ar", "44100",  # Sample rate in Hz (samples per second)
+                        "-ar", "44100",  # Sample rate: 44100 Hz
                         "-ac", "1",  # Mono
                         "-y", tmp_audio_path,
                     ],

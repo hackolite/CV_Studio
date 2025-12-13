@@ -67,13 +67,15 @@ def create_stft_custom(audio_data, sample_rate=44100, binsize=1024, colormap="je
     return create_spectrogram_from_audio(audio_data, sample_rate, binsize, colormap)
 
 
-def create_spectrogram_custom(audio_data, sample_rate=44100, binsize=1024, colormap="jet", n_fft=1024):
+def create_spectrogram_custom(audio_data, sample_rate=44100, binsize=1024, colormap="jet", n_fft=None):
     """
     Alias for create_stft_custom - for backward compatibility.
-    n_fft parameter is provided for compatibility but binsize is used internally (n_fft=1024 = binsize=1024).
+    n_fft parameter is provided for compatibility; if specified, it overrides binsize.
+    Both parameters represent the FFT window size (n_fft=1024 = binsize=1024).
     """
-    # Use binsize parameter (n_fft and binsize are equivalent in this implementation)
-    return create_stft_custom(audio_data, sample_rate, binsize, colormap)
+    # Use n_fft if provided, otherwise use binsize
+    effective_binsize = n_fft if n_fft is not None else binsize
+    return create_stft_custom(audio_data, sample_rate, effective_binsize, colormap)
 
 
 class FactoryNode:
