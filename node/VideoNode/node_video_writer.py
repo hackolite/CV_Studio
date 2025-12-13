@@ -121,7 +121,6 @@ def create_crash_log(operation_name, exception, tag_node_name=None):
         return None
 
 
-
 class FactoryNode:
     node_label = 'VideoWriter'
     node_tag = 'VideoWriter'
@@ -446,68 +445,67 @@ class VideoWriterNode(Node):
 
 
         if frame is not None:
-            try:
-                rec_frame = copy.deepcopy(frame)
+            rec_frame = copy.deepcopy(frame)
 
-                # Check if using background worker mode
-                if tag_node_name in self._background_workers:
-                    # Background worker mode - push frame to worker queue
-                    worker = self._background_workers[tag_node_name]
-                    
-                    # Resize frame for encoding
-                    writer_frame = cv2.resize(rec_frame,
-                                              (writer_width, writer_height),
-                                              interpolation=cv2.INTER_CUBIC)
-                    
-                    # Extract audio data
-                    audio_chunk = None
-                    if audio_data is not None:
-                        # Handle different audio data formats
-                        if isinstance(audio_data, dict):
-                            if 'data' in audio_data and 'sample_rate' in audio_data:
-                                # Single audio chunk from video node
-                                audio_chunk = audio_data['data']
-                            else:
-                                # Concat node output: {slot_idx: audio_chunk}
-                                # Merge all slots into a single audio track
-                                audio_chunks_with_ts = []
-                                
-                                for slot_idx in sorted(audio_data.keys()):
-                                    slot_audio = audio_data[slot_idx]
-                                    if isinstance(slot_audio, dict) and 'data' in slot_audio:
-                                        timestamp = slot_audio.get('timestamp', float('inf'))
-                                        audio_chunks_with_ts.append({
-                                            'data': slot_audio['data'],
-                                            'timestamp': timestamp,
-                                            'slot': slot_idx
-                                        })
-                                    elif isinstance(slot_audio, np.ndarray):
-                                        audio_chunks_with_ts.append({
-                                            'data': slot_audio,
-                                            'timestamp': float('inf'),
-                                            'slot': slot_idx
-                                        })
-                                
-                                if audio_chunks_with_ts:
-                                    # Sort by timestamp
-                                    audio_chunks_with_ts.sort(key=lambda x: (x['timestamp'], x['slot']))
-                                    # Concatenate
-                                    audio_chunk = np.concatenate([chunk['data'] for chunk in audio_chunks_with_ts])
-                        elif isinstance(audio_data, np.ndarray):
-                            audio_chunk = audio_data
-                    
-                    # Push to worker queue (non-blocking with backpressure)
-                    success = worker.push_frame(writer_frame, audio_chunk)
-                    if not success:
-                        logger.warning(f"[VideoWriter] Frame dropped due to queue backpressure")
-                    
-                elif tag_node_name in self._video_writer_dict:
-                    # Legacy mode - direct write to VideoWriter
+            # Check if using background worker mode
+            if tag_node_name in self._background_workers:
+                # Background worker mode - push frame to worker queue
+                worker = self._background_workers[tag_node_name]
+                
+                # Resize frame for encoding
+                writer_frame = cv2.resize(rec_frame,
+                                          (writer_width, writer_height),
+                                          interpolation=cv2.INTER_CUBIC)
+                
+                # Extract audio data
+                audio_chunk = None
+                if audio_data is not None:
+                    # Handle different audio data formats
+                    if isinstance(audio_data, dict):
+                        if 'data' in audio_data and 'sample_rate' in audio_data:
+                            # Single audio chunk from video node
+                            audio_chunk = audio_data['data']
+                        else:
+                            # Concat node output: {slot_idx: audio_chunk}
+                            # Merge all slots into a single audio track
+                            audio_chunks_with_ts = []
+                            
+                            for slot_idx in sorted(audio_data.keys()):
+                                slot_audio = audio_data[slot_idx]
+                                if isinstance(slot_audio, dict) and 'data' in slot_audio:
+                                    timestamp = slot_audio.get('timestamp', float('inf'))
+                                    audio_chunks_with_ts.append({
+                                        'data': slot_audio['data'],
+                                        'timestamp': timestamp,
+                                        'slot': slot_idx
+                                    })
+                                elif isinstance(slot_audio, np.ndarray):
+                                    audio_chunks_with_ts.append({
+                                        'data': slot_audio,
+                                        'timestamp': float('inf'),
+                                        'slot': slot_idx
+                                    })
+                            
+                            if audio_chunks_with_ts:
+                                # Sort by timestamp
+                                audio_chunks_with_ts.sort(key=lambda x: (x['timestamp'], x['slot']))
+                                # Concatenate
+                                audio_chunk = np.concatenate([chunk['data'] for chunk in audio_chunks_with_ts])
+                    elif isinstance(audio_data, np.ndarray):
+                        audio_chunk = audio_data
+                
+                # Push to worker queue (non-blocking with backpressure)
+                success = worker.push_frame(writer_frame, audio_chunk)
+                if not success:
+                    logger.warning(f"[VideoWriter] Frame dropped due to queue backpressure")
+                
+            elif tag_node_name in self._video_writer_dict:
+                # Legacy mode - direct write to VideoWriter
 
-                    writer_frame = cv2.resize(rec_frame,
-                                              (writer_width, writer_height),
-                                              interpolation=cv2.INTER_CUBIC)
-                    self._video_writer_dict[tag_node_name].write(writer_frame)
+                writer_frame = cv2.resize(rec_frame,
+                                          (writer_width, writer_height),
+                                          interpolation=cv2.INTER_CUBIC)
+                self._video_writer_dict[tag_node_name].write(writer_frame)
                 
                 # Track frame count and store last frame for potential duplication
                 if tag_node_name not in self._frame_count_dict:
@@ -659,25 +657,12 @@ class VideoWriterNode(Node):
                                        50, (0, 0, 255),
                                        thickness=-1)
 
-                texture = self.convert_cv_to_dpg(
-                    rec_frame,
-                    small_window_w,
-                    small_window_h,
-                )
-                dpg_set_value(input_value01_tag, texture)
-            
-            except Exception as e:
-                # Critical error during frame processing - create crash log
-                create_crash_log("frame_processing", e, tag_node_name)
-                logger.error(f"[VideoWriter] Frame processing crashed: {e}", exc_info=True)
-                
-                # Try to show error in UI
-                try:
-                    black_image = np.zeros((small_window_w, small_window_h, 3))
-                    texture = self.convert_cv_to_dpg(black_image, small_window_w, small_window_h)
-                    dpg_set_value(input_value01_tag, texture)
-                except:
-                    pass  # If even error display fails, give up
+            texture = self.convert_cv_to_dpg(
+                rec_frame,
+                small_window_w,
+                small_window_h,
+            )
+            dpg_set_value(input_value01_tag, texture)
         else:
             label = dpg.get_item_label(tag_node_button_value_name)
             if label == self._stop_label and self._prev_frame_flag:
@@ -1122,149 +1107,139 @@ class VideoWriterNode(Node):
         label = dpg.get_item_label(tag_node_button_value_name)
 
         if label == self._start_label:
-            try:
-                datetime_now = datetime.datetime.now()
-                
-                startup_time_text = datetime_now.strftime('%Y%m%d_%H%M%S')
-                writer_width = self._opencv_setting_dict['video_writer_width']
-                writer_height = self._opencv_setting_dict['video_writer_height']
-                writer_fps = self._opencv_setting_dict['video_writer_fps']
-                video_writer_directory = self._opencv_setting_dict[
-                    'video_writer_directory']
-                
-                # Use target_fps from source metadata if available (from Video node slider)
-                # This ensures output video FPS matches the input video node configuration
-                if tag_node_name in self._source_metadata_dict:
-                    source_metadata = self._source_metadata_dict[tag_node_name]
-                    if 'target_fps' in source_metadata:
-                        writer_fps = source_metadata['target_fps']
-                        logger.info(f"[VideoWriter] Using target_fps from source: {writer_fps}")
 
-                os.makedirs(video_writer_directory, exist_ok=True)
+            datetime_now = datetime.datetime.now()
+            
+            startup_time_text = datetime_now.strftime('%Y%m%d_%H%M%S')
+            writer_width = self._opencv_setting_dict['video_writer_width']
+            writer_height = self._opencv_setting_dict['video_writer_height']
+            writer_fps = self._opencv_setting_dict['video_writer_fps']
+            video_writer_directory = self._opencv_setting_dict[
+                'video_writer_directory']
+            
+            # Use target_fps from source metadata if available (from Video node slider)
+            # This ensures output video FPS matches the input video node configuration
+            if tag_node_name in self._source_metadata_dict:
+                source_metadata = self._source_metadata_dict[tag_node_name]
+                if 'target_fps' in source_metadata:
+                    writer_fps = source_metadata['target_fps']
+                    logger.info(f"[VideoWriter] Using target_fps from source: {writer_fps}")
 
-                # Get selected format
-                format_tag = tag_node_name + ':Format'
-                video_format = dpg_get_value(format_tag)
-                
-                # Determine file extension
-                format_config = {
-                    'AVI': {'ext': '.avi', 'codec': 'MJPG'},
-                    'MKV': {'ext': '.mkv', 'codec': 'FFV1'},
-                    'MP4': {'ext': '.mp4', 'codec': 'mp4v'}
-                }
-                
-                config = format_config.get(video_format, format_config['MP4'])
-                file_path = os.path.join(video_writer_directory, f'{startup_time_text}{config["ext"]}')
+            os.makedirs(video_writer_directory, exist_ok=True)
 
-                # Try to use background worker mode if available
-                use_worker = WORKER_AVAILABLE and FFMPEG_AVAILABLE
-                
-                if use_worker and tag_node_name not in self._background_workers:
-                    # Start background worker
-                    try:
-                        # Use chunk duration from source metadata if available (from Video node slider)
-                        # Otherwise default to 3.0 seconds (matches node_video.py default)
-                        # This ensures queue size is fps * chunk_duration * audio_queue_size for proper audio/video sync
-                        chunk_duration = 3.0
-                        if tag_node_name in self._source_metadata_dict:
-                            source_metadata = self._source_metadata_dict[tag_node_name]
-                            if 'chunk_duration' in source_metadata:
-                                chunk_duration = source_metadata['chunk_duration']
-                                logger.info(f"[VideoWriter] Using chunk_duration from source: {chunk_duration}s")
-                        
-                        worker = VideoBackgroundWorker(
-                            output_path=file_path,
-                            width=writer_width,
-                            height=writer_height,
-                            fps=writer_fps,
-                            sample_rate=22050,  # Default, will be updated from incoming audio
-                            total_frames=None,  # Unknown initially
-                            progress_callback=None,  # Progress is polled in update()
-                            chunk_duration=chunk_duration  # Queue sizing based on chunk duration
-                        )
-                        worker.start()
-                        
-                        self._background_workers[tag_node_name] = worker
-                        self._worker_mode[tag_node_name] = 'worker'
-                        
-                        logger.info(f"[VideoWriter] Started background worker for: {file_path}")
-                        
-                        # Show control buttons for pause/cancel
-                        control_group_tag = tag_node_name + ':ControlGroup'
-                        if dpg.does_item_exist(control_group_tag):
-                            dpg.configure_item(control_group_tag, show=True)
-                        
-                        # Show pause button, hide resume button
-                        pause_button_tag = tag_node_name + ':PauseButton'
-                        resume_button_tag = tag_node_name + ':ResumeButton'
-                        if dpg.does_item_exist(pause_button_tag):
-                            dpg.configure_item(pause_button_tag, show=True)
-                        if dpg.does_item_exist(resume_button_tag):
-                            dpg.configure_item(resume_button_tag, show=False)
-                        
-                    except Exception as e:
-                        logger.error(f"[VideoWriter] Failed to start background worker: {e}")
-                        logger.error(traceback.format_exc())
-                        use_worker = False
-                
-                # Fallback to legacy mode if worker not available or failed
-                if not use_worker and tag_node_name not in self._video_writer_dict:
-                    temp_file_path = os.path.join(video_writer_directory, f'{startup_time_text}_temp{config["ext"]}')
+            # Get selected format
+            format_tag = tag_node_name + ':Format'
+            video_format = dpg_get_value(format_tag)
+            
+            # Determine file extension
+            format_config = {
+                'AVI': {'ext': '.avi', 'codec': 'MJPG'},
+                'MKV': {'ext': '.mkv', 'codec': 'FFV1'},
+                'MP4': {'ext': '.mp4', 'codec': 'mp4v'}
+            }
+            
+            config = format_config.get(video_format, format_config['MP4'])
+            file_path = os.path.join(video_writer_directory, f'{startup_time_text}{config["ext"]}')
+
+            # Try to use background worker mode if available
+            use_worker = WORKER_AVAILABLE and FFMPEG_AVAILABLE
+            
+            if use_worker and tag_node_name not in self._background_workers:
+                # Start background worker
+                try:
+                    # Use chunk duration from source metadata if available (from Video node slider)
+                    # Otherwise default to 3.0 seconds (matches node_video.py default)
+                    # This ensures queue size is fps * chunk_duration * audio_queue_size for proper audio/video sync
+                    chunk_duration = 3.0
+                    if tag_node_name in self._source_metadata_dict:
+                        source_metadata = self._source_metadata_dict[tag_node_name]
+                        if 'chunk_duration' in source_metadata:
+                            chunk_duration = source_metadata['chunk_duration']
+                            logger.info(f"[VideoWriter] Using chunk_duration from source: {chunk_duration}s")
                     
-                    # Create video writer with temporary path
-                    self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
-                        temp_file_path,
-                        cv2.VideoWriter_fourcc(*config['codec']),
-                        writer_fps,
-                        (writer_width, writer_height),
+                    worker = VideoBackgroundWorker(
+                        output_path=file_path,
+                        width=writer_width,
+                        height=writer_height,
+                        fps=writer_fps,
+                        sample_rate=22050,  # Default, will be updated from incoming audio
+                        total_frames=None,  # Unknown initially
+                        progress_callback=None,  # Progress is polled in update()
+                        chunk_duration=chunk_duration  # Queue sizing based on chunk duration
                     )
+                    worker.start()
                     
-                    # Initialize metadata tracking for MKV
-                    if video_format == 'MKV':
-                        self._mkv_metadata_dict[tag_node_name] = {
-                            'audio_handles': {},
-                            'json_handles': {},
-                            'file_path': file_path,
-                        }
-                        
-                        # Create metadata track files (will be stored alongside video)
-                        metadata_dir = os.path.join(video_writer_directory, f'{startup_time_text}_metadata')
-                        os.makedirs(metadata_dir, exist_ok=True)
+                    self._background_workers[tag_node_name] = worker
+                    self._worker_mode[tag_node_name] = 'worker'
                     
-                    # Initialize audio sample collection per slot
-                    self._audio_samples_dict[tag_node_name] = {}  # Dict of {slot_idx: {'samples': [], 'timestamp': float, 'sample_rate': int}}
+                    logger.info(f"[VideoWriter] Started background worker for: {file_path}")
                     
-                    # Initialize JSON sample collection per slot
-                    self._json_samples_dict[tag_node_name] = {}  # Dict of {slot_idx: {'samples': [], 'timestamp': float}}
+                    # Show control buttons for pause/cancel
+                    control_group_tag = tag_node_name + ':ControlGroup'
+                    if dpg.does_item_exist(control_group_tag):
+                        dpg.configure_item(control_group_tag, show=True)
                     
-                    # Store recording metadata for final merge
-                    self._recording_metadata_dict[tag_node_name] = {
-                        'final_path': file_path,
-                        'temp_path': temp_file_path,
-                        'format': video_format,
-                        'sample_rate': 22050,  # Default sample rate, can be adjusted based on input
-                        'fps': writer_fps  # Store FPS from input video settings for duration adaptation
+                    # Show pause button, hide resume button
+                    pause_button_tag = tag_node_name + ':PauseButton'
+                    resume_button_tag = tag_node_name + ':ResumeButton'
+                    if dpg.does_item_exist(pause_button_tag):
+                        dpg.configure_item(pause_button_tag, show=True)
+                    if dpg.does_item_exist(resume_button_tag):
+                        dpg.configure_item(resume_button_tag, show=False)
+                    
+                except Exception as e:
+                    logger.error(f"[VideoWriter] Failed to start background worker: {e}")
+                    logger.error(traceback.format_exc())
+                    use_worker = False
+            
+            # Fallback to legacy mode if worker not available or failed
+            if not use_worker and tag_node_name not in self._video_writer_dict:
+                temp_file_path = os.path.join(video_writer_directory, f'{startup_time_text}_temp{config["ext"]}')
+                
+                # Create video writer with temporary path
+                self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
+                    temp_file_path,
+                    cv2.VideoWriter_fourcc(*config['codec']),
+                    writer_fps,
+                    (writer_width, writer_height),
+                )
+                
+                # Initialize metadata tracking for MKV
+                if video_format == 'MKV':
+                    self._mkv_metadata_dict[tag_node_name] = {
+                        'audio_handles': {},
+                        'json_handles': {},
+                        'file_path': file_path,
                     }
                     
-                    self._worker_mode[tag_node_name] = 'legacy'
-                    logger.info(f"[VideoWriter] Started legacy mode for: {file_path}")
+                    # Create metadata track files (will be stored alongside video)
+                    metadata_dir = os.path.join(video_writer_directory, f'{startup_time_text}_metadata')
+                    os.makedirs(metadata_dir, exist_ok=True)
+                
+                # Initialize audio sample collection per slot
+                self._audio_samples_dict[tag_node_name] = {}  # Dict of {slot_idx: {'samples': [], 'timestamp': float, 'sample_rate': int}}
+                
+                # Initialize JSON sample collection per slot
+                self._json_samples_dict[tag_node_name] = {}  # Dict of {slot_idx: {'samples': [], 'timestamp': float}}
+                
+                # Store recording metadata for final merge
+                self._recording_metadata_dict[tag_node_name] = {
+                    'final_path': file_path,
+                    'temp_path': temp_file_path,
+                    'format': video_format,
+                    'sample_rate': 22050,  # Default sample rate, can be adjusted based on input
+                    'fps': writer_fps  # Store FPS from input video settings for duration adaptation
+                }
+                
+                self._worker_mode[tag_node_name] = 'legacy'
+                logger.info(f"[VideoWriter] Started legacy mode for: {file_path}")
 
-                dpg.set_item_label(tag_node_button_value_name, self._stop_label)
-            
-            except Exception as e:
-                # Critical error during recording start - create crash log
-                create_crash_log("recording_start", e, tag_node_name)
-                logger.error(f"[VideoWriter] Recording start crashed: {e}", exc_info=True)
-                # Reset button state
-                try:
-                    dpg.set_item_label(tag_node_button_value_name, self._start_label)
-                except:
-                    pass
+            dpg.set_item_label(tag_node_button_value_name, self._stop_label)
             
         elif label == self._stop_label:
-            try:
-                # Check which mode we're using
-                if tag_node_name in self._background_workers:
+            
+            # Check which mode we're using
+            if tag_node_name in self._background_workers:
                 # Background worker mode - stop the worker
                 worker = self._background_workers[tag_node_name]
                 worker.stop(wait=False)  # Don't block UI
@@ -1366,23 +1341,13 @@ class VideoWriterNode(Node):
             if tag_node_name in self._last_frame_dict:
                 self._last_frame_dict.pop(tag_node_name)
             
-                # Close metadata file handles if MKV
-                if tag_node_name in self._mkv_metadata_dict:
-                    metadata = self._mkv_metadata_dict[tag_node_name]
-                    self._close_metadata_handles(metadata)
-                    self._mkv_metadata_dict.pop(tag_node_name)
+            # Close metadata file handles if MKV
+            if tag_node_name in self._mkv_metadata_dict:
+                metadata = self._mkv_metadata_dict[tag_node_name]
+                self._close_metadata_handles(metadata)
+                self._mkv_metadata_dict.pop(tag_node_name)
 
-                dpg.set_item_label(tag_node_button_value_name, self._start_label)
-            
-            except Exception as e:
-                # Critical error during recording stop - create crash log
-                create_crash_log("recording_stop", e, tag_node_name)
-                logger.error(f"[VideoWriter] Recording stop crashed: {e}", exc_info=True)
-                # Try to clean up and reset button state
-                try:
-                    dpg.set_item_label(tag_node_button_value_name, self._start_label)
-                except:
-                    pass
+            dpg.set_item_label(tag_node_button_value_name, self._start_label)
     
     def _pause_button(self, sender, data, user_data):
         """Pause the background video encoding"""

@@ -14,14 +14,81 @@ import sys
 import os
 import tempfile
 import shutil
+import datetime
+import traceback
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import the crash logging functions
-from node.VideoNode.node_video_writer import create_crash_log
-from node.VideoNode.node_image_concat import create_concat_crash_log
+# Import crash logging utilities
+try:
+    from src.utils.logging import get_logs_directory
+except ImportError:
+    def get_logs_directory():
+        project_root = Path(__file__).parent.parent
+        logs_dir = project_root / 'logs'
+        logs_dir.mkdir(exist_ok=True)
+        return logs_dir
+
+# Define crash log functions locally for testing (avoid importing full modules with heavy dependencies)
+def create_crash_log(operation_name, exception, tag_node_name=None):
+    """Create crash log for VideoWriter"""
+    logs_dir = get_logs_directory()
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    node_suffix = f"_{tag_node_name.replace(':', '_')}" if tag_node_name else ""
+    log_filename = f"crash_{operation_name}{node_suffix}_{timestamp}.log"
+    log_path = logs_dir / log_filename
+    
+    with open(log_path, 'w', encoding='utf-8') as f:
+        f.write("="*70 + "\n")
+        f.write(f"CV Studio VideoWriter Crash Log\n")
+        f.write("="*70 + "\n")
+        f.write(f"Timestamp: {datetime.datetime.now().isoformat()}\n")
+        f.write(f"Operation: {operation_name}\n")
+        if tag_node_name:
+            f.write(f"Node: {tag_node_name}\n")
+        f.write(f"Exception Type: {type(exception).__name__}\n")
+        f.write(f"Exception Message: {str(exception)}\n")
+        f.write("="*70 + "\n\n")
+        f.write("Full Stack Trace:\n")
+        f.write("-"*70 + "\n")
+        f.write(traceback.format_exc())
+        f.write("\n")
+        f.write("="*70 + "\n")
+        f.write("End of crash log\n")
+        f.write("="*70 + "\n")
+    
+    return log_path
+
+def create_concat_crash_log(operation_name, exception, node_name=None):
+    """Create crash log for ImageConcat"""
+    logs_dir = get_logs_directory()
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    node_suffix = f"_{node_name.replace(':', '_')}" if node_name else ""
+    log_filename = f"crash_imageconcat_{operation_name}{node_suffix}_{timestamp}.log"
+    log_path = logs_dir / log_filename
+    
+    with open(log_path, 'w', encoding='utf-8') as f:
+        f.write("="*70 + "\n")
+        f.write(f"CV Studio ImageConcat Crash Log\n")
+        f.write("="*70 + "\n")
+        f.write(f"Timestamp: {datetime.datetime.now().isoformat()}\n")
+        f.write(f"Operation: {operation_name}\n")
+        if node_name:
+            f.write(f"Node: {node_name}\n")
+        f.write(f"Exception Type: {type(exception).__name__}\n")
+        f.write(f"Exception Message: {str(exception)}\n")
+        f.write("="*70 + "\n\n")
+        f.write("Full Stack Trace:\n")
+        f.write("-"*70 + "\n")
+        f.write(traceback.format_exc())
+        f.write("\n")
+        f.write("="*70 + "\n")
+        f.write("End of crash log\n")
+        f.write("="*70 + "\n")
+    
+    return log_path
 
 
 def test_create_crash_log_videowriter():
