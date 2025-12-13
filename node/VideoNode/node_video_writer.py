@@ -1260,7 +1260,7 @@ class VideoWriterNode(Node):
                         key=lambda x: x[0]  # Sort by slot_idx only
                     )
                     
-                    # Build final audio sample list in timestamp order
+                    # Build final audio sample list in slot index order
                     audio_samples_list = []
                     # Track if we encounter mixed sample rates (use the first valid one)
                     final_sample_rate = None
