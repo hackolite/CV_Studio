@@ -113,6 +113,13 @@ class FactoryNode:
             node.tag_node_name + ":" + node.TYPE_JSON + ":OutputJsonValue"
         )
 
+        node.tag_node_queue_info_name = (
+            node.tag_node_name + ":" + node.TYPE_TEXT + ":QueueInfo"
+        )
+        node.tag_node_queue_info_value_name = (
+            node.tag_node_name + ":" + node.TYPE_TEXT + ":QueueInfoValue"
+        )
+
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict["input_window_width"]
         small_window_h = node._opencv_setting_dict["input_window_height"]
@@ -294,6 +301,16 @@ class FactoryNode:
             ):
                 btn = add_yellow_disabled_button(
                     "JSON", node.tag_node_output_json_value_name
+                )
+
+            # Queue size information label
+            with dpg.node_attribute(
+                tag=node.tag_node_queue_info_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_queue_info_value_name,
+                    default_value="Queue: Image=0 Audio=0",
                 )
 
         return node
@@ -759,6 +776,32 @@ class VideoNode(Node):
             if audio_chunk_data is not None and isinstance(audio_chunk_data, dict):
                 audio_chunk_data = audio_chunk_data.copy()
                 audio_chunk_data['timestamp'] = frame_timestamp
+        
+        # Update queue size information label
+        tag_node_queue_info_value_name = (
+            tag_node_name + ":" + self.TYPE_TEXT + ":QueueInfoValue"
+        )
+        
+        # Get queue sizes from the queue manager
+        image_queue_size = 0
+        audio_queue_size = 0
+        try:
+            image_queue_info = node_image_dict.get_queue_info(tag_node_name)
+            if image_queue_info.get("exists", False):
+                image_queue_size = image_queue_info.get("size", 0)
+        except Exception as e:
+            logger.debug(f"[Video] Failed to get image queue info: {e}")
+        
+        try:
+            audio_queue_info = node_audio_dict.get_queue_info(tag_node_name)
+            if audio_queue_info.get("exists", False):
+                audio_queue_size = audio_queue_info.get("size", 0)
+        except Exception as e:
+            logger.debug(f"[Video] Failed to get audio queue info: {e}")
+        
+        # Update the queue info label
+        queue_info_text = f"Queue: Image={image_queue_size} Audio={audio_queue_size}"
+        dpg_set_value(tag_node_queue_info_value_name, queue_info_text)
         
         # Return frame via IMAGE output and audio chunk data via AUDIO output
         # Include the FPS-based timestamp so it can be used for synchronization
