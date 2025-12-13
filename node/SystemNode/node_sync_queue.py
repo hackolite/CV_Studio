@@ -120,13 +120,6 @@ class FactoryNode:
                     default_value='⏳ Waiting',
                 )
 
-        # Add default 3 slots (Image, Audio, JSON) on node creation
-        # This should only happen for new nodes, not when loading from saved config
-        if not hasattr(node, '_loading_from_config'):
-            node._add_slot(None, None, node.tag_node_name, initial_type='image')
-            node._add_slot(None, None, node.tag_node_name, initial_type='audio')
-            node._add_slot(None, None, node.tag_node_name, initial_type='json')
-
         return node
 
 
@@ -558,9 +551,6 @@ class Node(Node):
         """Restore node configuration."""
         tag_node_name = str(node_id) + ':' + self.node_tag
         
-        # Mark that we're loading from config to prevent adding default slots
-        self._loading_from_config = True
-        
         # Safely get slot_id with validation
         slot_id_value = setting_dict.get('slot_id', 0)
         try:
@@ -590,14 +580,17 @@ class Node(Node):
         if tag_node_name not in self._slot_types:
             self._slot_types[tag_node_name] = {}
         
-        # Recreate slots with their saved types
-        for i in range(slot_number):
-            slot_idx = i + 1
-            slot_type = saved_slot_types.get(slot_idx, saved_slot_types.get(str(slot_idx), 'image'))
-            self._add_slot(None, None, tag_node_name, initial_type=slot_type)
-        
-        # Clear the loading flag
-        self._loading_from_config = False
+        # If no saved slots (new node), add default 3 slots
+        if slot_number == 0:
+            self._add_slot(None, None, tag_node_name, initial_type='image')
+            self._add_slot(None, None, tag_node_name, initial_type='audio')
+            self._add_slot(None, None, tag_node_name, initial_type='json')
+        else:
+            # Recreate slots with their saved types (loading from config)
+            for i in range(slot_number):
+                slot_idx = i + 1
+                slot_type = saved_slot_types.get(slot_idx, saved_slot_types.get(str(slot_idx), 'image'))
+                self._add_slot(None, None, tag_node_name, initial_type=slot_type)
 
     def _add_slot(self, sender, data, user_data, initial_type='image'):
         """
