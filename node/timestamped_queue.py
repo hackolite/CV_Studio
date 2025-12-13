@@ -149,6 +149,11 @@ class TimestampedQueue:
         with self._lock:
             return len(self._queue) == 0
     
+    def maxsize(self) -> int:
+        """Return the maximum capacity of the queue."""
+        with self._lock:
+            return self._maxsize
+    
     def get_all(self) -> list:
         """
         Get all data items in the queue (oldest to newest) without removing them.
@@ -326,6 +331,7 @@ class NodeDataQueueManager:
             return {
                 "exists": True,
                 "size": queue.size(),
+                "maxsize": queue.maxsize(),
                 "is_empty": queue.is_empty(),
                 "oldest_timestamp": oldest.timestamp if oldest else None,
                 "latest_timestamp": latest.timestamp if latest else None,

@@ -202,3 +202,14 @@ class QueueBackedDict:
         queue = self._queue_manager.get_queue(node_id_name, self._data_type)
         latest = queue.get_latest()
         return latest.timestamp if latest else None
+    
+    def resize_queue(self, node_id_name: str, data_type: str, new_size: int) -> None:
+        """
+        Resize a queue for a specific node and data type.
+        
+        Args:
+            node_id_name: The node identifier
+            data_type: Type of data (e.g., "image", "audio")
+            new_size: New maximum size for the queue
+        """
+        self._queue_manager.resize_queue(node_id_name, data_type, new_size)
