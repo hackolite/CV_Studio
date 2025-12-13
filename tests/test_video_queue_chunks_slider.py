@@ -54,10 +54,22 @@ def test_queue_chunks_slider_removed():
     # Check that Queue Chunks slider is NOT in the UI
     assert 'label="Queue Chunks"' not in content, "Queue Chunks slider should be removed from UI"
     
-    # Check that Input07 tags are NOT defined (or only in limited contexts)
+    # Check that Input07 tags are NOT defined in FactoryNode's add_node method
     lines = content.split('\n')
-    input07_in_factory = any('tag_node_input07_name' in line and '=' in line and 'def ' not in line for line in lines[:300])
-    assert not input07_in_factory, "Input07 name tag should not be defined in FactoryNode"
+    # Find the FactoryNode section by looking for the add_node method
+    in_factory_add_node = False
+    factory_lines = []
+    for line in lines:
+        if 'def add_node(' in line:
+            in_factory_add_node = True
+        elif in_factory_add_node and line.strip().startswith('def ') and 'add_node' not in line:
+            break
+        elif in_factory_add_node:
+            factory_lines.append(line)
+    
+    factory_content = '\n'.join(factory_lines)
+    input07_in_factory = 'tag_node_input07_name' in factory_content and '=' in factory_content
+    assert not input07_in_factory, "Input07 name tag should not be defined in FactoryNode.add_node()"
     
     print("✓ Queue Chunks slider removed from Video node")
     print("  - Input07 tags removed from UI")

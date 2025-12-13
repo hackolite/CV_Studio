@@ -23,10 +23,15 @@ def test_chunk_size_slider_removed():
         content = f.read()
     
     # Check that Input06 tags are NOT defined (Chunk Size used Input06)
-    assert 'tag_node_input06_name' not in content or 'Input06_name =' not in content, \
-        "Input06 tag definitions should be removed"
-    assert 'tag_node_input06_value_name' not in content or 'Input06_value_name =' not in content, \
-        "Input06 value tag definitions should be removed"
+    # Look for actual tag definitions (lines with '=' assignment)
+    lines = content.split('\n')
+    input06_definitions = [line for line in lines if 'tag_node_input06_name' in line and '=' in line and 'def ' not in line]
+    assert len(input06_definitions) == 0, \
+        f"Input06 tag definitions should be removed, found: {len(input06_definitions)} definitions"
+    
+    input06_value_definitions = [line for line in lines if 'tag_node_input06_value_name' in line and '=' in line and 'def ' not in line]
+    assert len(input06_value_definitions) == 0, \
+        f"Input06 value tag definitions should be removed, found: {len(input06_value_definitions)} definitions"
     
     # Check for slider widget removal
     assert 'label="Chunk Size (s)"' not in content, \

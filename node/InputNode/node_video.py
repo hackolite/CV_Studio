@@ -464,7 +464,8 @@ class VideoNode(Node):
                 last_size = len(audio_chunks[-1])
                 
                 # Check first chunk (should be expected size or expected size + 1 due to rounding)
-                if first_size < expected_chunk_size - 1 or first_size > expected_chunk_size + 1:
+                # Allow ±1 sample variance due to rounding of fractional samples_per_frame
+                if first_size < expected_chunk_size or first_size > expected_chunk_size + 1:
                     logger.warning(f"[Video] First chunk size unexpected - expected: {expected_chunk_size}, got: {first_size}")
                 
                 # Last chunk should be padded to expected size
