@@ -33,19 +33,19 @@ def test_audio_chunk_format():
     assert 'def _get_audio_chunk_for_frame' in content, \
         "Should have _get_audio_chunk_for_frame method"
     
-    # Verify it returns the correct format with WAV file loading
-    assert 'sf.read(chunk_path)' in content, \
-        "Should load audio data from WAV file"
+    # Verify it returns the correct format with in-memory storage
+    assert 'audio_chunks[chunk_index]' in content or 'audio_data = audio_chunks[chunk_index]' in content, \
+        "Should get audio data from in-memory storage"
     assert "'data': audio_data" in content, \
         "Should return audio data in 'data' key"
-    assert "'sample_rate': sample_rate" in content or "'sample_rate': sr" in content, \
+    assert "'sample_rate': sr" in content, \
         "Should return sample rate in 'sample_rate' key"
     
-    # Verify WAV-based storage is used
-    assert '_audio_chunk_paths' in content, \
-        "Should use WAV file paths for storage"
-    assert 'sf.write(chunk_path,' in content, \
-        "Should save chunks as WAV files"
+    # Verify in-memory storage is used
+    assert '_audio_chunks' in content, \
+        "Should use in-memory storage for audio chunks"
+    assert 'self._audio_chunks[node_id] = audio_chunks' in content, \
+        "Should store all chunks in memory"
     
     # Verify the update method returns audio chunk data
     assert 'audio_chunk_data = None' in content, \
@@ -58,7 +58,7 @@ def test_audio_chunk_format():
     
     print("✓ Audio chunk format verification passed")
     print("  - _get_audio_chunk_for_frame method exists")
-    print("  - Loads audio from WAV files (efficient for spectrogram)")
+    print("  - Loads audio from in-memory storage (all chunks preloaded)")
     print("  - Returns dict with 'data' and 'sample_rate' keys")
     print("  - update() method returns audio chunk via 'audio' output")
 
