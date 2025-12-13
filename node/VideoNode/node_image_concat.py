@@ -543,14 +543,16 @@ class Node(Node):
         
         for slot_idx, slot_info in slot_data_dict.items():
             # Collect metadata from source node result
+            # Priority: Use metadata from first IMAGE slot, as it's typically the primary video source
             source_result = node_result_dict.get(slot_info['source'], None)
             if source_result is not None and isinstance(source_result, dict):
                 node_metadata = source_result.get('metadata', {})
-                if node_metadata:
-                    # Store metadata by slot - first one with metadata wins for shared settings
-                    if not source_metadata and isinstance(node_metadata, dict):
+                if node_metadata and isinstance(node_metadata, dict):
+                    # Use first available metadata (typically from primary video source)
+                    # In most use cases, all video sources have the same FPS/chunk settings
+                    if not source_metadata:
                         source_metadata = node_metadata.copy()
-                        logger.debug(f"[ImageConcat] Collected metadata from slot {slot_idx}: {source_metadata}")
+                        logger.debug(f"[ImageConcat] Using metadata from slot {slot_idx}: {source_metadata}")
             
             if slot_info['type'] == self.TYPE_AUDIO:
                 # Get audio from node_audio_dict

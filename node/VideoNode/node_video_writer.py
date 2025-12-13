@@ -371,9 +371,8 @@ class VideoWriterNode(Node):
             source_metadata = json_data.get('metadata', {})
         
         # Store source metadata for use during recording
+        # Class variable _source_metadata_dict is initialized at class level (line 217)
         if source_metadata and tag_node_name in self._video_writer_dict:
-            if not hasattr(self, '_source_metadata_dict'):
-                self._source_metadata_dict = {}
             self._source_metadata_dict[tag_node_name] = source_metadata
             logger.debug(f"[VideoWriter] Received metadata: {source_metadata}")
 
