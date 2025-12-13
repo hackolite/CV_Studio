@@ -727,7 +727,9 @@ class VideoNode(Node):
             frame_timestamp = base_timestamp + loop_offset
             
             # Inject timestamp into audio chunk data for synchronization
+            # Copy the dict to avoid modifying the cached version
             if audio_chunk_data is not None:
+                audio_chunk_data = audio_chunk_data.copy()
                 audio_chunk_data['timestamp'] = frame_timestamp
         
         # Return frame via IMAGE output and audio chunk data via AUDIO output
