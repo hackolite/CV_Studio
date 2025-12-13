@@ -361,7 +361,7 @@ class VideoNode(Node):
         # Track which nodes have had their queues resized to prevent redundant resize operations on every frame
         self._queues_resized = {}
 
-    def _preprocess_video(self, node_id, movie_path, chunk_duration=2.0, step_duration=2.0, num_chunks_to_keep=4):
+    def _preprocess_video(self, node_id, movie_path, chunk_duration=2.0, step_duration=2.0, num_chunks_to_keep=4, target_fps=24):
         """
         Pre-process video by extracting and chunking audio into memory.
         
@@ -380,6 +380,7 @@ class VideoNode(Node):
             chunk_duration: Duration of each audio chunk in seconds (default: 2.0)
             step_duration: Step size between chunks in seconds (default: 2.0, no overlap)
             num_chunks_to_keep: Number of chunks to keep in queue (default: 4)
+            target_fps: Target FPS for playback (default: 24)
         """
         if not movie_path or not os.path.exists(movie_path):
             logger.warning(f"[Video] Video file not found: {movie_path}")
@@ -487,12 +488,13 @@ class VideoNode(Node):
             logger.info(f"[Video] Created {len(audio_chunks)} audio chunks in memory")
             
             # Step 4: Calculate dynamic queue sizes
-            # Image queue: num_chunks * chunk_duration * fps
-            image_queue_size = int(num_chunks_to_keep * chunk_duration * fps)
+            # Image queue: num_chunks * chunk_duration * target_fps
+            # Use target_fps (playback rate) instead of video fps for queue sizing
+            image_queue_size = int(num_chunks_to_keep * chunk_duration * target_fps)
             # Audio queue: num_chunks
             audio_queue_size = num_chunks_to_keep
             
-            logger.info(f"[Video] Calculated queue sizes: Image={image_queue_size}, Audio={audio_queue_size}")
+            logger.info(f"[Video] Calculated queue sizes: Image={image_queue_size}, Audio={audio_queue_size} (target_fps={target_fps})")
             
             # Step 5: Store metadata
             self._chunk_metadata[node_id] = {
@@ -903,6 +905,13 @@ class VideoNode(Node):
             self._movie_filepath[node_id] = data["file_path_name"]
             tag_node_name = str(node_id) + ":" + self.node_tag
             
+            # Get target FPS from slider
+            tag_node_input04_value_name = (
+                tag_node_name + ":" + self.TYPE_INT + ":Input04Value"
+            )
+            target_fps_value = dpg_get_value(tag_node_input04_value_name)
+            target_fps = int(target_fps_value) if target_fps_value is not None else 24
+            
             # Get chunk size from slider
             tag_node_input06_value_name = (
                 tag_node_name + ":" + self.TYPE_FLOAT + ":Input06Value"
@@ -923,5 +932,6 @@ class VideoNode(Node):
                 data["file_path_name"], 
                 chunk_duration=chunk_size, 
                 step_duration=chunk_size,
-                num_chunks_to_keep=num_chunks
+                num_chunks_to_keep=num_chunks,
+                target_fps=target_fps
             )
