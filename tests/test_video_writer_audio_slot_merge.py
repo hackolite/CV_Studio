@@ -4,7 +4,7 @@
 Test for VideoWriter audio slot merging logic.
 
 This test validates that audio from multiple slots is correctly collected
-and merged in timestamp order, not per-frame interleaved.
+and merged in slot index order, not per-frame interleaved (timestamps are indicative only).
 """
 
 import numpy as np
@@ -72,19 +72,19 @@ def test_audio_collection_per_slot():
     return audio_samples_dict
 
 
-def test_slot_merge_by_timestamp(audio_samples_dict):
+def test_slot_merge_by_slot_index(audio_samples_dict):
     """
-    Test that slots are merged in timestamp order.
+    Test that slots are merged in slot index order (timestamps are indicative only).
     """
-    print("\n--- Testing slot merge by timestamp ---")
+    print("\n--- Testing slot merge by slot index ---")
     
-    # Sort slots by timestamp (as VideoWriter does at recording end)
+    # Sort slots by slot index only (as VideoWriter does at recording end)
     sorted_slots = sorted(
         audio_samples_dict.items(),
-        key=lambda x: (x[1]['timestamp'], x[0])
+        key=lambda x: x[0]  # Sort by slot_idx only
     )
     
-    # Build final audio in timestamp order
+    # Build final audio in slot index order
     audio_samples_list = []
     for slot_idx, slot_data in sorted_slots:
         if slot_data['samples']:
@@ -94,14 +94,14 @@ def test_slot_merge_by_timestamp(audio_samples_dict):
     # Final concatenation
     final_audio = np.concatenate(audio_samples_list)
     
-    # Expected order: slot 1 (ts=99.9) THEN slot 0 (ts=100.0)
-    # Slot 1: [3.0, 4.0] (frame 1) + [7.0, 8.0] (frame 2) = [3.0, 4.0, 7.0, 8.0]
+    # Expected order: slot 0 THEN slot 1 (by slot index, not timestamp)
     # Slot 0: [1.0, 2.0] (frame 1) + [5.0, 6.0] (frame 2) = [1.0, 2.0, 5.0, 6.0]
-    # Final: [3.0, 4.0, 7.0, 8.0, 1.0, 2.0, 5.0, 6.0]
-    expected = np.array([3.0, 4.0, 7.0, 8.0, 1.0, 2.0, 5.0, 6.0])
+    # Slot 1: [3.0, 4.0] (frame 1) + [7.0, 8.0] (frame 2) = [3.0, 4.0, 7.0, 8.0]
+    # Final: [1.0, 2.0, 5.0, 6.0, 3.0, 4.0, 7.0, 8.0]
+    expected = np.array([1.0, 2.0, 5.0, 6.0, 3.0, 4.0, 7.0, 8.0])
     
     np.testing.assert_array_equal(final_audio, expected)
-    print(f"✓ Final audio in correct timestamp order: {final_audio}")
+    print(f"✓ Final audio in correct slot index order: {final_audio}")
 
 
 def test_single_slot_audio():
@@ -133,8 +133,8 @@ def test_single_slot_audio():
             
             audio_samples_dict[slot_idx]['samples'].append(audio_chunk['data'])
     
-    # Merge
-    sorted_slots = sorted(audio_samples_dict.items(), key=lambda x: (x[1]['timestamp'], x[0]))
+    # Merge (sort by slot index only)
+    sorted_slots = sorted(audio_samples_dict.items(), key=lambda x: x[0])
     audio_samples_list = []
     for slot_idx, slot_data in sorted_slots:
         if slot_data['samples']:
@@ -150,14 +150,14 @@ def test_single_slot_audio():
 
 def test_three_slot_mixed_timestamps():
     """
-    Test with 3 slots with different timestamps.
+    Test with 3 slots with different timestamps (indicative only, not used for ordering).
     """
     print("\n--- Testing 3 slots with mixed timestamps ---")
     
     audio_samples_dict = {}
     
     # Simulate 3 video sources over 2 frames
-    # Source timestamps: slot 0 = 100.0, slot 1 = 99.9, slot 2 = 100.1
+    # Source timestamps: slot 0 = 100.0, slot 1 = 99.9, slot 2 = 100.1 (indicative only)
     frame1_audio = {
         0: {'data': np.array([10.0]), 'timestamp': 100.0},
         1: {'data': np.array([20.0]), 'timestamp': 99.9},
@@ -183,8 +183,8 @@ def test_three_slot_mixed_timestamps():
             
             audio_samples_dict[slot_idx]['samples'].append(audio_chunk['data'])
     
-    # Sort and merge
-    sorted_slots = sorted(audio_samples_dict.items(), key=lambda x: (x[1]['timestamp'], x[0]))
+    # Sort and merge by slot index only
+    sorted_slots = sorted(audio_samples_dict.items(), key=lambda x: x[0])
     audio_samples_list = []
     for slot_idx, slot_data in sorted_slots:
         if slot_data['samples']:
@@ -193,21 +193,21 @@ def test_three_slot_mixed_timestamps():
     
     final_audio = np.concatenate(audio_samples_list)
     
-    # Expected order by timestamp: slot 1 (99.9), slot 0 (100.0), slot 2 (100.1)
-    # Slot 1: [20.0, 21.0]
+    # Expected order by slot index: slot 0, slot 1, slot 2
     # Slot 0: [10.0, 11.0]
+    # Slot 1: [20.0, 21.0]
     # Slot 2: [30.0, 31.0]
-    expected = np.array([20.0, 21.0, 10.0, 11.0, 30.0, 31.0])
+    expected = np.array([10.0, 11.0, 20.0, 21.0, 30.0, 31.0])
     
     np.testing.assert_array_equal(final_audio, expected)
-    print(f"✓ 3-slot audio merged in correct timestamp order: {final_audio}")
+    print(f"✓ 3-slot audio merged in correct slot index order: {final_audio}")
 
 
-def test_no_timestamp_fallback():
+def test_slot_order_with_missing_timestamps():
     """
-    Test fallback behavior when timestamps are missing.
+    Test slot-based ordering when timestamps are missing (always uses slot order).
     """
-    print("\n--- Testing fallback when timestamps missing ---")
+    print("\n--- Testing slot order when timestamps missing ---")
     
     audio_samples_dict = {}
     
@@ -224,8 +224,8 @@ def test_no_timestamp_fallback():
             'sample_rate': 22050
         }
     
-    # Sort and merge
-    sorted_slots = sorted(audio_samples_dict.items(), key=lambda x: (x[1]['timestamp'], x[0]))
+    # Sort and merge by slot index only
+    sorted_slots = sorted(audio_samples_dict.items(), key=lambda x: x[0])
     audio_samples_list = []
     for slot_idx, slot_data in sorted_slots:
         if slot_data['samples']:
@@ -234,10 +234,10 @@ def test_no_timestamp_fallback():
     
     final_audio = np.concatenate(audio_samples_list)
     
-    # When timestamps are equal (both inf), should fall back to slot order
+    # Always uses slot order (0, 1, 2, ...) regardless of timestamps
     expected = np.array([1.0, 2.0, 3.0, 4.0])
     np.testing.assert_array_equal(final_audio, expected)
-    print("✓ Fallback to slot order when timestamps missing")
+    print("✓ Uses slot order regardless of timestamps")
 
 
 if __name__ == '__main__':
@@ -246,10 +246,10 @@ if __name__ == '__main__':
     
     try:
         audio_dict = test_audio_collection_per_slot()
-        test_slot_merge_by_timestamp(audio_dict)
+        test_slot_merge_by_slot_index(audio_dict)
         test_single_slot_audio()
         test_three_slot_mixed_timestamps()
-        test_no_timestamp_fallback()
+        test_slot_order_with_missing_timestamps()
         
         print("\n" + "="*60)
         print("✅ All VideoWriter audio slot merging tests passed!")

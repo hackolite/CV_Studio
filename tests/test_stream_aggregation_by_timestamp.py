@@ -11,34 +11,34 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 
 
-def test_audio_slots_sorted_by_timestamp():
-    """Test that audio slots are sorted by timestamp when merging"""
-    # Simulate audio samples with different timestamps
+def test_audio_slots_sorted_by_slot_index():
+    """Test that audio slots are sorted by slot index when merging (timestamps are indicative only)."""
+    # Simulate audio samples with different timestamps (indicative only, not used for ordering)
     slot_audio_dict = {
         0: {'samples': [np.array([1, 2, 3])], 'timestamp': 102.0, 'sample_rate': 22050},
         1: {'samples': [np.array([4, 5, 6])], 'timestamp': 100.0, 'sample_rate': 22050},
         2: {'samples': [np.array([7, 8, 9])], 'timestamp': 101.0, 'sample_rate': 22050}
     }
     
-    # Sort by timestamp (as done in VideoWriter)
+    # Sort by slot index only (as done in VideoWriter)
     sorted_slots = sorted(
         slot_audio_dict.items(),
-        key=lambda x: (x[1]['timestamp'], x[0])
+        key=lambda x: x[0]  # Sort by slot_idx only
     )
     
-    # Verify sorting order: 100.0, 101.0, 102.0
-    assert sorted_slots[0][0] == 1  # slot 1 (timestamp 100.0)
-    assert sorted_slots[1][0] == 2  # slot 2 (timestamp 101.0)
-    assert sorted_slots[2][0] == 0  # slot 0 (timestamp 102.0)
+    # Verify sorting order: 0, 1, 2 (by slot index, not timestamp)
+    assert sorted_slots[0][0] == 0  # slot 0
+    assert sorted_slots[1][0] == 1  # slot 1
+    assert sorted_slots[2][0] == 2  # slot 2
 
 
 def test_audio_concatenation_preserves_order():
-    """Test that audio concatenation preserves timestamp order"""
-    # Simulate sorted audio samples
+    """Test that audio concatenation preserves slot order."""
+    # Simulate sorted audio samples (by slot index)
     sorted_audio_samples = [
-        np.array([1, 2, 3]),  # First by timestamp
-        np.array([4, 5, 6]),  # Second by timestamp
-        np.array([7, 8, 9])   # Third by timestamp
+        np.array([1, 2, 3]),  # First by slot index
+        np.array([4, 5, 6]),  # Second by slot index
+        np.array([7, 8, 9])   # Third by slot index
     ]
     
     # Concatenate
@@ -49,30 +49,30 @@ def test_audio_concatenation_preserves_order():
     assert np.array_equal(merged_audio, expected)
 
 
-def test_json_slots_sorted_by_timestamp():
-    """Test that JSON slots are sorted by timestamp"""
-    # Simulate JSON samples with different timestamps
+def test_json_slots_sorted_by_slot_index():
+    """Test that JSON slots are sorted by slot index (timestamps are indicative only)."""
+    # Simulate JSON samples with different timestamps (indicative only, not used for ordering)
     json_samples_dict = {
         0: {'samples': [{'frame': 2}], 'timestamp': 102.0},
         1: {'samples': [{'frame': 0}], 'timestamp': 100.0},
         2: {'samples': [{'frame': 1}], 'timestamp': 101.0}
     }
     
-    # Sort by timestamp
+    # Sort by slot index only
     sorted_slots = sorted(
         json_samples_dict.items(),
-        key=lambda x: (x[1]['timestamp'], x[0])
+        key=lambda x: x[0]  # Sort by slot_idx only
     )
     
-    # Verify sorting order
-    assert sorted_slots[0][0] == 1  # slot 1 (timestamp 100.0)
-    assert sorted_slots[1][0] == 2  # slot 2 (timestamp 101.0)
-    assert sorted_slots[2][0] == 0  # slot 0 (timestamp 102.0)
+    # Verify sorting order (by slot index, not timestamp)
+    assert sorted_slots[0][0] == 0  # slot 0
+    assert sorted_slots[1][0] == 1  # slot 1
+    assert sorted_slots[2][0] == 2  # slot 2
 
 
-def test_infinite_timestamp_comes_last():
-    """Test that slots with infinite timestamp come last"""
-    # Simulate slots with mixed finite and infinite timestamps
+def test_slot_ordering_by_index():
+    """Test that slots are ordered by slot index (timestamps not used for ordering)."""
+    # Simulate slots with mixed finite and infinite timestamps (timestamps are indicative only)
     slot_dict = {
         0: {'samples': [], 'timestamp': float('inf')},  # No timestamp
         1: {'samples': [], 'timestamp': 100.0},
@@ -80,35 +80,35 @@ def test_infinite_timestamp_comes_last():
         3: {'samples': [], 'timestamp': float('inf')}   # No timestamp
     }
     
-    # Sort by timestamp
+    # Sort by slot index only
     sorted_slots = sorted(
         slot_dict.items(),
-        key=lambda x: (x[1]['timestamp'], x[0])
+        key=lambda x: x[0]  # Sort by slot_idx only
     )
     
-    # Verify: finite timestamps first (99.0, 100.0), then infinite (0, 3)
-    assert sorted_slots[0][0] == 2  # slot 2 (99.0)
-    assert sorted_slots[1][0] == 1  # slot 1 (100.0)
-    assert sorted_slots[2][0] == 0  # slot 0 (inf)
-    assert sorted_slots[3][0] == 3  # slot 3 (inf)
+    # Verify: sorted by slot index only (0, 1, 2, 3)
+    assert sorted_slots[0][0] == 0  # slot 0
+    assert sorted_slots[1][0] == 1  # slot 1
+    assert sorted_slots[2][0] == 2  # slot 2
+    assert sorted_slots[3][0] == 3  # slot 3
 
 
-def test_slot_index_as_secondary_sort():
-    """Test that slot index is used as secondary sort key"""
-    # Simulate slots with same timestamp
+def test_slot_index_as_primary_sort():
+    """Test that slot index is used as the primary (and only) sort key."""
+    # Simulate slots with various timestamps (timestamps are indicative only)
     slot_dict = {
         3: {'samples': [], 'timestamp': 100.0},
         1: {'samples': [], 'timestamp': 100.0},
         2: {'samples': [], 'timestamp': 100.0}
     }
     
-    # Sort by (timestamp, slot_idx)
+    # Sort by slot_idx only
     sorted_slots = sorted(
         slot_dict.items(),
-        key=lambda x: (x[1]['timestamp'], x[0])
+        key=lambda x: x[0]  # Sort by slot_idx only
     )
     
-    # Verify: same timestamp, sorted by slot index
+    # Verify: sorted by slot index regardless of timestamp
     assert sorted_slots[0][0] == 1
     assert sorted_slots[1][0] == 2
     assert sorted_slots[2][0] == 3
@@ -172,10 +172,10 @@ def test_multiple_slot_audio_merge_realistic():
         1: {'samples': slot_1_chunks, 'timestamp': 100.1, 'sample_rate': 22050}
     }
     
-    # Sort by timestamp
+    # Sort by slot index only
     sorted_slots = sorted(
         slot_audio_dict.items(),
-        key=lambda x: (x[1]['timestamp'], x[0])
+        key=lambda x: x[0]  # Sort by slot_idx only
     )
     
     # Concatenate each slot
@@ -185,10 +185,10 @@ def test_multiple_slot_audio_merge_realistic():
             slot_concatenated = np.concatenate(slot_data['samples'])
             audio_samples_list.append(slot_concatenated)
     
-    # Verify merge
+    # Verify merge (slot 0 first, then slot 1)
     assert len(audio_samples_list) == 2
-    assert len(audio_samples_list[0]) == 102400  # 100 chunks * 1024
-    assert len(audio_samples_list[1]) == 102400
+    assert len(audio_samples_list[0]) == 102400  # 100 chunks * 1024 (slot 0)
+    assert len(audio_samples_list[1]) == 102400  # 100 chunks * 1024 (slot 1)
 
 
 def test_sample_rate_consistency_check():
@@ -208,8 +208,8 @@ def test_sample_rate_consistency_check():
 
 
 def test_json_timestamp_metadata():
-    """Test that JSON metadata includes timestamp for synchronization"""
-    # Simulate JSON slot with timestamp
+    """Test that JSON metadata includes timestamp (indicative only, not used for ordering)."""
+    # Simulate JSON slot with timestamp (indicative only)
     json_slot = {
         'samples': [
             {'frame': 0, 'time': 0.0},
@@ -219,21 +219,21 @@ def test_json_timestamp_metadata():
         'timestamp': 100.5
     }
     
-    # Verify timestamp is preserved
+    # Verify timestamp is preserved (for informational purposes only)
     assert 'timestamp' in json_slot
     assert json_slot['timestamp'] == 100.5
 
 
 if __name__ == '__main__':
     # Run tests
-    test_audio_slots_sorted_by_timestamp()
+    test_audio_slots_sorted_by_slot_index()
     test_audio_concatenation_preserves_order()
-    test_json_slots_sorted_by_timestamp()
-    test_infinite_timestamp_comes_last()
-    test_slot_index_as_secondary_sort()
+    test_json_slots_sorted_by_slot_index()
+    test_slot_ordering_by_index()
+    test_slot_index_as_primary_sort()
     test_audio_duration_calculation_from_samples()
     test_json_aggregation_structure()
     test_multiple_slot_audio_merge_realistic()
     test_sample_rate_consistency_check()
     test_json_timestamp_metadata()
-    print("All stream aggregation by timestamp tests passed!")
+    print("All stream aggregation tests passed!")

@@ -558,7 +558,7 @@ class Node(Node):
                 # Get audio from node_audio_dict
                 audio_chunk = node_audio_dict.get(slot_info['source'], None)
                 if audio_chunk is not None:
-                    # Preserve timestamp in audio chunk for downstream synchronization
+                    # Preserve timestamp in audio chunk (indicative only, not used for ordering)
                     if isinstance(audio_chunk, dict):
                         # Already a dict (possibly from SyncQueue or Video node)
                         # Check if it already has a timestamp
