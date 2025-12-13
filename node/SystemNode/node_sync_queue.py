@@ -1,36 +1,31 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Queue Synchronization Node - Optimized Version
+Queue Synchronization Node - Count-Based Version
 
-This node synchronizes data from multiple queues. Each "Add Slot" creates
-an input entry and a corresponding output entry with a selectable input type
-(Image, Audio, or JSON - only one type per slot).
-
-Optimizations:
-- Removed expensive copy.deepcopy() - uses direct references
-- O(1) deduplication using Set instead of O(n) linear search
-- Limited queue retrieval instead of get_all()
-- Cached sorting results
-- Optimized buffer cleanup
+This node synchronizes data from multiple queues using count-based synchronization.
+Each "Add Slot" creates an input entry and a corresponding output entry with a 
+selectable input type (Image, Audio, or JSON - only one type per slot).
 
 Features:
+- Count-based synchronization (no timestamp matching)
+- Configurable FPS and retention time
+- Automatic slot creation on node instantiation (Image, Audio, JSON)
 - Selectable data type per slot via dropdown (Image/Audio/JSON)
 - Type is displayed in input/output labels (e.g., "In1: Audio", "Out2: Image")
 - Dynamic type switching: changing the type recreates input/output attributes
   with correct type constants and clears the slot buffer
-- Configurable retention time (default: 3 seconds)
-- Automatic memory cleanup: removes old buffered data beyond retention window
-- Deduplication: prevents duplicate items from consuming memory
-- Timestamp-based synchronization across all slots
+- Simple element counting: Video/JSON = fps × retention_time, Audio = 1 chunk
+- Outputs immediately when ALL slots have the required count
+- Buffers automatically cleared after output
 
 The node does NOT display frames visually. It retrieves data from queues,
-buffers it with a configurable retention time (default: 3 seconds), 
-synchronizes based on timestamps, and passes the synchronized data to outputs.
+buffers it based on count, synchronizes when all slots are ready, 
+and passes the synchronized data to outputs.
 
-The node displays the number of available elements for synchronization.
+The node displays the synchronization status per slot.
 """
-import time
+from collections import deque
 
 import dearpygui.dearpygui as dpg
 
@@ -41,8 +36,8 @@ from node.basenode import Node
 # Default retention time in seconds
 DEFAULT_RETENTION_TIME = 3.0
 
-# Maximum items to retrieve from queue per update (prevents lag on large queues)
-MAX_QUEUE_ITEMS_PER_UPDATE = 10
+# Default FPS
+DEFAULT_FPS = 10
 
 
 class FactoryNode:
@@ -78,6 +73,7 @@ class FactoryNode:
         if node.tag_node_name not in node._sync_state:
             node._sync_state[node.tag_node_name] = {
                 'retention_time': DEFAULT_RETENTION_TIME,  # Default 3 seconds retention time
+                'fps': DEFAULT_FPS,  # Default 10 FPS
                 'slot_buffers': {},  # Buffers for each slot
             }
 
@@ -92,11 +88,21 @@ class FactoryNode:
                     tag=node.tag_node_input00_name,
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
+                dpg.add_text("FPS:")
+                dpg.add_input_int(
+                    tag=node.tag_node_name + ':FPS',
+                    default_value=DEFAULT_FPS,
+                    min_value=1,
+                    max_value=120,
+                    width=150,
+                    callback=node._update_fps,
+                    user_data=node.tag_node_name,
+                )
                 dpg.add_text("Retention Time (s):")
                 dpg.add_input_float(
                     tag=node.tag_node_name + ':RetentionTime',
                     default_value=DEFAULT_RETENTION_TIME,
-                    min_value=0.0,
+                    min_value=0.1,
                     max_value=10.0,
                     width=150,
                     step=0.1,
@@ -111,19 +117,14 @@ class FactoryNode:
                 )
                 dpg.add_text(
                     tag=node.tag_node_name + ':Status',
-                    default_value='Slots: 0 | Synced: 0',
-                )
-                # Display available elements count for synchronization
-                dpg.add_text(
-                    tag=node.tag_node_name + ':ElementsCount',
-                    default_value='Available: 0',
+                    default_value='⏳ Waiting',
                 )
 
         return node
 
 
 class Node(Node):
-    _ver = '0.0.4'
+    _ver = '0.1.0'
 
     node_label = 'SyncQueue'
     node_tag = 'SyncQueue'
@@ -150,12 +151,52 @@ class Node(Node):
     def __init__(self):
         pass
 
+    def _update_fps(self, sender, data, user_data):
+        """Update the FPS for count calculation."""
+        tag_node_name = user_data
+        fps = dpg_get_value(sender)
+        if tag_node_name in self._sync_state:
+            self._sync_state[tag_node_name]['fps'] = fps
+            # Recalculate required counts for all slots
+            self._recalculate_required_counts(tag_node_name)
+
     def _update_retention_time(self, sender, data, user_data):
         """Update the retention time for data buffering."""
         tag_node_name = user_data
         retention_time = dpg_get_value(sender)
         if tag_node_name in self._sync_state:
             self._sync_state[tag_node_name]['retention_time'] = retention_time
+            # Recalculate required counts for all slots
+            self._recalculate_required_counts(tag_node_name)
+
+    def _get_required_count(self, slot_type, fps, retention_time):
+        """Calculate required count per slot type."""
+        if slot_type == 'audio':
+            return 1  # 1 chunk = retention_time seconds
+        elif slot_type in ['image', 'json']:
+            return int(fps * retention_time)  # e.g., 10fps × 3s = 30 elements
+        return 1
+
+    def _recalculate_required_counts(self, tag_node_name):
+        """Recalculate required counts for all slots when FPS or retention time changes."""
+        if tag_node_name not in self._sync_state:
+            return
+        
+        sync_state = self._sync_state[tag_node_name]
+        fps = sync_state.get('fps', DEFAULT_FPS)
+        retention_time = sync_state.get('retention_time', DEFAULT_RETENTION_TIME)
+        slot_buffers = sync_state.get('slot_buffers', {})
+        slot_types = self._slot_types.get(tag_node_name, {})
+        
+        for slot_idx, buffer_info in slot_buffers.items():
+            slot_type = slot_types.get(slot_idx, 'image')
+            required_count = self._get_required_count(slot_type, fps, retention_time)
+            buffer_info['required_count'] = required_count
+            # Update maxlen for the deque
+            max_len = required_count * 2  # Allow some buffer overhead
+            # Create new deque with updated maxlen, preserving existing data
+            old_data = list(buffer_info['data'])
+            buffer_info['data'] = deque(old_data, maxlen=max_len)
 
     def _update_slot_type(self, sender, data, user_data):
         """
@@ -189,12 +230,18 @@ class Node(Node):
                 # Update the slot type
                 self._slot_types[tag_node_name][slot_idx] = new_slot_type
                 
-                # Clear the slot buffer since the data type changed
+                # Clear the slot buffer and recalculate required count
                 if tag_node_name in self._sync_state:
-                    slot_buffers = self._sync_state[tag_node_name].get('slot_buffers', {})
+                    sync_state = self._sync_state[tag_node_name]
+                    slot_buffers = sync_state.get('slot_buffers', {})
+                    fps = sync_state.get('fps', DEFAULT_FPS)
+                    retention_time = sync_state.get('retention_time', DEFAULT_RETENTION_TIME)
+                    
                     if slot_idx in slot_buffers:
-                        slot_buffers[slot_idx]['data'] = []
-                        slot_buffers[slot_idx]['seen_timestamps'] = set()
+                        required_count = self._get_required_count(new_slot_type, fps, retention_time)
+                        max_len = required_count * 2
+                        slot_buffers[slot_idx]['data'] = deque(maxlen=max_len)
+                        slot_buffers[slot_idx]['required_count'] = required_count
                 
                 # Delete old input/output attributes
                 old_type_constant = self._get_type_constant(old_slot_type)
@@ -250,20 +297,14 @@ class Node(Node):
         node_audio_dict,
     ):
         """
-        Update the sync queue node - OPTIMIZED VERSION.
+        Update the sync queue node - COUNT-BASED VERSION.
         
         This method:
-        1. Retrieves data from queues connected to input slots (limited retrieval)
-        2. Buffers data with timestamps (respecting retention time)
-        3. Synchronizes data across slots based on timestamps
-        4. Outputs synchronized data to respective output slots
-        5. Updates the available elements count display
-        
-        Optimizations:
-        - Direct reference instead of deepcopy (10-100x faster)
-        - O(1) deduplication with Set (instead of O(n))
-        - Limited queue retrieval (prevents processing thousands of items)
-        - Optimized cleanup
+        1. Retrieves data from queues connected to input slots
+        2. Buffers data using simple deque (no timestamp metadata)
+        3. Checks if all slots have required count
+        4. Outputs batch and clears buffers when synchronized
+        5. Updates the synchronization status display
         """
         tag_node_name = str(node_id) + ':' + self.node_tag
         
@@ -272,6 +313,7 @@ class Node(Node):
         
         # Get sync state
         sync_state = self._sync_state.get(tag_node_name, {})
+        fps = sync_state.get('fps', DEFAULT_FPS)
         retention_time = sync_state.get('retention_time', DEFAULT_RETENTION_TIME)
         
         # Initialize slot buffers if not exists
@@ -313,18 +355,18 @@ class Node(Node):
                 slot_connections[slot_number][connection_type] = source_node_id_name
         
         # Retrieve data from queues for each slot
-        current_time = time.time()
-        total_available_elements = 0
-        
         for slot_idx in range(1, slot_num + 1):
             # Get the slot's configured type (use 'or' to handle None values)
             slot_type = slot_types.get(slot_idx) or 'image'
             
-            # Initialize slot buffer with seen_timestamps set for O(1) deduplication
+            # Initialize slot buffer with required count
             if slot_idx not in slot_buffers:
+                required_count = self._get_required_count(slot_type, fps, retention_time)
+                max_len = required_count * 2  # Allow some buffer overhead
                 slot_buffers[slot_idx] = {
-                    'data': [],
-                    'seen_timestamps': set()  # O(1) lookup instead of O(n) search
+                    'data': deque(maxlen=max_len),
+                    'required_count': required_count,
+                    'slot_type': slot_type
                 }
             
             if slot_idx in slot_connections:
@@ -347,7 +389,7 @@ class Node(Node):
                 if data_dict is not None and connection_type_key in connections:
                     source_node = connections[connection_type_key]
                     
-                    # Get queue info to access buffered items with timestamps
+                    # Get queue info to access buffered items
                     queue_info = data_dict.get_queue_info(source_node)
                     
                     if queue_info.get('exists') and not queue_info.get('is_empty'):
@@ -355,117 +397,94 @@ class Node(Node):
                         queue_manager = data_dict._queue_manager
                         queue = queue_manager.get_queue(source_node, slot_type)
                         
-                        # OPTIMIZATION: Limit retrieval to avoid processing huge queues
-                        # Get only the most recent items (prevents lag on large queues)
+                        # Get all items from queue
                         all_items = queue.get_all()
                         
-                        # Take only the last N items (most recent)
-                        items_to_process = all_items[-MAX_QUEUE_ITEMS_PER_UPDATE:] if len(all_items) > MAX_QUEUE_ITEMS_PER_UPDATE else all_items
-                        
-                        # Add new items to slot buffer
-                        for timestamped_data in items_to_process:
-                            # OPTIMIZATION: O(1) deduplication check using Set
-                            if timestamped_data.timestamp not in slot_buffers[slot_idx]['seen_timestamps']:
-                                slot_buffers[slot_idx]['seen_timestamps'].add(timestamped_data.timestamp)
-                                
-                                # OPTIMIZATION: Direct reference instead of deepcopy
-                                # This is 10-100x faster and safe if data isn't modified
-                                slot_buffers[slot_idx]['data'].append({
-                                    'data': timestamped_data.data,  # Direct reference (no copy)
-                                    'timestamp': timestamped_data.timestamp,
-                                    'received_at': current_time
-                                })
-            
-            # Count available elements in this slot's buffer
-            total_available_elements += len(slot_buffers[slot_idx].get('data', []))
+                        # Add new items to slot buffer (deque automatically limits size)
+                        # Note: We don't check for duplicates since the deque maxlen handles overflow
+                        # and in a streaming context, duplicate data is rare
+                        for timestamped_data in all_items:
+                            # Store the TimestampedData object directly
+                            # (we keep the object for data access, but don't use timestamps for sync)
+                            slot_buffers[slot_idx]['data'].append(timestamped_data)
         
-        # OPTIMIZATION: Clean up old data from buffers efficiently
-        # Keep items for a reasonable window (retention_time + 1 second buffer)
-        max_buffer_age = max(retention_time + 1.0, 2.0)
-        for slot_idx in slot_buffers:
-            old_data = slot_buffers[slot_idx].get('data', [])
-            
-            # Filter out old items
-            new_data = [
-                item for item in old_data
-                if (current_time - item['received_at']) <= max_buffer_age
-            ]
-            
-            slot_buffers[slot_idx]['data'] = new_data
-            
-            # Update seen_timestamps set to only include current timestamps
-            slot_buffers[slot_idx]['seen_timestamps'] = {
-                item['timestamp'] for item in new_data
-            }
+        # Check if all slots are ready (have required count)
+        all_ready = True
+        if slot_num == 0:
+            all_ready = False
+        else:
+            for slot_idx in range(1, slot_num + 1):
+                if slot_idx not in slot_buffers:
+                    all_ready = False
+                    break
+                buffer_info = slot_buffers[slot_idx]
+                if len(buffer_info['data']) < buffer_info['required_count']:
+                    all_ready = False
+                    break
         
-        # Synchronize data based on timestamps
-        synced_count = 0
+        # Output batch if ready
         output_data = {
             'image': {},
             'json': {},
             'audio': {}
         }
         
-        # For each slot, find data that has been retained long enough
+        if all_ready:
+            # Extract required count from each slot
+            for slot_idx in range(1, slot_num + 1):
+                slot_type = slot_types.get(slot_idx) or 'image'
+                buffer_info = slot_buffers[slot_idx]
+                required_count = buffer_info['required_count']
+                
+                # Safety check: ensure we have enough data before popping
+                # (should always be true since all_ready checks this, but belt-and-suspenders)
+                if len(buffer_info['data']) < required_count:
+                    continue
+                
+                batch = []
+                for _ in range(required_count):
+                    timestamped_data = buffer_info['data'].popleft()
+                    batch.append(timestamped_data.data)
+                
+                # For audio slots with single element, unwrap the batch
+                if slot_type == 'audio' and len(batch) == 1:
+                    output_data[slot_type][slot_idx] = batch[0]
+                else:
+                    output_data[slot_type][slot_idx] = batch
+        
+        # Update output text values and build status string
+        status_parts = []
+        type_abbrev = {'image': 'I', 'audio': 'A', 'json': 'J'}
+        
         for slot_idx in range(1, slot_num + 1):
             slot_type = slot_types.get(slot_idx) or 'image'
             
+            # Get current and required counts
             if slot_idx in slot_buffers:
-                buffer_data = slot_buffers[slot_idx].get('data', [])
-                
-                if buffer_data:
-                    # Get items that have been retained long enough
-                    valid_items = [
-                        item for item in buffer_data
-                        if (current_time - item['received_at']) >= retention_time
-                    ]
-                    
-                    if valid_items:
-                        # OPTIMIZATION: Get max by timestamp without full sort
-                        # This is O(n) instead of O(n log n)
-                        synced_item = max(valid_items, key=lambda x: x['timestamp'])
-                        synced_data = synced_item['data']
-                        synced_timestamp = synced_item['timestamp']
-                        
-                        # Preserve timestamp in output data for downstream synchronization
-                        # Wrap audio data with timestamp information for VideoWriter
-                        if slot_type == 'audio' and isinstance(synced_data, dict):
-                            # Audio data is already a dict (from video node), preserve/update timestamp
-                            if 'timestamp' not in synced_data or synced_data['timestamp'] != synced_timestamp:
-                                synced_data = synced_data.copy()
-                                synced_data['timestamp'] = synced_timestamp
-                        elif slot_type == 'audio':
-                            # Audio data is raw numpy array, wrap with timestamp
-                            synced_data = {
-                                'data': synced_data,
-                                'timestamp': synced_timestamp
-                            }
-                        
-                        output_data[slot_type][slot_idx] = synced_data
-                        synced_count += 1
-        
-        # Update output text values for each slot
-        for slot_idx in range(1, slot_num + 1):
-            slot_type = slot_types.get(slot_idx) or 'image'
+                current_count = len(slot_buffers[slot_idx]['data'])
+                required_count = slot_buffers[slot_idx]['required_count']
+            else:
+                current_count = 0
+                required_count = 0
             
             # Update output text based on slot type
             output_tag = f"{tag_node_name}:{self._get_type_constant(slot_type)}:Output{slot_idx:02d}Value"
             if dpg.does_item_exist(output_tag):
-                if slot_idx in output_data[slot_type]:
-                    buffer_count = len(slot_buffers.get(slot_idx, {}).get('data', []))
-                    dpg_set_value(output_tag, f'Out{slot_idx}: {slot_type.capitalize()} ({buffer_count})')
-                else:
-                    dpg_set_value(output_tag, f'Out{slot_idx}: No data')
+                type_display = self._TYPE_INTERNAL_TO_DISPLAY.get(slot_type, 'Image')
+                dpg_set_value(output_tag, f'Out{slot_idx}: {type_display} ({current_count}/{required_count})')
+            
+            # Build status part for this slot
+            abbrev = type_abbrev.get(slot_type, 'I')
+            status_parts.append(f"S{slot_idx}({abbrev}): {current_count}/{required_count}")
         
         # Update status text
         status_tag = tag_node_name + ':Status'
         if dpg.does_item_exist(status_tag):
-            dpg_set_value(status_tag, f'Slots: {slot_num} | Synced: {synced_count}')
-        
-        # Update available elements count display
-        elements_tag = tag_node_name + ':ElementsCount'
-        if dpg.does_item_exist(elements_tag):
-            dpg_set_value(elements_tag, f'Available: {total_available_elements}')
+            if all_ready and slot_num > 0:
+                status_str = "✅ Synced! | " + " | ".join(status_parts)
+            else:
+                status_str = "⏳ Waiting | " + " | ".join(status_parts) if status_parts else "⏳ Waiting"
+            dpg_set_value(status_tag, status_str)
         
         # Return aggregated data for each slot
         result = {}
@@ -514,6 +533,13 @@ class Node(Node):
         setting_dict['pos'] = pos
         setting_dict['slot_id'] = self._slot_id.get(tag_node_name, 0)
         
+        # Save FPS
+        fps_tag = tag_node_name + ':FPS'
+        if dpg.does_item_exist(fps_tag):
+            setting_dict['fps'] = dpg_get_value(fps_tag)
+        else:
+            setting_dict['fps'] = DEFAULT_FPS
+        
         # Save retention time
         retention_tag = tag_node_name + ':RetentionTime'
         if dpg.does_item_exist(retention_tag):
@@ -537,6 +563,12 @@ class Node(Node):
         except (ValueError, TypeError):
             slot_number = 0  # Default to 0 if conversion fails
         
+        # Restore FPS
+        fps = setting_dict.get('fps', DEFAULT_FPS)
+        fps_tag = tag_node_name + ':FPS'
+        if dpg.does_item_exist(fps_tag):
+            dpg_set_value(fps_tag, fps)
+        
         # Restore retention time
         retention_time = setting_dict.get('retention_time', DEFAULT_RETENTION_TIME)
         retention_tag = tag_node_name + ':RetentionTime'
@@ -545,6 +577,7 @@ class Node(Node):
         
         # Update sync state
         if tag_node_name in self._sync_state:
+            self._sync_state[tag_node_name]['fps'] = fps
             self._sync_state[tag_node_name]['retention_time'] = retention_time
         
         # Restore slot types
@@ -552,11 +585,17 @@ class Node(Node):
         if tag_node_name not in self._slot_types:
             self._slot_types[tag_node_name] = {}
         
-        # Recreate slots with their saved types
-        for i in range(slot_number):
-            slot_idx = i + 1
-            slot_type = saved_slot_types.get(slot_idx, saved_slot_types.get(str(slot_idx), 'image'))
-            self._add_slot(None, None, tag_node_name, initial_type=slot_type)
+        # If no saved slots (new node), add default 3 slots
+        if slot_number == 0:
+            self._add_slot(None, None, tag_node_name, initial_type='image')
+            self._add_slot(None, None, tag_node_name, initial_type='audio')
+            self._add_slot(None, None, tag_node_name, initial_type='json')
+        else:
+            # Recreate slots with their saved types (loading from config)
+            for i in range(slot_number):
+                slot_idx = i + 1
+                slot_type = saved_slot_types.get(slot_idx, saved_slot_types.get(str(slot_idx), 'image'))
+                self._add_slot(None, None, tag_node_name, initial_type=slot_type)
 
     def _add_slot(self, sender, data, user_data, initial_type='image'):
         """
@@ -585,6 +624,21 @@ class Node(Node):
             
             # Store the initial slot type (ensure it's never None)
             self._slot_types[tag_node_name][slot_idx] = initial_type or 'image'
+            
+            # Initialize buffer for this slot
+            if tag_node_name in self._sync_state:
+                sync_state = self._sync_state[tag_node_name]
+                fps = sync_state.get('fps', DEFAULT_FPS)
+                retention_time = sync_state.get('retention_time', DEFAULT_RETENTION_TIME)
+                slot_buffers = sync_state.get('slot_buffers', {})
+                
+                required_count = self._get_required_count(initial_type, fps, retention_time)
+                max_len = required_count * 2
+                slot_buffers[slot_idx] = {
+                    'data': deque(maxlen=max_len),
+                    'required_count': required_count,
+                    'slot_type': initial_type
+                }
             
             # Determine where to insert (before the Add Slot button)
             before_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input00'
@@ -638,5 +692,5 @@ class Node(Node):
             ):
                 dpg.add_text(
                     tag=output_value_tag,
-                    default_value=f'Out{slot_idx}: {initial_display} (0)',
+                    default_value=f'Out{slot_idx}: {initial_display} (0/0)',
                 )
