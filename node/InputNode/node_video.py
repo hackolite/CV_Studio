@@ -71,6 +71,13 @@ class FactoryNode:
             node.tag_node_name + ":" + node.TYPE_FLOAT + ":Input05Value"
         )
 
+        node.tag_node_input06_name = (
+            node.tag_node_name + ":" + node.TYPE_FLOAT + ":Input06"
+        )
+        node.tag_node_input06_value_name = (
+            node.tag_node_name + ":" + node.TYPE_FLOAT + ":Input06Value"
+        )
+
         node.tag_node_output01_name = (
             node.tag_node_name + ":" + node.TYPE_IMAGE + ":Output01"
         )
@@ -229,6 +236,20 @@ class FactoryNode:
                     callback=None,
                 )
 
+            with dpg.node_attribute(
+                tag=node.tag_node_input06_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_input06_value_name,
+                    label="Chunk Size (s)",
+                    width=node._small_window_w - 80,
+                    default_value=2.0,
+                    min_value=0.5,
+                    max_value=10.0,
+                    callback=None,
+                )
+
             if use_pref_counter:
                 with dpg.node_attribute(
                     tag=node.tag_node_output02_name,
@@ -322,7 +343,7 @@ class VideoNode(Node):
         self._chunk_metadata = {}  # Metadata for chunk-to-frame mapping
         self._chunk_temp_dirs = {}  # Track temporary directories for cleanup
 
-    def _preprocess_video(self, node_id, movie_path, chunk_duration=3.0, step_duration=3.0):
+    def _preprocess_video(self, node_id, movie_path, chunk_duration=2.0, step_duration=2.0):
         """
         Pre-process video by extracting and chunking audio as WAV files.
         
@@ -335,8 +356,8 @@ class VideoNode(Node):
         Args:
             node_id: Node identifier
             movie_path: Path to video file
-            chunk_duration: Duration of each audio chunk in seconds (default: 3.0)
-            step_duration: Step size between chunks in seconds (default: 3.0, no overlap)
+            chunk_duration: Duration of each audio chunk in seconds (default: 2.0)
+            step_duration: Step size between chunks in seconds (default: 2.0, no overlap)
         """
         if not movie_path or not os.path.exists(movie_path):
             logger.warning(f"[Video] Video file not found: {movie_path}")
@@ -579,6 +600,9 @@ class VideoNode(Node):
         tag_node_input05_value_name = (
             tag_node_name + ":" + self.TYPE_FLOAT + ":Input05Value"
         )
+        tag_node_input06_value_name = (
+            tag_node_name + ":" + self.TYPE_FLOAT + ":Input06Value"
+        )
 
         output_value01_tag = tag_node_name + ":" + self.TYPE_IMAGE + ":Output01Value"
         tag_node_output_image = tag_node_name + ":" + self.TYPE_IMAGE + ":Output01Value"
@@ -621,6 +645,8 @@ class VideoNode(Node):
         target_fps = int(target_fps_value) if target_fps_value is not None else 24
         playback_speed_value = dpg_get_value(tag_node_input05_value_name)
         playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
+        chunk_size_value = dpg_get_value(tag_node_input06_value_name)
+        chunk_size = float(chunk_size_value) if chunk_size_value is not None else 2.0
 
         if video_capture is not None and use_pref_counter:
             start_time = time.monotonic()
@@ -761,6 +787,9 @@ class VideoNode(Node):
         tag_node_input05_value_name = (
             tag_node_name + ":" + self.TYPE_FLOAT + ":Input05Value"
         )
+        tag_node_input06_value_name = (
+            tag_node_name + ":" + self.TYPE_FLOAT + ":Input06Value"
+        )
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -771,6 +800,8 @@ class VideoNode(Node):
         target_fps = int(target_fps_value) if target_fps_value is not None else 24
         playback_speed_value = dpg_get_value(tag_node_input05_value_name)
         playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
+        chunk_size_value = dpg_get_value(tag_node_input06_value_name)
+        chunk_size = float(chunk_size_value) if chunk_size_value is not None else 2.0
 
         setting_dict = {}
         setting_dict["ver"] = self._ver
@@ -779,6 +810,7 @@ class VideoNode(Node):
         setting_dict[tag_node_input03_value_name] = skip_rate
         setting_dict[tag_node_input04_value_name] = target_fps
         setting_dict[tag_node_input05_value_name] = playback_speed
+        setting_dict[tag_node_input06_value_name] = chunk_size
 
         return setting_dict
 
@@ -796,20 +828,32 @@ class VideoNode(Node):
         tag_node_input05_value_name = (
             tag_node_name + ":" + self.TYPE_FLOAT + ":Input05Value"
         )
+        tag_node_input06_value_name = (
+            tag_node_name + ":" + self.TYPE_FLOAT + ":Input06Value"
+        )
 
         loop_flag = setting_dict[tag_node_input02_value_name]
         skip_rate = int(setting_dict[tag_node_input03_value_name])
         target_fps = int(setting_dict.get(tag_node_input04_value_name, 24))
         playback_speed = float(setting_dict.get(tag_node_input05_value_name, 1.0))
+        chunk_size = float(setting_dict.get(tag_node_input06_value_name, 2.0))
 
         dpg_set_value(tag_node_input02_value_name, loop_flag)
         dpg_set_value(tag_node_input03_value_name, skip_rate)
         dpg_set_value(tag_node_input04_value_name, target_fps)
         dpg_set_value(tag_node_input05_value_name, playback_speed)
+        dpg_set_value(tag_node_input06_value_name, chunk_size)
 
     def _callback_file_select(self, sender, data):
         if data["file_name"] != ".":
             node_id = sender.split(":")[1]
             self._movie_filepath[node_id] = data["file_path_name"]
-            # Preprocess video and extract audio chunks
-            self._preprocess_video(node_id, data["file_path_name"])
+            # Get chunk size from slider
+            tag_node_name = str(node_id) + ":" + self.node_tag
+            tag_node_input06_value_name = (
+                tag_node_name + ":" + self.TYPE_FLOAT + ":Input06Value"
+            )
+            chunk_size_value = dpg_get_value(tag_node_input06_value_name)
+            chunk_size = float(chunk_size_value) if chunk_size_value is not None else 2.0
+            # Preprocess video and extract audio chunks with the specified chunk size
+            self._preprocess_video(node_id, data["file_path_name"], chunk_duration=chunk_size, step_duration=chunk_size)
