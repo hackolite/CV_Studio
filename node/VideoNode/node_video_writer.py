@@ -25,11 +25,20 @@ from node.basenode import Node
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 try:
-    from src.utils.logging import get_logger
+    from src.utils.logging import get_logger, get_logs_directory
     logger = get_logger(__name__)
 except ImportError:
     import logging
     logger = logging.getLogger(__name__)
+    # Fallback for get_logs_directory if src.utils.logging import fails
+    # This ensures crash logging works even if the main logging system is unavailable
+    # Duplicates logic from src/utils/logging.py line 14-30 intentionally for robustness
+    def get_logs_directory():
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent.parent
+        logs_dir = project_root / 'logs'
+        logs_dir.mkdir(exist_ok=True)
+        return logs_dir
 
 try:
     import ffmpeg
@@ -52,6 +61,66 @@ def slow_motion_interpolation(prev_frame, next_frame, alpha):
     """ Generates smooth intermediate frame between 2 images """
     return cv2.addWeighted(prev_frame, 1 - alpha, next_frame, alpha, 0)
 
+
+def create_crash_log(operation_name, exception, tag_node_name=None):
+    """
+    Create a detailed crash log file when an error occurs in video operations.
+    
+    This function is called when critical operations fail (stream setup, recording, merging).
+    It creates a timestamped log file in the logs directory with:
+    - Full stack trace
+    - Exception details
+    - Node identification
+    - Timestamp
+    
+    Args:
+        operation_name: Name of the operation that failed (e.g., "recording_start", "audio_merge")
+        exception: The exception that was caught
+        tag_node_name: Optional node tag for identification
+        
+    Returns:
+        Path to the created log file
+    """
+    try:
+        logs_dir = get_logs_directory()
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # Create descriptive filename
+        node_suffix = f"_{tag_node_name.replace(':', '_')}" if tag_node_name else ""
+        log_filename = f"crash_{operation_name}{node_suffix}_{timestamp}.log"
+        log_path = logs_dir / log_filename
+        
+        # Gather crash information
+        with open(log_path, 'w', encoding='utf-8') as f:
+            f.write("="*70 + "\n")
+            f.write(f"CV Studio VideoWriter Crash Log\n")
+            f.write("="*70 + "\n")
+            f.write(f"Timestamp: {datetime.datetime.now().isoformat()}\n")
+            f.write(f"Operation: {operation_name}\n")
+            if tag_node_name:
+                f.write(f"Node: {tag_node_name}\n")
+            f.write(f"Exception Type: {type(exception).__name__}\n")
+            f.write(f"Exception Message: {str(exception)}\n")
+            f.write("="*70 + "\n\n")
+            
+            f.write("Full Stack Trace:\n")
+            f.write("-"*70 + "\n")
+            f.write(traceback.format_exc())
+            f.write("\n")
+            
+            f.write("="*70 + "\n")
+            f.write("End of crash log\n")
+            f.write("="*70 + "\n")
+        
+        logger.error(f"[VideoWriter] Crash log created: {log_path}")
+        return log_path
+        
+    except Exception as log_error:
+        # If we can't even create the log file, log to console
+        logger.error(f"[VideoWriter] Failed to create crash log: {log_error}")
+        logger.error(f"[VideoWriter] Original error: {exception}")
+        logger.error(traceback.format_exc())
+        return None
 
 
 class FactoryNode:
@@ -1015,6 +1084,8 @@ class VideoWriterNode(Node):
                 logger.warning(f"[VideoWriter] Audio merge failed. Video without audio saved to: {final_path}")
                 
         except Exception as e:
+            # Critical error during audio/video merge - create crash log
+            create_crash_log("audio_video_merge", e, tag_node_name)
             logger.error(f"[VideoWriter] Error in async merge thread: {e}", exc_info=True)
             # Try to save the temp file as final on error
             if os.path.exists(temp_path):
