@@ -158,6 +158,22 @@ class TimestampedQueue:
         """
         with self._lock:
             return list(self._queue)
+    
+    def resize(self, new_maxsize: int) -> None:
+        """
+        Resize the queue to a new maximum size.
+        
+        Args:
+            new_maxsize: New maximum size for the queue
+        """
+        with self._lock:
+            old_data = list(self._queue)
+            self._maxsize = new_maxsize
+            self._queue = deque(old_data, maxlen=new_maxsize)
+            logger.info(
+                f"Queue [{self._node_id}] resized to {new_maxsize} "
+                f"(kept {len(self._queue)} items)"
+            )
 
 
 class NodeDataQueueManager:
@@ -314,3 +330,15 @@ class NodeDataQueueManager:
                 "oldest_timestamp": oldest.timestamp if oldest else None,
                 "latest_timestamp": latest.timestamp if latest else None,
             }
+    
+    def resize_queue(self, node_id_name: str, data_type: str, new_size: int) -> None:
+        """
+        Resize a queue for a specific node and data type.
+        
+        Args:
+            node_id_name: The node identifier
+            data_type: Type of data
+            new_size: New maximum size for the queue
+        """
+        queue = self.get_queue(node_id_name, data_type)
+        queue.resize(new_size)
