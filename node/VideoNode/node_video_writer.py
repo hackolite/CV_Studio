@@ -214,6 +214,7 @@ class VideoWriterNode(Node):
     _merge_progress_dict = {}  # Store merge progress (0.0 to 1.0)
     _frame_count_dict = {}  # Track number of frames written during recording: {node: frame_count}
     _last_frame_dict = {}  # Store last frame for potential duplication: {node: frame}
+    _source_metadata_dict = {}  # Store metadata from source nodes (e.g., target_fps from Video node)
     
     # Background worker instances
     _background_workers = {}  # Store VideoBackgroundWorker instances
@@ -360,9 +361,20 @@ class VideoWriterNode(Node):
 
         frame = node_image_dict.get(connection_info_src, None)
         
-        # Get audio and JSON data if available
+        # Get audio, JSON data, and metadata if available
         audio_data = node_audio_dict.get(connection_info_src, None)
         json_data = node_result_dict.get(connection_info_src, None)
+        
+        # Extract metadata from source node (e.g., target_fps from Video node)
+        source_metadata = {}
+        if isinstance(json_data, dict):
+            source_metadata = json_data.get('metadata', {})
+        
+        # Store source metadata for use during recording
+        # Class variable _source_metadata_dict is initialized at class level (line 217)
+        if source_metadata and tag_node_name in self._video_writer_dict:
+            self._source_metadata_dict[tag_node_name] = source_metadata
+            logger.debug(f"[VideoWriter] Received metadata: {source_metadata}")
 
 
         if frame is not None:
@@ -1035,6 +1047,14 @@ class VideoWriterNode(Node):
             writer_fps = self._opencv_setting_dict['video_writer_fps']
             video_writer_directory = self._opencv_setting_dict[
                 'video_writer_directory']
+            
+            # Use target_fps from source metadata if available (from Video node slider)
+            # This ensures output video FPS matches the input video node configuration
+            if tag_node_name in self._source_metadata_dict:
+                source_metadata = self._source_metadata_dict[tag_node_name]
+                if 'target_fps' in source_metadata:
+                    writer_fps = source_metadata['target_fps']
+                    logger.info(f"[VideoWriter] Using target_fps from source: {writer_fps}")
 
             os.makedirs(video_writer_directory, exist_ok=True)
 
@@ -1058,9 +1078,15 @@ class VideoWriterNode(Node):
             if use_worker and tag_node_name not in self._background_workers:
                 # Start background worker
                 try:
-                    # Use default chunk duration of 3.0 seconds (matches node_video.py default)
+                    # Use chunk duration from source metadata if available (from Video node slider)
+                    # Otherwise default to 3.0 seconds (matches node_video.py default)
                     # This ensures queue size is fps * chunk_duration * audio_queue_size for proper audio/video sync
                     chunk_duration = 3.0
+                    if tag_node_name in self._source_metadata_dict:
+                        source_metadata = self._source_metadata_dict[tag_node_name]
+                        if 'chunk_duration' in source_metadata:
+                            chunk_duration = source_metadata['chunk_duration']
+                            logger.info(f"[VideoWriter] Using chunk_duration from source: {chunk_duration}s")
                     
                     worker = VideoBackgroundWorker(
                         output_path=file_path,
