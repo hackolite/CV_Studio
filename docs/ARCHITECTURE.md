@@ -164,9 +164,11 @@ Slots 5-6:  [1][2][3]    (2x3 grid)
 
 **Queue Sizing**:
 ```python
-# Frame queue size = fps × chunk_duration
+# Frame queue size = fps × chunk_duration × audio_queue_size
 # Clamped to MIN_FRAME_QUEUE_SIZE (50) and MAX_FRAME_QUEUE_SIZE (300)
-frame_queue_size = max(50, min(int(fps * chunk_duration), 300))
+# Audio queue size = 4 elements (for coherence with SyncQueue max retention)
+# Total audio retention: 4 × 3s = 12s >= SyncQueue max (10s + 1s overhead = 11s)
+frame_queue_size = max(50, min(int(fps * chunk_duration * audio_queue_size), 300))
 ```
 
 **Worker States**:
@@ -177,6 +179,44 @@ IDLE → STARTING → ENCODING → FLUSHING → COMPLETED
                      ↓
                  CANCELLED
 ```
+
+## Audio/Image Retention Coherence
+
+**Critical Requirement**: Audio retention must be sufficient for SyncQueue synchronization.
+
+**Coherence Formula**:
+```python
+# Audio retention calculation
+audio_retention_time = audio_queue_size × chunk_duration
+# Example: 4 elements × 3.0s = 12.0s
+
+# SyncQueue buffer requirement
+syncqueue_max_retention = 10.0s  # User-configurable max
+syncqueue_buffer_overhead = 1.0s  # Internal overhead
+syncqueue_total_buffer = 11.0s
+
+# Coherence check
+audio_retention_time >= syncqueue_total_buffer
+12.0s >= 11.0s ✓ COHERENT
+```
+
+**Image Frame Requirements**:
+```python
+# Total frames needed = audio_retention_time × fps
+# At 30 FPS: 12.0s × 30 = 360 frames
+# At 60 FPS: 12.0s × 60 = 720 frames (capped at MAX_FRAME_QUEUE_SIZE=300)
+```
+
+**Configuration Values**:
+- `DEFAULT_AUDIO_QUEUE_SIZE = 4` elements
+- `DEFAULT_CHUNK_DURATION = 3.0` seconds
+- `DEFAULT_RETENTION_TIME = 3.0` seconds (SyncQueue default)
+- `MAX_RETENTION_TIME = 10.0` seconds (SyncQueue max)
+
+**Why This Matters**:
+If audio retention < SyncQueue max buffer, synchronization fails when users set
+high retention values. The audio queue runs out of data before the SyncQueue can
+synchronize all slots, causing audio dropout or desynchronization.
 
 ## Crash Causes Analysis
 
