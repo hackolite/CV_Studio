@@ -3,6 +3,10 @@
 import re
 import copy
 import logging
+import datetime
+import traceback
+import sys
+import os
 
 import cv2
 import numpy as np
@@ -17,6 +21,73 @@ from node.basenode import Node
 
 # Set up logger for this module
 logger = logging.getLogger(__name__)
+
+# Try to import crash logging utilities
+try:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    from src.utils.logging import get_logs_directory
+except ImportError:
+    # Fallback for get_logs_directory
+    def get_logs_directory():
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent.parent
+        logs_dir = project_root / 'logs'
+        logs_dir.mkdir(exist_ok=True)
+        return logs_dir
+
+
+def create_concat_crash_log(operation_name, exception, node_name=None):
+    """
+    Create a detailed crash log file when an error occurs in ImageConcat operations.
+    
+    Args:
+        operation_name: Name of the operation that failed
+        exception: The exception that was caught
+        node_name: Optional node name for identification
+        
+    Returns:
+        Path to the created log file
+    """
+    try:
+        logs_dir = get_logs_directory()
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # Create descriptive filename
+        node_suffix = f"_{node_name.replace(':', '_')}" if node_name else ""
+        log_filename = f"crash_imageconcat_{operation_name}{node_suffix}_{timestamp}.log"
+        log_path = logs_dir / log_filename
+        
+        # Gather crash information
+        with open(log_path, 'w', encoding='utf-8') as f:
+            f.write("="*70 + "\n")
+            f.write(f"CV Studio ImageConcat Crash Log\n")
+            f.write("="*70 + "\n")
+            f.write(f"Timestamp: {datetime.datetime.now().isoformat()}\n")
+            f.write(f"Operation: {operation_name}\n")
+            if node_name:
+                f.write(f"Node: {node_name}\n")
+            f.write(f"Exception Type: {type(exception).__name__}\n")
+            f.write(f"Exception Message: {str(exception)}\n")
+            f.write("="*70 + "\n\n")
+            
+            f.write("Full Stack Trace:\n")
+            f.write("-"*70 + "\n")
+            f.write(traceback.format_exc())
+            f.write("\n")
+            
+            f.write("="*70 + "\n")
+            f.write("End of crash log\n")
+            f.write("="*70 + "\n")
+        
+        logger.error(f"[ImageConcat] Crash log created: {log_path}")
+        return log_path
+        
+    except Exception as log_error:
+        # If we can't even create the log file, log to console
+        logger.error(f"[ImageConcat] Failed to create crash log: {log_error}")
+        logger.error(f"[ImageConcat] Original error: {exception}")
+        logger.error(traceback.format_exc())
+        return None
 
 def create_concat_image(frame_dict, slot_num):
     if slot_num == 1:
@@ -458,11 +529,12 @@ class Node(Node):
         self.tag_node_name = str(node_id) + ':' + self.node_tag
         self.output_value01_tag = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
 
-        small_window_w = self._opencv_setting_dict['process_width']
-        small_window_h = self._opencv_setting_dict['process_height']
-        resize_width = self._opencv_setting_dict['result_width']
-        resize_height = self._opencv_setting_dict['result_height']
-        draw_info_on_result = self._opencv_setting_dict['draw_info_on_result']
+        try:
+            small_window_w = self._opencv_setting_dict['process_width']
+            small_window_h = self._opencv_setting_dict['process_height']
+            resize_width = self._opencv_setting_dict['result_width']
+            resize_height = self._opencv_setting_dict['result_height']
+            draw_info_on_result = self._opencv_setting_dict['draw_info_on_result']
 
 
         node_name_dict = {}
@@ -592,22 +664,34 @@ class Node(Node):
         if len(json_chunks) > 0:
             json_data = json_chunks
 
-        logger.debug(f"[ImageConcat] Output: frame={display_frame is not None}, audio_slots={len(audio_chunks)}, json_slots={len(json_chunks)}, metadata={bool(source_metadata)}")
-        if display_frame is not None:
-            texture = self.convert_cv_to_dpg(
-                display_frame,
-                small_window_w,
-                small_window_h,
-            )
-            dpg_set_value(self.output_value01_tag, texture)
+            logger.debug(f"[ImageConcat] Output: frame={display_frame is not None}, audio_slots={len(audio_chunks)}, json_slots={len(json_chunks)}, metadata={bool(source_metadata)}")
+            if display_frame is not None:
+                texture = self.convert_cv_to_dpg(
+                    display_frame,
+                    small_window_w,
+                    small_window_h,
+                )
+                dpg_set_value(self.output_value01_tag, texture)
 
-
-        return {
-            "image": frame, 
-            "json": json_data, 
-            "audio": audio_data,
-            "metadata": source_metadata  # Pass through metadata from source nodes (e.g., FPS settings)
-        }
+            return {
+                "image": frame, 
+                "json": json_data, 
+                "audio": audio_data,
+                "metadata": source_metadata  # Pass through metadata from source nodes (e.g., FPS settings)
+            }
+        
+        except Exception as e:
+            # Critical error during stream concatenation - create crash log
+            create_concat_crash_log("stream_concat", e, self.tag_node_name)
+            logger.error(f"[ImageConcat] Stream concatenation crashed: {e}", exc_info=True)
+            
+            # Return empty result on error
+            return {
+                "image": None, 
+                "json": None, 
+                "audio": None,
+                "metadata": {}
+            }
 
     def close(self, node_id):
         pass
