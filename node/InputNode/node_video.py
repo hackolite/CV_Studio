@@ -378,9 +378,12 @@ class VideoNode(Node):
         Args:
             node_id: Node identifier
             movie_path: Path to video file
-            chunk_duration: DEPRECATED - kept for backward compatibility, not used
-            step_duration: DEPRECATED - kept for backward compatibility, not used
-            num_chunks_to_keep: DEPRECATED - kept for backward compatibility, queue size is now 4 seconds
+            chunk_duration: DEPRECATED (v1.0+) - kept for backward compatibility, not used
+                           Migration: Remove this parameter, chunking is now FPS-based
+            step_duration: DEPRECATED (v1.0+) - kept for backward compatibility, not used
+                          Migration: Remove this parameter, chunking is now FPS-based
+            num_chunks_to_keep: DEPRECATED (v1.0+) - kept for backward compatibility, queue size is now 4 seconds
+                               Migration: Queue size is automatically 4 * target_fps
             target_fps: Target FPS for playback (default: 24)
         """
         if not movie_path or not os.path.exists(movie_path):
@@ -462,7 +465,8 @@ class VideoNode(Node):
             
             # Create one audio chunk per frame
             # Use frame index to calculate exact boundaries, avoiding cumulative rounding errors
-            total_frames = int(np.ceil(len(y) / samples_per_frame))
+            # Use frame_count from video metadata to ensure exact number of chunks
+            total_frames = frame_count
             
             for frame_idx in range(total_frames):
                 # Calculate exact start and end positions for this frame using fractional precision
