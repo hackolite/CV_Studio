@@ -650,12 +650,19 @@ class VideoBackgroundWorker:
                 video_input = ffmpeg.input(self._temp_video_path)
                 audio_input = ffmpeg.input(self._temp_audio_path)
                 
+                # Merge with explicit synchronization parameters
+                # - shortest=True: Finish encoding when shortest stream ends (prevents desync)
+                # - audio_bitrate: 192k for good quality AAC audio
+                # - vsync='cfr': Constant frame rate for consistent video timing
                 output = ffmpeg.output(
                     video_input,
                     audio_input,
                     self.output_path,
                     vcodec='copy',
                     acodec='aac',
+                    audio_bitrate='192k',  # Higher quality audio (prevents "bizarre" sound)
+                    shortest=None,  # Finish when shortest stream ends (ensures sync)
+                    vsync='cfr',  # Constant frame rate video sync
                     loglevel='error'
                 )
                 

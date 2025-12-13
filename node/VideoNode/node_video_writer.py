@@ -899,13 +899,19 @@ class VideoWriterNode(Node):
                 video_input = ffmpeg.input(actual_video_path)
                 audio_input = ffmpeg.input(temp_audio_path)
                 
-                # Merge video and audio streams
+                # Merge video and audio streams with explicit synchronization
+                # - shortest=True: Finish encoding when shortest stream ends (prevents desync)
+                # - audio_bitrate: 192k for good quality AAC audio (prevents "bizarre" sound)
+                # - vsync='cfr': Constant frame rate for consistent video timing
                 output = ffmpeg.output(
                     video_input,
                     audio_input,
                     output_path,
                     vcodec='copy',  # Copy video codec (no re-encoding)
                     acodec='aac',   # Use AAC for audio (widely compatible)
+                    audio_bitrate='192k',  # Higher quality audio
+                    shortest=None,  # Finish when shortest stream ends (ensures sync)
+                    vsync='cfr',  # Constant frame rate video sync
                     loglevel='error'  # Only show errors
                 )
                 
