@@ -117,8 +117,9 @@ def test_audio_chunks_are_5_seconds():
         assert all_chunks_valid, "All chunks should be exactly 5 seconds"
         
         # For 12.5 seconds of audio with 5s chunks and 5s steps (no overlap):
-        # Full 5s chunks starting at: 0s, 5s (2 chunks)
-        # Remaining audio from 10s-12.5s (2.5s) gets padded to 5s (1 chunk)
+        # Chunk 0: 0-5s (full)
+        # Chunk 1: 5-10s (full)
+        # Chunk 2: 10-12.5s (2.5s padded to 5s)
         # Total: 3 chunks
         expected_num_chunks = 3
         assert len(chunk_paths) == expected_num_chunks, \
