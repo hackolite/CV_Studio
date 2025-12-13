@@ -92,7 +92,8 @@ def test_no_overlap_configuration():
     assert 'label="Speed"' in content, "Should have Speed slider"
     
     # 3. Check that default step_duration equals chunk_duration (no overlap)
-    assert 'chunk_duration=3.0, step_duration=3.0' in content, \
+    # Check for the function signature with both parameters
+    assert 'def _preprocess_video(self, node_id, movie_path, chunk_duration=3.0, step_duration=3.0)' in content, \
         "Default parameters should have no overlap (step_duration=chunk_duration)"
     
     # 4. Check synchronized playback via audio chunk retrieval
