@@ -12,7 +12,7 @@ import numpy as np
 
 
 def test_audio_slots_sorted_by_slot_index():
-    """Test that audio slots are sorted by slot index when merging (timestamps are indicative only)"""
+    """Test that audio slots are sorted by slot index when merging (timestamps are indicative only)."""
     # Simulate audio samples with different timestamps (indicative only, not used for ordering)
     slot_audio_dict = {
         0: {'samples': [np.array([1, 2, 3])], 'timestamp': 102.0, 'sample_rate': 22050},
@@ -33,7 +33,7 @@ def test_audio_slots_sorted_by_slot_index():
 
 
 def test_audio_concatenation_preserves_order():
-    """Test that audio concatenation preserves slot order"""
+    """Test that audio concatenation preserves slot order."""
     # Simulate sorted audio samples (by slot index)
     sorted_audio_samples = [
         np.array([1, 2, 3]),  # First by slot index
@@ -50,7 +50,7 @@ def test_audio_concatenation_preserves_order():
 
 
 def test_json_slots_sorted_by_slot_index():
-    """Test that JSON slots are sorted by slot index (timestamps are indicative only)"""
+    """Test that JSON slots are sorted by slot index (timestamps are indicative only)."""
     # Simulate JSON samples with different timestamps (indicative only, not used for ordering)
     json_samples_dict = {
         0: {'samples': [{'frame': 2}], 'timestamp': 102.0},
@@ -71,7 +71,7 @@ def test_json_slots_sorted_by_slot_index():
 
 
 def test_slot_ordering_by_index():
-    """Test that slots are ordered by slot index (timestamps not used for ordering)"""
+    """Test that slots are ordered by slot index (timestamps not used for ordering)."""
     # Simulate slots with mixed finite and infinite timestamps (timestamps are indicative only)
     slot_dict = {
         0: {'samples': [], 'timestamp': float('inf')},  # No timestamp
@@ -94,7 +94,7 @@ def test_slot_ordering_by_index():
 
 
 def test_slot_index_as_primary_sort():
-    """Test that slot index is used as the primary (and only) sort key"""
+    """Test that slot index is used as the primary (and only) sort key."""
     # Simulate slots with various timestamps (timestamps are indicative only)
     slot_dict = {
         3: {'samples': [], 'timestamp': 100.0},
@@ -208,7 +208,7 @@ def test_sample_rate_consistency_check():
 
 
 def test_json_timestamp_metadata():
-    """Test that JSON metadata includes timestamp (indicative only, not used for ordering)"""
+    """Test that JSON metadata includes timestamp (indicative only, not used for ordering)."""
     # Simulate JSON slot with timestamp (indicative only)
     json_slot = {
         'samples': [
