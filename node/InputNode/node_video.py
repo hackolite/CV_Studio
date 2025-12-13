@@ -433,12 +433,9 @@ class VideoNode(Node):
                 start = round(start_float)
                 end = round(end_float)
                 
-                # Ensure we don't go past the audio array bounds
-                start = max(0, min(start, len(y)))
-                end = max(0, min(end, len(y)))
-                
                 # Extract chunk
-                if end > len(y) or frame_idx == total_frames - 1:
+                # Last chunk handling: if we're at the end or past the audio array bounds
+                if end >= len(y) or frame_idx == total_frames - 1:
                     # Last chunk: extract remaining audio
                     chunk = y[start:]
                     # Pad with zeros to maintain consistent chunk size
