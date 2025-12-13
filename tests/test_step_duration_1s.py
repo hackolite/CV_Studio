@@ -47,8 +47,8 @@ def test_step_duration_docstring():
         content = f.read()
     
     # The docstring should mention step_duration default as 3.0, no overlap
-    assert 'step_duration: Step size between chunks in seconds (default: 3.0' in content, \
-        "Docstring should mention step_duration default as 3.0"
+    assert 'step_duration: Step size between chunks in seconds (default: 3.0, no overlap)' in content, \
+        "Docstring should mention step_duration default as 3.0 with no overlap"
     
     print("✓ Docstring correctly documents step_duration=3.0")
 
