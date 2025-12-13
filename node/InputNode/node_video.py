@@ -428,15 +428,21 @@ class VideoNode(Node):
                 start_float = frame_idx * samples_per_frame
                 end_float = (frame_idx + 1) * samples_per_frame
                 
-                start = int(start_float)
-                end = int(end_float)
+                # Use round() instead of int() to avoid gaps/overlaps in audio
+                # This ensures seamless audio continuity without discontinuities that cause graininess
+                start = round(start_float)
+                end = round(end_float)
+                
+                # Ensure we don't go past the audio array bounds
+                start = max(0, min(start, len(y)))
+                end = max(0, min(end, len(y)))
                 
                 # Extract chunk
-                if end > len(y):
+                if end > len(y) or frame_idx == total_frames - 1:
                     # Last chunk: extract remaining audio
                     chunk = y[start:]
                     # Pad with zeros to maintain consistent chunk size
-                    expected_size = int(samples_per_frame)
+                    expected_size = round(samples_per_frame)
                     padding_needed = expected_size - len(chunk)
                     if padding_needed > 0:
                         chunk = np.pad(chunk, (0, padding_needed), mode='constant', constant_values=0)
@@ -452,20 +458,20 @@ class VideoNode(Node):
             self._audio_chunks[node_id] = audio_chunks
             
             # Verify all chunks have consistent size (allowing for last chunk)
-            expected_chunk_size = int(samples_per_frame)
+            expected_chunk_size = round(samples_per_frame)
             if len(audio_chunks) > 0:
                 first_size = len(audio_chunks[0])
                 last_size = len(audio_chunks[-1])
                 
                 # Check first chunk (should be expected size or expected size + 1 due to rounding)
-                if first_size < expected_chunk_size or first_size > expected_chunk_size + 1:
+                if first_size < expected_chunk_size - 1 or first_size > expected_chunk_size + 1:
                     logger.warning(f"[Video] First chunk size unexpected - expected: {expected_chunk_size}, got: {first_size}")
                 
                 # Last chunk should be padded to expected size
                 if last_size != expected_chunk_size:
                     logger.warning(f"[Video] Last chunk size unexpected - expected: {expected_chunk_size} (padded), got: {last_size}")
                     
-            logger.info(f"[Video] Created {len(audio_chunks)} audio chunks (1 per frame) with {expected_chunk_size} samples each")
+            logger.info(f"[Video] Created {len(audio_chunks)} audio chunks (1 per frame) with ~{expected_chunk_size} samples each")
             
             # Step 4: Calculate dynamic queue sizes
             # IMPORTANT: Audio and video queues must have the SAME size for synchronization
