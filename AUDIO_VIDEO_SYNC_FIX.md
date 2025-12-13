@@ -74,7 +74,9 @@ After fix:
 **Effect:** Eliminates audio compression artifacts and distortion
 
 #### 3. `shortest=None`
-**Purpose:** Stop encoding when the shortest stream ends
+**Purpose:** Adds the FFmpeg `-shortest` flag to stop encoding when the shortest stream ends
+
+**Technical note:** In ffmpeg-python, `shortest=None` generates the `-shortest` flag without a value, which is the correct FFmpeg syntax.
 
 **How it prevents issues:**
 - Without this: If audio is longer than video, final file has extra audio

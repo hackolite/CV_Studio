@@ -655,7 +655,7 @@ class VideoBackgroundWorker:
                 # Root cause: Mismatched PTS (Presentation TimeStamps) between video and audio streams
                 # 
                 # Fix parameters:
-                # - shortest=None: Stop encoding when shortest stream ends (prevents duration mismatch)
+                # - shortest=None: Adds FFmpeg -shortest flag to stop when shortest stream ends
                 # - audio_bitrate='192k': High quality AAC (prevents audio artifacts/distortion)
                 # - vsync='cfr': Constant frame rate (prevents variable frame timing issues)
                 # - avoid_negative_ts='make_zero': Reset timestamps to start at 0 (syncs audio/video start)
