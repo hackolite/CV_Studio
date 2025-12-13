@@ -208,6 +208,7 @@ class VideoWriterNode(Node):
     _mkv_metadata_dict = {}  # Store audio and JSON metadata for MKV files
     _mkv_file_handles = {}  # Store file handles for MKV metadata tracks
     _audio_samples_dict = {}  # Store audio samples per slot: {node: {slot_idx: {'samples': [], 'timestamp': float, 'sample_rate': int}}}
+    _json_samples_dict = {}  # Store JSON samples per slot: {node: {slot_idx: {'samples': [], 'timestamp': float}}}
     _recording_metadata_dict = {}  # Store metadata about ongoing recordings
     _merge_threads_dict = {}  # Store merge threads for async operations
     _merge_progress_dict = {}  # Store merge progress (0.0 to 1.0)
@@ -494,6 +495,44 @@ class VideoWriterNode(Node):
                                 }
                             self._audio_samples_dict[tag_node_name][slot_idx]['samples'].append(audio_data)
                 
+                # Collect JSON samples per slot for final merge (for MKV format)
+                if json_data is not None and tag_node_name in self._json_samples_dict:
+                    # json_data can be a dict (from concat node with multiple slots) or a single chunk
+                    if isinstance(json_data, dict):
+                        # Concat node output: {slot_idx: json_chunk}
+                        # Collect JSON samples per slot
+                        for slot_idx, json_chunk in json_data.items():
+                            # Validate JSON serializability before storing
+                            try:
+                                json.dumps(json_chunk)  # Test serialization
+                            except (TypeError, ValueError) as e:
+                                logger.warning(f"[VideoWriter] Skipping non-serializable JSON chunk for slot {slot_idx}: {e}")
+                                continue
+                            
+                            # Initialize slot if not exists
+                            if slot_idx not in self._json_samples_dict[tag_node_name]:
+                                self._json_samples_dict[tag_node_name][slot_idx] = {
+                                    'samples': [],
+                                    'timestamp': float('inf')
+                                }
+                            
+                            # Append this frame's JSON to the slot
+                            self._json_samples_dict[tag_node_name][slot_idx]['samples'].append(json_chunk)
+                    else:
+                        # Single JSON chunk (slot 0)
+                        # Validate JSON serializability before storing
+                        try:
+                            json.dumps(json_data)  # Test serialization
+                            slot_idx = 0
+                            if slot_idx not in self._json_samples_dict[tag_node_name]:
+                                self._json_samples_dict[tag_node_name][slot_idx] = {
+                                    'samples': [],
+                                    'timestamp': float('inf')
+                                }
+                            self._json_samples_dict[tag_node_name][slot_idx]['samples'].append(json_data)
+                        except (TypeError, ValueError) as e:
+                            logger.warning(f"[VideoWriter] Skipping non-serializable JSON data: {e}")
+                
                 # Write audio and JSON data to MKV metadata tracks if applicable
                 if tag_node_name in self._mkv_metadata_dict:
                     metadata = self._mkv_metadata_dict[tag_node_name]
@@ -728,10 +767,19 @@ class VideoWriterNode(Node):
     def set_setting_dict(self, node_id, setting_dict):
         pass
 
-    def _async_merge_thread(self, tag_node_name, temp_path, audio_samples, sample_rate, final_path):
+    def _async_merge_thread(self, tag_node_name, temp_path, audio_samples, sample_rate, final_path, video_format='MP4', json_samples=None):
         """
         Thread worker function to merge audio and video asynchronously.
         This runs in a separate thread to prevent UI freezing.
+        
+        Args:
+            tag_node_name: Node identifier
+            temp_path: Path to temporary video file
+            audio_samples: List of concatenated audio samples
+            sample_rate: Audio sample rate
+            final_path: Final output file path
+            video_format: Video format (AVI, MP4, MKV)
+            json_samples: Dictionary of JSON samples per slot (for MKV)
         """
         def progress_callback(progress):
             """Update progress in the shared dict"""
@@ -764,6 +812,53 @@ class VideoWriterNode(Node):
             )
             
             if success:
+                # For MKV format, save concatenated JSON metadata alongside the video
+                if video_format == 'MKV' and json_samples:
+                    try:
+                        # Sort and concatenate JSON samples by timestamp
+                        sorted_json_slots = sorted(
+                            json_samples.items(),
+                            key=lambda x: (x[1]['timestamp'], x[0])
+                        )
+                        
+                        # Create metadata directory
+                        file_base = final_path.rsplit('.', 1)[0]
+                        metadata_dir = file_base + '_metadata'
+                        os.makedirs(metadata_dir, exist_ok=True)
+                        
+                        # Save concatenated JSON stream per slot
+                        for slot_idx, slot_data in sorted_json_slots:
+                            if slot_data['samples']:
+                                json_file = os.path.join(metadata_dir, f'json_slot_{slot_idx}_concat.json')
+                                try:
+                                    # Prepare data structure
+                                    output_data = {
+                                        'slot_idx': slot_idx,
+                                        'timestamp': slot_data['timestamp'],
+                                        'samples': slot_data['samples']
+                                    }
+                                    # Validate serializability by attempting to serialize
+                                    json_str = json.dumps(output_data, indent=2)
+                                    # Write validated JSON to file
+                                    with open(json_file, 'w') as f:
+                                        f.write(json_str)
+                                    logger.info(f"[VideoWriter] Saved JSON metadata for slot {slot_idx} to: {json_file}")
+                                except (TypeError, ValueError) as json_err:
+                                    logger.error(f"[VideoWriter] JSON serialization error for slot {slot_idx}: {json_err}")
+                                    # Attempt to save with default serialization (converts non-serializable to str)
+                                    try:
+                                        with open(json_file, 'w') as f:
+                                            json.dump({
+                                                'slot_idx': slot_idx,
+                                                'timestamp': float(slot_data['timestamp']) if slot_data['timestamp'] != float('inf') else 'inf',
+                                                'samples': str(slot_data['samples'])
+                                            }, f, indent=2)
+                                        logger.warning(f"[VideoWriter] Saved JSON metadata with fallback serialization for slot {slot_idx}")
+                                    except Exception as fallback_err:
+                                        logger.error(f"[VideoWriter] Failed to save JSON metadata even with fallback: {fallback_err}")
+                    except Exception as json_error:
+                        logger.error(f"[VideoWriter] Error saving JSON metadata: {json_error}", exc_info=True)
+                
                 # Remove temporary video file
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
@@ -896,6 +991,9 @@ class VideoWriterNode(Node):
                 # Initialize audio sample collection per slot
                 self._audio_samples_dict[tag_node_name] = {}  # Dict of {slot_idx: {'samples': [], 'timestamp': float, 'sample_rate': int}}
                 
+                # Initialize JSON sample collection per slot
+                self._json_samples_dict[tag_node_name] = {}  # Dict of {slot_idx: {'samples': [], 'timestamp': float}}
+                
                 # Store recording metadata for final merge
                 self._recording_metadata_dict[tag_node_name] = {
                     'final_path': file_path,
@@ -963,10 +1061,18 @@ class VideoWriterNode(Node):
                     if final_sample_rate is not None:
                         sample_rate = final_sample_rate
                     
+                    # Get video format for format-specific merging
+                    video_format = metadata.get('format', 'MP4')
+                    
+                    # Process JSON samples for MKV format
+                    json_samples_dict = None
+                    if video_format == 'MKV' and tag_node_name in self._json_samples_dict:
+                        json_samples_dict = self._json_samples_dict[tag_node_name]
+                    
                     # Start merge in a separate thread to prevent UI freezing
                     merge_thread = threading.Thread(
                         target=self._async_merge_thread,
-                        args=(tag_node_name, temp_path, audio_samples_list, sample_rate, final_path),
+                        args=(tag_node_name, temp_path, audio_samples_list, sample_rate, final_path, video_format, json_samples_dict),
                         daemon=True
                     )
                     merge_thread.start()
@@ -974,7 +1080,7 @@ class VideoWriterNode(Node):
                     # Store thread reference for tracking
                     self._merge_threads_dict[tag_node_name] = merge_thread
                     
-                    logger.info(f"[VideoWriter] Started async merge for: {final_path}")
+                    logger.info(f"[VideoWriter] Started async merge for: {final_path} (format: {video_format})")
                     
                     # Clean up metadata
                     self._recording_metadata_dict.pop(tag_node_name)
@@ -994,6 +1100,10 @@ class VideoWriterNode(Node):
             # Clean up audio samples
             if tag_node_name in self._audio_samples_dict:
                 self._audio_samples_dict.pop(tag_node_name)
+            
+            # Clean up JSON samples
+            if tag_node_name in self._json_samples_dict:
+                self._json_samples_dict.pop(tag_node_name)
             
             # Close metadata file handles if MKV
             if tag_node_name in self._mkv_metadata_dict:
