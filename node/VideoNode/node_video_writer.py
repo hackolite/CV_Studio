@@ -30,7 +30,9 @@ try:
 except ImportError:
     import logging
     logger = logging.getLogger(__name__)
-    # Fallback for get_logs_directory
+    # Fallback for get_logs_directory if src.utils.logging import fails
+    # This ensures crash logging works even if the main logging system is unavailable
+    # Duplicates logic from src/utils/logging.py line 14-30 intentionally for robustness
     def get_logs_directory():
         from pathlib import Path
         project_root = Path(__file__).parent.parent.parent

@@ -35,8 +35,14 @@ except ImportError:
 # Note: We duplicate these functions here to avoid importing the full node modules
 # which have heavy dependencies (cv2, dearpygui, etc.) that aren't needed for pure
 # crash logging tests. This keeps tests lightweight and fast.
+# Alternative: Extract to utility module, but increases project complexity for minor benefit.
 def create_crash_log(operation_name, exception, tag_node_name=None):
-    """Create crash log for VideoWriter (test version)"""
+    """
+    Create crash log for VideoWriter (test version).
+    
+    This is a test duplicate of the production function to avoid heavy dependencies.
+    Matches the implementation in node/VideoNode/node_video_writer.py.
+    """
     logs_dir = get_logs_directory()
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     node_suffix = f"_{tag_node_name.replace(':', '_')}" if tag_node_name else ""
@@ -65,7 +71,11 @@ def create_crash_log(operation_name, exception, tag_node_name=None):
     return log_path
 
 def create_concat_crash_log(operation_name, exception, node_name=None):
-    """Create crash log for ImageConcat"""
+    """
+    Create crash log for ImageConcat (test version).
+    
+    This is a test duplicate to avoid heavy node module dependencies.
+    """
     logs_dir = get_logs_directory()
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     node_suffix = f"_{node_name.replace(':', '_')}" if node_name else ""
