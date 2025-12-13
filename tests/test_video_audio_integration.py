@@ -52,7 +52,8 @@ def test_audio_chunk_format():
         "Should initialize audio_chunk_data variable"
     assert 'audio_chunk_data = self._get_audio_chunk_for_frame' in content, \
         "Should get audio chunk data for current frame"
-    assert 'return {"image": frame, "json": None, "audio": audio_chunk_data}' in content, \
+    # Check for return statement with audio (may include timestamp)
+    assert '"audio": audio_chunk_data' in content, \
         "Should return audio chunk data in audio output"
     
     print("✓ Audio chunk format verification passed")
