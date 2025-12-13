@@ -401,11 +401,12 @@ class Node(Node):
                         all_items = queue.get_all()
                         
                         # Add new items to slot buffer (deque automatically limits size)
+                        # Note: We don't check for duplicates since the deque maxlen handles overflow
+                        # and in a streaming context, duplicate data is rare
                         for timestamped_data in all_items:
                             # Store the TimestampedData object directly
                             # (we keep the object for data access, but don't use timestamps for sync)
-                            if timestamped_data not in slot_buffers[slot_idx]['data']:
-                                slot_buffers[slot_idx]['data'].append(timestamped_data)
+                            slot_buffers[slot_idx]['data'].append(timestamped_data)
         
         # Check if all slots are ready (have required count)
         all_ready = True
@@ -435,11 +436,15 @@ class Node(Node):
                 buffer_info = slot_buffers[slot_idx]
                 required_count = buffer_info['required_count']
                 
+                # Safety check: ensure we have enough data before popping
+                # (should always be true since all_ready checks this, but belt-and-suspenders)
+                if len(buffer_info['data']) < required_count:
+                    continue
+                
                 batch = []
                 for _ in range(required_count):
-                    if buffer_info['data']:
-                        timestamped_data = buffer_info['data'].popleft()
-                        batch.append(timestamped_data.data)
+                    timestamped_data = buffer_info['data'].popleft()
+                    batch.append(timestamped_data.data)
                 
                 # For audio slots with single element, unwrap the batch
                 if slot_type == 'audio' and len(batch) == 1:
