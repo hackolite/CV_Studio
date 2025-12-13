@@ -276,8 +276,8 @@ class VideoWriterNode(Node):
     _video_writer_dict = {}
     _mkv_metadata_dict = {}  # Store audio and JSON metadata for MKV files
     _mkv_file_handles = {}  # Store file handles for MKV metadata tracks
-    _audio_samples_dict = {}  # Store audio samples per slot: {node: {slot_idx: {'samples': [], 'timestamp': float, 'sample_rate': int}}}
-    _json_samples_dict = {}  # Store JSON samples per slot: {node: {slot_idx: {'samples': [], 'timestamp': float}}}
+    _audio_samples_dict = {}  # Store audio samples per slot: {node: {slot_idx: {'samples': [], 'timestamp': float (indicative), 'sample_rate': int}}}
+    _json_samples_dict = {}  # Store JSON samples per slot: {node: {slot_idx: {'samples': [], 'timestamp': float (indicative)}}}
     _recording_metadata_dict = {}  # Store metadata about ongoing recordings
     _merge_threads_dict = {}  # Store merge threads for async operations
     _merge_progress_dict = {}  # Store merge progress (0.0 to 1.0)
@@ -470,29 +470,19 @@ class VideoWriterNode(Node):
                         else:
                             # Concat node output: {slot_idx: audio_chunk}
                             # Merge all slots into a single audio track
-                            audio_chunks_with_ts = []
+                            # Sort by slot index only (timestamps are indicative only)
+                            audio_chunks = []
                             
                             for slot_idx in sorted(audio_data.keys()):
                                 slot_audio = audio_data[slot_idx]
                                 if isinstance(slot_audio, dict) and 'data' in slot_audio:
-                                    timestamp = slot_audio.get('timestamp', float('inf'))
-                                    audio_chunks_with_ts.append({
-                                        'data': slot_audio['data'],
-                                        'timestamp': timestamp,
-                                        'slot': slot_idx
-                                    })
+                                    audio_chunks.append(slot_audio['data'])
                                 elif isinstance(slot_audio, np.ndarray):
-                                    audio_chunks_with_ts.append({
-                                        'data': slot_audio,
-                                        'timestamp': float('inf'),
-                                        'slot': slot_idx
-                                    })
+                                    audio_chunks.append(slot_audio)
                             
-                            if audio_chunks_with_ts:
-                                # Sort by timestamp
-                                audio_chunks_with_ts.sort(key=lambda x: (x['timestamp'], x['slot']))
-                                # Concatenate
-                                audio_chunk = np.concatenate([chunk['data'] for chunk in audio_chunks_with_ts])
+                            if audio_chunks:
+                                # Concatenate based on slot order only
+                                audio_chunk = np.concatenate(audio_chunks)
                     elif isinstance(audio_data, np.ndarray):
                         audio_chunk = audio_data
                 
@@ -1029,10 +1019,10 @@ class VideoWriterNode(Node):
                 # For MKV format, save concatenated JSON metadata alongside the video
                 if video_format == 'MKV' and json_samples:
                     try:
-                        # Sort and concatenate JSON samples by timestamp
+                        # Sort JSON samples by slot index only (timestamps are indicative only)
                         sorted_json_slots = sorted(
                             json_samples.items(),
-                            key=lambda x: (x[1]['timestamp'], x[0])
+                            key=lambda x: x[0]  # Sort by slot_idx only
                         )
                         
                         # Create metadata directory
@@ -1260,16 +1250,14 @@ class VideoWriterNode(Node):
                     final_path = metadata['final_path']
                     sample_rate = metadata['sample_rate']
                     
-                    # Process audio samples: sort slots by timestamp, concatenate each slot, then merge
+                    # Process audio samples: sort slots by slot index only, concatenate each slot, then merge
                     slot_audio_dict = self._audio_samples_dict[tag_node_name]
                     
-                    # Sort slots by timestamp (finite timestamps first), then by slot index
-                    # Note: Tuple sorting in Python sorts by first element (timestamp), then second element (slot_idx)
-                    # Finite timestamps (e.g., 99.9, 100.0) come before float('inf'), ensuring
-                    # synchronized slots are ordered correctly before falling back to slot order
+                    # Sort slots by slot index only (timestamps are indicative only)
+                    # Video stream creation is based on actual accumulated data size, not timestamps
                     sorted_slots = sorted(
                         slot_audio_dict.items(),
-                        key=lambda x: (x[1]['timestamp'], x[0])
+                        key=lambda x: x[0]  # Sort by slot_idx only
                     )
                     
                     # Build final audio sample list in timestamp order
