@@ -26,8 +26,8 @@ def test_video_node_has_queue_labels():
     assert 'tag_node_queue_info_value_name' in content, "Queue info value tag should be defined"
     
     # Check that queue info label is added to UI
-    assert 'dpg.add_text' in content and 'Queue: Image=0 Audio=0' in content, \
-        "Queue info text label should be added to UI with default value"
+    assert 'dpg.add_text' in content and 'Queue: Image=0/0 Audio=0/0' in content, \
+        "Queue info text label should be added to UI with default value showing size/maxsize"
     
     # Check that queue sizes are retrieved in update method
     assert 'get_queue_info' in content, "Update method should retrieve queue info"
