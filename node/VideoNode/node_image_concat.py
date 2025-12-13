@@ -536,11 +536,22 @@ class Node(Node):
                 image_slot_count = slot_num
             frame, display_frame = create_concat_image(frame_dict, image_slot_count)
 
-        # Collect audio and JSON data from slots
+        # Collect audio, JSON, and metadata from slots
         audio_chunks = {}
         json_chunks = {}
+        source_metadata = {}  # Collect metadata from source nodes (e.g., Video node FPS settings)
         
         for slot_idx, slot_info in slot_data_dict.items():
+            # Collect metadata from source node result
+            source_result = node_result_dict.get(slot_info['source'], None)
+            if source_result is not None and isinstance(source_result, dict):
+                node_metadata = source_result.get('metadata', {})
+                if node_metadata:
+                    # Store metadata by slot - first one with metadata wins for shared settings
+                    if not source_metadata and isinstance(node_metadata, dict):
+                        source_metadata = node_metadata.copy()
+                        logger.debug(f"[ImageConcat] Collected metadata from slot {slot_idx}: {source_metadata}")
+            
             if slot_info['type'] == self.TYPE_AUDIO:
                 # Get audio from node_audio_dict
                 audio_chunk = node_audio_dict.get(slot_info['source'], None)
@@ -579,7 +590,7 @@ class Node(Node):
         if len(json_chunks) > 0:
             json_data = json_chunks
 
-        logger.debug(f"[ImageConcat] Output: frame={display_frame is not None}, audio_slots={len(audio_chunks)}, json_slots={len(json_chunks)}")
+        logger.debug(f"[ImageConcat] Output: frame={display_frame is not None}, audio_slots={len(audio_chunks)}, json_slots={len(json_chunks)}, metadata={bool(source_metadata)}")
         if display_frame is not None:
             texture = self.convert_cv_to_dpg(
                 display_frame,
@@ -589,7 +600,12 @@ class Node(Node):
             dpg_set_value(self.output_value01_tag, texture)
 
 
-        return {"image": frame, "json": json_data, "audio": audio_data}
+        return {
+            "image": frame, 
+            "json": json_data, 
+            "audio": audio_data,
+            "metadata": source_metadata  # Pass through metadata from source nodes (e.g., FPS settings)
+        }
 
     def close(self, node_id):
         pass

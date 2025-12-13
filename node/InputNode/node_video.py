@@ -815,13 +815,27 @@ class VideoNode(Node):
         queue_info_text = f"Queue: Image={image_queue_size}/{image_queue_maxsize} Audio={audio_queue_size}/{audio_queue_maxsize}"
         dpg_set_value(tag_node_queue_info_value_name, queue_info_text)
         
+        # Get metadata to pass through pipeline
+        metadata = {}
+        if str(node_id) in self._chunk_metadata:
+            chunk_meta = self._chunk_metadata[str(node_id)]
+            metadata = {
+                'target_fps': target_fps,  # FPS from slider (authoritative for output)
+                'chunk_duration': chunk_meta.get('chunk_duration', chunk_size),
+                'step_duration': chunk_meta.get('step_duration', chunk_size),
+                'video_fps': chunk_meta.get('fps', 30.0),  # Actual video FPS
+                'sample_rate': chunk_meta.get('sr', 44100)
+            }
+        
         # Return frame via IMAGE output and audio chunk data via AUDIO output
         # Include the FPS-based timestamp so it can be used for synchronization
+        # Include metadata about FPS and chunk settings for downstream nodes
         return {
             "image": frame, 
             "json": None, 
             "audio": audio_chunk_data,
-            "timestamp": frame_timestamp
+            "timestamp": frame_timestamp,
+            "metadata": metadata  # Pass FPS and chunk info to VideoWriter
         }
 
     def close(self, node_id):
