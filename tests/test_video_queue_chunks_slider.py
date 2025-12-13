@@ -39,8 +39,8 @@ def test_skip_rate_slider_removed():
     print("✓ Skip Rate slider removed from Video node")
 
 
-def test_queue_chunks_slider_present():
-    """Test that Queue Chunks slider is present in Video node UI"""
+def test_queue_chunks_slider_removed():
+    """Test that Queue Chunks slider has been removed from Video node UI"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -51,26 +51,35 @@ def test_queue_chunks_slider_present():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Check that Queue Chunks slider IS in the UI
-    assert 'label="Queue Chunks"' in content, "Queue Chunks slider should be in UI"
+    # Check that Queue Chunks slider is NOT in the UI
+    assert 'label="Queue Chunks"' not in content, "Queue Chunks slider should be removed from UI"
     
-    # Check that Input07 tags are defined
-    assert 'tag_node_input07_name' in content, "Input07 name tag should be defined"
-    assert 'tag_node_input07_value_name' in content, "Input07 value tag should be defined"
+    # Check that Input07 tags are NOT defined in FactoryNode's add_node method
+    lines = content.split('\n')
+    # Find the FactoryNode section by looking for the add_node method
+    in_factory_add_node = False
+    factory_lines = []
+    for line in lines:
+        if 'def add_node(' in line:
+            in_factory_add_node = True
+        elif in_factory_add_node and line.strip().startswith('def ') and 'add_node' not in line:
+            break
+        elif in_factory_add_node:
+            factory_lines.append(line)
     
-    # Check slider parameters
-    assert 'default_value=4' in content, "Queue Chunks slider should have default value of 4"
-    assert 'min_value=1' in content, "Queue Chunks slider should have min value of 1"
-    assert 'max_value=20' in content, "Queue Chunks slider should have max value of 20"
+    factory_content = '\n'.join(factory_lines)
+    # Look for actual tag definitions (lines with '=' assignment)
+    input07_definitions = [line for line in factory_lines if 'tag_node_input07_name' in line and '=' in line]
+    assert len(input07_definitions) == 0, \
+        f"Input07 name tag should not be defined in FactoryNode.add_node(), found {len(input07_definitions)} definitions"
     
-    print("✓ Queue Chunks slider present in Video node")
-    print("  - Input07 tags defined")
-    print("  - Default value: 4")
-    print("  - Range: 1-20")
+    print("✓ Queue Chunks slider removed from Video node")
+    print("  - Input07 tags removed from UI")
+    print("  - Queue size now calculated automatically (4 * fps)")
 
 
-def test_preprocess_video_accepts_num_chunks():
-    """Test that _preprocess_video accepts num_chunks_to_keep parameter"""
+def test_preprocess_video_automatic_queue_sizing():
+    """Test that _preprocess_video calculates queue sizes automatically"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -81,15 +90,17 @@ def test_preprocess_video_accepts_num_chunks():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Check that _preprocess_video signature includes num_chunks_to_keep
-    assert 'def _preprocess_video(self, node_id, movie_path, chunk_duration=2.0, step_duration=2.0, num_chunks_to_keep=4)' in content, \
-        "_preprocess_video should accept num_chunks_to_keep parameter"
+    # Check that _preprocess_video no longer requires num_chunks_to_keep
+    assert 'def _preprocess_video(self, node_id, movie_path, target_fps' in content, \
+        "_preprocess_video should have simplified signature"
     
-    # Check that queue sizes are calculated
-    assert 'image_queue_size = int(num_chunks_to_keep * chunk_duration * fps)' in content, \
-        "Image queue size should be calculated based on num_chunks_to_keep"
-    assert 'audio_queue_size = num_chunks_to_keep' in content, \
-        "Audio queue size should equal num_chunks_to_keep"
+    # Check that queue sizes are calculated automatically based on FPS
+    assert 'queue_size_seconds = 4' in content or 'queue_duration_seconds = 4' in content, \
+        "Queue size should be calculated as 4 seconds"
+    assert 'image_queue_size = int(' in content and '* target_fps)' in content, \
+        "Image queue size should be calculated based on fps"
+    assert 'audio_queue_size = int(' in content and '* target_fps)' in content, \
+        "Audio queue size should be calculated based on fps"
     
     # Check that queue sizes are stored in metadata
     assert "'image_queue_size': image_queue_size" in content, \
@@ -97,14 +108,14 @@ def test_preprocess_video_accepts_num_chunks():
     assert "'audio_queue_size': audio_queue_size" in content, \
         "Audio queue size should be stored in metadata"
     
-    print("✓ _preprocess_video accepts num_chunks_to_keep parameter")
-    print("  - Calculates image queue size: num_chunks × chunk_duration × fps")
-    print("  - Calculates audio queue size: num_chunks")
+    print("✓ _preprocess_video calculates queue sizes automatically")
+    print("  - Image queue size: 4 * target_fps")
+    print("  - Audio queue size: 4 * target_fps (same as image)")
     print("  - Stores sizes in metadata")
 
 
-def test_callback_file_select_passes_num_chunks():
-    """Test that _callback_file_select passes num_chunks_to_keep to _preprocess_video"""
+def test_callback_file_select_no_num_chunks():
+    """Test that _callback_file_select no longer retrieves or passes num_chunks_to_keep"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -115,19 +126,30 @@ def test_callback_file_select_passes_num_chunks():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Check that _callback_file_select retrieves num_chunks value
-    assert 'tag_node_input07_value_name' in content and '_callback_file_select' in content, \
-        "_callback_file_select should retrieve Input07 (Queue Chunks) value"
+    # Check that _callback_file_select does NOT retrieve num_chunks from Input07
+    in_callback = False
+    callback_lines = []
+    for line in content.split('\n'):
+        if 'def _callback_file_select' in line:
+            in_callback = True
+        elif in_callback and line.strip().startswith('def '):
+            break
+        elif in_callback:
+            callback_lines.append(line)
     
-    # Check that num_chunks_to_keep is passed to _preprocess_video
-    assert 'num_chunks_to_keep=num_chunks' in content or 'num_chunks_to_keep=' in content, \
-        "_callback_file_select should pass num_chunks_to_keep to _preprocess_video"
+    callback_content = '\n'.join(callback_lines)
+    assert 'tag_node_input07_value_name' not in callback_content, \
+        "_callback_file_select should not retrieve Input07 (Queue Chunks removed)"
     
-    print("✓ _callback_file_select passes num_chunks_to_keep")
+    # Check that num_chunks_to_keep is NOT passed to _preprocess_video
+    assert 'num_chunks_to_keep=' not in callback_content, \
+        "_callback_file_select should not pass num_chunks_to_keep"
+    
+    print("✓ _callback_file_select no longer uses num_chunks")
 
 
-def test_update_method_applies_queue_sizes():
-    """Test that update method applies dynamic queue sizes"""
+def test_update_method_no_manual_queue_sizing():
+    """Test that update method no longer retrieves queue size from slider"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -138,19 +160,33 @@ def test_update_method_applies_queue_sizes():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Check that update method retrieves Input07 value
-    assert 'tag_node_input07_value_name' in content and 'def update(' in content, \
-        "update method should retrieve Input07 (Queue Chunks) value"
+    # Check that update method does NOT retrieve Input07 value
+    in_update = False
+    update_lines = []
+    for line in content.split('\n'):
+        if 'def update(' in line:
+            in_update = True
+        elif in_update and line.strip().startswith('def ') and 'def update' not in line:
+            break
+        elif in_update:
+            update_lines.append(line)
     
-    # Check that queue resizing is attempted
+    update_content = '\n'.join(update_lines)
+    # Check that Input07 is not used for reading queue chunks
+    # We specifically look for dpg_get_value calls which indicate active use
+    input07_get_value_calls = [line for line in update_lines if 'dpg_get_value' in line and 'tag_node_input07_value_name' in line]
+    assert len(input07_get_value_calls) == 0, \
+        f"update method should not read Input07 (Queue Chunks removed), found {len(input07_get_value_calls)} calls"
+    
+    # Check that queue resizing is still called (but sizes come from metadata, not slider)
     assert 'resize_queue' in content, \
-        "update method should call resize_queue"
+        "update method should still call resize_queue (with automatic sizes)"
     
-    print("✓ update method applies dynamic queue sizes")
+    print("✓ update method uses automatic queue sizes from metadata")
 
 
-def test_setting_dict_methods_updated():
-    """Test that get_setting_dict and set_setting_dict handle Input07"""
+def test_setting_dict_methods_no_queue_chunks():
+    """Test that get_setting_dict and set_setting_dict no longer handle Input07"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -161,13 +197,13 @@ def test_setting_dict_methods_updated():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Check that get_setting_dict handles Input07
+    # Check that get_setting_dict exists
     assert 'def get_setting_dict' in content, "get_setting_dict method should exist"
     
-    # Check that set_setting_dict handles Input07
+    # Check that set_setting_dict exists
     assert 'def set_setting_dict' in content, "set_setting_dict method should exist"
     
-    # Check that Input03 (Skip Rate) is no longer in get_setting_dict
+    # Check that Input03 (Skip Rate) and Input07 (Queue Chunks) are no longer in get_setting_dict
     lines_in_get_setting = []
     in_get_setting = False
     for line in content.split('\n'):
@@ -181,12 +217,13 @@ def test_setting_dict_methods_updated():
     get_setting_content = '\n'.join(lines_in_get_setting)
     assert 'tag_node_input03_value_name' not in get_setting_content, \
         "get_setting_dict should not reference Input03 (Skip Rate)"
-    assert 'tag_node_input07_value_name' in get_setting_content, \
-        "get_setting_dict should reference Input07 (Queue Chunks)"
+    assert 'tag_node_input07_value_name' not in get_setting_content, \
+        "get_setting_dict should not reference Input07 (Queue Chunks removed)"
     
     print("✓ Setting dict methods updated")
     print("  - Input03 (Skip Rate) removed")
-    print("  - Input07 (Queue Chunks) added")
+    print("  - Input07 (Queue Chunks) removed")
+    print("  - Queue size now calculated automatically")
 
 
 def test_queue_resize_methods_exist():
@@ -246,11 +283,11 @@ def test_skip_rate_fixed_at_one():
 
 if __name__ == "__main__":
     test_skip_rate_slider_removed()
-    test_queue_chunks_slider_present()
-    test_preprocess_video_accepts_num_chunks()
-    test_callback_file_select_passes_num_chunks()
-    test_update_method_applies_queue_sizes()
-    test_setting_dict_methods_updated()
+    test_queue_chunks_slider_removed()
+    test_preprocess_video_automatic_queue_sizing()
+    test_callback_file_select_no_num_chunks()
+    test_update_method_no_manual_queue_sizing()
+    test_setting_dict_methods_no_queue_chunks()
     test_queue_resize_methods_exist()
     test_skip_rate_fixed_at_one()
-    print("\n✅ All tests passed!")
+    print("\n✅ All queue chunks removal tests passed!")

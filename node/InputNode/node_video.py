@@ -64,20 +64,6 @@ class FactoryNode:
             node.tag_node_name + ":" + node.TYPE_FLOAT + ":Input05Value"
         )
 
-        node.tag_node_input06_name = (
-            node.tag_node_name + ":" + node.TYPE_FLOAT + ":Input06"
-        )
-        node.tag_node_input06_value_name = (
-            node.tag_node_name + ":" + node.TYPE_FLOAT + ":Input06Value"
-        )
-
-        node.tag_node_input07_name = (
-            node.tag_node_name + ":" + node.TYPE_INT + ":Input07"
-        )
-        node.tag_node_input07_value_name = (
-            node.tag_node_name + ":" + node.TYPE_INT + ":Input07Value"
-        )
-
         node.tag_node_output01_name = (
             node.tag_node_name + ":" + node.TYPE_IMAGE + ":Output01"
         )
@@ -229,34 +215,6 @@ class FactoryNode:
                     callback=None,
                 )
 
-            with dpg.node_attribute(
-                tag=node.tag_node_input06_name,
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_slider_float(
-                    tag=node.tag_node_input06_value_name,
-                    label="Chunk Size (s)",
-                    width=node._small_window_w - 80,
-                    default_value=2.0,
-                    min_value=0.5,
-                    max_value=10.0,
-                    callback=None,
-                )
-
-            with dpg.node_attribute(
-                tag=node.tag_node_input07_name,
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_slider_int(
-                    tag=node.tag_node_input07_value_name,
-                    label="Queue Chunks",
-                    width=node._small_window_w - 80,
-                    default_value=4,
-                    min_value=1,
-                    max_value=20,
-                    callback=None,
-                )
-
             if use_pref_counter:
                 with dpg.node_attribute(
                     tag=node.tag_node_output02_name,
@@ -339,6 +297,7 @@ class VideoNode(Node):
     _frame_count = {}
     _last_frame_time = {}
     _loop_elapsed_time = {}  # Track cumulative time across loops for continuous timestamps
+    _is_playing = {}  # Track playback state per node
 
     _min_val = 1
     _max_val = 10
@@ -352,6 +311,7 @@ class VideoNode(Node):
         self._small_window_h = 135
 
         self._start_label = "Start"
+        self._stop_label = "Stop"
         self.node_tag = "Video"
         self.node_label = "Video"
 
@@ -361,7 +321,7 @@ class VideoNode(Node):
         # Track which nodes have had their queues resized to prevent redundant resize operations on every frame
         self._queues_resized = {}
 
-    def _preprocess_video(self, node_id, movie_path, chunk_duration=2.0, step_duration=2.0, num_chunks_to_keep=4, target_fps=24):
+    def _preprocess_video(self, node_id, movie_path, target_fps=24):
         """
         Pre-process video by extracting and chunking audio into memory.
         
@@ -378,12 +338,6 @@ class VideoNode(Node):
         Args:
             node_id: Node identifier
             movie_path: Path to video file
-            chunk_duration: DEPRECATED (v1.0+) - kept for backward compatibility, not used
-                           Migration: Remove this parameter, chunking is now FPS-based
-            step_duration: DEPRECATED (v1.0+) - kept for backward compatibility, not used
-                          Migration: Remove this parameter, chunking is now FPS-based
-            num_chunks_to_keep: DEPRECATED (v1.0+) - kept for backward compatibility, queue size is now 4 seconds
-                               Migration: Queue size is automatically 4 * target_fps
             target_fps: Target FPS for playback (default: 24)
         """
         if not movie_path or not os.path.exists(movie_path):
@@ -474,15 +428,18 @@ class VideoNode(Node):
                 start_float = frame_idx * samples_per_frame
                 end_float = (frame_idx + 1) * samples_per_frame
                 
-                start = int(start_float)
-                end = int(end_float)
+                # Use round() instead of int() to avoid gaps/overlaps in audio
+                # This ensures seamless audio continuity without discontinuities that cause graininess
+                start = round(start_float)
+                end = round(end_float)
                 
                 # Extract chunk
-                if end > len(y):
+                # Last chunk handling: if we're at the end or past the audio array bounds
+                if end >= len(y) or frame_idx == total_frames - 1:
                     # Last chunk: extract remaining audio
                     chunk = y[start:]
                     # Pad with zeros to maintain consistent chunk size
-                    expected_size = int(samples_per_frame)
+                    expected_size = round(samples_per_frame)
                     padding_needed = expected_size - len(chunk)
                     if padding_needed > 0:
                         chunk = np.pad(chunk, (0, padding_needed), mode='constant', constant_values=0)
@@ -498,12 +455,13 @@ class VideoNode(Node):
             self._audio_chunks[node_id] = audio_chunks
             
             # Verify all chunks have consistent size (allowing for last chunk)
-            expected_chunk_size = int(samples_per_frame)
+            expected_chunk_size = round(samples_per_frame)
             if len(audio_chunks) > 0:
                 first_size = len(audio_chunks[0])
                 last_size = len(audio_chunks[-1])
                 
                 # Check first chunk (should be expected size or expected size + 1 due to rounding)
+                # Allow ±1 sample variance due to rounding of fractional samples_per_frame
                 if first_size < expected_chunk_size or first_size > expected_chunk_size + 1:
                     logger.warning(f"[Video] First chunk size unexpected - expected: {expected_chunk_size}, got: {first_size}")
                 
@@ -511,7 +469,7 @@ class VideoNode(Node):
                 if last_size != expected_chunk_size:
                     logger.warning(f"[Video] Last chunk size unexpected - expected: {expected_chunk_size} (padded), got: {last_size}")
                     
-            logger.info(f"[Video] Created {len(audio_chunks)} audio chunks (1 per frame) with {expected_chunk_size} samples each")
+            logger.info(f"[Video] Created {len(audio_chunks)} audio chunks (1 per frame) with ~{expected_chunk_size} samples each")
             
             # Step 4: Calculate dynamic queue sizes
             # IMPORTANT: Audio and video queues must have the SAME size for synchronization
@@ -609,7 +567,20 @@ class VideoNode(Node):
 
 
     def _button(self, sender, app_data, user_data):
-        logger.debug(f"[Video] Button clicked for {user_data}")
+        """Toggle playback state when Start/Stop button is clicked"""
+        node_id = user_data.split(":")[0]
+        
+        # Toggle playback state
+        is_playing = self._is_playing.get(node_id, False)
+        self._is_playing[node_id] = not is_playing
+        
+        # Update button label
+        if self._is_playing[node_id]:
+            dpg.set_item_label(sender, self._stop_label)
+            logger.info(f"[Video] Started playback for node {node_id}")
+        else:
+            dpg.set_item_label(sender, self._start_label)
+            logger.info(f"[Video] Stopped playback for node {node_id}")
 
     def update(
         self,
@@ -628,12 +599,6 @@ class VideoNode(Node):
         )
         tag_node_input05_value_name = (
             tag_node_name + ":" + self.TYPE_FLOAT + ":Input05Value"
-        )
-        tag_node_input06_value_name = (
-            tag_node_name + ":" + self.TYPE_FLOAT + ":Input06Value"
-        )
-        tag_node_input07_value_name = (
-            tag_node_name + ":" + self.TYPE_INT + ":Input07Value"
         )
 
         output_value01_tag = tag_node_name + ":" + self.TYPE_IMAGE + ":Output01Value"
@@ -679,8 +644,9 @@ class VideoNode(Node):
         target_fps = int(target_fps_value) if target_fps_value is not None else 24
         playback_speed_value = dpg_get_value(tag_node_input05_value_name)
         playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
-        chunk_size_value = dpg_get_value(tag_node_input06_value_name)
-        chunk_size = float(chunk_size_value) if chunk_size_value is not None else 2.0
+        
+        # Check if playback is active (video should only play when Start button is clicked)
+        is_playing = self._is_playing.get(str(node_id), False)
         
         # Apply dynamic queue sizing if metadata is available (only once per video load)
         if str(node_id) in self._chunk_metadata and str(node_id) not in self._queues_resized:
@@ -707,7 +673,8 @@ class VideoNode(Node):
             start_time = time.monotonic()
 
         frame = None
-        if video_capture is not None:
+        # Only read frames if playback is active (Start button has been clicked)
+        if video_capture is not None and is_playing:
             # Check frame timing for playback speed control
             current_time = time.time()
             last_time = self._last_frame_time.get(str(node_id), None)
@@ -883,12 +850,6 @@ class VideoNode(Node):
         tag_node_input05_value_name = (
             tag_node_name + ":" + self.TYPE_FLOAT + ":Input05Value"
         )
-        tag_node_input06_value_name = (
-            tag_node_name + ":" + self.TYPE_FLOAT + ":Input06Value"
-        )
-        tag_node_input07_value_name = (
-            tag_node_name + ":" + self.TYPE_INT + ":Input07Value"
-        )
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -897,10 +858,6 @@ class VideoNode(Node):
         target_fps = int(target_fps_value) if target_fps_value is not None else 24
         playback_speed_value = dpg_get_value(tag_node_input05_value_name)
         playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
-        chunk_size_value = dpg_get_value(tag_node_input06_value_name)
-        chunk_size = float(chunk_size_value) if chunk_size_value is not None else 2.0
-        queue_chunks_value = dpg_get_value(tag_node_input07_value_name)
-        queue_chunks = int(queue_chunks_value) if queue_chunks_value is not None else 4
 
         setting_dict = {}
         setting_dict["ver"] = self._ver
@@ -908,8 +865,6 @@ class VideoNode(Node):
         setting_dict[tag_node_input02_value_name] = loop_flag
         setting_dict[tag_node_input04_value_name] = target_fps
         setting_dict[tag_node_input05_value_name] = playback_speed
-        setting_dict[tag_node_input06_value_name] = chunk_size
-        setting_dict[tag_node_input07_value_name] = queue_chunks
 
         return setting_dict
 
@@ -924,24 +879,14 @@ class VideoNode(Node):
         tag_node_input05_value_name = (
             tag_node_name + ":" + self.TYPE_FLOAT + ":Input05Value"
         )
-        tag_node_input06_value_name = (
-            tag_node_name + ":" + self.TYPE_FLOAT + ":Input06Value"
-        )
-        tag_node_input07_value_name = (
-            tag_node_name + ":" + self.TYPE_INT + ":Input07Value"
-        )
 
         loop_flag = setting_dict[tag_node_input02_value_name]
         target_fps = int(setting_dict.get(tag_node_input04_value_name, 24))
         playback_speed = float(setting_dict.get(tag_node_input05_value_name, 1.0))
-        chunk_size = float(setting_dict.get(tag_node_input06_value_name, 2.0))
-        queue_chunks = int(setting_dict.get(tag_node_input07_value_name, 4))
 
         dpg_set_value(tag_node_input02_value_name, loop_flag)
         dpg_set_value(tag_node_input04_value_name, target_fps)
         dpg_set_value(tag_node_input05_value_name, playback_speed)
-        dpg_set_value(tag_node_input06_value_name, chunk_size)
-        dpg_set_value(tag_node_input07_value_name, queue_chunks)
 
     def _callback_file_select(self, sender, data):
         if data["file_name"] != ".":
@@ -956,26 +901,9 @@ class VideoNode(Node):
             target_fps_value = dpg_get_value(tag_node_input04_value_name)
             target_fps = int(target_fps_value) if target_fps_value is not None else 24
             
-            # Get chunk size from slider
-            tag_node_input06_value_name = (
-                tag_node_name + ":" + self.TYPE_FLOAT + ":Input06Value"
-            )
-            chunk_size_value = dpg_get_value(tag_node_input06_value_name)
-            chunk_size = float(chunk_size_value) if chunk_size_value is not None else 2.0
-            
-            # Get queue chunks from slider
-            tag_node_input07_value_name = (
-                tag_node_name + ":" + self.TYPE_INT + ":Input07Value"
-            )
-            num_chunks_value = dpg_get_value(tag_node_input07_value_name)
-            num_chunks = int(num_chunks_value) if num_chunks_value is not None else 4
-            
-            # Preprocess video with chunk size and queue configuration
+            # Preprocess video (chunk size and queue size are calculated automatically based on FPS)
             self._preprocess_video(
                 node_id, 
                 data["file_path_name"], 
-                chunk_duration=chunk_size, 
-                step_duration=chunk_size,
-                num_chunks_to_keep=num_chunks,
                 target_fps=target_fps
             )

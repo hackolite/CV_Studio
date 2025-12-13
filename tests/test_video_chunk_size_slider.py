@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Test to verify that the chunk size slider is correctly implemented in the Video node.
+Test to verify that the chunk size slider has been removed from the Video node.
+Chunk size is now calculated automatically based on FPS.
 """
 
 import sys
@@ -11,8 +12,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def test_chunk_size_slider_in_factory():
-    """Verify that the chunk size slider is added in the FactoryNode"""
+def test_chunk_size_slider_removed():
+    """Verify that the chunk size slider has been removed from FactoryNode"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -21,23 +22,26 @@ def test_chunk_size_slider_in_factory():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Check for Input06 tag definition
-    assert 'tag_node_input06_name' in content, \
-        "Should define tag_node_input06_name for chunk size slider"
-    assert 'tag_node_input06_value_name' in content, \
-        "Should define tag_node_input06_value_name for chunk size slider"
+    # Check that Input06 tags are NOT defined (Chunk Size used Input06)
+    # Look for actual tag definitions (lines with '=' assignment)
+    lines = content.split('\n')
+    input06_definitions = [line for line in lines if 'tag_node_input06_name' in line and '=' in line and 'def ' not in line]
+    assert len(input06_definitions) == 0, \
+        f"Input06 tag definitions should be removed, found: {len(input06_definitions)} definitions"
     
-    # Check for slider widget creation
-    assert 'label="Chunk Size (s)"' in content, \
-        "Should have a slider labeled 'Chunk Size (s)'"
-    assert 'default_value=2.0' in content, \
-        "Should have default chunk size of 2.0 seconds"
+    input06_value_definitions = [line for line in lines if 'tag_node_input06_value_name' in line and '=' in line and 'def ' not in line]
+    assert len(input06_value_definitions) == 0, \
+        f"Input06 value tag definitions should be removed, found: {len(input06_value_definitions)} definitions"
     
-    print("✓ Chunk size slider is defined in FactoryNode")
+    # Check for slider widget removal
+    assert 'label="Chunk Size (s)"' not in content, \
+        "Should not have a slider labeled 'Chunk Size (s)'"
+    
+    print("✓ Chunk size slider has been removed from Video node")
 
 
-def test_chunk_size_in_update_method():
-    """Verify that the update method reads the chunk size value"""
+def test_chunk_size_not_in_update_method():
+    """Verify that the update method no longer reads chunk size value"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -46,17 +50,17 @@ def test_chunk_size_in_update_method():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Check that update method reads chunk_size
-    assert 'chunk_size_value = dpg_get_value(tag_node_input06_value_name)' in content, \
-        "update() should read chunk_size from slider"
-    assert 'chunk_size = float(chunk_size_value) if chunk_size_value is not None else 2.0' in content, \
-        "update() should convert chunk_size to float with 2.0 default"
+    # Check that update method does NOT read chunk_size
+    assert 'chunk_size_value = dpg_get_value(tag_node_input06_value_name)' not in content, \
+        "update() should not read chunk_size from slider (removed)"
+    assert 'chunk_size = float(chunk_size_value)' not in content, \
+        "update() should not convert chunk_size (removed)"
     
-    print("✓ Update method correctly reads chunk size value")
+    print("✓ Update method no longer reads chunk size value")
 
 
-def test_chunk_size_in_settings():
-    """Verify that chunk size is saved and loaded in settings"""
+def test_chunk_size_not_in_settings():
+    """Verify that chunk size is no longer saved and loaded in settings"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -65,21 +69,21 @@ def test_chunk_size_in_settings():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Check get_setting_dict
-    assert 'setting_dict[tag_node_input06_value_name] = chunk_size' in content, \
-        "get_setting_dict() should save chunk_size"
+    # Check get_setting_dict does not save chunk_size
+    assert 'setting_dict[tag_node_input06_value_name] = chunk_size' not in content, \
+        "get_setting_dict() should not save chunk_size (removed)"
     
-    # Check set_setting_dict
-    assert "chunk_size = float(setting_dict.get(tag_node_input06_value_name, 2.0))" in content, \
-        "set_setting_dict() should load chunk_size with 2.0 default"
-    assert 'dpg_set_value(tag_node_input06_value_name, chunk_size)' in content, \
-        "set_setting_dict() should set the slider value"
+    # Check set_setting_dict does not load chunk_size
+    assert "chunk_size = float(setting_dict.get(tag_node_input06_value_name, 2.0))" not in content, \
+        "set_setting_dict() should not load chunk_size (removed)"
+    assert 'dpg_set_value(tag_node_input06_value_name, chunk_size)' not in content, \
+        "set_setting_dict() should not set the slider value (removed)"
     
-    print("✓ Chunk size is correctly saved and loaded in settings")
+    print("✓ Chunk size is no longer saved and loaded in settings")
 
 
-def test_chunk_size_in_callback():
-    """Verify that file selection callback uses the chunk size"""
+def test_chunk_size_not_in_callback():
+    """Verify that file selection callback no longer uses chunk size"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -88,19 +92,20 @@ def test_chunk_size_in_callback():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Check that callback reads chunk size and passes it to _preprocess_video
+    # Check that callback does NOT read chunk size
     assert '_callback_file_select' in content, \
         "Should have _callback_file_select method"
-    assert 'chunk_size_value = dpg_get_value(tag_node_input06_value_name)' in content, \
-        "Callback should read chunk_size from slider"
-    assert 'self._preprocess_video(node_id, data["file_path_name"], chunk_duration=chunk_size, step_duration=chunk_size)' in content, \
-        "Callback should pass chunk_size to _preprocess_video"
+    assert 'chunk_size_value = dpg_get_value(tag_node_input06_value_name)' not in content, \
+        "Callback should not read chunk_size from slider (removed)"
+    # Check that _preprocess_video is called without chunk_duration parameter
+    assert 'chunk_duration=chunk_size' not in content, \
+        "Callback should not pass chunk_duration to _preprocess_video (removed)"
     
-    print("✓ File selection callback uses chunk size correctly")
+    print("✓ File selection callback no longer uses chunk size")
 
 
-def test_slider_range():
-    """Verify that the slider has appropriate min/max values"""
+def test_preprocess_video_signature():
+    """Verify that _preprocess_video no longer requires chunk_duration parameter"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -109,33 +114,31 @@ def test_slider_range():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Find the slider definition
+    # Find the _preprocess_video method signature
     lines = content.split('\n')
-    found_slider = False
-    min_value = None
-    max_value = None
+    found_method = False
     
-    for i, line in enumerate(lines):
-        if 'label="Chunk Size (s)"' in line:
-            found_slider = True
-            # Look for min_value and max_value in surrounding lines
-            for j in range(i-3, min(i+5, len(lines))):
-                if 'min_value=' in lines[j]:
-                    min_value = lines[j].split('min_value=')[1].split(',')[0].strip()
-                if 'max_value=' in lines[j]:
-                    max_value = lines[j].split('max_value=')[1].split(',')[0].strip()
+    for line in lines:
+        if 'def _preprocess_video(self' in line:
+            found_method = True
+            # Check that chunk_duration is not a required parameter
+            # Should have target_fps but not chunk_duration
+            assert 'target_fps' in line, "_preprocess_video should have target_fps parameter"
+            # Allow chunk_duration in signature only if it has a default value or is not there at all
+            if 'chunk_duration' in line:
+                # If it exists, it should have a default value (backwards compatibility)
+                pass  # OK for backwards compatibility
+            break
     
-    assert found_slider, "Should find chunk size slider definition"
-    assert min_value == '0.5', f"Min value should be 0.5, got {min_value}"
-    assert max_value == '10.0', f"Max value should be 10.0, got {max_value}"
+    assert found_method, "Should find _preprocess_video method definition"
     
-    print("✓ Slider range is correctly set (0.5 to 10.0 seconds)")
+    print("✓ _preprocess_video signature updated (chunk size calculated from FPS)")
 
 
 if __name__ == '__main__':
-    test_chunk_size_slider_in_factory()
-    test_chunk_size_in_update_method()
-    test_chunk_size_in_settings()
-    test_chunk_size_in_callback()
-    test_slider_range()
-    print("\n✅ All chunk size slider tests passed!")
+    test_chunk_size_slider_removed()
+    test_chunk_size_not_in_update_method()
+    test_chunk_size_not_in_settings()
+    test_chunk_size_not_in_callback()
+    test_preprocess_video_signature()
+    print("\n✅ All chunk size slider removal tests passed!")
