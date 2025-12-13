@@ -84,14 +84,8 @@ def create_spectrogram_custom(audio_data, sample_rate=44100, binsize=1024, color
     Note: Both binsize and n_fft control the FFT window size. Both default to 1024.
           If different values are provided, n_fft takes precedence for backward compatibility.
     """
-    # Use n_fft (for backward compatibility with code that passes n_fft explicitly)
-    # If user only changed binsize and left n_fft at default, use binsize
-    if n_fft != 1024:  # n_fft was explicitly changed from default
-        effective_binsize = n_fft
-    elif binsize != 1024:  # binsize was explicitly changed from default
-        effective_binsize = binsize
-    else:  # both at default, use either (they're the same)
-        effective_binsize = binsize
+    # Use n_fft if it differs from binsize (indicating explicit n_fft usage), otherwise use binsize
+    effective_binsize = n_fft if n_fft != binsize else binsize
     return create_stft_custom(audio_data, sample_rate, effective_binsize, colormap)
 
 
