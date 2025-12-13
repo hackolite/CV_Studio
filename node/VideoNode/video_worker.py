@@ -146,7 +146,7 @@ class ProgressTracker:
     Uses a moving average over the last N seconds to smooth ETA calculations.
     """
     
-    def __init__(self, total_frames: Optional[int] = None, sample_rate: int = 22050):
+    def __init__(self, total_frames: Optional[int] = None, sample_rate: int = 44100):
         self.total_frames = total_frames
         self.sample_rate = sample_rate
         
@@ -270,7 +270,7 @@ class VideoBackgroundWorker:
         width: int,
         height: int,
         fps: float,
-        sample_rate: int = 22050,
+        sample_rate: int = 44100,
         total_frames: Optional[int] = None,
         progress_callback: Optional[Callable[[ProgressEvent], None]] = None,
         chunk_duration: float = DEFAULT_CHUNK_DURATION,

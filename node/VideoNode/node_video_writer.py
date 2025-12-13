@@ -294,7 +294,7 @@ class VideoWriterNode(Node):
     _stop_label = 'Stop'
     
     # Default values for audio/video parameters
-    _DEFAULT_SAMPLE_RATE = 22050  # Default audio sample rate in Hz
+    _DEFAULT_SAMPLE_RATE = 44100  # Default audio sample rate in Hz (matches video input extraction)
     _DEFAULT_FPS = 30  # Default video frames per second
     
     # Constants for file wait logic
@@ -557,7 +557,7 @@ class VideoWriterNode(Node):
                                 # Handle dict format from video node: {'data': array, 'sample_rate': int, 'timestamp': float}
                                 if isinstance(audio_chunk, dict) and 'data' in audio_chunk:
                                     timestamp = audio_chunk.get('timestamp', float('inf'))
-                                    sample_rate = audio_chunk.get('sample_rate', 22050)
+                                    sample_rate = audio_chunk.get('sample_rate', self._DEFAULT_SAMPLE_RATE)
                                     
                                     # Initialize slot if not exists
                                     if slot_idx not in self._audio_samples_dict[tag_node_name]:
@@ -580,7 +580,7 @@ class VideoWriterNode(Node):
                                         self._audio_samples_dict[tag_node_name][slot_idx] = {
                                             'samples': [],
                                             'timestamp': float('inf'),
-                                            'sample_rate': 22050
+                                            'sample_rate': self._DEFAULT_SAMPLE_RATE
                                         }
                                     self._audio_samples_dict[tag_node_name][slot_idx]['samples'].append(audio_chunk)
                     else:
@@ -591,7 +591,7 @@ class VideoWriterNode(Node):
                                 self._audio_samples_dict[tag_node_name][slot_idx] = {
                                     'samples': [],
                                     'timestamp': float('inf'),
-                                    'sample_rate': 22050
+                                    'sample_rate': self._DEFAULT_SAMPLE_RATE
                                 }
                             self._audio_samples_dict[tag_node_name][slot_idx]['samples'].append(audio_data)
                 
@@ -1298,7 +1298,7 @@ class VideoWriterNode(Node):
                         width=writer_width,
                         height=writer_height,
                         fps=writer_fps,
-                        sample_rate=22050,  # Default, will be updated from incoming audio
+                        sample_rate=self._DEFAULT_SAMPLE_RATE,  # Default, will be updated from incoming audio
                         total_frames=None,  # Unknown initially
                         progress_callback=None,  # Progress is polled in update()
                         chunk_duration=chunk_duration  # Queue sizing based on chunk duration
@@ -1363,7 +1363,7 @@ class VideoWriterNode(Node):
                     'final_path': file_path,
                     'temp_path': temp_file_path,
                     'format': video_format,
-                    'sample_rate': 22050,  # Default sample rate, can be adjusted based on input
+                    'sample_rate': self._DEFAULT_SAMPLE_RATE,  # Default sample rate, can be adjusted based on input
                     'fps': writer_fps  # Store FPS from input video settings for duration adaptation
                 }
                 

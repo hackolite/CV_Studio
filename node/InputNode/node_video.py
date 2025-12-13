@@ -412,13 +412,17 @@ class VideoNode(Node):
             
             try:
                 # Use ffmpeg to extract audio as WAV - most efficient for spectrogram conversion
+                # Audio is resampled to 44100 Hz for consistency across the pipeline
+                # This ensures sample rate (samples per second in Hz) is uniform for:
+                # - Audio chunk sizing: chunk_samples = chunk_duration * sample_rate
+                # - Queue population frequency throughout workflow (input → concat → videowriter)
                 subprocess.run(
                     [
                         "ffmpeg",
                         "-i", movie_path,
                         "-vn",  # No video
                         "-acodec", "pcm_s16le",  # WAV codec
-                        "-ar", "44100",  # Sample rate (ESC-50 native sample rate)
+                        "-ar", "44100",  # Sample rate in Hz (samples per second)
                         "-ac", "1",  # Mono
                         "-y", tmp_audio_path,
                     ],
@@ -426,7 +430,7 @@ class VideoNode(Node):
                     capture_output=True,
                 )
                 
-                # Load audio to get samples and sample rate
+                # Load audio to get samples and sample rate (should be 44100 Hz after resampling)
                 y, sr = sf.read(tmp_audio_path)
                 logger.info(f"[Video] Audio extracted: SR={sr}Hz, Duration={len(y)/sr:.2f}s")
                 
@@ -441,9 +445,11 @@ class VideoNode(Node):
                     os.unlink(tmp_audio_path)
             
             # Step 3: Chunk audio with sliding window and store in memory
+            # Calculate number of samples per chunk based on sample rate (Hz = samples/second)
+            # Example: 2.0 seconds * 44100 samples/second = 88200 samples per chunk
             logger.debug(f"[Video] Chunking audio: chunk={chunk_duration}s, step={step_duration}s")
-            chunk_samples = int(chunk_duration * sr)
-            step_samples = int(step_duration * sr)
+            chunk_samples = int(chunk_duration * sr)  # sr is sample rate in Hz
+            step_samples = int(step_duration * sr)    # sr is sample rate in Hz
             
             audio_chunks = []
             chunk_start_times = []
@@ -488,10 +494,15 @@ class VideoNode(Node):
             logger.info(f"[Video] Created {len(audio_chunks)} audio chunks in memory")
             
             # Step 4: Calculate dynamic queue sizes
-            # Image queue: num_chunks * chunk_duration * target_fps
-            # Use target_fps (playback rate) instead of video fps for queue sizing
+            # The queue sizes ensure consistent audio/video synchronization throughout the pipeline:
+            # - Image queue: sized to hold (num_chunks * chunk_duration * target_fps) frames
+            #   Example: 4 chunks * 2.0 sec * 24 fps = 192 frames
+            # - Audio queue: sized to hold num_chunks audio chunks
+            #   Example: 4 chunks (each chunk = chunk_duration * sample_rate samples)
+            # The ratio ensures: image_queue_size / audio_queue_size = frames per audio chunk
+            # This guarantees coherent queue population frequency for the workflow:
+            # input/video → concat [audio, image] → videowriter
             image_queue_size = int(num_chunks_to_keep * chunk_duration * target_fps)
-            # Audio queue: num_chunks
             audio_queue_size = num_chunks_to_keep
             
             logger.info(f"[Video] Calculated queue sizes: Image={image_queue_size}, Audio={audio_queue_size} (target_fps={target_fps})")
