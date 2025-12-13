@@ -212,6 +212,8 @@ class VideoWriterNode(Node):
     _recording_metadata_dict = {}  # Store metadata about ongoing recordings
     _merge_threads_dict = {}  # Store merge threads for async operations
     _merge_progress_dict = {}  # Store merge progress (0.0 to 1.0)
+    _frame_count_dict = {}  # Track number of frames written during recording: {node: frame_count}
+    _last_frame_dict = {}  # Store last frame for potential duplication: {node: frame}
     
     # Background worker instances
     _background_workers = {}  # Store VideoBackgroundWorker instances
@@ -426,6 +428,12 @@ class VideoWriterNode(Node):
                                           interpolation=cv2.INTER_CUBIC)
                 self._video_writer_dict[tag_node_name].write(writer_frame)
                 
+                # Track frame count and store last frame for potential duplication
+                if tag_node_name not in self._frame_count_dict:
+                    self._frame_count_dict[tag_node_name] = 0
+                self._frame_count_dict[tag_node_name] += 1
+                self._last_frame_dict[tag_node_name] = writer_frame
+                
                 # Collect audio samples per slot for final merge (for all formats)
                 if audio_data is not None and tag_node_name in self._audio_samples_dict:
                     # audio_data can be a dict (from concat node with multiple slots) or a single chunk
@@ -610,7 +618,114 @@ class VideoWriterNode(Node):
             if not handle.closed:
                 handle.close()
 
-    def _merge_audio_video_ffmpeg(self, video_path, audio_samples, sample_rate, output_path, progress_callback=None):
+    def _adapt_video_to_audio_duration(self, video_path, audio_samples, sample_rate, fps, temp_adapted_path):
+        """
+        Adapt video duration to match audio duration by duplicating the last frame if needed.
+        
+        This method uses frame-by-frame copying which is simple and reliable but may be slower
+        for large videos. For production use with very long videos, consider implementing an
+        alternative using ffmpeg's concat filter for better performance.
+        
+        Args:
+            video_path: Path to the original video file
+            audio_samples: List of numpy arrays containing audio samples
+            sample_rate: Audio sample rate
+            fps: Video frames per second (from input video settings)
+            temp_adapted_path: Path to save the adapted video
+            
+        Returns:
+            True if adaptation was needed and successful, False if no adaptation needed
+        """
+        cap = None
+        out = None
+        try:
+            # Calculate required video duration from audio
+            total_audio_samples = sum(len(samples) for samples in audio_samples)
+            audio_duration = total_audio_samples / sample_rate
+            
+            # Open original video to get current frame count
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                logger.error(f"[VideoWriter] Failed to open video for duration check: {video_path}")
+                return False
+            
+            # Get frame count and validate it
+            video_frame_count_raw = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+            
+            # Validate frame count (check for NaN, inf, or invalid values)
+            if not np.isfinite(video_frame_count_raw) or video_frame_count_raw <= 0:
+                logger.warning(f"[VideoWriter] Invalid frame count ({video_frame_count_raw}), cannot adapt video duration")
+                return False
+            
+            video_frame_count = int(video_frame_count_raw)
+            
+            video_duration = video_frame_count / fps if fps > 0 else 0
+            
+            logger.info(f"[VideoWriter] Video duration: {video_duration:.2f}s ({video_frame_count} frames at {fps} fps)")
+            logger.info(f"[VideoWriter] Audio duration: {audio_duration:.2f}s ({total_audio_samples} samples at {sample_rate} Hz)")
+            
+            # Calculate required frames for audio duration
+            required_frames = int(audio_duration * fps)
+            frames_to_add = required_frames - video_frame_count
+            
+            if frames_to_add <= 0:
+                # Video is already long enough or longer than audio
+                logger.info(f"[VideoWriter] No frame adaptation needed (video >= audio duration)")
+                return False
+            
+            logger.info(f"[VideoWriter] Adapting video: adding {frames_to_add} frames to match audio duration")
+            
+            # Get video properties and validate them
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            
+            if width <= 0 or height <= 0:
+                logger.error(f"[VideoWriter] Invalid video dimensions: {width}x{height}")
+                return False
+            
+            fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
+            
+            # Create new video writer with adapted path
+            out = cv2.VideoWriter(temp_adapted_path, fourcc, fps, (width, height))
+            if not out.isOpened():
+                logger.error(f"[VideoWriter] Failed to create adapted video writer")
+                return False
+            
+            # Copy all existing frames
+            # Note: This reads/writes frames individually which may be slower for large videos.
+            # For production use, consider using ffmpeg's concat filter for better performance.
+            # However, this approach is simpler and works reliably across all video formats.
+            last_frame = None
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                out.write(frame)
+                last_frame = frame
+            
+            # Duplicate last frame to fill the gap
+            if last_frame is not None:
+                for _ in range(frames_to_add):
+                    out.write(last_frame)
+                logger.info(f"[VideoWriter] Duplicated last frame {frames_to_add} times")
+            else:
+                # Handle edge case: empty video (no frames)
+                logger.warning(f"[VideoWriter] Source video has no frames, cannot adapt duration")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"[VideoWriter] Error adapting video duration: {e}", exc_info=True)
+            return False
+        finally:
+            # Ensure resources are properly released
+            if cap is not None:
+                cap.release()
+            if out is not None:
+                out.release()
+
+    def _merge_audio_video_ffmpeg(self, video_path, audio_samples, sample_rate, output_path, fps=None, progress_callback=None):
         """
         Merge video and audio using ffmpeg.
         
@@ -619,6 +734,7 @@ class VideoWriterNode(Node):
             audio_samples: List of numpy arrays containing audio samples
             sample_rate: Audio sample rate (e.g., 22050, 44100)
             output_path: Path to the final output file with audio
+            fps: Video frames per second (from input video settings) - used for duration adaptation
             progress_callback: Optional callback function to report progress (0.0 to 1.0)
         
         Returns:
@@ -661,6 +777,16 @@ class VideoWriterNode(Node):
             
             logger.info(f"[VideoWriter] Merge: Total audio duration = {total_duration:.2f}s at {sample_rate}Hz")
             
+            # Adapt video duration to match audio duration if FPS is provided
+            actual_video_path = video_path
+            if fps is not None and fps > 0:
+                # Extract file extension safely using os.path.splitext
+                video_base, video_ext = os.path.splitext(video_path)
+                adapted_path = f"{video_base}_adapted{video_ext}"
+                if self._adapt_video_to_audio_duration(video_path, valid_samples, sample_rate, fps, adapted_path):
+                    actual_video_path = adapted_path
+                    logger.info(f"[VideoWriter] Using adapted video: {adapted_path}")
+            
             # Report progress: Audio concatenated
             if progress_callback:
                 progress_callback(0.3)
@@ -677,8 +803,8 @@ class VideoWriterNode(Node):
                 if progress_callback:
                     progress_callback(0.5)
                 
-                # Use ffmpeg to merge video and audio
-                video_input = ffmpeg.input(video_path)
+                # Use ffmpeg to merge video and audio (use adapted path if available)
+                video_input = ffmpeg.input(actual_video_path)
                 audio_input = ffmpeg.input(temp_audio_path)
                 
                 # Merge video and audio streams
@@ -712,6 +838,11 @@ class VideoWriterNode(Node):
                 # Clean up temporary audio file
                 if os.path.exists(temp_audio_path):
                     os.remove(temp_audio_path)
+                
+                # Clean up adapted video file if it was created
+                if actual_video_path != video_path and os.path.exists(actual_video_path):
+                    os.remove(actual_video_path)
+                    logger.debug(f"[VideoWriter] Cleaned up adapted video: {actual_video_path}")
                     
         except Exception as e:
             logger.error(f"[VideoWriter] Error merging audio and video: {e}", exc_info=True)
@@ -767,7 +898,7 @@ class VideoWriterNode(Node):
     def set_setting_dict(self, node_id, setting_dict):
         pass
 
-    def _async_merge_thread(self, tag_node_name, temp_path, audio_samples, sample_rate, final_path, video_format='MP4', json_samples=None):
+    def _async_merge_thread(self, tag_node_name, temp_path, audio_samples, sample_rate, final_path, fps, video_format='MP4', json_samples=None):
         """
         Thread worker function to merge audio and video asynchronously.
         This runs in a separate thread to prevent UI freezing.
@@ -778,6 +909,7 @@ class VideoWriterNode(Node):
             audio_samples: List of concatenated audio samples
             sample_rate: Audio sample rate
             final_path: Final output file path
+            fps: Video frames per second (from input video settings)
             video_format: Video format (AVI, MP4, MKV)
             json_samples: Dictionary of JSON samples per slot (for MKV)
         """
@@ -802,12 +934,13 @@ class VideoWriterNode(Node):
             # Additional small wait to ensure file is fully flushed
             time.sleep(self._FILE_FLUSH_DELAY)
             
-            # Perform the merge with progress reporting
+            # Perform the merge with progress reporting (pass FPS for duration adaptation)
             success = self._merge_audio_video_ffmpeg(
                 temp_path,
                 audio_samples,
                 sample_rate,
                 final_path,
+                fps=fps,
                 progress_callback=progress_callback
             )
             
@@ -999,7 +1132,8 @@ class VideoWriterNode(Node):
                     'final_path': file_path,
                     'temp_path': temp_file_path,
                     'format': video_format,
-                    'sample_rate': 22050  # Default sample rate, can be adjusted based on input
+                    'sample_rate': 22050,  # Default sample rate, can be adjusted based on input
+                    'fps': writer_fps  # Store FPS from input video settings for duration adaptation
                 }
                 
                 self._worker_mode[tag_node_name] = 'legacy'
@@ -1061,8 +1195,9 @@ class VideoWriterNode(Node):
                     if final_sample_rate is not None:
                         sample_rate = final_sample_rate
                     
-                    # Get video format for format-specific merging
+                    # Get video format and FPS for format-specific merging
                     video_format = metadata.get('format', 'MP4')
+                    fps = metadata.get('fps', 30)  # Get FPS from recording metadata
                     
                     # Process JSON samples for MKV format
                     json_samples_dict = None
@@ -1072,7 +1207,7 @@ class VideoWriterNode(Node):
                     # Start merge in a separate thread to prevent UI freezing
                     merge_thread = threading.Thread(
                         target=self._async_merge_thread,
-                        args=(tag_node_name, temp_path, audio_samples_list, sample_rate, final_path, video_format, json_samples_dict),
+                        args=(tag_node_name, temp_path, audio_samples_list, sample_rate, final_path, fps, video_format, json_samples_dict),
                         daemon=True
                     )
                     merge_thread.start()
@@ -1104,6 +1239,12 @@ class VideoWriterNode(Node):
             # Clean up JSON samples
             if tag_node_name in self._json_samples_dict:
                 self._json_samples_dict.pop(tag_node_name)
+            
+            # Clean up frame tracking
+            if tag_node_name in self._frame_count_dict:
+                self._frame_count_dict.pop(tag_node_name)
+            if tag_node_name in self._last_frame_dict:
+                self._last_frame_dict.pop(tag_node_name)
             
             # Close metadata file handles if MKV
             if tag_node_name in self._mkv_metadata_dict:
