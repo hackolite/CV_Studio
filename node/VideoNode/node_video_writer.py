@@ -501,8 +501,13 @@ class VideoWriterNode(Node):
                     if isinstance(json_data, dict):
                         # Concat node output: {slot_idx: json_chunk}
                         # Collect JSON samples per slot
-                        for slot_idx in json_data.keys():
-                            json_chunk = json_data[slot_idx]
+                        for slot_idx, json_chunk in json_data.items():
+                            # Validate JSON serializability before storing
+                            try:
+                                json.dumps(json_chunk)  # Test serialization
+                            except (TypeError, ValueError) as e:
+                                logger.warning(f"[VideoWriter] Skipping non-serializable JSON chunk for slot {slot_idx}: {e}")
+                                continue
                             
                             # Initialize slot if not exists
                             if slot_idx not in self._json_samples_dict[tag_node_name]:
@@ -515,13 +520,18 @@ class VideoWriterNode(Node):
                             self._json_samples_dict[tag_node_name][slot_idx]['samples'].append(json_chunk)
                     else:
                         # Single JSON chunk (slot 0)
-                        slot_idx = 0
-                        if slot_idx not in self._json_samples_dict[tag_node_name]:
-                            self._json_samples_dict[tag_node_name][slot_idx] = {
-                                'samples': [],
-                                'timestamp': float('inf')
-                            }
-                        self._json_samples_dict[tag_node_name][slot_idx]['samples'].append(json_data)
+                        # Validate JSON serializability before storing
+                        try:
+                            json.dumps(json_data)  # Test serialization
+                            slot_idx = 0
+                            if slot_idx not in self._json_samples_dict[tag_node_name]:
+                                self._json_samples_dict[tag_node_name][slot_idx] = {
+                                    'samples': [],
+                                    'timestamp': float('inf')
+                                }
+                            self._json_samples_dict[tag_node_name][slot_idx]['samples'].append(json_data)
+                        except (TypeError, ValueError) as e:
+                            logger.warning(f"[VideoWriter] Skipping non-serializable JSON data: {e}")
                 
                 # Write audio and JSON data to MKV metadata tracks if applicable
                 if tag_node_name in self._mkv_metadata_dict:
@@ -820,13 +830,32 @@ class VideoWriterNode(Node):
                         for slot_idx, slot_data in sorted_json_slots:
                             if slot_data['samples']:
                                 json_file = os.path.join(metadata_dir, f'json_slot_{slot_idx}_concat.json')
-                                with open(json_file, 'w') as f:
-                                    json.dump({
+                                try:
+                                    # Prepare data structure
+                                    output_data = {
                                         'slot_idx': slot_idx,
                                         'timestamp': slot_data['timestamp'],
                                         'samples': slot_data['samples']
-                                    }, f, indent=2)
-                                logger.info(f"[VideoWriter] Saved JSON metadata for slot {slot_idx} to: {json_file}")
+                                    }
+                                    # Validate serializability by attempting to serialize
+                                    json_str = json.dumps(output_data, indent=2)
+                                    # Write validated JSON to file
+                                    with open(json_file, 'w') as f:
+                                        f.write(json_str)
+                                    logger.info(f"[VideoWriter] Saved JSON metadata for slot {slot_idx} to: {json_file}")
+                                except (TypeError, ValueError) as json_err:
+                                    logger.error(f"[VideoWriter] JSON serialization error for slot {slot_idx}: {json_err}")
+                                    # Attempt to save with default serialization (converts non-serializable to str)
+                                    try:
+                                        with open(json_file, 'w') as f:
+                                            json.dump({
+                                                'slot_idx': slot_idx,
+                                                'timestamp': float(slot_data['timestamp']) if slot_data['timestamp'] != float('inf') else 'inf',
+                                                'samples': str(slot_data['samples'])
+                                            }, f, indent=2)
+                                        logger.warning(f"[VideoWriter] Saved JSON metadata with fallback serialization for slot {slot_idx}")
+                                    except Exception as fallback_err:
+                                        logger.error(f"[VideoWriter] Failed to save JSON metadata even with fallback: {fallback_err}")
                     except Exception as json_error:
                         logger.error(f"[VideoWriter] Error saving JSON metadata: {json_error}", exc_info=True)
                 
