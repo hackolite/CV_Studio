@@ -646,10 +646,14 @@ class VideoWriterNode(Node):
                 return False
             
             # Get frame count and validate it
-            video_frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            if video_frame_count <= 0:
-                logger.warning(f"[VideoWriter] Invalid frame count ({video_frame_count}), cannot adapt video duration")
+            video_frame_count_raw = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+            
+            # Validate frame count (check for NaN, inf, or invalid values)
+            if not np.isfinite(video_frame_count_raw) or video_frame_count_raw <= 0:
+                logger.warning(f"[VideoWriter] Invalid frame count ({video_frame_count_raw}), cannot adapt video duration")
                 return False
+            
+            video_frame_count = int(video_frame_count_raw)
             
             video_duration = video_frame_count / fps if fps > 0 else 0
             
@@ -679,6 +683,9 @@ class VideoWriterNode(Node):
                 return False
             
             # Copy all existing frames
+            # Note: This reads/writes frames individually which may be slower for large videos.
+            # For production use, consider using ffmpeg's concat filter for better performance.
+            # However, this approach is simpler and works reliably across all video formats.
             last_frame = None
             while True:
                 ret, frame = cap.read()
@@ -760,9 +767,9 @@ class VideoWriterNode(Node):
             # Adapt video duration to match audio duration if FPS is provided
             actual_video_path = video_path
             if fps is not None and fps > 0:
-                # Extract file extension once
-                video_base, video_ext = video_path.rsplit('.', 1)
-                adapted_path = f"{video_base}_adapted.{video_ext}"
+                # Extract file extension safely using os.path.splitext
+                video_base, video_ext = os.path.splitext(video_path)
+                adapted_path = f"{video_base}_adapted{video_ext}"
                 if self._adapt_video_to_audio_duration(video_path, valid_samples, sample_rate, fps, adapted_path):
                     actual_video_path = adapted_path
                     logger.info(f"[VideoWriter] Using adapted video: {adapted_path}")
