@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Test to verify that step_duration is correctly set to 3.0 seconds (no overlap)"""
+"""Test to verify that step_duration is correctly set to 2.0 seconds (no overlap)"""
 
-import pytest
 import sys
 import os
 
@@ -11,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def test_step_duration_default_is_3s():
-    """Verify that step_duration default is 3.0 seconds in _preprocess_video (no overlap)"""
+    """Verify that step_duration default is 2.0 seconds in _preprocess_video (no overlap)"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -26,18 +25,18 @@ def test_step_duration_default_is_3s():
     
     for line in lines:
         if 'def _preprocess_video' in line:
-            # Verify step_duration=3.0 is in the signature
-            assert 'step_duration=3.0' in line, \
-                f"step_duration should be 3.0, found: {line}"
+            # Verify step_duration=2.0 is in the signature
+            assert 'step_duration=2.0' in line, \
+                f"step_duration should be 2.0, found: {line}"
             found_method = True
             break
     
     assert found_method, "_preprocess_video method should exist"
-    print("✓ step_duration default is correctly set to 3.0 seconds (no overlap)")
+    print("✓ step_duration default is correctly set to 2.0 seconds (no overlap)")
 
 
 def test_step_duration_docstring():
-    """Verify that the docstring mentions 3.0 seconds for step_duration"""
+    """Verify that the docstring mentions 2.0 seconds for step_duration"""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -46,11 +45,11 @@ def test_step_duration_docstring():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # The docstring should mention step_duration default as 3.0, no overlap
-    assert 'step_duration: Step size between chunks in seconds (default: 3.0, no overlap)' in content, \
-        "Docstring should mention step_duration default as 3.0 with no overlap"
+    # The docstring should mention step_duration default as 2.0, no overlap
+    assert 'step_duration: Step size between chunks in seconds (default: 2.0, no overlap)' in content, \
+        "Docstring should mention step_duration default as 2.0 with no overlap"
     
-    print("✓ Docstring correctly documents step_duration=3.0")
+    print("✓ Docstring correctly documents step_duration=2.0")
 
 
 def test_synchronization_calculation():
@@ -93,7 +92,7 @@ def test_no_overlap_configuration():
     
     # 3. Check that default step_duration equals chunk_duration (no overlap)
     # Check for the function signature with both parameters
-    assert 'def _preprocess_video(self, node_id, movie_path, chunk_duration=3.0, step_duration=3.0)' in content, \
+    assert 'def _preprocess_video(self, node_id, movie_path, chunk_duration=2.0, step_duration=2.0)' in content, \
         "Default parameters should have no overlap (step_duration=chunk_duration)"
     
     # 4. Check synchronized playback via audio chunk retrieval
@@ -114,4 +113,4 @@ if __name__ == '__main__':
     test_step_duration_docstring()
     test_synchronization_calculation()
     test_no_overlap_configuration()
-    print("\n✅ All step_duration=3.0 (no overlap) tests passed!")
+    print("\n✅ All step_duration=2.0 (no overlap) tests passed!")
