@@ -632,6 +632,8 @@ class VideoWriterNode(Node):
         Returns:
             True if adaptation was needed and successful, False if no adaptation needed
         """
+        cap = None
+        out = None
         try:
             # Calculate required video duration from audio
             total_audio_samples = sum(len(samples) for samples in audio_samples)
@@ -643,7 +645,12 @@ class VideoWriterNode(Node):
                 logger.error(f"[VideoWriter] Failed to open video for duration check: {video_path}")
                 return False
             
+            # Get frame count and validate it
             video_frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            if video_frame_count <= 0:
+                logger.warning(f"[VideoWriter] Invalid frame count ({video_frame_count}), cannot adapt video duration")
+                return False
+            
             video_duration = video_frame_count / fps if fps > 0 else 0
             
             logger.info(f"[VideoWriter] Video duration: {video_duration:.2f}s ({video_frame_count} frames at {fps} fps)")
@@ -655,7 +662,6 @@ class VideoWriterNode(Node):
             
             if frames_to_add <= 0:
                 # Video is already long enough or longer than audio
-                cap.release()
                 logger.info(f"[VideoWriter] No frame adaptation needed (video >= audio duration)")
                 return False
             
@@ -670,7 +676,6 @@ class VideoWriterNode(Node):
             out = cv2.VideoWriter(temp_adapted_path, fourcc, fps, (width, height))
             if not out.isOpened():
                 logger.error(f"[VideoWriter] Failed to create adapted video writer")
-                cap.release()
                 return False
             
             # Copy all existing frames
@@ -682,20 +687,23 @@ class VideoWriterNode(Node):
                 out.write(frame)
                 last_frame = frame
             
-            cap.release()
-            
             # Duplicate last frame to fill the gap
             if last_frame is not None:
                 for _ in range(frames_to_add):
                     out.write(last_frame)
                 logger.info(f"[VideoWriter] Duplicated last frame {frames_to_add} times")
             
-            out.release()
             return True
             
         except Exception as e:
             logger.error(f"[VideoWriter] Error adapting video duration: {e}", exc_info=True)
             return False
+        finally:
+            # Ensure resources are properly released
+            if cap is not None:
+                cap.release()
+            if out is not None:
+                out.release()
 
     def _merge_audio_video_ffmpeg(self, video_path, audio_samples, sample_rate, output_path, fps=None, progress_callback=None):
         """
@@ -752,7 +760,9 @@ class VideoWriterNode(Node):
             # Adapt video duration to match audio duration if FPS is provided
             actual_video_path = video_path
             if fps is not None and fps > 0:
-                adapted_path = video_path.rsplit('.', 1)[0] + '_adapted.' + video_path.rsplit('.', 1)[1]
+                # Extract file extension once
+                video_base, video_ext = video_path.rsplit('.', 1)
+                adapted_path = f"{video_base}_adapted.{video_ext}"
                 if self._adapt_video_to_audio_duration(video_path, valid_samples, sample_rate, fps, adapted_path):
                     actual_video_path = adapted_path
                     logger.info(f"[VideoWriter] Using adapted video: {adapted_path}")
