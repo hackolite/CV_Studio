@@ -322,7 +322,7 @@ class VideoNode(Node):
         self._chunk_metadata = {}  # Metadata for chunk-to-frame mapping
         self._chunk_temp_dirs = {}  # Track temporary directories for cleanup
 
-    def _preprocess_video(self, node_id, movie_path, chunk_duration=3.0, step_duration=1.0):
+    def _preprocess_video(self, node_id, movie_path, chunk_duration=3.0, step_duration=3.0):
         """
         Pre-process video by extracting and chunking audio as WAV files.
         
@@ -336,7 +336,7 @@ class VideoNode(Node):
             node_id: Node identifier
             movie_path: Path to video file
             chunk_duration: Duration of each audio chunk in seconds (default: 3.0)
-            step_duration: Step size between chunks in seconds (default: 1.0)
+            step_duration: Step size between chunks in seconds (default: 3.0, no overlap)
         """
         if not movie_path or not os.path.exists(movie_path):
             logger.warning(f"[Video] Video file not found: {movie_path}")

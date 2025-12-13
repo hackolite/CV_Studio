@@ -63,7 +63,10 @@ def test_audio_chunks_are_5_seconds():
     from node.InputNode.node_video import VideoNode
     
     # Create a test video with 12.5 seconds of audio
-    # This should create 9 chunks: 8 full chunks and 1 padded chunk
+    # With 5s chunks and 5s steps (no overlap): chunks at 0s, 5s, 10s (3 chunks)
+    # Chunk 0: 0-5s (full)
+    # Chunk 1: 5-10s (full)
+    # Chunk 2: 10-12.5s (2.5s padded to 5s)
     video_path = create_test_video_with_audio(duration_seconds=12.5)
     
     try:
@@ -77,8 +80,8 @@ def test_audio_chunks_are_5_seconds():
             'use_pref_counter': False
         }
         
-        # Preprocess the video
-        node._preprocess_video(node_id, video_path, chunk_duration=5.0, step_duration=1.0)
+        # Preprocess the video with no overlap
+        node._preprocess_video(node_id, video_path, chunk_duration=5.0, step_duration=5.0)
         
         # Check that chunk paths were created (WAV-based storage)
         assert node_id in node._audio_chunk_paths, "Audio chunk paths should be created"
@@ -113,13 +116,14 @@ def test_audio_chunks_are_5_seconds():
         # Assert all chunks are valid
         assert all_chunks_valid, "All chunks should be exactly 5 seconds"
         
-        # For 12.5 seconds of audio with 5s chunks and 1s steps:
-        # Full 5s chunks starting at: 0s, 1s, 2s, 3s, 4s, 5s, 6s, 7s (8 chunks)
-        # Remaining audio from 8s-12.5s (4.5s) gets padded to 5s (1 chunk)
-        # Total: 9 chunks
-        expected_num_chunks = 9
+        # For 12.5 seconds of audio with 5s chunks and 5s steps (no overlap):
+        # Chunk 0: 0-5s (full)
+        # Chunk 1: 5-10s (full)
+        # Chunk 2: 10-12.5s (2.5s padded to 5s)
+        # Total: 3 chunks
+        expected_num_chunks = 3
         assert len(chunk_paths) == expected_num_chunks, \
-            f"Expected {expected_num_chunks} chunks for 12.5s audio, got {len(chunk_paths)}"
+            f"Expected {expected_num_chunks} chunks for 12.5s audio with no overlap, got {len(chunk_paths)}"
         
         print(f"\n✅ All {len(chunk_paths)} audio chunks are exactly 5 seconds (saved as WAV files)!")
         
@@ -137,9 +141,8 @@ def test_audio_chunks_exact_multiple():
     from node.InputNode.node_video import VideoNode
     
     # Create a test video with exactly 10 seconds of audio
-    # With 5s chunks and 1s steps: chunks at 0s, 1s, 2s, 3s, 4s, 5s (6 full chunks)
-    # Plus remaining 4s from 6s-10s gets padded to 5s (1 chunk)
-    # Total: 7 chunks
+    # With 5s chunks and 5s steps (no overlap): chunks at 0s, 5s (2 full chunks)
+    # Total: 2 chunks (exactly fits with no remainder)
     video_path = create_test_video_with_audio(duration_seconds=10.0)
     
     try:
@@ -153,8 +156,8 @@ def test_audio_chunks_exact_multiple():
             'use_pref_counter': False
         }
         
-        # Preprocess the video
-        node._preprocess_video(node_id, video_path, chunk_duration=5.0, step_duration=1.0)
+        # Preprocess the video with no overlap
+        node._preprocess_video(node_id, video_path, chunk_duration=5.0, step_duration=5.0)
         
         # Check that chunk paths were created
         assert node_id in node._audio_chunk_paths, "Audio chunk paths should be created"
