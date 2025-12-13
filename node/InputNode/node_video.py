@@ -358,7 +358,8 @@ class VideoNode(Node):
         # Audio data storage - stores audio chunks in memory as numpy arrays
         self._audio_chunks = {}  # Store audio chunks in memory
         self._chunk_metadata = {}  # Metadata for chunk-to-frame mapping
-        self._queues_resized = {}  # Track which nodes have had their queues resized
+        # Track which nodes have had their queues resized to prevent redundant resize operations on every frame
+        self._queues_resized = {}
 
     def _preprocess_video(self, node_id, movie_path, chunk_duration=2.0, step_duration=2.0, num_chunks_to_keep=4):
         """
