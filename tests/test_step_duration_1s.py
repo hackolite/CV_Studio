@@ -98,8 +98,8 @@ def test_no_overlap_configuration():
     # 4. Check synchronized playback via audio chunk retrieval
     assert '_get_audio_chunk_for_frame' in content, \
         "Should have synchronized audio chunk retrieval"
-    assert 'self._audio_chunk_paths' in content, \
-        "Should store audio chunk paths"
+    assert 'self._audio_chunks' in content, \
+        "Should store audio chunks in memory"
     
     print("✓ All requirements verified:")
     print("  - 24 FPS default (configurable)")

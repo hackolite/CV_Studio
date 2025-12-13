@@ -355,20 +355,21 @@ class VideoNode(Node):
         self.node_tag = "Video"
         self.node_label = "Video"
 
-        # Audio data storage - now stores WAV file paths instead of numpy arrays
-        self._audio_chunk_paths = {}  # Store paths to WAV chunk files
+        # Audio data storage - stores audio chunks in memory as numpy arrays
+        self._audio_chunks = {}  # Store audio chunks in memory
         self._chunk_metadata = {}  # Metadata for chunk-to-frame mapping
-        self._chunk_temp_dirs = {}  # Track temporary directories for cleanup
 
     def _preprocess_video(self, node_id, movie_path, chunk_duration=2.0, step_duration=2.0):
         """
-        Pre-process video by extracting and chunking audio as WAV files.
+        Pre-process video by extracting and chunking audio into memory.
         
         This method:
         1. Extracts video metadata (FPS, frame count) using OpenCV
-        2. Extracts audio using ffmpeg to WAV format (faster and more efficient)
-        3. Chunks audio into segments and saves each as a WAV file
-        4. Stores metadata and WAV file paths for frame-to-chunk mapping
+        2. Extracts audio using ffmpeg (WAV used temporarily during extraction only)
+        3. Chunks audio into segments and stores all chunks in memory as numpy arrays
+        4. Stores metadata for frame-to-chunk mapping
+        
+        Note: All audio chunks are loaded into memory for fast access during playback.
         
         Args:
             node_id: Node identifier
@@ -434,109 +435,79 @@ class VideoNode(Node):
                 if os.path.exists(tmp_audio_path):
                     os.unlink(tmp_audio_path)
             
-            # Step 3: Create temporary directory for audio chunks
-            chunk_temp_dir = tempfile.mkdtemp(prefix=f"cv_studio_audio_{node_id}_")
-            self._chunk_temp_dirs[node_id] = chunk_temp_dir
-            logger.debug(f"[Video] Created temp directory: {chunk_temp_dir}")
+            # Step 3: Chunk audio with sliding window and store in memory
+            logger.debug(f"[Video] Chunking audio: chunk={chunk_duration}s, step={step_duration}s")
+            chunk_samples = int(chunk_duration * sr)
+            step_samples = int(step_duration * sr)
             
-            try:
-                # Step 4: Chunk audio with sliding window and save each as WAV
-                logger.debug(f"[Video] Chunking audio: chunk={chunk_duration}s, step={step_duration}s")
-                chunk_samples = int(chunk_duration * sr)
-                step_samples = int(step_duration * sr)
-                
-                chunk_paths = []
-                chunk_start_times = []
-                start = 0
-                chunk_idx = 0
-                
-                while (start + chunk_samples) <= len(y):
-                    end = start + chunk_samples
-                    chunk = y[start:end]
-                    
-                    # Save chunk as WAV file
-                    chunk_path = os.path.join(chunk_temp_dir, f"chunk_{chunk_idx:04d}.wav")
-                    sf.write(chunk_path, chunk, sr)
-                    
-                    chunk_paths.append(chunk_path)
-                    chunk_start_times.append(start / sr)
-                    chunk_idx += 1
-                    start += step_samples
-                
-                # Handle remaining audio: pad to chunk_duration if necessary
-                remaining_samples = len(y) - start
-                if remaining_samples > 0:
-                    # Extract remaining audio
-                    remaining_chunk = y[start:]
-                    # Pad with zeros to reach chunk_samples (5 seconds)
-                    padding_needed = chunk_samples - remaining_samples
-                    padded_chunk = np.pad(remaining_chunk, (0, padding_needed), mode='constant', constant_values=0)
-                    
-                    # Save padded chunk as WAV file
-                    chunk_path = os.path.join(chunk_temp_dir, f"chunk_{chunk_idx:04d}.wav")
-                    sf.write(chunk_path, padded_chunk, sr)
-                    
-                    chunk_paths.append(chunk_path)
-                    chunk_start_times.append(start / sr)
-                    logger.debug(f"[Video] Padded last chunk: {remaining_samples/sr:.2f}s → {chunk_duration}s")
-                
-                # Store chunk paths instead of numpy arrays
-                self._audio_chunk_paths[node_id] = chunk_paths
-                
-                # Verify all chunks are exactly chunk_duration by reading first and last
-                if len(chunk_paths) > 0:
-                    first_chunk, _ = sf.read(chunk_paths[0])
-                    last_chunk, _ = sf.read(chunk_paths[-1])
-                    first_duration = len(first_chunk) / sr
-                    last_duration = len(last_chunk) / sr
-                    
-                    if abs(first_duration - chunk_duration) > 0.001 or abs(last_duration - chunk_duration) > 0.001:
-                        logger.warning(f"[Video] Chunk duration mismatch - first: {first_duration:.3f}s, last: {last_duration:.3f}s")
-                        
-                logger.info(f"[Video] Created {len(chunk_paths)} audio chunks")
-                
-                # Step 5: Store metadata
-                self._chunk_metadata[node_id] = {
-                    'fps': fps,
-                    'sr': sr,
-                    'chunk_duration': chunk_duration,
-                    'step_duration': step_duration,
-                    'chunk_start_times': chunk_start_times,
-                    'num_frames': frame_count,
-                    'num_chunks': len(chunk_paths),
-                }
-                
-                logger.info(f"[Video] Pre-processing complete: Frames={frame_count}, Chunks={len(chunk_paths)}, FPS={fps}")
+            audio_chunks = []
+            chunk_start_times = []
+            start = 0
+            chunk_idx = 0
             
-            except Exception as chunk_error:
-                # If chunking fails, clean up the temp directory
-                logger.error(f"[Video] Failed during audio chunking: {chunk_error}")
-                self._cleanup_audio_chunks(node_id)
-                raise
+            while (start + chunk_samples) <= len(y):
+                end = start + chunk_samples
+                chunk = y[start:end]
+                
+                # Store chunk in memory as numpy array
+                audio_chunks.append(chunk)
+                chunk_start_times.append(start / sr)
+                chunk_idx += 1
+                start += step_samples
+            
+            # Handle remaining audio: pad to chunk_duration if necessary
+            remaining_samples = len(y) - start
+            if remaining_samples > 0:
+                # Extract remaining audio
+                remaining_chunk = y[start:]
+                # Pad with zeros to reach chunk_samples
+                padding_needed = chunk_samples - remaining_samples
+                padded_chunk = np.pad(remaining_chunk, (0, padding_needed), mode='constant', constant_values=0)
+                
+                # Store padded chunk in memory
+                audio_chunks.append(padded_chunk)
+                chunk_start_times.append(start / sr)
+                logger.debug(f"[Video] Padded last chunk: {remaining_samples/sr:.2f}s → {chunk_duration}s")
+            
+            # Store all audio chunks in memory
+            self._audio_chunks[node_id] = audio_chunks
+            
+            # Verify all chunks are exactly chunk_duration
+            if len(audio_chunks) > 0:
+                first_duration = len(audio_chunks[0]) / sr
+                last_duration = len(audio_chunks[-1]) / sr
+                
+                if abs(first_duration - chunk_duration) > 0.001 or abs(last_duration - chunk_duration) > 0.001:
+                    logger.warning(f"[Video] Chunk duration mismatch - first: {first_duration:.3f}s, last: {last_duration:.3f}s")
+                    
+            logger.info(f"[Video] Created {len(audio_chunks)} audio chunks in memory")
+            
+            # Step 4: Store metadata
+            self._chunk_metadata[node_id] = {
+                'fps': fps,
+                'sr': sr,
+                'chunk_duration': chunk_duration,
+                'step_duration': step_duration,
+                'chunk_start_times': chunk_start_times,
+                'num_frames': frame_count,
+                'num_chunks': len(audio_chunks),
+            }
+            
+            logger.info(f"[Video] Pre-processing complete: Frames={frame_count}, Chunks={len(audio_chunks)}, FPS={fps}")
             
         except Exception as e:
             logger.error(f"[Video] Failed to pre-process video: {e}", exc_info=True)
     
     def _cleanup_audio_chunks(self, node_id):
         """
-        Clean up temporary WAV chunk files for a node.
+        Clean up in-memory audio chunks for a node.
         
         Args:
             node_id: Node identifier
         """
-        # Clean up temporary directory (which also removes all chunk files)
-        if node_id in self._chunk_temp_dirs:
-            temp_dir = self._chunk_temp_dirs[node_id]
-            if os.path.exists(temp_dir):
-                try:
-                    shutil.rmtree(temp_dir)
-                except Exception as e:
-                    logger.warning(f"[Video] Failed to delete temp directory {temp_dir}: {e}")
-            del self._chunk_temp_dirs[node_id]
-        
-        # Clean up chunk paths reference
-        if node_id in self._audio_chunk_paths:
-            del self._audio_chunk_paths[node_id]
+        # Clean up audio chunks from memory
+        if node_id in self._audio_chunks:
+            del self._audio_chunks[node_id]
         
         # Clean up metadata
         if node_id in self._chunk_metadata:
@@ -544,7 +515,7 @@ class VideoNode(Node):
     
     def _get_audio_chunk_for_frame(self, node_id, frame_number):
         """
-        Get the audio chunk data for a specific frame number by loading from WAV file.
+        Get the audio chunk data for a specific frame number from memory.
         
         Args:
             node_id: Node identifier
@@ -553,7 +524,7 @@ class VideoNode(Node):
         Returns:
             Dictionary with 'data' (numpy array) and 'sample_rate' (int), or None if not available
         """
-        if node_id not in self._chunk_metadata or node_id not in self._audio_chunk_paths:
+        if node_id not in self._chunk_metadata or node_id not in self._audio_chunks:
             return None
         
         metadata = self._chunk_metadata[node_id]
@@ -568,25 +539,19 @@ class VideoNode(Node):
         chunk_index = int(current_time / step_duration)
         
         # Clamp to valid range
-        chunk_paths = self._audio_chunk_paths[node_id]
-        chunk_index = max(0, min(chunk_index, len(chunk_paths) - 1))
+        audio_chunks = self._audio_chunks[node_id]
+        chunk_index = max(0, min(chunk_index, len(audio_chunks) - 1))
         
-        # Load audio chunk from WAV file
-        chunk_path = None
+        # Get audio chunk from memory
         try:
-            chunk_path = chunk_paths[chunk_index]
-            if os.path.exists(chunk_path):
-                audio_data, sample_rate = sf.read(chunk_path)
-                # Return audio chunk in the format expected by audio processing nodes
-                return {
-                    'data': audio_data,
-                    'sample_rate': sample_rate
-                }
+            audio_data = audio_chunks[chunk_index]
+            # Return audio chunk in the format expected by audio processing nodes
+            return {
+                'data': audio_data,
+                'sample_rate': sr
+            }
         except Exception as e:
-            if chunk_path:
-                logger.warning(f"[Video] Failed to load audio chunk {chunk_index} from {chunk_path}: {e}")
-            else:
-                logger.warning(f"[Video] Failed to load audio chunk {chunk_index}: {e}")
+            logger.warning(f"[Video] Failed to get audio chunk {chunk_index} from memory: {e}")
         
         return None
 
@@ -751,7 +716,7 @@ class VideoNode(Node):
         # Get audio chunk data for this frame to pass to other audio nodes
         audio_chunk_data = None
         current_frame_num = self._frame_count.get(str(node_id), 0)
-        if str(node_id) in self._audio_chunk_paths:
+        if str(node_id) in self._audio_chunks:
             audio_chunk_data = self._get_audio_chunk_for_frame(str(node_id), current_frame_num)
 
         # Calculate FPS-based timestamp for this frame

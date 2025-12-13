@@ -35,14 +35,13 @@ def test_video_node_structure():
     # Check method exists - _preprocess_video now handles WAV chunking
     assert 'def _preprocess_video' in content, "Should have _preprocess_video method"
     
-    # Check storage attributes for WAV-based chunking
-    assert '_audio_chunk_paths' in content, "Should have WAV chunk paths storage dict"
+    # Check storage attributes for in-memory chunking
+    assert '_audio_chunks' in content, "Should have in-memory audio chunks storage dict"
     assert '_chunk_metadata' in content, "Should have chunk metadata dict"
-    assert '_chunk_temp_dirs' in content, "Should track temporary directories for cleanup"
     
-    # Check WAV file operations
-    assert 'sf.write(chunk_path,' in content, "Should save audio chunks as WAV files"
-    assert 'sf.read(chunk_path)' in content, "Should load audio chunks from WAV files"
+    # Check in-memory storage operations
+    assert 'audio_chunks.append(chunk)' in content or 'audio_chunks.append(padded_chunk)' in content, "Should append audio chunks to memory"
+    assert 'self._audio_chunks[node_id] = audio_chunks' in content, "Should store all chunks in memory"
     
     # Check ffmpeg usage for efficient audio extraction
     assert 'pcm_s16le' in content, "Should use WAV codec for audio extraction"
@@ -52,10 +51,10 @@ def test_video_node_structure():
     assert 'sr=44100' in content or 'sr = 44100' in content or 'sr=None' in content, "Should use sample rate 44100 Hz (ESC-50 native)"
     
     # Check cleanup
-    assert 'def _cleanup_audio_chunks' in content, "Should have cleanup method for WAV files"
+    assert 'def _cleanup_audio_chunks' in content, "Should have cleanup method for in-memory chunks"
     
     print("✓ All structure checks passed")
-    print("  - WAV-based audio chunking implemented")
+    print("  - In-memory audio chunking implemented")
     print("  - ffmpeg used for efficient audio extraction")
     print("  - Proper cleanup methods in place")
 
