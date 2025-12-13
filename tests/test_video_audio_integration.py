@@ -34,7 +34,7 @@ def test_audio_chunk_format():
         "Should have _get_audio_chunk_for_frame method"
     
     # Verify it returns the correct format with in-memory storage
-    assert 'audio_chunks[chunk_index]' in content or 'audio_data = audio_chunks[chunk_index]' in content, \
+    assert 'audio_data = audio_chunks[chunk_index]' in content, \
         "Should get audio data from in-memory storage"
     assert "'data': audio_data" in content, \
         "Should return audio data in 'data' key"

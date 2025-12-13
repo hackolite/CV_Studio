@@ -365,9 +365,11 @@ class VideoNode(Node):
         
         This method:
         1. Extracts video metadata (FPS, frame count) using OpenCV
-        2. Extracts audio using ffmpeg to WAV format (faster and more efficient)
+        2. Extracts audio using ffmpeg (WAV used temporarily during extraction only)
         3. Chunks audio into segments and stores all chunks in memory as numpy arrays
         4. Stores metadata for frame-to-chunk mapping
+        
+        Note: All audio chunks are loaded into memory for fast access during playback.
         
         Args:
             node_id: Node identifier
