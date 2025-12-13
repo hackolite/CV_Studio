@@ -790,12 +790,15 @@ class VideoNode(Node):
             image_queue_info = node_image_dict.get_queue_info(tag_node_name_full)
             if image_queue_info.get("exists", False):
                 image_queue_size = image_queue_info.get("size", 0)
-            
+        except Exception as e:
+            logger.debug(f"[Video] Failed to get image queue info: {e}")
+        
+        try:
             audio_queue_info = node_audio_dict.get_queue_info(tag_node_name_full)
             if audio_queue_info.get("exists", False):
                 audio_queue_size = audio_queue_info.get("size", 0)
         except Exception as e:
-            logger.debug(f"[Video] Failed to get queue info: {e}")
+            logger.debug(f"[Video] Failed to get audio queue info: {e}")
         
         # Update the queue info label
         queue_info_text = f"Queue: Image={image_queue_size} Audio={audio_queue_size}"
