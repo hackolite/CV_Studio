@@ -284,7 +284,7 @@ class VideoWriterNode(Node):
     _frame_count_dict = {}  # Track number of frames written during recording: {node: frame_count}
     _last_frame_dict = {}  # Store last frame for potential duplication: {node: frame}
     _source_metadata_dict = {}  # Store metadata from source nodes (e.g., target_fps from Video node)
-    _stopping_state_dict = {}  # Track stopping state: {node: {'stopping': bool, 'required_frames': int, 'audio_count': int}}
+    _stopping_state_dict = {}  # Track stopping state: {node: {'stopping': bool, 'required_frames': int, 'audio_chunks': int}}
     
     # Background worker instances
     _background_workers = {}  # Store VideoBackgroundWorker instances
@@ -1282,12 +1282,22 @@ class VideoWriterNode(Node):
                                 break  # Use first valid sample rate
                     
                     # Calculate audio duration in seconds
-                    audio_duration = total_audio_samples / sample_rate if sample_rate > 0 else 0
+                    # Protect against division by zero with sensible default
+                    if sample_rate <= 0:
+                        logger.warning(f"[VideoWriter] Invalid sample rate {sample_rate}, using default 22050 Hz")
+                        sample_rate = 22050
+                    
+                    audio_duration = total_audio_samples / sample_rate
                     
                     # Get FPS from recording metadata
                     fps = 30  # Default
                     if tag_node_name in self._recording_metadata_dict:
                         fps = self._recording_metadata_dict[tag_node_name].get('fps', 30)
+                    
+                    # Additional validation for FPS
+                    if fps <= 0:
+                        logger.warning(f"[VideoWriter] Invalid fps {fps}, using default 30")
+                        fps = 30
                     
                     # Calculate required frames: audio_duration * fps
                     # The formula from the problem statement was: duration * fps * num_elements
