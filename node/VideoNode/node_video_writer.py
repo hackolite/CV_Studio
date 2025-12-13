@@ -517,10 +517,8 @@ class VideoWriterNode(Node):
                     # Check if we've collected enough frames
                     if current_frames >= required_frames:
                         logger.info(f"[VideoWriter] Reached required frame count ({current_frames}/{required_frames}), finalizing recording")
-                        # Trigger the stop recording process
-                        self._recording_button(None, None, tag_node_name)
-                        # Clear stopping state
-                        self._stopping_state_dict.pop(tag_node_name, None)
+                        # Finalize the recording (no recursive call)
+                        self._finalize_recording(tag_node_name)
                 
                 # Collect audio samples per slot for final merge (for all formats)
                 # Only collect audio if we're not in stopping state (audio collection stops when user presses stop)
@@ -1115,6 +1113,125 @@ class VideoWriterNode(Node):
     
 
 
+    def _finalize_recording(self, tag_node_name):
+        """
+        Finalize the recording by releasing resources and starting merge.
+        
+        This method is called either:
+        1. When user clicks Stop and we already have enough frames
+        2. When in stopping state and we reach the required frame count
+        
+        Args:
+            tag_node_name: The node identifier
+        """
+        tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
+        
+        # Release video writer if in legacy mode
+        if tag_node_name in self._video_writer_dict:
+            self._video_writer_dict[tag_node_name].release()
+            self._video_writer_dict.pop(tag_node_name)
+        
+        # Merge audio and video if audio samples were collected
+        if tag_node_name in self._audio_samples_dict and len(self._audio_samples_dict[tag_node_name]) > 0:
+            if tag_node_name in self._recording_metadata_dict:
+                metadata = self._recording_metadata_dict[tag_node_name]
+                temp_path = metadata['temp_path']
+                final_path = metadata['final_path']
+                sample_rate = metadata['sample_rate']
+                
+                # Process audio samples: sort slots by slot index only, concatenate each slot, then merge
+                slot_audio_dict = self._audio_samples_dict[tag_node_name]
+                
+                # Sort slots by slot index only (timestamps are indicative only)
+                # Video stream creation is based on actual accumulated data size, not timestamps
+                sorted_slots = sorted(
+                    slot_audio_dict.items(),
+                    key=lambda x: x[0]  # Sort by slot_idx only
+                )
+                
+                # Build final audio sample list in slot index order
+                audio_samples_list = []
+                # Track if we encounter mixed sample rates (use the first valid one)
+                final_sample_rate = None
+                
+                for slot_idx, slot_data in sorted_slots:
+                    # Concatenate all samples for this slot
+                    if slot_data['samples']:
+                        slot_concatenated = np.concatenate(slot_data['samples'])
+                        audio_samples_list.append(slot_concatenated)
+                    
+                    # Use the first valid sample rate we encounter
+                    # Note: All slots should have the same sample rate for proper merging
+                    if final_sample_rate is None and 'sample_rate' in slot_data and slot_data['sample_rate'] is not None:
+                        final_sample_rate = slot_data['sample_rate']
+                
+                # Use the detected sample rate, fallback to metadata default
+                if final_sample_rate is not None:
+                    sample_rate = final_sample_rate
+                
+                # Get video format and FPS for format-specific merging
+                video_format = metadata.get('format', 'MP4')
+                fps = metadata.get('fps', 30)  # Get FPS from recording metadata
+                
+                # Process JSON samples for MKV format
+                json_samples_dict = None
+                if video_format == 'MKV' and tag_node_name in self._json_samples_dict:
+                    json_samples_dict = self._json_samples_dict[tag_node_name]
+                
+                # Start merge in a separate thread to prevent UI freezing
+                merge_thread = threading.Thread(
+                    target=self._async_merge_thread,
+                    args=(tag_node_name, temp_path, audio_samples_list, sample_rate, final_path, fps, video_format, json_samples_dict),
+                    daemon=True
+                )
+                merge_thread.start()
+                
+                # Store thread reference for tracking
+                self._merge_threads_dict[tag_node_name] = merge_thread
+                
+                logger.info(f"[VideoWriter] Started async merge for: {final_path} (format: {video_format})")
+                
+                # Clean up metadata
+                self._recording_metadata_dict.pop(tag_node_name)
+        else:
+            # No audio samples, just rename temp file to final name
+            if tag_node_name in self._recording_metadata_dict:
+                metadata = self._recording_metadata_dict[tag_node_name]
+                temp_path = metadata['temp_path']
+                final_path = metadata['final_path']
+                
+                if os.path.exists(temp_path):
+                    os.rename(temp_path, final_path)
+                logger.info(f"[VideoWriter] Video without audio saved to: {final_path}")
+                
+                self._recording_metadata_dict.pop(tag_node_name)
+        
+        # Clean up audio samples
+        if tag_node_name in self._audio_samples_dict:
+            self._audio_samples_dict.pop(tag_node_name)
+        
+        # Clean up JSON samples
+        if tag_node_name in self._json_samples_dict:
+            self._json_samples_dict.pop(tag_node_name)
+        
+        # Clean up frame tracking
+        if tag_node_name in self._frame_count_dict:
+            self._frame_count_dict.pop(tag_node_name)
+        if tag_node_name in self._last_frame_dict:
+            self._last_frame_dict.pop(tag_node_name)
+        
+        # Clean up stopping state
+        if tag_node_name in self._stopping_state_dict:
+            self._stopping_state_dict.pop(tag_node_name)
+        
+        # Close metadata file handles if MKV
+        if tag_node_name in self._mkv_metadata_dict:
+            metadata = self._mkv_metadata_dict[tag_node_name]
+            self._close_metadata_handles(metadata)
+            self._mkv_metadata_dict.pop(tag_node_name)
+
+        dpg.set_item_label(tag_node_button_value_name, self._start_label)
+    
     def _recording_button(self, sender, data, user_data):
         tag_node_name = user_data
         tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
@@ -1300,9 +1417,10 @@ class VideoWriterNode(Node):
                         fps = 30
                     
                     # Calculate required frames: audio_duration * fps
-                    # The formula from the problem statement was: duration * fps * num_elements
-                    # But actually, what makes sense is: total_audio_duration * fps
-                    # Because we want enough video frames to cover the entire audio duration
+                    # Note: The problem statement mentioned "duration * fps * num_elements", but this would
+                    # incorrectly multiply by the number of audio chunks. The correct formula is simply:
+                    # total_audio_duration * fps, because we need enough video frames to match the total
+                    # audio duration (all chunks concatenated together). This ensures proper A/V sync.
                     required_frames = int(audio_duration * fps)
                     current_frames = self._frame_count_dict.get(tag_node_name, 0)
                     
@@ -1319,116 +1437,18 @@ class VideoWriterNode(Node):
                         }
                         logger.info(f"[VideoWriter] Entering stopping state - need {required_frames - current_frames} more frames")
                         
-                        # Don't change button label yet - will be changed when we have enough frames
+                        # Update button label to indicate we're in stopping state
+                        # This provides user feedback that the system is still processing
+                        dpg.set_item_label(tag_node_button_value_name, "Stopping...")
+                        
+                        # Early return - will finalize when we have enough frames
                         return
                     else:
                         # We already have enough frames, proceed with normal stop
                         logger.info(f"[VideoWriter] Already have enough frames ({current_frames} >= {required_frames}), stopping immediately")
                 
-                # Normal stop: release video writer and merge
-                self._video_writer_dict[tag_node_name].release()
-                self._video_writer_dict.pop(tag_node_name)
-            
-            # Merge audio and video if audio samples were collected
-            if tag_node_name in self._audio_samples_dict and len(self._audio_samples_dict[tag_node_name]) > 0:
-                if tag_node_name in self._recording_metadata_dict:
-                    metadata = self._recording_metadata_dict[tag_node_name]
-                    temp_path = metadata['temp_path']
-                    final_path = metadata['final_path']
-                    sample_rate = metadata['sample_rate']
-                    
-                    # Process audio samples: sort slots by slot index only, concatenate each slot, then merge
-                    slot_audio_dict = self._audio_samples_dict[tag_node_name]
-                    
-                    # Sort slots by slot index only (timestamps are indicative only)
-                    # Video stream creation is based on actual accumulated data size, not timestamps
-                    sorted_slots = sorted(
-                        slot_audio_dict.items(),
-                        key=lambda x: x[0]  # Sort by slot_idx only
-                    )
-                    
-                    # Build final audio sample list in slot index order
-                    audio_samples_list = []
-                    # Track if we encounter mixed sample rates (use the first valid one)
-                    final_sample_rate = None
-                    
-                    for slot_idx, slot_data in sorted_slots:
-                        # Concatenate all samples for this slot
-                        if slot_data['samples']:
-                            slot_concatenated = np.concatenate(slot_data['samples'])
-                            audio_samples_list.append(slot_concatenated)
-                        
-                        # Use the first valid sample rate we encounter
-                        # Note: All slots should have the same sample rate for proper merging
-                        if final_sample_rate is None and 'sample_rate' in slot_data and slot_data['sample_rate'] is not None:
-                            final_sample_rate = slot_data['sample_rate']
-                    
-                    # Use the detected sample rate, fallback to metadata default
-                    if final_sample_rate is not None:
-                        sample_rate = final_sample_rate
-                    
-                    # Get video format and FPS for format-specific merging
-                    video_format = metadata.get('format', 'MP4')
-                    fps = metadata.get('fps', 30)  # Get FPS from recording metadata
-                    
-                    # Process JSON samples for MKV format
-                    json_samples_dict = None
-                    if video_format == 'MKV' and tag_node_name in self._json_samples_dict:
-                        json_samples_dict = self._json_samples_dict[tag_node_name]
-                    
-                    # Start merge in a separate thread to prevent UI freezing
-                    merge_thread = threading.Thread(
-                        target=self._async_merge_thread,
-                        args=(tag_node_name, temp_path, audio_samples_list, sample_rate, final_path, fps, video_format, json_samples_dict),
-                        daemon=True
-                    )
-                    merge_thread.start()
-                    
-                    # Store thread reference for tracking
-                    self._merge_threads_dict[tag_node_name] = merge_thread
-                    
-                    logger.info(f"[VideoWriter] Started async merge for: {final_path} (format: {video_format})")
-                    
-                    # Clean up metadata
-                    self._recording_metadata_dict.pop(tag_node_name)
-            else:
-                # No audio samples, just rename temp file to final name
-                if tag_node_name in self._recording_metadata_dict:
-                    metadata = self._recording_metadata_dict[tag_node_name]
-                    temp_path = metadata['temp_path']
-                    final_path = metadata['final_path']
-                    
-                    if os.path.exists(temp_path):
-                        os.rename(temp_path, final_path)
-                    logger.info(f"[VideoWriter] Video without audio saved to: {final_path}")
-                    
-                    self._recording_metadata_dict.pop(tag_node_name)
-            
-            # Clean up audio samples
-            if tag_node_name in self._audio_samples_dict:
-                self._audio_samples_dict.pop(tag_node_name)
-            
-            # Clean up JSON samples
-            if tag_node_name in self._json_samples_dict:
-                self._json_samples_dict.pop(tag_node_name)
-            
-            # Clean up frame tracking
-            if tag_node_name in self._frame_count_dict:
-                self._frame_count_dict.pop(tag_node_name)
-            if tag_node_name in self._last_frame_dict:
-                self._last_frame_dict.pop(tag_node_name)
-            
-            # Clean up stopping state
-            if tag_node_name in self._stopping_state_dict:
-                self._stopping_state_dict.pop(tag_node_name)
-            
-            # Close metadata file handles if MKV
-            if tag_node_name in self._mkv_metadata_dict:
-                metadata = self._mkv_metadata_dict[tag_node_name]
-                self._close_metadata_handles(metadata)
-                self._mkv_metadata_dict.pop(tag_node_name)
-
-            dpg.set_item_label(tag_node_button_value_name, self._start_label)
+                # Use the new finalization method instead of duplicating code
+                self._finalize_recording(tag_node_name)
     
     def _pause_button(self, sender, data, user_data):
         """Pause the background video encoding"""
