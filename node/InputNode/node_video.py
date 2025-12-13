@@ -778,23 +778,22 @@ class VideoNode(Node):
                 audio_chunk_data['timestamp'] = frame_timestamp
         
         # Update queue size information label
-        tag_node_name_full = str(node_id) + ":" + self.node_tag
         tag_node_queue_info_value_name = (
-            tag_node_name_full + ":" + self.TYPE_TEXT + ":QueueInfoValue"
+            tag_node_name + ":" + self.TYPE_TEXT + ":QueueInfoValue"
         )
         
         # Get queue sizes from the queue manager
         image_queue_size = 0
         audio_queue_size = 0
         try:
-            image_queue_info = node_image_dict.get_queue_info(tag_node_name_full)
+            image_queue_info = node_image_dict.get_queue_info(tag_node_name)
             if image_queue_info.get("exists", False):
                 image_queue_size = image_queue_info.get("size", 0)
         except Exception as e:
             logger.debug(f"[Video] Failed to get image queue info: {e}")
         
         try:
-            audio_queue_info = node_audio_dict.get_queue_info(tag_node_name_full)
+            audio_queue_info = node_audio_dict.get_queue_info(tag_node_name)
             if audio_queue_info.get("exists", False):
                 audio_queue_size = audio_queue_info.get("size", 0)
         except Exception as e:
