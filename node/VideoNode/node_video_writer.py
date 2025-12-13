@@ -622,6 +622,10 @@ class VideoWriterNode(Node):
         """
         Adapt video duration to match audio duration by duplicating the last frame if needed.
         
+        This method uses frame-by-frame copying which is simple and reliable but may be slower
+        for large videos. For production use with very long videos, consider implementing an
+        alternative using ffmpeg's concat filter for better performance.
+        
         Args:
             video_path: Path to the original video file
             audio_samples: List of numpy arrays containing audio samples
@@ -671,9 +675,14 @@ class VideoWriterNode(Node):
             
             logger.info(f"[VideoWriter] Adapting video: adding {frames_to_add} frames to match audio duration")
             
-            # Get video properties
+            # Get video properties and validate them
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            
+            if width <= 0 or height <= 0:
+                logger.error(f"[VideoWriter] Invalid video dimensions: {width}x{height}")
+                return False
+            
             fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
             
             # Create new video writer with adapted path
@@ -699,6 +708,10 @@ class VideoWriterNode(Node):
                 for _ in range(frames_to_add):
                     out.write(last_frame)
                 logger.info(f"[VideoWriter] Duplicated last frame {frames_to_add} times")
+            else:
+                # Handle edge case: empty video (no frames)
+                logger.warning(f"[VideoWriter] Source video has no frames, cannot adapt duration")
+                return False
             
             return True
             

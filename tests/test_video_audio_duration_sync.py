@@ -175,6 +175,8 @@ def test_video_shorter_than_audio_scenario():
     required_frames = int(audio_duration * fps)
     frames_to_add = required_frames - video_frames
     
+    # Verify scenario (print for test output visibility)
+    # Note: In production, this would use the logging framework
     print(f"Video: {video_duration:.2f}s ({video_frames} frames)")
     print(f"Audio: {audio_duration:.2f}s ({audio_samples} samples)")
     print(f"Frames to add: {frames_to_add}")
