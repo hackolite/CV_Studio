@@ -453,23 +453,33 @@ class VideoNode(Node):
             logger.debug(f"[Video] Chunking audio by FPS: {target_fps} fps, {sr} Hz")
             
             # Calculate samples per frame (one chunk = one frame worth of audio)
+            # Keep as float to maintain precision and avoid cumulative drift
             samples_per_frame = sr / target_fps
             
             audio_chunks = []
             chunk_start_times = []
-            start = 0
             chunk_idx = 0
             
             # Create one audio chunk per frame
-            # Total chunks should equal or exceed frame count
-            while start < len(y):
-                # Calculate end position for this frame's audio
-                end = int(start + samples_per_frame)
+            # Use frame index to calculate exact boundaries, avoiding cumulative rounding errors
+            total_frames = int(np.ceil(len(y) / samples_per_frame))
+            
+            for frame_idx in range(total_frames):
+                # Calculate exact start and end positions for this frame using fractional precision
+                # This ensures no cumulative drift over many frames
+                start_float = frame_idx * samples_per_frame
+                end_float = (frame_idx + 1) * samples_per_frame
                 
+                start = int(start_float)
+                end = int(end_float)
+                
+                # Extract chunk
                 if end > len(y):
-                    # Last chunk: pad with zeros to maintain consistent chunk size
+                    # Last chunk: extract remaining audio
                     chunk = y[start:]
-                    padding_needed = int(samples_per_frame) - len(chunk)
+                    # Pad with zeros to maintain consistent chunk size
+                    expected_size = int(samples_per_frame)
+                    padding_needed = expected_size - len(chunk)
                     if padding_needed > 0:
                         chunk = np.pad(chunk, (0, padding_needed), mode='constant', constant_values=0)
                 else:
@@ -479,19 +489,23 @@ class VideoNode(Node):
                 audio_chunks.append(chunk)
                 chunk_start_times.append(start / sr)
                 chunk_idx += 1
-                start = end
             
             # Store all audio chunks in memory
             self._audio_chunks[node_id] = audio_chunks
             
-            # Verify all chunks have the correct size
+            # Verify all chunks have consistent size (allowing for last chunk)
             expected_chunk_size = int(samples_per_frame)
             if len(audio_chunks) > 0:
                 first_size = len(audio_chunks[0])
                 last_size = len(audio_chunks[-1])
                 
-                if first_size != expected_chunk_size or last_size != expected_chunk_size:
-                    logger.warning(f"[Video] Chunk size mismatch - expected: {expected_chunk_size}, first: {first_size}, last: {last_size}")
+                # Check first chunk (should be expected size or expected size + 1 due to rounding)
+                if first_size < expected_chunk_size or first_size > expected_chunk_size + 1:
+                    logger.warning(f"[Video] First chunk size unexpected - expected: {expected_chunk_size}, got: {first_size}")
+                
+                # Last chunk should be padded to expected size
+                if last_size != expected_chunk_size:
+                    logger.warning(f"[Video] Last chunk size unexpected - expected: {expected_chunk_size} (padded), got: {last_size}")
                     
             logger.info(f"[Video] Created {len(audio_chunks)} audio chunks (1 per frame) with {expected_chunk_size} samples each")
             
