@@ -358,6 +358,7 @@ class VideoNode(Node):
         # Audio data storage - stores audio chunks in memory as numpy arrays
         self._audio_chunks = {}  # Store audio chunks in memory
         self._chunk_metadata = {}  # Metadata for chunk-to-frame mapping
+        self._queues_resized = {}  # Track which nodes have had their queues resized
 
     def _preprocess_video(self, node_id, movie_path, chunk_duration=2.0, step_duration=2.0, num_chunks_to_keep=4):
         """
@@ -524,6 +525,10 @@ class VideoNode(Node):
         # Clean up metadata
         if node_id in self._chunk_metadata:
             del self._chunk_metadata[node_id]
+        
+        # Clean up queue resize flag
+        if node_id in self._queues_resized:
+            del self._queues_resized[node_id]
     
     def _get_audio_chunk_for_frame(self, node_id, frame_number):
         """
@@ -628,6 +633,9 @@ class VideoNode(Node):
             self._frame_count[str(node_id)] = 0
             self._last_frame_time[str(node_id)] = None
             self._loop_elapsed_time[str(node_id)] = 0.0  # Reset loop elapsed time for new video
+            # Reset queue resize flag so queues will be resized for the new video
+            if str(node_id) in self._queues_resized:
+                del self._queues_resized[str(node_id)]
 
         video_capture = self._video_capture.get(str(node_id), None)
 
@@ -640,10 +648,9 @@ class VideoNode(Node):
         playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
         chunk_size_value = dpg_get_value(tag_node_input06_value_name)
         chunk_size = float(chunk_size_value) if chunk_size_value is not None else 2.0
-        num_chunks_to_keep = int(dpg_get_value(tag_node_input07_value_name)) if dpg_get_value(tag_node_input07_value_name) is not None else 4
         
-        # Apply dynamic queue sizing if metadata is available
-        if str(node_id) in self._chunk_metadata:
+        # Apply dynamic queue sizing if metadata is available (only once per video load)
+        if str(node_id) in self._chunk_metadata and str(node_id) not in self._queues_resized:
             metadata = self._chunk_metadata[str(node_id)]
             if 'image_queue_size' in metadata and 'audio_queue_size' in metadata:
                 image_queue_size = metadata['image_queue_size']
@@ -653,10 +660,15 @@ class VideoNode(Node):
                 try:
                     if hasattr(node_image_dict, 'resize_queue'):
                         node_image_dict.resize_queue(tag_node_name, "image", image_queue_size)
+                        logger.info(f"[Video] Resized image queue to {image_queue_size}")
                     if hasattr(node_audio_dict, 'resize_queue'):
                         node_audio_dict.resize_queue(tag_node_name, "audio", audio_queue_size)
+                        logger.info(f"[Video] Resized audio queue to {audio_queue_size}")
+                    
+                    # Mark queues as resized for this node
+                    self._queues_resized[str(node_id)] = True
                 except Exception as e:
-                    logger.debug(f"[Video] Failed to resize queues: {e}")
+                    logger.warning(f"[Video] Failed to resize queues: {e}")
 
         if video_capture is not None and use_pref_counter:
             start_time = time.monotonic()
