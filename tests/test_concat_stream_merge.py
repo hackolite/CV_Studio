@@ -77,8 +77,7 @@ def test_multi_slot_json_collection():
     
     # Simulate slot iteration
     collected_slots = {}
-    for slot_idx in json_data.keys():
-        json_chunk = json_data[slot_idx]
+    for slot_idx, json_chunk in json_data.items():
         collected_slots[slot_idx] = {
             'samples': [json_chunk],
             'timestamp': float('inf')
