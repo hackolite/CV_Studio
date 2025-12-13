@@ -668,7 +668,7 @@ class VideoBackgroundWorker:
                     audio_bitrate='192k',
                     shortest=None,
                     vsync='cfr',
-                    **{'avoid_negative_ts': 'make_zero'},  # Critical: aligns audio/video start times
+                    avoid_negative_ts='make_zero',  # Critical: aligns audio/video start times
                     loglevel='error'
                 )
                 

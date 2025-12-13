@@ -917,7 +917,7 @@ class VideoWriterNode(Node):
                     audio_bitrate='192k',  # Higher quality audio
                     shortest=None,  # Finish when shortest stream ends (ensures sync)
                     vsync='cfr',  # Constant frame rate video sync
-                    **{'avoid_negative_ts': 'make_zero'},  # Critical: aligns audio/video start times
+                    avoid_negative_ts='make_zero',  # Critical: aligns audio/video start times
                     loglevel='error'  # Only show errors
                 )
                 

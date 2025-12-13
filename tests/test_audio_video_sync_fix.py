@@ -43,7 +43,7 @@ def test_ffmpeg_sync_parameters():
         audio_bitrate='192k',
         shortest=None,
         vsync='cfr',
-        **{'avoid_negative_ts': 'make_zero'}
+        avoid_negative_ts='make_zero'
     )
     
     # Compile to command line
