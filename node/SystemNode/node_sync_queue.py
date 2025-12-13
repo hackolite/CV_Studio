@@ -15,9 +15,13 @@ Features:
 - Type is displayed in input/output labels (e.g., "In1: Audio", "Out2: Image")
 - Dynamic type switching: changing the type recreates input/output attributes
   with correct type constants and clears the slot buffer
-- Simple element counting: Video/JSON = fps × retention_time, Audio = 1 chunk
+- Element counting for synchronization:
+  * Audio: 1 chunk (retention_time seconds of audio data)
+  * Image/JSON: fps × retention_time elements
+  * When 1 audio chunk is present, outputs: retention_time × fps × 1 images
 - Outputs immediately when ALL slots have the required count
 - Buffers automatically cleared after output
+- Output labels display the number of elements that will be output per slot
 
 The node does NOT display frames visually. It retrieves data from queues,
 buffers it based on count, synchronizes when all slots are ready, 
@@ -170,7 +174,19 @@ class Node(Node):
             self._recalculate_required_counts(tag_node_name)
 
     def _get_required_count(self, slot_type, fps, retention_time):
-        """Calculate required count per slot type."""
+        """
+        Calculate required count per slot type.
+        
+        For synchronization:
+        - Audio: 1 chunk (representing retention_time seconds of audio)
+        - Image/JSON: audio_duration * fps * number_of_audio_chunks
+                    = retention_time * fps * 1
+                    = fps * retention_time elements
+        
+        Example: retention_time=3s, fps=10
+        - Audio: 1 chunk (3 seconds of audio)
+        - Image: 3s × 10fps × 1 = 30 frames
+        """
         if slot_type == 'audio':
             return 1  # 1 chunk = retention_time seconds
         elif slot_type in ['image', 'json']:
@@ -471,7 +487,8 @@ class Node(Node):
             output_tag = f"{tag_node_name}:{self._get_type_constant(slot_type)}:Output{slot_idx:02d}Value"
             if dpg.does_item_exist(output_tag):
                 type_display = self._TYPE_INTERNAL_TO_DISPLAY.get(slot_type, 'Image')
-                dpg_set_value(output_tag, f'Out{slot_idx}: {type_display} ({current_count}/{required_count})')
+                # Display shows: number of elements that will be output when synchronized
+                dpg_set_value(output_tag, f'Out{slot_idx}: {type_display} ({required_count})')
             
             # Build status part for this slot
             abbrev = type_abbrev.get(slot_type, 'I')
@@ -692,5 +709,5 @@ class Node(Node):
             ):
                 dpg.add_text(
                     tag=output_value_tag,
-                    default_value=f'Out{slot_idx}: {initial_display} (0/0)',
+                    default_value=f'Out{slot_idx}: {initial_display} (0)',
                 )
