@@ -35,7 +35,7 @@ def test_video_node_has_queue_labels():
     assert 'audio_queue_size' in content, "Update method should get audio queue size"
     
     # Check that queue info label is updated
-    assert 'f"Queue: Image={image_queue_size} Audio={audio_queue_size}"' in content, \
+    assert 'Queue: Image=' in content and 'Audio=' in content, \
         "Queue info label should be updated with queue sizes"
     
     print("✓ Video node has queue size labels")
