@@ -150,7 +150,13 @@ class TimestampedQueue:
             return len(self._queue) == 0
     
     def maxsize(self) -> int:
-        """Return the maximum capacity of the queue."""
+        """
+        Return the maximum capacity of the queue.
+        
+        Returns:
+            The maximum number of items that can be stored in the queue.
+            When the queue is full, adding new items removes the oldest items automatically.
+        """
         with self._lock:
             return self._maxsize
     
