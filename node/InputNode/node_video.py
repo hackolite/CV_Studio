@@ -320,12 +320,215 @@ class VideoNode(Node):
         self._chunk_metadata = {}  # Metadata for chunk-to-frame mapping
         # Track which nodes have had their queues resized to prevent redundant resize operations on every frame
         self._queues_resized = {}
+        
+        # Track converted CFR videos to clean them up later
+        self._converted_videos = {}
+
+    def _safe_cleanup_temp_file(self, file_path):
+        """
+        Safely clean up a temporary file with error handling.
+        
+        Args:
+            file_path: Path to the temporary file to delete
+        """
+        if file_path:
+            try:
+                if os.path.exists(file_path):
+                    os.unlink(file_path)
+                    logger.debug(f"[Video] Cleaned up temporary file: {file_path}")
+            except (OSError, FileNotFoundError) as cleanup_error:
+                logger.warning(f"[Video] Failed to clean up temporary file: {cleanup_error}")
+    
+    def _detect_vfr(self, video_path):
+        """
+        Detect if a video has variable frame rate (VFR).
+        
+        Args:
+            video_path: Path to the video file
+            
+        Returns:
+            True if VFR is detected, False if CFR or detection fails
+        """
+        try:
+            # Validate video path exists and is a file
+            if not video_path or not os.path.isfile(video_path):
+                logger.warning(f"[Video] Invalid video path for VFR detection: {video_path}")
+                return False
+            
+            # Verify ffprobe is available
+            if not shutil.which('ffprobe'):
+                logger.warning("[Video] ffprobe not found, assuming CFR")
+                return False
+            
+            # Use ffprobe to get frame rate information
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v", "error",
+                    "-select_streams", "v:0",
+                    "-count_packets",
+                    "-show_entries", "stream=r_frame_rate,avg_frame_rate",
+                    "-of", "csv=p=0",
+                    video_path
+                ],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            
+            output = result.stdout.strip()
+            if output:
+                lines = output.split('\n')
+                if len(lines) >= 1:
+                    # Parse r_frame_rate and avg_frame_rate
+                    rates = lines[0].split(',')
+                    if len(rates) >= 2:
+                        r_frame_rate = rates[0]
+                        avg_frame_rate = rates[1]
+                        
+                        # Parse fractions (e.g., "30000/1001" -> 29.97)
+                        def parse_frame_rate(rate_str):
+                            if '/' in rate_str:
+                                num, den = rate_str.split('/')
+                                return float(num) / float(den)
+                            return float(rate_str)
+                        
+                        try:
+                            r_fps = parse_frame_rate(r_frame_rate)
+                            avg_fps = parse_frame_rate(avg_frame_rate)
+                            
+                            # If r_frame_rate and avg_frame_rate differ significantly, it's likely VFR
+                            # Allow small difference due to rounding (0.1 fps tolerance)
+                            if abs(r_fps - avg_fps) > 0.1:
+                                logger.info(f"[Video] VFR detected: r_frame_rate={r_fps:.2f}, avg_frame_rate={avg_fps:.2f}")
+                                return True
+                            else:
+                                logger.info(f"[Video] CFR detected: frame_rate={r_fps:.2f}")
+                                return False
+                        except (ValueError, ZeroDivisionError) as e:
+                            logger.warning(f"[Video] Failed to parse frame rates ({r_frame_rate}, {avg_frame_rate}): {e}, assuming CFR")
+                            return False
+            
+            logger.info("[Video] Could not determine frame rate mode, assuming CFR")
+            return False
+            
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"[Video] ffprobe failed, assuming CFR: {e}")
+            return False
+        except Exception as e:
+            logger.warning(f"[Video] VFR detection failed, assuming CFR: {e}")
+            return False
+    
+    def _convert_vfr_to_cfr(self, video_path, target_fps=None):
+        """
+        Convert a VFR (Variable Frame Rate) video to CFR (Constant Frame Rate).
+        
+        Args:
+            video_path: Path to the VFR video file
+            target_fps: Target FPS for CFR conversion. If None, uses the average FPS of the video.
+            
+        Returns:
+            Path to the converted CFR video, or original path if conversion fails
+        """
+        cfr_video_path = None
+        
+        try:
+            # Validate video path exists and is a file
+            if not video_path or not os.path.isfile(video_path):
+                logger.warning(f"[Video] Invalid video path for conversion: {video_path}")
+                return video_path
+            
+            # Verify ffmpeg is available
+            if not shutil.which('ffmpeg'):
+                logger.warning("[Video] ffmpeg not found, cannot convert VFR to CFR")
+                return video_path
+            
+            # Create temporary file for CFR video
+            # Use the same directory as the original video to ensure we have write permissions
+            video_dir = os.path.dirname(video_path)
+            video_name = os.path.basename(video_path)
+            # Get file extension safely
+            _, ext = os.path.splitext(video_name)
+            if not ext:
+                ext = ".mp4"  # Default to mp4 if no extension
+            
+            # Create temp file in the same directory with secure naming
+            # Use tempfile for secure temporary file creation
+            with tempfile.NamedTemporaryFile(
+                suffix=f"_cfr{ext}",
+                prefix="cvstudio_",
+                dir=video_dir if video_dir else None,
+                delete=False
+            ) as tmp_video:
+                cfr_video_path = tmp_video.name
+            
+            logger.info(f"[Video] Converting VFR to CFR: {video_path} -> {cfr_video_path}")
+            
+            # Build ffmpeg command for VFR to CFR conversion
+            # Key points:
+            # 1. -vsync cfr: Force constant frame rate by duplicating/dropping frames
+            # 2. -r: Set output frame rate (if target_fps specified)
+            # 3. -c:v libx264: Re-encode video (necessary for proper CFR)
+            # 4. -preset fast: Balance between speed and quality
+            # 5. -crf 18: High quality (lower CRF = higher quality, 18 is visually lossless)
+            # 6. -c:a copy: Copy audio stream without re-encoding
+            
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-i", video_path,
+                "-vsync", "cfr",  # Force constant frame rate
+            ]
+            
+            # Add target FPS if specified
+            if target_fps is not None:
+                ffmpeg_cmd.extend(["-r", str(target_fps)])
+            
+            ffmpeg_cmd.extend([
+                "-c:v", "libx264",      # Video codec
+                "-preset", "fast",      # Encoding speed
+                "-crf", "18",           # Quality (18 = visually lossless)
+                "-c:a", "copy",         # Copy audio without re-encoding
+                "-y",                   # Overwrite output file
+                cfr_video_path
+            ])
+            
+            logger.debug(f"[Video] Running ffmpeg command: {' '.join(ffmpeg_cmd)}")
+            
+            # Run ffmpeg conversion
+            result = subprocess.run(
+                ffmpeg_cmd,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            
+            # Verify the converted file exists and has content
+            if os.path.exists(cfr_video_path) and os.path.getsize(cfr_video_path) > 0:
+                logger.info(f"[Video] VFR to CFR conversion successful: {cfr_video_path}")
+                return cfr_video_path
+            else:
+                logger.error("[Video] CFR video file is empty or doesn't exist")
+                if os.path.exists(cfr_video_path):
+                    os.unlink(cfr_video_path)
+                return video_path
+                
+        except subprocess.CalledProcessError as e:
+            logger.error(f"[Video] ffmpeg conversion failed: {e.stderr if e.stderr else str(e)}")
+            # Clean up failed conversion file
+            self._safe_cleanup_temp_file(cfr_video_path)
+            return video_path
+        except Exception as e:
+            logger.error(f"[Video] VFR to CFR conversion failed: {e}", exc_info=True)
+            # Clean up any partial conversion file
+            self._safe_cleanup_temp_file(cfr_video_path)
+            return video_path
 
     def _preprocess_video(self, node_id, movie_path, target_fps=24):
         """
         Pre-process video by extracting and chunking audio into memory.
         
         This method:
+        0. Detects VFR and converts to CFR if necessary (NEW)
         1. Extracts video metadata (FPS, frame count) using OpenCV
         2. Extracts audio using ffmpeg (WAV used temporarily during extraction only)
         3. Chunks audio into per-frame segments based on FPS and stores all chunks in memory as numpy arrays
@@ -348,6 +551,33 @@ class VideoNode(Node):
         
         # Clean up any previous chunks for this node
         self._cleanup_audio_chunks(node_id)
+        
+        # Step 0: Detect VFR and convert to CFR if necessary
+        # This is critical for proper audio-video synchronization
+        is_vfr = self._detect_vfr(movie_path)
+        if is_vfr:
+            logger.info("[Video] VFR detected, converting to CFR...")
+            # Convert using target_fps to ensure consistent frame rate
+            cfr_video_path = self._convert_vfr_to_cfr(movie_path, target_fps=target_fps)
+            
+            # If conversion succeeded, use the CFR video for the rest of preprocessing
+            if cfr_video_path != movie_path:
+                logger.info(f"[Video] Using CFR video: {cfr_video_path}")
+                # Store the converted video path for cleanup later
+                old_converted = self._converted_videos.get(node_id)
+                if old_converted and os.path.exists(old_converted):
+                    try:
+                        os.unlink(old_converted)
+                        logger.debug(f"[Video] Cleaned up old CFR video: {old_converted}")
+                    except Exception as e:
+                        logger.warning(f"[Video] Failed to clean up old CFR video: {e}")
+                
+                self._converted_videos[node_id] = cfr_video_path
+                movie_path = cfr_video_path
+            else:
+                logger.warning("[Video] VFR to CFR conversion failed, using original video")
+        else:
+            logger.info("[Video] CFR video detected, no conversion needed")
         
         try:
             # Step 1: Extract video metadata only (not frames to avoid memory issues)
@@ -505,7 +735,7 @@ class VideoNode(Node):
     
     def _cleanup_audio_chunks(self, node_id):
         """
-        Clean up in-memory audio chunks for a node.
+        Clean up in-memory audio chunks and converted CFR videos for a node.
         
         Args:
             node_id: Node identifier
@@ -521,6 +751,17 @@ class VideoNode(Node):
         # Clean up queue resize flag
         if node_id in self._queues_resized:
             del self._queues_resized[node_id]
+        
+        # Clean up converted CFR video file
+        if node_id in self._converted_videos:
+            cfr_video_path = self._converted_videos[node_id]
+            if os.path.exists(cfr_video_path):
+                try:
+                    os.unlink(cfr_video_path)
+                    logger.debug(f"[Video] Cleaned up CFR video: {cfr_video_path}")
+                except Exception as e:
+                    logger.warning(f"[Video] Failed to clean up CFR video: {e}")
+            del self._converted_videos[node_id]
     
     def _get_audio_chunk_for_frame(self, node_id, frame_number):
         """
@@ -626,7 +867,17 @@ class VideoNode(Node):
             video_capture = self._video_capture.get(str(node_id), None)
             if video_capture is not None:
                 video_capture.release()
-            self._video_capture[str(node_id)] = cv2.VideoCapture(movie_path)
+            
+            # Use converted CFR video if available, otherwise use original
+            actual_movie_path = self._converted_videos.get(str(node_id), movie_path)
+            if actual_movie_path and os.path.exists(actual_movie_path):
+                self._video_capture[str(node_id)] = cv2.VideoCapture(actual_movie_path)
+                logger.debug(f"[Video] Opened video capture: {actual_movie_path}")
+            elif movie_path and os.path.exists(movie_path):
+                # Fallback to original if CFR doesn't exist
+                self._video_capture[str(node_id)] = cv2.VideoCapture(movie_path)
+                logger.debug(f"[Video] Opened video capture: {movie_path}")
+            
             self._prev_movie_filepath[str(node_id)] = movie_path
             self._frame_count[str(node_id)] = 0
             self._last_frame_time[str(node_id)] = None

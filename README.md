@@ -691,6 +691,7 @@ Comprehensive guides explaining how the Video Node synchronizes audio spectrogra
 - **[Video-Audio Synchronization Explained](VIDEO_AUDIO_SYNCHRONIZATION_EXPLAINED.md)** - Complete technical explanation in English
 - **[Synchronisation Vidéo-Audio Expliquée](SYNCHRONISATION_VIDEO_AUDIO_EXPLIQUEE.md)** - Explication complète en français
 - **[Visual Sync Diagrams](VISUAL_SYNC_DIAGRAMS.md)** - Visual diagrams and flowcharts
+- **[VFR to CFR Conversion](VFR_TO_CFR_CONVERSION.md)** - Automatic variable frame rate to constant frame rate conversion 🆕
 
 ## 🧪 Testing
 
