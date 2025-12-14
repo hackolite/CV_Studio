@@ -335,6 +335,16 @@ class VideoNode(Node):
             True if VFR is detected, False if CFR or detection fails
         """
         try:
+            # Validate video path exists and is a file
+            if not video_path or not os.path.isfile(video_path):
+                logger.warning(f"[Video] Invalid video path for VFR detection: {video_path}")
+                return False
+            
+            # Verify ffprobe is available
+            if not shutil.which('ffprobe'):
+                logger.warning("[Video] ffprobe not found, assuming CFR")
+                return False
+            
             # Use ffprobe to get frame rate information
             result = subprocess.run(
                 [
@@ -405,17 +415,33 @@ class VideoNode(Node):
         Returns:
             Path to the converted CFR video, or original path if conversion fails
         """
+        cfr_video_path = None
+        
         try:
+            # Validate video path exists and is a file
+            if not video_path or not os.path.isfile(video_path):
+                logger.warning(f"[Video] Invalid video path for conversion: {video_path}")
+                return video_path
+            
+            # Verify ffmpeg is available
+            if not shutil.which('ffmpeg'):
+                logger.warning("[Video] ffmpeg not found, cannot convert VFR to CFR")
+                return video_path
+            
             # Create temporary file for CFR video
             # Use the same directory as the original video to ensure we have write permissions
             video_dir = os.path.dirname(video_path)
             video_name = os.path.basename(video_path)
-            name_without_ext, ext = os.path.splitext(video_name)
+            # Get file extension safely
+            _, ext = os.path.splitext(video_name)
+            if not ext:
+                ext = ".mp4"  # Default to mp4 if no extension
             
-            # Create temp file in the same directory
+            # Create temp file in the same directory with secure naming
+            # Use tempfile for secure temporary file creation
             with tempfile.NamedTemporaryFile(
                 suffix=f"_cfr{ext}",
-                prefix=f"{name_without_ext}_",
+                prefix="cvstudio_",
                 dir=video_dir if video_dir else None,
                 delete=False
             ) as tmp_video:
@@ -474,20 +500,22 @@ class VideoNode(Node):
         except subprocess.CalledProcessError as e:
             logger.error(f"[Video] ffmpeg conversion failed: {e.stderr if e.stderr else str(e)}")
             # Clean up failed conversion file
-            try:
-                if 'cfr_video_path' in locals() and os.path.exists(cfr_video_path):
-                    os.unlink(cfr_video_path)
-            except (OSError, FileNotFoundError) as cleanup_error:
-                logger.warning(f"[Video] Failed to clean up temporary file: {cleanup_error}")
+            if cfr_video_path:
+                try:
+                    if os.path.exists(cfr_video_path):
+                        os.unlink(cfr_video_path)
+                except (OSError, FileNotFoundError) as cleanup_error:
+                    logger.warning(f"[Video] Failed to clean up temporary file: {cleanup_error}")
             return video_path
         except Exception as e:
             logger.error(f"[Video] VFR to CFR conversion failed: {e}", exc_info=True)
             # Clean up any partial conversion file
-            try:
-                if 'cfr_video_path' in locals() and os.path.exists(cfr_video_path):
-                    os.unlink(cfr_video_path)
-            except (OSError, FileNotFoundError) as cleanup_error:
-                logger.warning(f"[Video] Failed to clean up temporary file: {cleanup_error}")
+            if cfr_video_path:
+                try:
+                    if os.path.exists(cfr_video_path):
+                        os.unlink(cfr_video_path)
+                except (OSError, FileNotFoundError) as cleanup_error:
+                    logger.warning(f"[Video] Failed to clean up temporary file: {cleanup_error}")
             return video_path
 
     def _preprocess_video(self, node_id, movie_path, target_fps=24):
