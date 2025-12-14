@@ -407,11 +407,11 @@ class VideoNode(Node):
             # Formula: chunk_samples = sample_rate / fps
             # Example: 44100 Hz / 24 fps = 1837.5 samples per frame
             # This ensures each audio chunk corresponds to exactly ONE video frame
-            logger.debug(f"[Video] Chunking audio by FPS: {target_fps} fps, {sr} Hz")
+            logger.debug(f"[Video] Chunking audio by FPS: {fps} fps, {sr} Hz")
             
             # Calculate samples per frame (one chunk = one frame worth of audio)
             # Keep as float to maintain precision and avoid cumulative drift
-            samples_per_frame = sr / target_fps
+            samples_per_frame = sr / fps
             
             audio_chunks = []
             chunk_start_times = []
@@ -481,10 +481,10 @@ class VideoNode(Node):
             #   input/video → concat [audio, image] → videowriter
             # Example: at 24 fps, both queues = 4 * 24 = 96 frames/chunks
             queue_size_seconds = 4  # 4 seconds of buffer
-            image_queue_size = int(queue_size_seconds * target_fps)
-            audio_queue_size = int(queue_size_seconds * target_fps)  # Same as image queue
+            image_queue_size = int(queue_size_seconds * fps)
+            audio_queue_size = int(queue_size_seconds * fps)  # Same as image queue
             
-            logger.info(f"[Video] Calculated queue sizes: Image={image_queue_size}, Audio={audio_queue_size} (both = 4 * {target_fps} fps)")
+            logger.info(f"[Video] Calculated queue sizes: Image={image_queue_size}, Audio={audio_queue_size} (both = 4 * {fps} fps)")
             
             # Step 5: Store metadata
             self._chunk_metadata[node_id] = {
@@ -816,10 +816,11 @@ class VideoNode(Node):
         metadata = {}
         if str(node_id) in self._chunk_metadata:
             chunk_meta = self._chunk_metadata[str(node_id)]
+            video_fps = chunk_meta.get('fps', 30.0)  # Actual video FPS
             metadata = {
                 'target_fps': target_fps,  # FPS from slider (authoritative for output)
-                'samples_per_frame': chunk_meta.get('samples_per_frame', 44100 / target_fps),  # NEW: samples per frame
-                'video_fps': chunk_meta.get('fps', 30.0),  # Actual video FPS
+                'samples_per_frame': chunk_meta.get('samples_per_frame', 44100 / video_fps),  # NEW: samples per frame (use video_fps, not target_fps)
+                'video_fps': video_fps,  # Actual video FPS
                 'sample_rate': chunk_meta.get('sr', 44100),
                 'chunking_mode': 'fps_based'  # NEW: indicates FPS-based chunking (1 chunk per frame)
             }

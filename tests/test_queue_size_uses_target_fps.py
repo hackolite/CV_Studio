@@ -1,16 +1,17 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Test to verify that queue size calculation uses target_fps instead of video fps.
+Test to verify that queue size calculation uses detected video FPS for audio chunking.
 
-This test verifies the fix for the issue where image queue size was incorrectly
-calculated using the video file's actual FPS instead of the target FPS setting.
+UPDATED: This test now verifies that audio chunking and queue sizes use the
+detected video FPS, not the target_fps slider value, to ensure audio/video sync.
 
-The correct formula is:
-    image_queue_size = num_chunks × chunk_duration × target_fps
+With FPS-based chunking (1 chunk per frame):
+    audio_chunk_size = sample_rate / video_fps
+    image_queue_size = 4 seconds * video_fps
+    audio_queue_size = 4 seconds * video_fps
 
-NOT:
-    image_queue_size = num_chunks × chunk_duration × video_fps
+The target_fps slider is used for playback timing but NOT for audio chunking.
 """
 
 import unittest
@@ -88,8 +89,8 @@ class TestQueueSizeUsesTargetFPS(unittest.TestCase):
         
         print("✓ _callback_file_select reads and passes target_fps")
     
-    def test_queue_size_calculation_uses_target_fps(self):
-        """Verify that queue size calculation uses target_fps instead of video fps"""
+    def test_queue_size_calculation_uses_video_fps(self):
+        """Verify that queue size calculation uses detected video fps for audio chunking"""
         video_node_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             'node', 'InputNode', 'node_video.py'
@@ -110,46 +111,46 @@ class TestQueueSizeUsesTargetFPS(unittest.TestCase):
                 break
             
             if in_preprocess:
-                # Check for the correct queue size calculation
-                if 'image_queue_size' in line and 'target_fps' in line:
+                # Check for the correct queue size calculation using detected fps
+                # After the fix, it should use 'fps' (detected video fps), not 'target_fps' (slider)
+                if 'image_queue_size' in line and '* fps' in line and 'target_fps' not in line:
                     found_correct_calculation = True
                     print(f"✓ Found calculation: {line.strip()}")
                 
-                # Make sure we're not using video fps instead
-                if 'image_queue_size' in line and '* fps' in line and 'target_fps' not in line:
-                    self.fail("Queue size calculation should use target_fps, not video fps")
+                # Make sure we're not using target_fps (which would be wrong)
+                if 'image_queue_size' in line and 'target_fps' in line and '* fps' not in line.replace('target_fps', ''):
+                    self.fail("Queue size calculation should use detected video fps, not target_fps slider")
         
-        assert found_correct_calculation, "Queue size calculation should use target_fps"
+        assert found_correct_calculation, "Queue size calculation should use detected video fps"
         
-        print("✓ Queue size calculation uses target_fps")
+        print("✓ Queue size calculation uses detected video fps (not target_fps)")
     
     def test_calculation_example_with_different_fps(self):
-        """Test example: video is 30fps, but target is 24fps"""
-        num_chunks_to_keep = 4
-        chunk_duration = 2.0
+        """Test example: video is 30fps, but target is 24fps - should use video fps"""
+        queue_duration_seconds = 4  # 4 seconds of buffer
         
-        # Scenario 1: Using target_fps (correct)
-        target_fps = 24
-        correct_queue_size = int(num_chunks_to_keep * chunk_duration * target_fps)
-        
-        # Scenario 2: Using video_fps (incorrect)
+        # Scenario 1: Using video_fps (CORRECT for audio chunking)
         video_fps = 30
-        incorrect_queue_size = int(num_chunks_to_keep * chunk_duration * video_fps)
+        correct_queue_size = int(queue_duration_seconds * video_fps)
+        
+        # Scenario 2: Using target_fps (INCORRECT - causes desync)
+        target_fps = 24
+        incorrect_queue_size = int(queue_duration_seconds * target_fps)
         
         # The values should be different
         self.assertNotEqual(correct_queue_size, incorrect_queue_size,
                            "Queue size should differ when target_fps != video_fps")
         
-        self.assertEqual(correct_queue_size, 192,
-                        f"With target_fps=24, should be 4*2.0*24=192, got {correct_queue_size}")
+        self.assertEqual(correct_queue_size, 120,
+                        f"With video_fps=30, should be 4*30=120, got {correct_queue_size}")
         
-        self.assertEqual(incorrect_queue_size, 240,
-                        f"With video_fps=30, would be 4*2.0*30=240, got {incorrect_queue_size}")
+        self.assertEqual(incorrect_queue_size, 96,
+                        f"With target_fps=24, would be 4*24=96, got {incorrect_queue_size}")
         
-        print(f"✓ Example calculation:")
-        print(f"  - Correct (target_fps=24): {correct_queue_size} frames")
-        print(f"  - Incorrect (video_fps=30): {incorrect_queue_size} frames")
-        print(f"  - Difference: {incorrect_queue_size - correct_queue_size} frames")
+        print(f"✓ Example calculation (FPS-based chunking):")
+        print(f"  - Correct (video_fps=30): {correct_queue_size} frames (audio chunks match video frames)")
+        print(f"  - Incorrect (target_fps=24): {incorrect_queue_size} frames (causes desync)")
+        print(f"  - Difference: {correct_queue_size - incorrect_queue_size} frames")
 
 
 if __name__ == "__main__":
