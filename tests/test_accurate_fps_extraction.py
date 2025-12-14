@@ -18,6 +18,34 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 class TestAccurateFPSExtraction(unittest.TestCase):
     """Test accurate FPS extraction with ffprobe"""
     
+    @staticmethod
+    def _get_method_source(method_name):
+        """Helper to extract source code for a specific method from node_video.py"""
+        node_video_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'node', 'InputNode', 'node_video.py'
+        )
+        
+        with open(node_video_path, 'r') as f:
+            content = f.read()
+        
+        # Find the method start
+        start_marker = f'def {method_name}(self'
+        start_idx = content.find(start_marker)
+        if start_idx == -1:
+            return None
+        
+        # Find the next method definition (end of current method)
+        # Look for the next 'def ' at the same indentation level
+        end_idx = content.find('\n    def ', start_idx + 1)
+        if end_idx == -1:
+            # If no next method, look for class end or file end
+            end_idx = content.find('\nclass ', start_idx + 1)
+            if end_idx == -1:
+                end_idx = len(content)
+        
+        return content[start_idx:end_idx]
+    
     def test_get_accurate_fps_method_exists(self):
         """Verify that _get_accurate_fps method exists in VideoNode source"""
         node_video_path = os.path.join(
@@ -36,25 +64,10 @@ class TestAccurateFPSExtraction(unittest.TestCase):
     
     def test_get_accurate_fps_uses_ffprobe(self):
         """Verify that _get_accurate_fps uses ffprobe with correct parameters"""
-        node_video_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'node', 'InputNode', 'node_video.py'
-        )
+        method_source = self._get_method_source('_get_accurate_fps')
         
-        with open(node_video_path, 'r') as f:
-            content = f.read()
-        
-        # Find the _get_accurate_fps method
-        start_idx = content.find('def _get_accurate_fps(self')
-        if start_idx == -1:
+        if method_source is None:
             self.fail("_get_accurate_fps method not found")
-        
-        # Get the method content (until next def or end)
-        end_idx = content.find('\n    def ', start_idx + 1)
-        if end_idx == -1:
-            end_idx = len(content)
-        
-        method_source = content[start_idx:end_idx]
         
         # Check that it uses ffprobe
         self.assertIn('ffprobe', method_source, 
@@ -72,21 +85,10 @@ class TestAccurateFPSExtraction(unittest.TestCase):
     
     def test_preprocess_video_uses_accurate_fps(self):
         """Verify that _preprocess_video uses _get_accurate_fps instead of OpenCV"""
-        node_video_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'node', 'InputNode', 'node_video.py'
-        )
+        method_source = self._get_method_source('_preprocess_video')
         
-        with open(node_video_path, 'r') as f:
-            content = f.read()
-        
-        # Find the _preprocess_video method
-        start_idx = content.find('def _preprocess_video(self')
-        if start_idx == -1:
+        if method_source is None:
             self.fail("_preprocess_video method not found")
-        
-        # Get a reasonable chunk of the method
-        method_source = content[start_idx:start_idx + 5000]
         
         # Check that it calls _get_accurate_fps
         self.assertIn('_get_accurate_fps', method_source,
@@ -126,24 +128,10 @@ class TestAccurateFPSExtraction(unittest.TestCase):
     
     def test_fps_parsing_handles_fractions(self):
         """Verify that FPS parsing can handle fractions like '24000/1001'"""
-        node_video_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'node', 'InputNode', 'node_video.py'
-        )
+        method_source = self._get_method_source('_get_accurate_fps')
         
-        with open(node_video_path, 'r') as f:
-            content = f.read()
-        
-        # Find the _get_accurate_fps method
-        start_idx = content.find('def _get_accurate_fps(self')
-        if start_idx == -1:
+        if method_source is None:
             self.fail("_get_accurate_fps method not found")
-        
-        end_idx = content.find('\n    def ', start_idx + 1)
-        if end_idx == -1:
-            end_idx = len(content)
-        
-        method_source = content[start_idx:end_idx]
         
         # Check for fraction handling
         self.assertIn("'/' in", method_source,
@@ -159,24 +147,10 @@ class TestAccurateFPSExtraction(unittest.TestCase):
     
     def test_accurate_fps_has_proper_fallbacks(self):
         """Verify that accurate FPS extraction has proper error handling"""
-        node_video_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'node', 'InputNode', 'node_video.py'
-        )
+        method_source = self._get_method_source('_get_accurate_fps')
         
-        with open(node_video_path, 'r') as f:
-            content = f.read()
-        
-        # Find the _get_accurate_fps method
-        start_idx = content.find('def _get_accurate_fps(self')
-        if start_idx == -1:
+        if method_source is None:
             self.fail("_get_accurate_fps method not found")
-        
-        end_idx = content.find('\n    def ', start_idx + 1)
-        if end_idx == -1:
-            end_idx = len(content)
-        
-        method_source = content[start_idx:end_idx]
         
         # Check for error handling
         self.assertIn('try:', method_source,
@@ -196,20 +170,10 @@ class TestAccurateFPSExtraction(unittest.TestCase):
     
     def test_preprocess_uses_target_fps_as_ultimate_fallback(self):
         """Verify that target_fps is used as ultimate fallback if both ffprobe and OpenCV fail"""
-        node_video_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'node', 'InputNode', 'node_video.py'
-        )
+        method_source = self._get_method_source('_preprocess_video')
         
-        with open(node_video_path, 'r') as f:
-            content = f.read()
-        
-        # Find the _preprocess_video method
-        start_idx = content.find('def _preprocess_video(self')
-        if start_idx == -1:
+        if method_source is None:
             self.fail("_preprocess_video method not found")
-        
-        method_source = content[start_idx:start_idx + 5000]
         
         # Check that target_fps is available as fallback
         self.assertIn('target_fps', method_source,
@@ -223,20 +187,10 @@ class TestAccurateFPSExtraction(unittest.TestCase):
     
     def test_audio_chunking_uses_accurate_fps(self):
         """Verify that audio chunking calculation uses the accurate FPS"""
-        node_video_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'node', 'InputNode', 'node_video.py'
-        )
+        method_source = self._get_method_source('_preprocess_video')
         
-        with open(node_video_path, 'r') as f:
-            content = f.read()
-        
-        # Find the _preprocess_video method
-        start_idx = content.find('def _preprocess_video(self')
-        if start_idx == -1:
+        if method_source is None:
             self.fail("_preprocess_video method not found")
-        
-        method_source = content[start_idx:start_idx + 10000]
         
         # Check that samples_per_frame uses fps variable
         self.assertIn('samples_per_frame = sr / fps', method_source,

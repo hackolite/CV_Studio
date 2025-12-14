@@ -463,8 +463,16 @@ class VideoNode(Node):
             if output:
                 # Parse avg_frame_rate (e.g., "24000/1001" -> 23.976)
                 if '/' in output:
-                    num, den = output.split('/')
-                    fps = float(num) / float(den)
+                    parts = output.split('/')
+                    if len(parts) != 2:
+                        logger.warning(f"[Video] Invalid FPS format: {output}")
+                        return None
+                    num, den = parts
+                    den_float = float(den)
+                    if den_float == 0:
+                        logger.warning(f"[Video] FPS denominator is zero: {output}")
+                        return None
+                    fps = float(num) / den_float
                 else:
                     fps = float(output)
                 
