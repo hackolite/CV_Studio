@@ -4,6 +4,8 @@
 
 CV Studio now automatically detects and converts Variable Frame Rate (VFR) videos to Constant Frame Rate (CFR) before processing. This ensures perfect audio-video synchronization and prevents timing issues during playback.
 
+**IMPORTANT**: For detailed information about the recent fix for audio/video sync issues (metallic audio, slow video), see [VFR_AUDIO_SYNC_FIX.md](VFR_AUDIO_SYNC_FIX.md).
+
 ## What is VFR vs CFR?
 
 ### Variable Frame Rate (VFR)
@@ -46,6 +48,8 @@ If VFR is detected:
 5. **Cleans up** the temporary file when the video is changed or node is closed
 
 ### Technical Details
+
+**NEW (2025-12-14)**: After conversion, CV Studio now uses ffprobe to extract the accurate `avg_frame_rate` instead of relying on OpenCV's `CAP_PROP_FPS`. This fixes issues with metallic audio and slow video playback. See [VFR_AUDIO_SYNC_FIX.md](VFR_AUDIO_SYNC_FIX.md) for details.
 
 The conversion uses ffmpeg with the following settings:
 
@@ -301,10 +305,11 @@ Potential improvements for future versions:
 
 ## References
 
+- **[VFR Audio Sync Fix Documentation](VFR_AUDIO_SYNC_FIX.md)** - NEW: Detailed fix for metallic audio and slow video
 - [FFmpeg VFR to CFR Conversion Guide](https://trac.ffmpeg.org/wiki/ChangingFrameRate)
 - [Understanding Video Frame Rates](https://www.adobe.com/creativecloud/video/discover/frame-rate.html)
 - [FFmpeg Documentation](https://ffmpeg.org/documentation.html)
-- [CV Studio Audio-Video Sync Documentation](VIDEO_AUDIO_SYNC_INDEX.md)
+- [CV Studio Audio-Video Sync Documentation](AUDIO_VIDEO_SYNC_FIX.md)
 
 ## Support
 

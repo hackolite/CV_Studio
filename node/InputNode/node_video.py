@@ -419,6 +419,79 @@ class VideoNode(Node):
             logger.warning(f"[Video] VFR detection failed, assuming CFR: {e}")
             return False
     
+    def _get_accurate_fps(self, video_path):
+        """
+        Get accurate FPS from video using ffprobe.
+        
+        This method uses ffprobe to get the actual average frame rate (avg_frame_rate),
+        which is more reliable than OpenCV's CAP_PROP_FPS, especially for VFR videos
+        that have been converted to CFR.
+        
+        Args:
+            video_path: Path to the video file
+            
+        Returns:
+            float: Accurate FPS, or None if extraction fails
+        """
+        try:
+            # Validate video path exists and is a file
+            if not video_path or not os.path.isfile(video_path):
+                logger.warning(f"[Video] Invalid video path for FPS extraction: {video_path}")
+                return None
+            
+            # Verify ffprobe is available
+            if not shutil.which('ffprobe'):
+                logger.warning("[Video] ffprobe not found, cannot extract accurate FPS")
+                return None
+            
+            # Use ffprobe to get avg_frame_rate (most reliable for CFR videos)
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v", "error",
+                    "-select_streams", "v:0",
+                    "-show_entries", "stream=avg_frame_rate",
+                    "-of", "csv=p=0",
+                    video_path
+                ],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            
+            output = result.stdout.strip()
+            if output:
+                # Parse avg_frame_rate (e.g., "24000/1001" -> 23.976)
+                if '/' in output:
+                    try:
+                        num, den = output.split('/')
+                        den_float = float(den)
+                        if den_float == 0:
+                            logger.warning(f"[Video] FPS denominator is zero: {output}")
+                            return None
+                        fps = float(num) / den_float
+                    except ValueError:
+                        logger.warning(f"[Video] Invalid FPS format: {output}")
+                        return None
+                else:
+                    fps = float(output)
+                
+                logger.info(f"[Video] Extracted accurate FPS: {fps:.3f}")
+                return fps
+            
+            logger.warning("[Video] No FPS information from ffprobe")
+            return None
+            
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"[Video] ffprobe failed: {e}")
+            return None
+        except (ValueError, ZeroDivisionError) as e:
+            logger.warning(f"[Video] Failed to parse FPS: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"[Video] FPS extraction failed: {e}")
+            return None
+    
     def _convert_vfr_to_cfr(self, video_path, target_fps=None):
         """
         Convert a VFR (Variable Frame Rate) video to CFR (Constant Frame Rate).
@@ -579,17 +652,27 @@ class VideoNode(Node):
         else:
             logger.info("[Video] CFR video detected, no conversion needed")
         
+        # Step 1: Extract accurate video metadata
+        # CRITICAL: Use ffprobe for FPS (not OpenCV) to prevent audio sync issues
+        # See VFR_AUDIO_SYNC_FIX.md for details on why this is necessary
         try:
-            # Step 1: Extract video metadata only (not frames to avoid memory issues)
             logger.debug("[Video] Extracting video metadata...")
+            
+            # Get accurate FPS using ffprobe (reliable for CFR videos)
+            fps = self._get_accurate_fps(movie_path)
+            
+            # Fallback to OpenCV if ffprobe fails
             cap = cv2.VideoCapture(movie_path)
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            #if fps <= 0:
-            #    fps = 30.0  # Default fallback
+            if fps is None or fps <= 0:
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                logger.warning(f"[Video] Using OpenCV FPS (ffprobe failed): {fps}")
+                if fps <= 0:
+                    fps = target_fps  # Ultimate fallback to target_fps
+                    logger.warning(f"[Video] Using target_fps as fallback: {fps}")
             
             frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             cap.release()
-            logger.info(f"[Video] Metadata: FPS={fps}, Frames={frame_count}")
+            logger.info(f"[Video] Metadata: FPS={fps:.3f}, Frames={frame_count}")
             
             # Step 2: Extract audio using ffmpeg directly to WAV (faster than librosa)
             logger.debug("[Video] Extracting audio with ffmpeg...")
