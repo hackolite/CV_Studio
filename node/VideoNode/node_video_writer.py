@@ -296,6 +296,7 @@ class VideoWriterNode(Node):
     # Default values for audio/video parameters
     _DEFAULT_SAMPLE_RATE = 44100  # Default audio sample rate in Hz (matches video input extraction)
     _DEFAULT_FPS = 30  # Default video frames per second
+    _FPS_MULTIPLIER = 2.5  # Multiplier applied to FPS when creating video output
     
     # Constants for file wait logic
     # These control the behavior when waiting for the video file to be written to disk
@@ -1337,8 +1338,8 @@ class VideoWriterNode(Node):
 
             os.makedirs(video_writer_directory, exist_ok=True)
             
-            # Multiply FPS by 2.5 for video creation
-            writer_fps = writer_fps * 2.5
+            # Multiply FPS for video creation
+            writer_fps = writer_fps * self._FPS_MULTIPLIER
 
             # Get selected format
             format_tag = tag_node_name + ':Format'
