@@ -25,7 +25,7 @@ class TestVideoInfoValidation(unittest.TestCase):
             'node', 'InputNode', 'node_video.py'
         )
         
-        with open(node_video_path, 'r') as f:
+        with open(node_video_path, 'r', encoding='utf-8') as f:
             content = f.read()
         
         # Find the method start
