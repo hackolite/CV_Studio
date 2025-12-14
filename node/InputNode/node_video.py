@@ -396,7 +396,7 @@ class VideoNode(Node):
                         'frame_count': frame_count
                     }
         except subprocess.CalledProcessError as e:
-            stderr_msg = e.stderr.strip() if e.stderr else str(e)
+            stderr_msg = e.stderr.strip() if e.stderr is not None else str(e)
             logger.warning(f"[Video] ffprobe command failed for {video_path}: {stderr_msg}")
         except (ValueError, IndexError) as e:
             logger.warning(f"[Video] Failed to parse video info for {video_path}: {e}")

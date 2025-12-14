@@ -67,8 +67,7 @@ class TestVideoInfoValidation(unittest.TestCase):
         warning_lines = [line for line in lines if 'logger.warning' in line]
         
         # At least some warning messages should include the video path for context
-        has_video_path_in_warnings = any('video_path' in line or '{video_path}' in line 
-                                         for line in warning_lines)
+        has_video_path_in_warnings = any('video_path' in line for line in warning_lines)
         self.assertTrue(has_video_path_in_warnings,
                        "_get_video_info should include video_path in warning messages")
     
