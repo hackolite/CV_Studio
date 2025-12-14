@@ -463,16 +463,16 @@ class VideoNode(Node):
             if output:
                 # Parse avg_frame_rate (e.g., "24000/1001" -> 23.976)
                 if '/' in output:
-                    parts = output.split('/')
-                    if len(parts) != 2:
+                    try:
+                        num, den = output.split('/')
+                        den_float = float(den)
+                        if den_float == 0:
+                            logger.warning(f"[Video] FPS denominator is zero: {output}")
+                            return None
+                        fps = float(num) / den_float
+                    except ValueError:
                         logger.warning(f"[Video] Invalid FPS format: {output}")
                         return None
-                    num, den = parts
-                    den_float = float(den)
-                    if den_float == 0:
-                        logger.warning(f"[Video] FPS denominator is zero: {output}")
-                        return None
-                    fps = float(num) / den_float
                 else:
                     fps = float(output)
                 
@@ -652,13 +652,10 @@ class VideoNode(Node):
         else:
             logger.info("[Video] CFR video detected, no conversion needed")
         
+        # Step 1: Extract accurate video metadata
+        # CRITICAL: Use ffprobe for FPS (not OpenCV) to prevent audio sync issues
+        # See VFR_AUDIO_SYNC_FIX.md for details on why this is necessary
         try:
-            # Step 1: Extract video metadata
-            # CRITICAL FIX: Use ffprobe to get accurate FPS instead of OpenCV
-            # OpenCV's CAP_PROP_FPS is unreliable for VFR videos and can cause:
-            # - Incorrect audio chunking (wrong samples_per_frame)
-            # - Wrong reconstruction FPS in VideoWriter
-            # - Audio/video desynchronization and audio distortion
             logger.debug("[Video] Extracting video metadata...")
             
             # Get accurate FPS using ffprobe (reliable for CFR videos)
