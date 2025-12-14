@@ -512,12 +512,11 @@ class VideoBackgroundWorker:
             logger.info(f"[VideoWorker] Initializing encoder for {self.width}x{self.height} @ {self.fps} fps")
             
             # Initialize video writer
-            # Multiply FPS by 2.5 for video creation
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             video_writer = cv2.VideoWriter(
                 self._temp_video_path,
                 fourcc,
-                self.fps * 2.5,
+                self.fps,
                 (self.width, self.height)
             )
             

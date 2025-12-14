@@ -778,8 +778,7 @@ class VideoWriterNode(Node):
             fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
             
             # Create new video writer with adapted path
-            # Multiply FPS by 2.5 for video creation
-            out = cv2.VideoWriter(temp_adapted_path, fourcc, fps * 2.5, (width, height))
+            out = cv2.VideoWriter(temp_adapted_path, fourcc, fps, (width, height))
             if not out.isOpened():
                 logger.error(f"[VideoWriter] Failed to create adapted video writer")
                 return False
@@ -1337,6 +1336,9 @@ class VideoWriterNode(Node):
                     logger.info(f"[VideoWriter] Using target_fps from source: {writer_fps}")
 
             os.makedirs(video_writer_directory, exist_ok=True)
+            
+            # Multiply FPS by 2.5 for video creation
+            writer_fps = writer_fps * 2.5
 
             # Get selected format
             format_tag = tag_node_name + ':Format'
@@ -1408,11 +1410,10 @@ class VideoWriterNode(Node):
                 temp_file_path = os.path.join(video_writer_directory, f'{startup_time_text}_temp{config["ext"]}')
                 
                 # Create video writer with temporary path
-                # Multiply FPS by 2.5 for video creation
                 self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
                     temp_file_path,
                     cv2.VideoWriter_fourcc(*config['codec']),
-                    writer_fps * 2.5,
+                    writer_fps,
                     (writer_width, writer_height),
                 )
                 

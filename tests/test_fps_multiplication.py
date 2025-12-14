@@ -16,44 +16,44 @@ def test_fps_multiplication_in_node_video_writer():
     with open(file_path, 'r') as f:
         source = f.read()
     
-    # Check that FPS is multiplied by 2.5 in the VideoWriter creation
-    assert 'writer_fps * 2.5' in source, "FPS should be multiplied by 2.5 in VideoWriter creation"
+    # Check that FPS is multiplied by 2.5 before VideoWriter creation
+    assert 'writer_fps = writer_fps * 2.5' in source or 'writer_fps *= 2.5' in source, \
+        "FPS should be multiplied by 2.5 before VideoWriter creation"
     
     print("✓ FPS multiplication in node_video_writer test passed")
 
 
-def test_fps_multiplication_in_video_worker():
-    """Test that VideoBackgroundWorker uses FPS * 2.5 when creating video"""
-    file_path = os.path.join(os.path.dirname(__file__), '..', 'node', 'VideoNode', 'video_worker.py')
-    
-    if not os.path.exists(file_path):
-        print("⚠ video_worker.py not available, skipping test")
-        return
-    
-    with open(file_path, 'r') as f:
-        source = f.read()
-    
-    # Check that FPS is multiplied by 2.5 in the VideoWriter creation
-    assert 'self.fps * 2.5' in source, "FPS should be multiplied by 2.5 in VideoWriter creation"
-    
-    print("✓ FPS multiplication in video_worker test passed")
-
-
-def test_fps_multiplication_in_adapt_method():
-    """Test that _adapt_video_to_audio_duration uses FPS * 2.5 when creating video"""
+def test_fps_multiplication_passed_to_worker():
+    """Test that FPS * 2.5 is passed to VideoBackgroundWorker"""
     file_path = os.path.join(os.path.dirname(__file__), '..', 'node', 'VideoNode', 'node_video_writer.py')
     
     with open(file_path, 'r') as f:
         source = f.read()
     
-    # Check that FPS is multiplied by 2.5 in the VideoWriter creation for adapted video
-    assert 'fps * 2.5' in source, "FPS should be multiplied by 2.5 in adapted VideoWriter creation"
+    # The multiplied writer_fps is passed to VideoBackgroundWorker
+    # Since we multiply it before creating the worker, we just need to verify the multiplication happens
+    assert 'writer_fps = writer_fps * 2.5' in source or 'writer_fps *= 2.5' in source, \
+        "FPS should be multiplied by 2.5 before being passed to VideoBackgroundWorker"
     
-    print("✓ FPS multiplication in _adapt_video_to_audio_duration test passed")
+    print("✓ FPS multiplication passed to worker test passed")
+
+
+def test_fps_stored_in_metadata():
+    """Test that FPS is stored correctly in recording metadata after multiplication"""
+    file_path = os.path.join(os.path.dirname(__file__), '..', 'node', 'VideoNode', 'node_video_writer.py')
+    
+    with open(file_path, 'r') as f:
+        source = f.read()
+    
+    # The multiplied writer_fps should be stored in metadata
+    # This ensures _adapt_video_to_audio_duration receives the correct FPS
+    assert "'fps': writer_fps" in source, "Multiplied FPS should be stored in recording metadata"
+    
+    print("✓ FPS stored in metadata test passed")
 
 
 if __name__ == '__main__':
     test_fps_multiplication_in_node_video_writer()
-    test_fps_multiplication_in_video_worker()
-    test_fps_multiplication_in_adapt_method()
+    test_fps_multiplication_passed_to_worker()
+    test_fps_stored_in_metadata()
     print("\n✅ All FPS multiplication tests passed!")
