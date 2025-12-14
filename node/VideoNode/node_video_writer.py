@@ -1339,7 +1339,7 @@ class VideoWriterNode(Node):
             os.makedirs(video_writer_directory, exist_ok=True)
             
             # Multiply FPS for video creation
-            writer_fps = writer_fps * self._FPS_MULTIPLIER
+            writer_fps *= self._FPS_MULTIPLIER
 
             # Get selected format
             format_tag = tag_node_name + ':Format'

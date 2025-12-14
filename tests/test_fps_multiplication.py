@@ -27,16 +27,32 @@ def test_fps_multiplication_in_node_video_writer():
 
 
 def test_fps_multiplication_passed_to_worker():
-    """Test that FPS multiplier is applied before passing to VideoBackgroundWorker"""
+    """Test that multiplied FPS is passed to VideoBackgroundWorker"""
     file_path = os.path.join(os.path.dirname(__file__), '..', 'node', 'VideoNode', 'node_video_writer.py')
     
     with open(file_path, 'r') as f:
         source = f.read()
     
-    # The multiplied writer_fps is passed to VideoBackgroundWorker
-    # Since we multiply it before creating the worker, we just need to verify the multiplication happens
-    assert 'writer_fps * self._FPS_MULTIPLIER' in source or 'writer_fps *= self._FPS_MULTIPLIER' in source, \
-        "FPS should be multiplied by FPS_MULTIPLIER before being passed to VideoBackgroundWorker"
+    # Verify that the VideoBackgroundWorker receives writer_fps as its fps parameter
+    # Since writer_fps is already multiplied by FPS_MULTIPLIER before this call,
+    # the worker will receive the multiplied value
+    assert 'fps=writer_fps' in source, \
+        "VideoBackgroundWorker should receive writer_fps (which is already multiplied)"
+    
+    # Also verify the multiplication happens before the worker is created
+    lines = source.split('\n')
+    multiply_line_idx = None
+    worker_create_line_idx = None
+    
+    for i, line in enumerate(lines):
+        if 'writer_fps *= self._FPS_MULTIPLIER' in line or 'writer_fps = writer_fps * self._FPS_MULTIPLIER' in line:
+            multiply_line_idx = i
+        if 'VideoBackgroundWorker(' in line:
+            worker_create_line_idx = i
+    
+    if multiply_line_idx is not None and worker_create_line_idx is not None:
+        assert multiply_line_idx < worker_create_line_idx, \
+            "FPS multiplication should occur before VideoBackgroundWorker is created"
     
     print("✓ FPS multiplication passed to worker test passed")
 
