@@ -291,13 +291,14 @@ class VideoNode(Node):
     _youtube_capture = {}
     _prev_read_time = {}
 
-    _video_capture = {}
+    _video_capture = {}  # Now stores ffmpeg process instead of cv2.VideoCapture
     _movie_filepath = {}
     _prev_movie_filepath = {}
     _frame_count = {}
     _last_frame_time = {}
     _loop_elapsed_time = {}  # Track cumulative time across loops for continuous timestamps
     _is_playing = {}  # Track playback state per node
+    _video_info = {}  # Store video metadata (width, height, fps, frame_count)
 
     _min_val = 1
     _max_val = 10
@@ -338,6 +339,155 @@ class VideoNode(Node):
                     logger.debug(f"[Video] Cleaned up temporary file: {file_path}")
             except (OSError, FileNotFoundError) as cleanup_error:
                 logger.warning(f"[Video] Failed to clean up temporary file: {cleanup_error}")
+    
+    def _get_video_info(self, video_path):
+        """
+        Extract video metadata using ffprobe.
+        
+        Args:
+            video_path: Path to the video file
+            
+        Returns:
+            Dictionary with 'width', 'height', 'fps', 'frame_count', or None if extraction fails
+        """
+        try:
+            # Get video stream info
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v", "error",
+                    "-select_streams", "v:0",
+                    "-show_entries", "stream=width,height,r_frame_rate,nb_frames",
+                    "-of", "csv=p=0",
+                    video_path
+                ],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            
+            output = result.stdout.strip()
+            if output:
+                parts = output.split(',')
+                if len(parts) >= 3:
+                    width = int(parts[0])
+                    height = int(parts[1])
+                    
+                    # Parse frame rate (e.g., "30000/1001" -> 29.97)
+                    fps_str = parts[2]
+                    if '/' in fps_str:
+                        num, den = fps_str.split('/')
+                        fps = float(num) / float(den)
+                    else:
+                        fps = float(fps_str)
+                    
+                    # Frame count may not always be available
+                    frame_count = int(parts[3]) if len(parts) > 3 and parts[3] else 0
+                    
+                    return {
+                        'width': width,
+                        'height': height,
+                        'fps': fps,
+                        'frame_count': frame_count
+                    }
+        except Exception as e:
+            logger.warning(f"[Video] Failed to extract video info with ffprobe: {e}")
+        
+        return None
+    
+    def _start_ffmpeg_reader(self, video_path):
+        """
+        Start an ffmpeg process to read video frames.
+        
+        Args:
+            video_path: Path to the video file
+            
+        Returns:
+            subprocess.Popen object, or None if failed
+        """
+        try:
+            # Get video info first to determine dimensions
+            info = self._get_video_info(video_path)
+            if not info:
+                logger.error(f"[Video] Could not get video info for ffmpeg reader: {video_path}")
+                return None
+            
+            # Start ffmpeg process to output raw RGB24 frames
+            process = subprocess.Popen(
+                [
+                    "ffmpeg",
+                    "-i", video_path,
+                    "-f", "rawvideo",
+                    "-pix_fmt", "rgb24",
+                    "-vsync", "0",  # Pass through timestamps as-is
+                    "-"
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                bufsize=10**8
+            )
+            
+            logger.debug(f"[Video] Started ffmpeg reader for {video_path}")
+            return process
+            
+        except Exception as e:
+            logger.error(f"[Video] Failed to start ffmpeg reader: {e}")
+            return None
+    
+    def _read_frame_from_ffmpeg(self, process, width, height):
+        """
+        Read a single frame from ffmpeg stdout pipe.
+        
+        Args:
+            process: ffmpeg subprocess.Popen object
+            width: Frame width in pixels
+            height: Frame height in pixels
+            
+        Returns:
+            Tuple (success, frame) where success is True/False and frame is numpy array in BGR format
+        """
+        try:
+            # Calculate bytes per frame (RGB24 format = 3 bytes per pixel)
+            frame_size = width * height * 3
+            
+            # Read raw frame data
+            raw_frame = process.stdout.read(frame_size)
+            
+            # Check if we got a complete frame
+            if len(raw_frame) != frame_size:
+                return False, None
+            
+            # Convert raw bytes to numpy array and reshape to frame dimensions
+            frame_rgb = np.frombuffer(raw_frame, dtype=np.uint8).reshape((height, width, 3))
+            
+            # Convert RGB to BGR (OpenCV format)
+            frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+            
+            return True, frame_bgr
+            
+        except Exception as e:
+            logger.debug(f"[Video] Error reading frame from ffmpeg: {e}")
+            return False, None
+    
+    def _stop_ffmpeg_reader(self, process):
+        """
+        Stop an ffmpeg reader process gracefully.
+        
+        Args:
+            process: ffmpeg subprocess.Popen object
+        """
+        if process:
+            try:
+                process.stdout.close()
+                process.terminate()
+                process.wait(timeout=5)
+                logger.debug("[Video] Stopped ffmpeg reader")
+            except Exception as e:
+                logger.warning(f"[Video] Error stopping ffmpeg reader: {e}")
+                try:
+                    process.kill()
+                except:
+                    pass
     
     def _detect_vfr(self, video_path):
         """
@@ -661,17 +811,33 @@ class VideoNode(Node):
             # Get accurate FPS using ffprobe (reliable for CFR videos)
             fps = self._get_accurate_fps(movie_path)
             
-            # Fallback to OpenCV if ffprobe fails
-            cap = cv2.VideoCapture(movie_path)
-            if fps is None or fps <= 0:
-                fps = cap.get(cv2.CAP_PROP_FPS)
-                logger.warning(f"[Video] Using OpenCV FPS (ffprobe failed): {fps}")
-                if fps <= 0:
-                    fps = target_fps  # Ultimate fallback to target_fps
-                    logger.warning(f"[Video] Using target_fps as fallback: {fps}")
+            # Get video info using ffprobe
+            video_info = self._get_video_info(movie_path)
             
-            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            cap.release()
+            # Fallback to OpenCV if ffprobe fails
+            if fps is None or fps <= 0:
+                if video_info and video_info.get('fps', 0) > 0:
+                    fps = video_info['fps']
+                    logger.info(f"[Video] Using ffprobe FPS: {fps}")
+                else:
+                    # Last resort: use OpenCV
+                    cap = cv2.VideoCapture(movie_path)
+                    fps = cap.get(cv2.CAP_PROP_FPS)
+                    cap.release()
+                    logger.warning(f"[Video] Using OpenCV FPS (ffprobe failed): {fps}")
+                    if fps <= 0:
+                        fps = target_fps  # Ultimate fallback to target_fps
+                        logger.warning(f"[Video] Using target_fps as fallback: {fps}")
+            
+            # Get frame count from video info or OpenCV
+            if video_info and video_info.get('frame_count', 0) > 0:
+                frame_count = video_info['frame_count']
+            else:
+                # Fallback to OpenCV for frame count
+                cap = cv2.VideoCapture(movie_path)
+                frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                cap.release()
+            
             logger.info(f"[Video] Metadata: FPS={fps:.3f}, Frames={frame_count}")
             
             # Step 2: Extract audio using ffmpeg directly to WAV (faster than librosa)
@@ -949,17 +1115,21 @@ class VideoNode(Node):
         if prev_movie_path != movie_path:
             video_capture = self._video_capture.get(str(node_id), None)
             if video_capture is not None:
-                video_capture.release()
+                # Stop previous ffmpeg process
+                self._stop_ffmpeg_reader(video_capture)
             
             # Use converted CFR video if available, otherwise use original
             actual_movie_path = self._converted_videos.get(str(node_id), movie_path)
             if actual_movie_path and os.path.exists(actual_movie_path):
-                self._video_capture[str(node_id)] = cv2.VideoCapture(actual_movie_path)
-                logger.debug(f"[Video] Opened video capture: {actual_movie_path}")
+                # Start ffmpeg reader and store video info
+                self._video_capture[str(node_id)] = self._start_ffmpeg_reader(actual_movie_path)
+                self._video_info[str(node_id)] = self._get_video_info(actual_movie_path)
+                logger.debug(f"[Video] Opened ffmpeg reader: {actual_movie_path}")
             elif movie_path and os.path.exists(movie_path):
                 # Fallback to original if CFR doesn't exist
-                self._video_capture[str(node_id)] = cv2.VideoCapture(movie_path)
-                logger.debug(f"[Video] Opened video capture: {movie_path}")
+                self._video_capture[str(node_id)] = self._start_ffmpeg_reader(movie_path)
+                self._video_info[str(node_id)] = self._get_video_info(movie_path)
+                logger.debug(f"[Video] Opened ffmpeg reader: {movie_path}")
             
             self._prev_movie_filepath[str(node_id)] = movie_path
             self._frame_count[str(node_id)] = 0
@@ -970,6 +1140,7 @@ class VideoNode(Node):
                 del self._queues_resized[str(node_id)]
 
         video_capture = self._video_capture.get(str(node_id), None)
+        video_info = self._video_info.get(str(node_id), None)
 
         loop_flag = dpg_get_value(tag_node_input02_value_name)
 
@@ -1029,7 +1200,15 @@ class VideoNode(Node):
 
             if should_read_frame:
                 while True:
-                    ret, frame = video_capture.read()
+                    # Read frame from ffmpeg pipe
+                    if video_info:
+                        width = video_info.get('width', 640)
+                        height = video_info.get('height', 480)
+                        ret, frame = self._read_frame_from_ffmpeg(video_capture, width, height)
+                    else:
+                        ret = False
+                        frame = None
+                    
                     if not ret:
                         if loop_flag:
                             # Before looping, add the video duration to elapsed time
@@ -1043,27 +1222,40 @@ class VideoNode(Node):
                                 actual_fps = metadata.get('fps', 30.0)
                                 video_duration = num_frames / actual_fps if actual_fps > 0 else 0
                             else:
-                                # Fallback: get duration from OpenCV video properties
+                                # Fallback: get duration from video info
                                 # This ensures loop timestamps work even without audio preprocessing
-                                total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
-                                actual_fps = video_capture.get(cv2.CAP_PROP_FPS)
-                                if actual_fps <= 0:
-                                    actual_fps = target_fps  # Final fallback to user setting
-                                video_duration = total_frames / actual_fps
+                                if video_info:
+                                    total_frames = video_info.get('frame_count', 0)
+                                    actual_fps = video_info.get('fps', 30.0)
+                                    if actual_fps <= 0:
+                                        actual_fps = target_fps  # Final fallback to user setting
+                                    video_duration = total_frames / actual_fps if total_frames > 0 else 0
+                                else:
+                                    video_duration = 0
                                 
                             # Add duration to elapsed time (initialized when video is loaded)
                             self._loop_elapsed_time[str(node_id)] += video_duration
                             
-                            # Reset to beginning
-                            video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                            self._frame_count[str(node_id)] = 0
-                            _, frame = video_capture.read()
+                            # Reset to beginning by restarting ffmpeg process
+                            self._stop_ffmpeg_reader(video_capture)
+                            actual_movie_path = self._converted_videos.get(str(node_id), 
+                                                                           self._movie_filepath.get(str(node_id), None))
+                            if actual_movie_path and os.path.exists(actual_movie_path):
+                                video_capture = self._start_ffmpeg_reader(actual_movie_path)
+                                self._video_capture[str(node_id)] = video_capture
+                                self._frame_count[str(node_id)] = 0
+                                # Read first frame
+                                if video_info:
+                                    width = video_info.get('width', 640)
+                                    height = video_info.get('height', 480)
+                                    _, frame = self._read_frame_from_ffmpeg(video_capture, width, height)
                         else:
-                            video_capture.release()
+                            self._stop_ffmpeg_reader(video_capture)
                             video_capture = None
-                            self._movie_filepath.pop(str(node_id))
-                            self._prev_movie_filepath.pop(str(node_id))
-                            self._video_capture.pop(str(node_id))
+                            self._movie_filepath.pop(str(node_id), None)
+                            self._prev_movie_filepath.pop(str(node_id), None)
+                            self._video_capture.pop(str(node_id), None)
+                            self._video_info.pop(str(node_id), None)
 
                             break
 
@@ -1171,8 +1363,17 @@ class VideoNode(Node):
         }
 
     def close(self, node_id):
-        """Clean up audio chunks and temporary files when node is closed."""
+        """Clean up audio chunks, ffmpeg processes and temporary files when node is closed."""
         self._cleanup_audio_chunks(str(node_id))
+        
+        # Stop ffmpeg process if running
+        video_capture = self._video_capture.get(str(node_id), None)
+        if video_capture is not None:
+            self._stop_ffmpeg_reader(video_capture)
+            self._video_capture.pop(str(node_id), None)
+        
+        # Clean up video info
+        self._video_info.pop(str(node_id), None)
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ":" + self.node_tag
