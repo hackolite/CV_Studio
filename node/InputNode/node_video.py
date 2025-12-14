@@ -351,6 +351,11 @@ class VideoNode(Node):
             Dictionary with 'width', 'height', 'fps', 'frame_count', or None if extraction fails
         """
         try:
+            # Validate video path exists and is a file
+            if not video_path or not os.path.isfile(video_path):
+                logger.warning(f"[Video] Invalid video path for info extraction: {video_path}")
+                return None
+            
             # Get video stream info
             result = subprocess.run(
                 [
@@ -391,11 +396,12 @@ class VideoNode(Node):
                         'frame_count': frame_count
                     }
         except subprocess.CalledProcessError as e:
-            logger.warning(f"[Video] ffprobe command failed: {e}")
+            stderr_msg = e.stderr.strip() if e.stderr else str(e)
+            logger.warning(f"[Video] ffprobe command failed for {video_path}: {stderr_msg}")
         except (ValueError, IndexError) as e:
-            logger.warning(f"[Video] Failed to parse video info: {e}")
+            logger.warning(f"[Video] Failed to parse video info for {video_path}: {e}")
         except Exception as e:
-            logger.warning(f"[Video] Unexpected error extracting video info: {e}")
+            logger.warning(f"[Video] Unexpected error extracting video info for {video_path}: {e}")
         
         return None
     
@@ -413,7 +419,7 @@ class VideoNode(Node):
             # Get video info first to determine dimensions
             info = self._get_video_info(video_path)
             if not info:
-                logger.error(f"[Video] Could not get video info for ffmpeg reader: {video_path}")
+                logger.error(f"[Video] Could not get video info for ffmpeg reader: {video_path}. Check if the file exists and is a valid video file.")
                 return None
             
             # Start ffmpeg process to output raw RGB24 frames
