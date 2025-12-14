@@ -31,7 +31,7 @@ class TestVFRConversion:
         node = VideoNode()
         # Should return False (assume CFR) when file doesn't exist
         is_vfr = node._detect_vfr("/nonexistent/video.mp4")
-        assert is_vfr == False, "Non-existent file should be treated as CFR"
+        assert not is_vfr, "Non-existent file should be treated as CFR"
     
     def test_convert_vfr_to_cfr_nonexistent_file(self):
         """Test VFR conversion with non-existent file"""
@@ -64,7 +64,7 @@ class TestVFRConversion:
                 node = VideoNode()
                 is_vfr = node._detect_vfr(test_video_path)
                 # CFR video should be detected as CFR (not VFR)
-                assert is_vfr == False, "CFR test video should be detected as CFR"
+                assert not is_vfr, "CFR test video should be detected as CFR"
             else:
                 pytest.skip(f"Failed to create test video: {result.stderr.decode()}")
         finally:

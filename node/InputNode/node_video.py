@@ -324,6 +324,21 @@ class VideoNode(Node):
         # Track converted CFR videos to clean them up later
         self._converted_videos = {}
 
+    def _safe_cleanup_temp_file(self, file_path):
+        """
+        Safely clean up a temporary file with error handling.
+        
+        Args:
+            file_path: Path to the temporary file to delete
+        """
+        if file_path:
+            try:
+                if os.path.exists(file_path):
+                    os.unlink(file_path)
+                    logger.debug(f"[Video] Cleaned up temporary file: {file_path}")
+            except (OSError, FileNotFoundError) as cleanup_error:
+                logger.warning(f"[Video] Failed to clean up temporary file: {cleanup_error}")
+    
     def _detect_vfr(self, video_path):
         """
         Detect if a video has variable frame rate (VFR).
@@ -390,8 +405,8 @@ class VideoNode(Node):
                             else:
                                 logger.info(f"[Video] CFR detected: frame_rate={r_fps:.2f}")
                                 return False
-                        except (ValueError, ZeroDivisionError):
-                            logger.warning("[Video] Failed to parse frame rates, assuming CFR")
+                        except (ValueError, ZeroDivisionError) as e:
+                            logger.warning(f"[Video] Failed to parse frame rates ({r_frame_rate}, {avg_frame_rate}): {e}, assuming CFR")
                             return False
             
             logger.info("[Video] Could not determine frame rate mode, assuming CFR")
@@ -500,22 +515,12 @@ class VideoNode(Node):
         except subprocess.CalledProcessError as e:
             logger.error(f"[Video] ffmpeg conversion failed: {e.stderr if e.stderr else str(e)}")
             # Clean up failed conversion file
-            if cfr_video_path:
-                try:
-                    if os.path.exists(cfr_video_path):
-                        os.unlink(cfr_video_path)
-                except (OSError, FileNotFoundError) as cleanup_error:
-                    logger.warning(f"[Video] Failed to clean up temporary file: {cleanup_error}")
+            self._safe_cleanup_temp_file(cfr_video_path)
             return video_path
         except Exception as e:
             logger.error(f"[Video] VFR to CFR conversion failed: {e}", exc_info=True)
             # Clean up any partial conversion file
-            if cfr_video_path:
-                try:
-                    if os.path.exists(cfr_video_path):
-                        os.unlink(cfr_video_path)
-                except (OSError, FileNotFoundError) as cleanup_error:
-                    logger.warning(f"[Video] Failed to clean up temporary file: {cleanup_error}")
+            self._safe_cleanup_temp_file(cfr_video_path)
             return video_path
 
     def _preprocess_video(self, node_id, movie_path, target_fps=24):
