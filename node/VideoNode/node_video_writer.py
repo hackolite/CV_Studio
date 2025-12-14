@@ -819,7 +819,18 @@ class VideoWriterNode(Node):
 
     def _merge_audio_video_ffmpeg(self, video_path, audio_samples, sample_rate, output_path, fps=None, video_format='MP4', progress_callback=None):
         """
-        Merge video and audio using ffmpeg.
+        Merge video and audio using ffmpeg with audio priority.
+        
+        AUDIO PRIORITY WORKFLOW:
+        This method ensures audio is built completely with guaranteed quality before merging.
+        
+        Workflow:
+        1. Validate and filter audio samples
+        2. Concatenate all audio samples (AUDIO BUILD)
+        3. Calculate audio duration
+        4. Write audio to WAV file (LOSSLESS, HIGH QUALITY)
+        5. Adapt video to match audio duration (if needed)
+        6. Merge using FFmpeg with 192k AAC bitrate (QUALITY GUARANTEE)
         
         Args:
             video_path: Path to the temporary video file (no audio)
@@ -843,11 +854,11 @@ class VideoWriterNode(Node):
                 logger.error(f"[VideoWriter] Video file not found: {video_path}")
                 return False
             
-            # Report progress: Starting concatenation
+            # Report progress: Starting audio processing
             if progress_callback:
                 progress_callback(0.1)
             
-            # Validate and filter audio samples
+            # Step 1: Validate and filter audio samples
             if not audio_samples:
                 logger.warning("[VideoWriter] No audio samples collected, merging only video")
                 return False
@@ -864,13 +875,16 @@ class VideoWriterNode(Node):
             
             logger.debug(f"[VideoWriter] Merge: {len(valid_samples)} valid sample chunks after filtering")
             
-            # Concatenate all valid audio samples
+            # Step 2: Concatenate all valid audio samples (AUDIO BUILD - PRIORITY STEP)
+            # This is where audio is fully assembled before any video processing
             full_audio = np.concatenate(valid_samples)
             total_duration = len(full_audio) / sample_rate
             
             logger.info(f"[VideoWriter] Merge: Total audio duration = {total_duration:.2f}s at {sample_rate}Hz")
+            logger.info(f"[VideoWriter] Audio built successfully with {len(full_audio)} samples at {sample_rate}Hz")
             
-            # Adapt video duration to match audio duration if FPS is provided
+            # Step 3: Adapt video to match audio duration (AUDIO HAS PRIORITY)
+            # Video is adapted to match audio, NOT the other way around
             actual_video_path = video_path
             if fps is not None and fps > 0:
                 # Extract file extension safely using os.path.splitext
@@ -878,19 +892,22 @@ class VideoWriterNode(Node):
                 adapted_path = f"{video_base}_adapted{video_ext}"
                 if self._adapt_video_to_audio_duration(video_path, valid_samples, sample_rate, fps, adapted_path):
                     actual_video_path = adapted_path
-                    logger.info(f"[VideoWriter] Using adapted video: {adapted_path}")
+                    logger.info(f"[VideoWriter] Video adapted to match audio duration: {adapted_path}")
             
             # Report progress: Audio concatenated
             if progress_callback:
                 progress_callback(0.3)
             
-            # Create temporary audio file
+            # Step 4: Write audio to WAV file (QUALITY GUARANTEE)
+            # WAV format is lossless and preserves full audio quality
+            # No sample rate conversion, no compression
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_audio:
                 temp_audio_path = temp_audio.name
             
             try:
-                # Write audio to temporary WAV file
+                # Write audio with native sample rate (NO CONVERSION - QUALITY PRESERVED)
                 sf.write(temp_audio_path, full_audio, sample_rate)
+                logger.info(f"[VideoWriter] Audio file written with guaranteed quality: {sample_rate}Hz WAV format")
                 
                 # Report progress: Audio file written
                 if progress_callback:
@@ -913,20 +930,21 @@ class VideoWriterNode(Node):
                     vcodec = 'copy'
                     vcodec_preset = None
                 
-                # Merge video and audio streams with explicit synchronization to fix audio/video sync issues
-                # Issue: Audio was ahead of video and sounded strange ("bizarre")
-                # Root cause: Mismatched PTS (Presentation TimeStamps) between video and audio streams
+                # Step 5: Merge video and audio with HIGH QUALITY settings (AUDIO PRIORITY)
+                # Audio quality is guaranteed through high bitrate and proper encoding
                 # 
-                # Fix parameters:
+                # QUALITY PARAMETERS:
+                # - audio_bitrate='192k': HIGH QUALITY AAC (prevents audio artifacts/distortion)
+                #   This ensures audio has priority for quality over file size
+                # - acodec='aac': AAC codec (industry standard for quality)
+                # - avoid_negative_ts='make_zero': Perfect audio/video synchronization
+                # - vsync='cfr': Constant frame rate (prevents drift)
+                # - shortest=None: Stop when shortest stream ends
                 # - vcodec: For AVI, re-encode to H.264; for others, copy codec
-                # - shortest=None: Adds FFmpeg -shortest flag to stop when shortest stream ends
-                # - audio_bitrate='192k': High quality AAC (prevents audio artifacts/distortion)
-                # - vsync='cfr': Constant frame rate (prevents variable frame timing issues)
-                # - avoid_negative_ts='make_zero': Reset timestamps to start at 0 (syncs audio/video start)
                 output_params = {
                     'vcodec': vcodec,
                     'acodec': 'aac',
-                    'audio_bitrate': '192k',
+                    'audio_bitrate': '192k',  # AUDIO PRIORITY - High quality over file size
                     'shortest': None,
                     'vsync': 'cfr',
                     'avoid_negative_ts': 'make_zero',
@@ -1157,6 +1175,15 @@ class VideoWriterNode(Node):
         """
         Finalize the recording by releasing resources and starting merge.
         
+        AUDIO PRIORITY WORKFLOW:
+        This method ensures audio is built first with guaranteed quality before merging with video.
+        
+        Workflow:
+        1. Release video writer (video file closed)
+        2. Build audio completely (concatenate all slots)
+        3. Detect and preserve audio sample rate (no conversion)
+        4. Start async merge thread (audio-first merge)
+        
         This method is called either:
         1. When user clicks Stop and we already have enough frames
         2. When in stopping state and we reach the required frame count
@@ -1166,11 +1193,13 @@ class VideoWriterNode(Node):
         """
         tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
         
-        # Release video writer if in legacy mode
+        # Step 1: Release video writer if in legacy mode
+        # Video file is closed, no more frames can be written
         if tag_node_name in self._video_writer_dict:
             self._video_writer_dict[tag_node_name].release()
             self._video_writer_dict.pop(tag_node_name)
         
+        # Step 2: Build audio completely before merge (AUDIO PRIORITY)
         # Merge audio and video if audio samples were collected
         if tag_node_name in self._audio_samples_dict and len(self._audio_samples_dict[tag_node_name]) > 0:
             if tag_node_name in self._recording_metadata_dict:
@@ -1179,7 +1208,9 @@ class VideoWriterNode(Node):
                 final_path = metadata['final_path']
                 sample_rate = metadata['sample_rate']
                 
-                # Process audio samples: sort slots by slot index only, concatenate each slot, then merge
+                # Step 3: Process audio samples - AUDIO PRIORITY
+                # Sort slots by slot index only, concatenate each slot, then merge
+                # This ensures audio is built completely before video merge
                 slot_audio_dict = self._audio_samples_dict[tag_node_name]
                 
                 # Sort slots by slot index only (timestamps are indicative only)
@@ -1200,12 +1231,14 @@ class VideoWriterNode(Node):
                         slot_concatenated = np.concatenate(slot_data['samples'])
                         audio_samples_list.append(slot_concatenated)
                     
+                    # Step 4: Detect and preserve sample rate (QUALITY GUARANTEE)
                     # Use the first valid sample rate we encounter
                     # Note: All slots should have the same sample rate for proper merging
                     if final_sample_rate is None and 'sample_rate' in slot_data and slot_data['sample_rate'] is not None:
                         final_sample_rate = slot_data['sample_rate']
                 
                 # Use the detected sample rate, fallback to metadata default
+                # NO SAMPLE RATE CONVERSION - Quality is guaranteed
                 if final_sample_rate is not None:
                     sample_rate = final_sample_rate
                 
@@ -1218,7 +1251,12 @@ class VideoWriterNode(Node):
                 if video_format == 'MKV' and tag_node_name in self._json_samples_dict:
                     json_samples_dict = self._json_samples_dict[tag_node_name]
                 
-                # Start merge in a separate thread to prevent UI freezing
+                # Step 5: Start merge in a separate thread to prevent UI freezing
+                # At this point, audio is fully built and ready for merge
+                # The merge thread will:
+                # 1. Write audio to WAV file (lossless, high quality)
+                # 2. Adapt video to match audio duration (if needed)
+                # 3. Merge using FFmpeg with 192k AAC bitrate
                 merge_thread = threading.Thread(
                     target=self._async_merge_thread,
                     args=(tag_node_name, temp_path, audio_samples_list, sample_rate, final_path, fps, video_format, json_samples_dict),

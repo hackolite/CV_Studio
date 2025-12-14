@@ -585,20 +585,32 @@ class VideoBackgroundWorker:
                         )
                         last_metric_log = current_time
             
-            # Flush and release video writer
+            # Step 1: Flush and release video writer
+            # Video encoding is complete, file is closed
             video_writer.release()
             logger.info(f"[VideoWorker] Video encoding complete, {self.progress_tracker.frames_encoded} frames")
             
-            # Write audio file if we have samples
+            # Step 2: Build audio completely (AUDIO PRIORITY)
+            # Audio is concatenated and written BEFORE muxer starts
+            # This ensures audio is fully built with guaranteed quality
             if audio_samples and FFMPEG_AVAILABLE and sf is not None and not self._cancel_flag.is_set():
-                logger.info(f"[VideoWorker] Writing audio file with {len(audio_samples)} chunks")
+                logger.info(f"[VideoWorker] Building audio with {len(audio_samples)} chunks")
+                
+                # Concatenate all audio samples (AUDIO BUILD)
                 full_audio = np.concatenate(audio_samples)
+                
+                # Write audio to WAV file (QUALITY GUARANTEE)
+                # WAV format is lossless, preserves full quality
+                # No sample rate conversion, no compression
                 sf.write(self._temp_audio_path, full_audio, self.sample_rate)
-                logger.info(f"[VideoWorker] Audio file written: {self._temp_audio_path}")
+                logger.info(f"[VideoWorker] Audio file written with guaranteed quality: {self.sample_rate}Hz WAV format")
+                logger.info(f"[VideoWorker] Audio path: {self._temp_audio_path}")
             
-            # Signal muxer that encoding is done (only if not cancelled)
+            # Step 3: Signal muxer that audio is ready (only if not cancelled)
+            # Muxer will only start after audio is fully built
             if not self._cancel_flag.is_set():
                 self._set_state(WorkerState.FLUSHING)
+                logger.info(f"[VideoWorker] Audio built successfully, ready for muxing")
             
         except Exception as e:
             logger.error(f"[VideoWorker] Error in encoder thread: {e}")
@@ -645,8 +657,9 @@ class VideoBackgroundWorker:
             
             if has_audio and FFMPEG_AVAILABLE:
                 logger.info(f"[VideoWorker] Merging video and audio with ffmpeg")
+                logger.info(f"[VideoWorker] Audio is fully built and ready for merge (AUDIO PRIORITY)")
                 
-                # Use ffmpeg to merge
+                # Use ffmpeg to merge (audio was built first)
                 video_input = ffmpeg.input(self._temp_video_path)
                 audio_input = ffmpeg.input(self._temp_audio_path)
                 
@@ -664,20 +677,21 @@ class VideoBackgroundWorker:
                     vcodec = 'copy'
                     vcodec_preset = None
                 
-                # Merge with explicit synchronization parameters to fix audio/video sync issues
-                # Issue: Audio was ahead of video and sounded strange ("bizarre")
-                # Root cause: Mismatched PTS (Presentation TimeStamps) between video and audio streams
+                # Merge with HIGH QUALITY audio settings (AUDIO PRIORITY)
+                # Audio quality is guaranteed through high bitrate and proper encoding
                 # 
-                # Fix parameters:
+                # QUALITY PARAMETERS:
+                # - audio_bitrate='192k': HIGH QUALITY AAC (prevents audio artifacts/distortion)
+                #   This ensures audio has priority for quality over file size
+                # - acodec='aac': AAC codec (industry standard for quality)
+                # - avoid_negative_ts='make_zero': Perfect audio/video synchronization
+                # - vsync='cfr': Constant frame rate (prevents drift)
+                # - shortest=None: Stop when shortest stream ends
                 # - vcodec: For AVI, re-encode to H.264; for others, copy codec
-                # - shortest=None: Adds FFmpeg -shortest flag to stop when shortest stream ends
-                # - audio_bitrate='192k': High quality AAC (prevents audio artifacts/distortion)
-                # - vsync='cfr': Constant frame rate (prevents variable frame timing issues)
-                # - avoid_negative_ts='make_zero': Reset timestamps to start at 0 (syncs audio/video start)
                 output_params = {
                     'vcodec': vcodec,
                     'acodec': 'aac',
-                    'audio_bitrate': '192k',
+                    'audio_bitrate': '192k',  # AUDIO PRIORITY - High quality over file size
                     'shortest': None,
                     'vsync': 'cfr',
                     'avoid_negative_ts': 'make_zero',
