@@ -474,14 +474,20 @@ class VideoNode(Node):
         except subprocess.CalledProcessError as e:
             logger.error(f"[Video] ffmpeg conversion failed: {e.stderr if e.stderr else str(e)}")
             # Clean up failed conversion file
-            if os.path.exists(cfr_video_path):
-                try:
+            try:
+                if 'cfr_video_path' in locals() and os.path.exists(cfr_video_path):
                     os.unlink(cfr_video_path)
-                except:
-                    pass
+            except (OSError, FileNotFoundError) as cleanup_error:
+                logger.warning(f"[Video] Failed to clean up temporary file: {cleanup_error}")
             return video_path
         except Exception as e:
             logger.error(f"[Video] VFR to CFR conversion failed: {e}", exc_info=True)
+            # Clean up any partial conversion file
+            try:
+                if 'cfr_video_path' in locals() and os.path.exists(cfr_video_path):
+                    os.unlink(cfr_video_path)
+            except (OSError, FileNotFoundError) as cleanup_error:
+                logger.warning(f"[Video] Failed to clean up temporary file: {cleanup_error}")
             return video_path
 
     def _preprocess_video(self, node_id, movie_path, target_fps=24):

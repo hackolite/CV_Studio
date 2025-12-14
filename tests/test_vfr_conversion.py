@@ -7,6 +7,7 @@ import os
 import sys
 import tempfile
 import subprocess
+import shutil
 import pytest
 
 # Add parent directory to path for imports
@@ -39,7 +40,7 @@ class TestVFRConversion:
         result = node._convert_vfr_to_cfr("/nonexistent/video.mp4")
         assert result == "/nonexistent/video.mp4", "Should return original path for non-existent file"
     
-    @pytest.mark.skipif(not os.path.exists("/usr/bin/ffmpeg") and not os.path.exists("/usr/local/bin/ffmpeg"), 
+    @pytest.mark.skipif(shutil.which('ffmpeg') is None, 
                         reason="ffmpeg not installed")
     def test_create_test_cfr_video(self):
         """Test creating a simple CFR video with ffmpeg"""
@@ -121,8 +122,9 @@ class TestVFRConversion:
             # Call preprocess (will fail at audio extraction but that's ok)
             try:
                 node._preprocess_video("test_node", test_video, target_fps=24)
-            except Exception:
-                pass  # Expected to fail at audio extraction
+            except (subprocess.CalledProcessError, FileNotFoundError, RuntimeError) as e:
+                # Expected to fail at audio extraction since test file has no audio
+                pass
             
             # Verify _detect_vfr was called
             assert len(detect_vfr_called) == 1, "_detect_vfr should be called once"
