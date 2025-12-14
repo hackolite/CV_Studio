@@ -601,7 +601,8 @@ class VideoBackgroundWorker:
                 
                 # Write audio to WAV file (QUALITY GUARANTEE)
                 # WAV format is lossless, preserves full quality
-                # No sample rate conversion, no compression
+                # Audio is written with the sample rate from the source (self.sample_rate)
+                # Note: Ensure audio data matches this sample rate to avoid conversion
                 sf.write(self._temp_audio_path, full_audio, self.sample_rate)
                 logger.info(f"[VideoWorker] Audio file written with guaranteed quality: {self.sample_rate}Hz WAV format")
                 logger.info(f"[VideoWorker] Audio path: {self._temp_audio_path}")

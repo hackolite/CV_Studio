@@ -23,20 +23,17 @@ import numpy as np
 import sys
 import os
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 
 def test_audio_concatenation_order():
     """
     Test that audio concatenation completes before video merge starts.
     
     This validates the workflow order in _merge_audio_video_ffmpeg method:
-    1. Validate and filter audio samples (line 850-865)
-    2. Concatenate all valid audio samples (line 867-869)
-    3. Calculate audio duration (line 869-871)
-    4. Write audio to WAV file (line 892-893)
-    5. THEN merge with video using ffmpeg (line 955)
+    1. Validate and filter audio samples
+    2. Concatenate all valid audio samples
+    3. Calculate audio duration
+    4. Write audio to WAV file
+    5. THEN merge with video using ffmpeg
     """
     print("Testing audio concatenation order...")
     
@@ -77,7 +74,7 @@ def test_audio_quality_parameters():
     """
     Test that audio quality parameters are set correctly in FFmpeg merge.
     
-    This validates lines 926-934 in _merge_audio_video_ffmpeg:
+    This validates audio quality settings in _merge_audio_video_ffmpeg:
     - audio_bitrate='192k' - High quality AAC (prevents artifacts)
     - acodec='aac' - AAC codec for quality
     - avoid_negative_ts='make_zero' - Proper sync
@@ -110,7 +107,7 @@ def test_audio_sample_rate_preservation():
     """
     Test that audio sample rate is preserved during concatenation and merge.
     
-    This validates the _finalize_recording method (lines 1182-1210):
+    This validates the _finalize_recording method:
     - Sample rate from source is detected and used
     - No sample rate conversion that could degrade quality
     - Audio is written with the original sample rate
@@ -164,10 +161,10 @@ def test_video_adaptation_after_audio_build():
     """
     Test that video adaptation happens AFTER audio is fully built.
     
-    This validates lines 873-881 in _merge_audio_video_ffmpeg:
-    - Audio is concatenated first (line 868)
-    - Audio duration is calculated (line 869)
-    - Video is adapted to match audio duration (line 879)
+    This validates _merge_audio_video_ffmpeg method:
+    - Audio is concatenated first
+    - Audio duration is calculated
+    - Video is adapted to match audio duration
     - This ensures audio has priority over video
     """
     print("\nTesting video adaptation after audio build...")
@@ -204,7 +201,7 @@ def test_audio_priority_in_stopping_state():
     """
     Test that in stopping state, audio collection stops but audio is still processed first.
     
-    This validates the _recording_button method (lines 1422-1490):
+    This validates the _recording_button method:
     - When stop button is pressed, audio collection stops
     - Collected audio is still fully processed
     - Video frames are collected until audio duration is matched
@@ -245,7 +242,7 @@ def test_worker_mode_audio_priority():
     """
     Test that in background worker mode, audio is also built first.
     
-    This validates video_worker.py _encoder_worker method (lines 590-597):
+    This validates video_worker.py _encoder_worker method:
     - Video encoding completes first
     - Audio samples are concatenated
     - Audio file is written
@@ -311,4 +308,4 @@ if __name__ == '__main__':
         print(f"\n❌ Test failed: {e}")
         import traceback
         traceback.print_exc()
-        sys.exit(1)
+        raise
