@@ -382,7 +382,7 @@ class VideoNode(Node):
                         fps = float(fps_str)
                     
                     # Frame count may not always be available
-                    frame_count = int(parts[3]) if len(parts) > 3 and parts[3] else 0
+                    frame_count = int(parts[3]) if len(parts) > 3 and parts[3].strip() else 0
                     
                     return {
                         'width': width,
@@ -390,8 +390,12 @@ class VideoNode(Node):
                         'fps': fps,
                         'frame_count': frame_count
                     }
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"[Video] ffprobe command failed: {e}")
+        except (ValueError, IndexError) as e:
+            logger.warning(f"[Video] Failed to parse video info: {e}")
         except Exception as e:
-            logger.warning(f"[Video] Failed to extract video info with ffprobe: {e}")
+            logger.warning(f"[Video] Unexpected error extracting video info: {e}")
         
         return None
     
@@ -419,7 +423,7 @@ class VideoNode(Node):
                     "-i", video_path,
                     "-f", "rawvideo",
                     "-pix_fmt", "rgb24",
-                    "-vsync", "0",  # Pass through timestamps as-is
+                    "-fps_mode", "passthrough",  # Pass through timestamps as-is (replaces deprecated -vsync 0)
                     "-"
                 ],
                 stdout=subprocess.PIPE,
@@ -482,12 +486,32 @@ class VideoNode(Node):
                 process.terminate()
                 process.wait(timeout=5)
                 logger.debug("[Video] Stopped ffmpeg reader")
-            except Exception as e:
-                logger.warning(f"[Video] Error stopping ffmpeg reader: {e}")
+            except subprocess.TimeoutExpired:
+                logger.warning("[Video] ffmpeg process did not terminate gracefully, killing")
                 try:
                     process.kill()
-                except:
-                    pass
+                except (OSError, ProcessLookupError) as e:
+                    logger.debug(f"[Video] Error killing ffmpeg process: {e}")
+            except Exception as e:
+                logger.warning(f"[Video] Error stopping ffmpeg reader: {e}")
+    
+    def _cleanup_video_resources(self, node_id):
+        """
+        Clean up video resources for a node.
+        
+        Args:
+            node_id: Node identifier (string)
+        """
+        # Stop ffmpeg process if running
+        video_capture = self._video_capture.get(node_id, None)
+        if video_capture is not None:
+            self._stop_ffmpeg_reader(video_capture)
+        
+        # Remove from dictionaries
+        self._movie_filepath.pop(node_id, None)
+        self._prev_movie_filepath.pop(node_id, None)
+        self._video_capture.pop(node_id, None)
+        self._video_info.pop(node_id, None)
     
     def _detect_vfr(self, video_path):
         """
@@ -1245,17 +1269,13 @@ class VideoNode(Node):
                                 self._video_capture[str(node_id)] = video_capture
                                 self._frame_count[str(node_id)] = 0
                                 # Read first frame
-                                if video_info:
+                                if video_capture and video_info:
                                     width = video_info.get('width', 640)
                                     height = video_info.get('height', 480)
                                     _, frame = self._read_frame_from_ffmpeg(video_capture, width, height)
                         else:
-                            self._stop_ffmpeg_reader(video_capture)
+                            self._cleanup_video_resources(str(node_id))
                             video_capture = None
-                            self._movie_filepath.pop(str(node_id), None)
-                            self._prev_movie_filepath.pop(str(node_id), None)
-                            self._video_capture.pop(str(node_id), None)
-                            self._video_info.pop(str(node_id), None)
 
                             break
 
@@ -1365,15 +1385,7 @@ class VideoNode(Node):
     def close(self, node_id):
         """Clean up audio chunks, ffmpeg processes and temporary files when node is closed."""
         self._cleanup_audio_chunks(str(node_id))
-        
-        # Stop ffmpeg process if running
-        video_capture = self._video_capture.get(str(node_id), None)
-        if video_capture is not None:
-            self._stop_ffmpeg_reader(video_capture)
-            self._video_capture.pop(str(node_id), None)
-        
-        # Clean up video info
-        self._video_info.pop(str(node_id), None)
+        self._cleanup_video_resources(str(node_id))
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ":" + self.node_tag
