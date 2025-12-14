@@ -584,8 +584,8 @@ class VideoNode(Node):
             logger.debug("[Video] Extracting video metadata...")
             cap = cv2.VideoCapture(movie_path)
             fps = cap.get(cv2.CAP_PROP_FPS)
-            if fps <= 0:
-                fps = 30.0  # Default fallback
+            #if fps <= 0:
+            #    fps = 30.0  # Default fallback
             
             frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             cap.release()
