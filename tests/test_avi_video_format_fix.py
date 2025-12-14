@@ -23,18 +23,30 @@ while keeping MP4 and MKV as copy (no re-encoding).
 import os
 
 
-def test_avi_uses_h264_encoding():
-    """Test that AVI format is configured to use H.264 encoding"""
-    # Simulate the format detection logic from node_video_writer.py
-    video_format = 'AVI'
+def get_codec_for_format(video_format):
+    """
+    Helper function to determine codec based on video format.
+    Simulates the logic from node_video_writer.py and video_worker.py.
     
-    # Logic from _merge_audio_video_ffmpeg
+    Args:
+        video_format: Video format string (AVI, MP4, MKV)
+        
+    Returns:
+        tuple: (vcodec, vcodec_preset)
+    """
     if video_format == 'AVI':
         vcodec = 'libx264'
         vcodec_preset = 'medium'
     else:
         vcodec = 'copy'
         vcodec_preset = None
+    
+    return vcodec, vcodec_preset
+
+
+def test_avi_uses_h264_encoding():
+    """Test that AVI format is configured to use H.264 encoding"""
+    vcodec, vcodec_preset = get_codec_for_format('AVI')
     
     # Verify AVI uses H.264
     assert vcodec == 'libx264', f"AVI should use libx264, got {vcodec}"
@@ -45,14 +57,7 @@ def test_avi_uses_h264_encoding():
 
 def test_mp4_uses_copy():
     """Test that MP4 format still uses copy (no re-encoding)"""
-    video_format = 'MP4'
-    
-    if video_format == 'AVI':
-        vcodec = 'libx264'
-        vcodec_preset = 'medium'
-    else:
-        vcodec = 'copy'
-        vcodec_preset = None
+    vcodec, vcodec_preset = get_codec_for_format('MP4')
     
     # Verify MP4 uses copy
     assert vcodec == 'copy', f"MP4 should use copy, got {vcodec}"
@@ -63,14 +68,7 @@ def test_mp4_uses_copy():
 
 def test_mkv_uses_copy():
     """Test that MKV format still uses copy (no re-encoding)"""
-    video_format = 'MKV'
-    
-    if video_format == 'AVI':
-        vcodec = 'libx264'
-        vcodec_preset = 'medium'
-    else:
-        vcodec = 'copy'
-        vcodec_preset = None
+    vcodec, vcodec_preset = get_codec_for_format('MKV')
     
     # Verify MKV uses copy
     assert vcodec == 'copy', f"MKV should use copy, got {vcodec}"
