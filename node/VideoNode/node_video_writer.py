@@ -817,7 +817,7 @@ class VideoWriterNode(Node):
             if out is not None:
                 out.release()
 
-    def _merge_audio_video_ffmpeg(self, video_path, audio_samples, sample_rate, output_path, fps=None, progress_callback=None):
+    def _merge_audio_video_ffmpeg(self, video_path, audio_samples, sample_rate, output_path, fps=None, video_format='MP4', progress_callback=None):
         """
         Merge video and audio using ffmpeg.
         
@@ -827,6 +827,7 @@ class VideoWriterNode(Node):
             sample_rate: Audio sample rate (e.g., 22050, 44100)
             output_path: Path to the final output file with audio
             fps: Video frames per second (from input video settings) - used for duration adaptation
+            video_format: Video format (AVI, MP4, MKV) - affects codec selection
             progress_callback: Optional callback function to report progress (0.0 to 1.0)
         
         Returns:
@@ -899,26 +900,48 @@ class VideoWriterNode(Node):
                 video_input = ffmpeg.input(actual_video_path)
                 audio_input = ffmpeg.input(temp_audio_path)
                 
+                # Determine video codec based on format
+                # AVI with MJPEG has timing issues, needs re-encoding to H.264
+                # MP4 and MKV can use copy (no re-encoding needed)
+                if video_format == 'AVI':
+                    # Re-encode AVI to H.264 for proper timing and audio sync
+                    # MJPEG in AVI containers has frame timing issues that cause slow playback
+                    vcodec = 'libx264'
+                    vcodec_preset = 'medium'  # Balance between speed and quality
+                else:
+                    # For MP4 and MKV, copy the video codec (no re-encoding)
+                    vcodec = 'copy'
+                    vcodec_preset = None
+                
                 # Merge video and audio streams with explicit synchronization to fix audio/video sync issues
                 # Issue: Audio was ahead of video and sounded strange ("bizarre")
                 # Root cause: Mismatched PTS (Presentation TimeStamps) between video and audio streams
                 # 
                 # Fix parameters:
+                # - vcodec: For AVI, re-encode to H.264; for others, copy codec
                 # - shortest=None: Adds FFmpeg -shortest flag to stop when shortest stream ends
                 # - audio_bitrate='192k': High quality AAC (prevents audio artifacts/distortion)
                 # - vsync='cfr': Constant frame rate (prevents variable frame timing issues)
                 # - avoid_negative_ts='make_zero': Reset timestamps to start at 0 (syncs audio/video start)
+                output_params = {
+                    'vcodec': vcodec,
+                    'acodec': 'aac',
+                    'audio_bitrate': '192k',
+                    'shortest': None,
+                    'vsync': 'cfr',
+                    'avoid_negative_ts': 'make_zero',
+                    'loglevel': 'error'
+                }
+                
+                # Add preset for H.264 encoding (AVI only)
+                if vcodec_preset:
+                    output_params['preset'] = vcodec_preset
+                
                 output = ffmpeg.output(
                     video_input,
                     audio_input,
                     output_path,
-                    vcodec='copy',  # Copy video codec (no re-encoding)
-                    acodec='aac',   # Use AAC for audio (widely compatible)
-                    audio_bitrate='192k',  # Higher quality audio
-                    shortest=None,  # Finish when shortest stream ends (ensures sync)
-                    vsync='cfr',  # Constant frame rate video sync
-                    avoid_negative_ts='make_zero',  # Critical: aligns audio/video start times
-                    loglevel='error'  # Only show errors
+                    **output_params
                 )
                 
                 # Overwrite output file if it exists
@@ -1049,6 +1072,7 @@ class VideoWriterNode(Node):
                 sample_rate,
                 final_path,
                 fps=fps,
+                video_format=video_format,
                 progress_callback=progress_callback
             )
             

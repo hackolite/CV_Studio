@@ -650,26 +650,49 @@ class VideoBackgroundWorker:
                 video_input = ffmpeg.input(self._temp_video_path)
                 audio_input = ffmpeg.input(self._temp_audio_path)
                 
+                # Determine video codec based on output format
+                # AVI with MJPEG has timing issues, needs re-encoding to H.264
+                # MP4 and MKV can use copy (no re-encoding needed)
+                output_ext = os.path.splitext(self.output_path)[1].lower()
+                if output_ext == '.avi':
+                    # Re-encode AVI to H.264 for proper timing and audio sync
+                    # MJPEG in AVI containers has frame timing issues that cause slow playback
+                    vcodec = 'libx264'
+                    vcodec_preset = 'medium'  # Balance between speed and quality
+                else:
+                    # For MP4 and MKV, copy the video codec (no re-encoding)
+                    vcodec = 'copy'
+                    vcodec_preset = None
+                
                 # Merge with explicit synchronization parameters to fix audio/video sync issues
                 # Issue: Audio was ahead of video and sounded strange ("bizarre")
                 # Root cause: Mismatched PTS (Presentation TimeStamps) between video and audio streams
                 # 
                 # Fix parameters:
+                # - vcodec: For AVI, re-encode to H.264; for others, copy codec
                 # - shortest=None: Adds FFmpeg -shortest flag to stop when shortest stream ends
                 # - audio_bitrate='192k': High quality AAC (prevents audio artifacts/distortion)
                 # - vsync='cfr': Constant frame rate (prevents variable frame timing issues)
                 # - avoid_negative_ts='make_zero': Reset timestamps to start at 0 (syncs audio/video start)
+                output_params = {
+                    'vcodec': vcodec,
+                    'acodec': 'aac',
+                    'audio_bitrate': '192k',
+                    'shortest': None,
+                    'vsync': 'cfr',
+                    'avoid_negative_ts': 'make_zero',
+                    'loglevel': 'error'
+                }
+                
+                # Add preset for H.264 encoding (AVI only)
+                if vcodec_preset:
+                    output_params['preset'] = vcodec_preset
+                
                 output = ffmpeg.output(
                     video_input,
                     audio_input,
                     self.output_path,
-                    vcodec='copy',
-                    acodec='aac',
-                    audio_bitrate='192k',
-                    shortest=None,
-                    vsync='cfr',
-                    avoid_negative_ts='make_zero',  # Critical: aligns audio/video start times
-                    loglevel='error'
+                    **output_params
                 )
                 
                 output = ffmpeg.overwrite_output(output)
