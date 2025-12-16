@@ -67,6 +67,14 @@ class FactoryNode:
         # Audio indicator (blinking light)
         node.tag_node_indicator_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Indicator'
 
+        # Queue info
+        node.tag_node_queue_info_name = (
+            node.tag_node_name + ":" + node.TYPE_TEXT + ":QueueInfo"
+        )
+        node.tag_node_queue_info_value_name = (
+            node.tag_node_name + ":" + node.TYPE_TEXT + ":QueueInfoValue"
+        )
+
         node.opencv_setting_dict = opencv_setting_dict
         node.small_window_w = opencv_setting_dict['input_window_width']
         node.small_window_h = opencv_setting_dict['input_window_height']
@@ -205,6 +213,16 @@ class FactoryNode:
                     enabled=False,
                 )
                 dpg.bind_item_theme(btn, yellow_button_theme)
+
+            # Queue size information label
+            with dpg.node_attribute(
+                tag=node.tag_node_queue_info_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_queue_info_value_name,
+                    default_value="Queue: Image=0/0 Audio=0/0",
+                )
         
         return node
 
@@ -414,16 +432,54 @@ class MicrophoneNode(Node):
                     'sample_rate': sample_rate
                 }
                 
+                # Update queue info before returning
+                self._update_queue_info(tag_node_name, node_image_dict, node_audio_dict)
+                
                 return {"image": None, "json": None, "audio": audio_output}
                 
             except queue.Empty:
                 # No audio data available yet, return None
                 # This is normal during startup or if processing is faster than recording
+                # Still update queue info
+                self._update_queue_info(tag_node_name, node_image_dict, node_audio_dict)
                 return {"image": None, "json": None, "audio": None}
             
         except Exception as e:
             print(f"⚠️ Error in microphone update: {e}")
+            # Update queue info even on error
+            self._update_queue_info(tag_node_name, node_image_dict, node_audio_dict)
             return {"image": None, "json": None, "audio": None}
+
+    def _update_queue_info(self, tag_node_name, node_image_dict, node_audio_dict):
+        """Update queue size information label"""
+        tag_node_queue_info_value_name = (
+            tag_node_name + ":" + self.TYPE_TEXT + ":QueueInfoValue"
+        )
+        
+        # Get queue information from the queue manager
+        image_queue_size = 0
+        image_queue_maxsize = 0
+        audio_queue_size = 0
+        audio_queue_maxsize = 0
+        try:
+            image_queue_info = node_image_dict.get_queue_info(tag_node_name)
+            if image_queue_info.get("exists", False):
+                image_queue_size = image_queue_info.get("size", 0)
+                image_queue_maxsize = image_queue_info.get("maxsize", 0)
+        except Exception:
+            pass
+        
+        try:
+            audio_queue_info = node_audio_dict.get_queue_info(tag_node_name)
+            if audio_queue_info.get("exists", False):
+                audio_queue_size = audio_queue_info.get("size", 0)
+                audio_queue_maxsize = audio_queue_info.get("maxsize", 0)
+        except Exception:
+            pass
+        
+        # Update the queue info label
+        queue_info_text = f"Queue: Image={image_queue_size}/{image_queue_maxsize} Audio={audio_queue_size}/{audio_queue_maxsize}"
+        dpg_set_value(tag_node_queue_info_value_name, queue_info_text)
 
     def close(self, node_id):
         """Clean up when node is deleted"""
