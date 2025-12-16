@@ -418,6 +418,7 @@ class MicrophoneNode(Node):
                 self._start_stream(device_idx, sample_rate, chunk_duration)
             
             # Try to get audio data from buffer (non-blocking)
+            audio_output = None
             try:
                 audio_data = self._audio_buffer.get_nowait()
                 # Flatten to ensure it's 1D
@@ -432,23 +433,17 @@ class MicrophoneNode(Node):
                     'sample_rate': sample_rate
                 }
                 
-                # Update queue info before returning
-                self.update_queue_info_display(tag_node_name, node_image_dict, node_audio_dict)
-                
-                return {"image": None, "json": None, "audio": audio_output}
-                
             except queue.Empty:
                 # No audio data available yet, return None
                 # This is normal during startup or if processing is faster than recording
-                # Still update queue info
-                self.update_queue_info_display(tag_node_name, node_image_dict, node_audio_dict)
-                return {"image": None, "json": None, "audio": None}
+                pass
             
         except Exception as e:
             print(f"⚠️ Error in microphone update: {e}")
-            # Update queue info even on error
-            self.update_queue_info_display(tag_node_name, node_image_dict, node_audio_dict)
-            return {"image": None, "json": None, "audio": None}
+        
+        # Update queue info once at the end
+        self.update_queue_info_display(tag_node_name, node_image_dict, node_audio_dict)
+        return {"image": None, "json": None, "audio": audio_output}
 
 
 
