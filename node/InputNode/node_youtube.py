@@ -362,34 +362,7 @@ class YoutubeNode(Node):
             print("No valid frame")
 
         # Update queue size information label
-        tag_node_queue_info_value_name = (
-            tag_node_name + ":" + self.TYPE_TEXT + ":QueueInfoValue"
-        )
-        
-        # Get queue information from the queue manager
-        image_queue_size = 0
-        image_queue_maxsize = 0
-        audio_queue_size = 0
-        audio_queue_maxsize = 0
-        try:
-            image_queue_info = node_image_dict.get_queue_info(tag_node_name)
-            if image_queue_info.get("exists", False):
-                image_queue_size = image_queue_info.get("size", 0)
-                image_queue_maxsize = image_queue_info.get("maxsize", 0)
-        except Exception:
-            pass
-        
-        try:
-            audio_queue_info = node_audio_dict.get_queue_info(tag_node_name)
-            if audio_queue_info.get("exists", False):
-                audio_queue_size = audio_queue_info.get("size", 0)
-                audio_queue_maxsize = audio_queue_info.get("maxsize", 0)
-        except Exception:
-            pass
-        
-        # Update the queue info label
-        queue_info_text = f"Queue: Image={image_queue_size}/{image_queue_maxsize} Audio={audio_queue_size}/{audio_queue_maxsize}"
-        dpg_set_value(tag_node_queue_info_value_name, queue_info_text)
+        self.update_queue_info_display(tag_node_name, node_image_dict, node_audio_dict)
 
         return {"image": getattr(self, "_last_frame", None), "json": None, "audio": None}
     
