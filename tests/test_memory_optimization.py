@@ -4,6 +4,7 @@
 
 import sys
 import os
+import copy
 import tracemalloc
 
 # Add parent directory to path
@@ -24,9 +25,12 @@ def test_deepcopy_removed_from_object_detection():
     # Verify the old deepcopy pattern is not in the debug frame creation
     lines = content.split('\n')
     for i, line in enumerate(lines):
-        if 'debug_frame = ' in line and 'draw_object_detection_info' in lines[i+1] if i+1 < len(lines) else False:
-            assert 'deepcopy' not in line, \
-                f"Line {i+1} should not use deepcopy for debug_frame: {line}"
+        # Check if this line creates debug_frame and next line calls draw_object_detection_info
+        if 'debug_frame = ' in line:
+            has_next_line = i + 1 < len(lines)
+            if has_next_line and 'draw_object_detection_info' in lines[i+1]:
+                assert 'deepcopy' not in line, \
+                    f"Line {i+1} should not use deepcopy for debug_frame: {line}"
 
 
 def test_deepcopy_removed_from_concat_image():
@@ -123,7 +127,6 @@ def test_memory_efficiency_simulation():
     # Object detection: 1 deepcopy, Image concat: 3 deepcopies, Video writer: 1 deepcopy
     old_copies = []
     for i in range(5):  # 5 deepcopies total in old pipeline
-        import copy
         old_copies.append(copy.deepcopy(frame))
     old_approach_snapshot = tracemalloc.take_snapshot()
     

@@ -428,9 +428,11 @@ class Node(Node):
                 # Use get() directly without deepcopy - we'll copy only when needed
                 frame = node_image_dict.get(node_id_name, None)
                 if frame is not None:
-                    # Make a copy only if we need to draw on it, otherwise just use it directly
+                    # Make a copy only if we need to draw on it
+                    # If we don't draw, we can use the frame directly since cv2.resize will
+                    # create a new array anyway, protecting the original
                     if draw_info_on_result:
-                        # draw_info modifies the frame, so we need a copy
+                        # draw_info modifies the frame in-place, so we need a copy first
                         frame = frame.copy()
                         node_result = node_result_dict[node_id_name]
                         image_node_name = node_id_name.split(':')[1]
@@ -438,7 +440,7 @@ class Node(Node):
                             image_node_name, node_result, frame,
                             target_height=resize_height, target_width=resize_width
                         )
-                    # cv2.resize creates a new array, no additional copy needed
+                    # cv2.resize creates a new array, so no additional copy needed after draw
                     resize_frame = cv2.resize(frame, (resize_width, resize_height))
                     frame_dict[output_index] = resize_frame
 
