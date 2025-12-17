@@ -13,27 +13,6 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 
-def test_noplaylist_option_in_ydl_opts():
-    """Test that the ydl_opts includes noplaylist: True"""
-    # Read the node_youtube.py file and check for noplaylist option
-    node_file_path = os.path.join(
-        os.path.dirname(__file__), 
-        '..', 
-        'node', 
-        'InputNode', 
-        'node_youtube.py'
-    )
-    
-    with open(node_file_path, 'r') as f:
-        content = f.read()
-    
-    # Check that noplaylist is set to True in ydl_opts
-    assert '"noplaylist": True' in content or "'noplaylist': True" in content, \
-        "ydl_opts should include 'noplaylist': True to handle playlist URLs correctly"
-    
-    print("✓ ydl_opts correctly includes 'noplaylist': True")
-
-
 def test_playlist_url_format():
     """Test that playlist URLs are in the expected format"""
     # Example URLs that should be handled correctly
@@ -53,9 +32,6 @@ def test_playlist_url_format():
 
 def test_ydl_opts_configuration():
     """Test that ydl_opts has the correct configuration for playlist URLs"""
-    # Read the source file directly instead of importing (to avoid dependency issues)
-    import inspect
-    
     node_file_path = os.path.join(
         os.path.dirname(__file__), 
         '..', 
@@ -71,12 +47,20 @@ def test_ydl_opts_configuration():
     assert "def get_light_live_stream_url" in source, \
         "get_light_live_stream_url function should exist"
     
-    # Verify noplaylist is in the configuration
-    assert "noplaylist" in source.lower(), \
+    # Verify noplaylist is in the configuration within the function
+    # Extract the function code to be more precise
+    func_start = source.find("def get_light_live_stream_url")
+    func_end = source.find("\ndef ", func_start + 1)
+    if func_end == -1:
+        func_end = source.find("\nclass ", func_start + 1)
+    func_code = source[func_start:func_end] if func_end != -1 else source[func_start:]
+    
+    # Verify noplaylist is in the function configuration
+    assert "noplaylist" in func_code.lower(), \
         "get_light_live_stream_url should configure noplaylist option"
     
     # Verify it's set to True
-    assert '"noplaylist": True' in source or "'noplaylist': True" in source, \
+    assert '"noplaylist": True' in func_code or "'noplaylist': True" in func_code, \
         "noplaylist should be set to True"
     
     print("✓ get_light_live_stream_url correctly configures noplaylist option")
@@ -87,9 +71,8 @@ if __name__ == '__main__':
     print("=" * 60)
     
     tests = [
-        ("noplaylist option in ydl_opts", test_noplaylist_option_in_ydl_opts),
         ("playlist URL format validation", test_playlist_url_format),
-        ("ydl_opts configuration", test_ydl_opts_configuration),
+        ("ydl_opts configuration with noplaylist option", test_ydl_opts_configuration),
     ]
     
     passed = 0
