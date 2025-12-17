@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 def create_concat_image(frame_dict, slot_num):
     if slot_num == 1:
         frame = frame_dict[0]
-        display_frame = copy.deepcopy(frame)
+        # No copy needed - frame is already a copy from frame_dict
+        display_frame = frame
     
 
     elif slot_num == 2:
@@ -32,14 +33,16 @@ def create_concat_image(frame_dict, slot_num):
         bg_image[int(frame.shape[0] / 2):int(frame.shape[0] / 2) +
                  frame.shape[0], 0:frame.shape[1]] = frame
 
-        display_frame = copy.deepcopy(bg_image)
+        # bg_image is already a new array, no copy needed
+        display_frame = bg_image
    
 
     elif slot_num == 3 or slot_num == 4:
         hconcat_image01 = cv2.hconcat([frame_dict[0], frame_dict[1]])
         hconcat_image02 = cv2.hconcat([frame_dict[2], frame_dict[3]])
         frame = cv2.vconcat([hconcat_image01, hconcat_image02])
-        display_frame = copy.deepcopy(frame)
+        # cv2.vconcat already creates a new array, no copy needed
+        display_frame = frame
     
 
     elif slot_num == 5 or slot_num == 6:
@@ -48,7 +51,8 @@ def create_concat_image(frame_dict, slot_num):
         hconcat_image02 = cv2.hconcat([frame_dict[3], frame_dict[4]])
         hconcat_image02 = cv2.hconcat([hconcat_image02, frame_dict[5]])
         frame = cv2.vconcat([hconcat_image01, hconcat_image02])
-        display_frame = copy.deepcopy(frame)
+        # cv2.vconcat already creates a new array, no copy needed
+        display_frame = frame
     
 
     elif slot_num == 7 or slot_num == 8 or slot_num == 9:
@@ -60,7 +64,8 @@ def create_concat_image(frame_dict, slot_num):
         hconcat_image03 = cv2.hconcat([hconcat_image03, frame_dict[8]])
         vconcat_image = cv2.vconcat([hconcat_image01, hconcat_image02])
         frame = cv2.vconcat([vconcat_image, hconcat_image03])
-        display_frame = copy.deepcopy(frame)
+        # cv2.vconcat already creates a new array, no copy needed
+        display_frame = frame
 
     return frame, display_frame
 
@@ -205,14 +210,15 @@ class Node(Node):
         bigger and at the bottom left of the image.
         
         Args:
-            image: Input image to draw on
+            image: Input image to draw on (modified in-place)
             class_ids: List of class IDs
             class_scores: List of class scores
             class_names: List of class names
             target_height: Target height for text scaling (used when image will be resized).
                           If None, uses the current image height.
         """
-        debug_image = copy.deepcopy(image)
+        # Draw directly on input image to avoid unnecessary copy
+        debug_image = image
         height, width = debug_image.shape[:2]
         
         # Define colors for top 5 positions (BGR format) - matching node_classification.py
@@ -279,7 +285,7 @@ class Node(Node):
         for proper text scaling when images are resized in concat node.
         
         Args:
-            image: Input image to draw on
+            image: Input image to draw on (modified in-place)
             score_th: Score threshold for filtering detections
             bboxes: Bounding boxes
             scores: Detection scores
@@ -291,7 +297,8 @@ class Node(Node):
             target_width: Target width for text scaling (used when image will be resized).
                          If None, uses the current image width.
         """
-        debug_image = copy.deepcopy(image)
+        # Draw directly on input image to avoid unnecessary copy
+        debug_image = image
         image_height, image_width = debug_image.shape[:2]
         
         # Calculate scaling dimensions based on target size (if provided)
@@ -418,27 +425,35 @@ class Node(Node):
             frame_dict = {}
             for output_index, input_index in enumerate(reversed(slots_to_process)):
                 node_id_name = connection_info_src_dict.get(input_index, None)
-                frame = copy.deepcopy(node_image_dict.get(node_id_name, None))
+                # Use get() directly without deepcopy - we'll copy only when needed
+                frame = node_image_dict.get(node_id_name, None)
                 if frame is not None:
+                    # Make a copy only if we need to draw on it
+                    # If we don't draw, we can use the frame directly since cv2.resize will
+                    # create a new array anyway, protecting the original
                     if draw_info_on_result:
+                        # draw_info modifies the frame in-place, so we need a copy first
+                        frame = frame.copy()
                         node_result = node_result_dict[node_id_name]
                         image_node_name = node_id_name.split(':')[1]
                         frame = self.draw_info(
                             image_node_name, node_result, frame,
                             target_height=resize_height, target_width=resize_width
                         )
+                    # cv2.resize creates a new array, so no additional copy needed after draw
                     resize_frame = cv2.resize(frame, (resize_width, resize_height))
-                    frame_dict[output_index] = copy.deepcopy(resize_frame)
+                    frame_dict[output_index] = resize_frame
 
                     frame_exist_flag = True
                 else:
-                    # Add black frame for IMAGE slots with no data
-                    frame_dict[output_index] = copy.deepcopy(black_image)
+                    # Reuse the same black_image reference - no need to copy a static array
+                    frame_dict[output_index] = black_image
             
             # Fill remaining grid positions with black frames
             for index in range(grid_size):
                 if frame_dict.get(index, None) is None:
-                    frame_dict[index] = copy.deepcopy(black_image)
+                    # Reuse the same black_image reference - no need to copy a static array
+                    frame_dict[index] = black_image
 
             if not frame_exist_flag:
                 frame_dict = None
@@ -719,7 +734,8 @@ class Node(Node):
         multi_object_tracking_nodes = ['MultiObjectTracking']
         qr_code_detection_nodes = ['QRCodeDetection']
 
-        debug_image = copy.deepcopy(image)
+        # Draw directly on input image to avoid unnecessary copy (caller already made a copy if needed)
+        debug_image = image
         if node_name in classification_nodes:
             use_object_detection = node_result.get('use_object_detection', [])
             class_ids = node_result.get('class_ids', [])
