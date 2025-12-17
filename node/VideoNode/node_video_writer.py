@@ -1407,45 +1407,111 @@ class VideoWriterNode(Node):
             
             # Fallback to legacy mode if worker not available or failed
             if not use_worker and tag_node_name not in self._video_writer_dict:
-                temp_file_path = os.path.join(video_writer_directory, f'{startup_time_text}_temp{config["ext"]}')
-                
-                # Create video writer with temporary path
-                self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
-                    temp_file_path,
-                    cv2.VideoWriter_fourcc(*config['codec']),
-                    writer_fps,
-                    (writer_width, writer_height),
-                )
-                
-                # Initialize metadata tracking for MKV
-                if video_format == 'MKV':
-                    self._mkv_metadata_dict[tag_node_name] = {
-                        'audio_handles': {},
-                        'json_handles': {},
-                        'file_path': file_path,
+                try:
+                    temp_file_path = os.path.join(video_writer_directory, f'{startup_time_text}_temp{config["ext"]}')
+                    
+                    # Create video writer with temporary path
+                    video_writer = cv2.VideoWriter(
+                        temp_file_path,
+                        cv2.VideoWriter_fourcc(*config['codec']),
+                        writer_fps,
+                        (writer_width, writer_height),
+                    )
+                    
+                    # Validate that VideoWriter was opened successfully
+                    # This is critical - if VideoWriter fails to initialize (due to codec issues,
+                    # disk space, permissions, etc.), we must detect it immediately to prevent
+                    # silent failures and data loss
+                    if not video_writer.isOpened():
+                        error_msg = (
+                            f"Failed to initialize VideoWriter:\n"
+                            f"Format: {video_format}, Codec: {config['codec']}, "
+                            f"Resolution: {writer_width}x{writer_height}, FPS: {writer_fps}\n"
+                            f"Path: {temp_file_path}\n\n"
+                            f"Possible causes:\n"
+                            f"- Codec not available on your system\n"
+                            f"- Insufficient disk space\n"
+                            f"- Invalid output directory permissions\n"
+                            f"- Invalid video parameters"
+                        )
+                        logger.error(f"[VideoWriter] {error_msg}")
+                        
+                        # Create crash log for diagnostics
+                        create_crash_log("recording_start_videowriter_failed", 
+                                       RuntimeError(error_msg), 
+                                       tag_node_name)
+                        
+                        # Update progress bar to show error
+                        tag_node_progress_name = tag_node_name + ':' + self.TYPE_TEXT + ':Progress'
+                        if dpg.does_item_exist(tag_node_progress_name):
+                            dpg.configure_item(tag_node_progress_name, show=True)
+                            dpg.configure_item(tag_node_progress_name, overlay="Error: Failed to start")
+                            dpg.set_value(tag_node_progress_name, 0.0)
+                        
+                        # Release the failed writer
+                        video_writer.release()
+                        
+                        # Don't change button label - keep it as "Start" so user can try again
+                        logger.error(f"[VideoWriter] Recording start aborted due to initialization failure")
+                        return
+                    
+                    # VideoWriter is valid, store it
+                    self._video_writer_dict[tag_node_name] = video_writer
+                    
+                    # Initialize metadata tracking for MKV
+                    if video_format == 'MKV':
+                        self._mkv_metadata_dict[tag_node_name] = {
+                            'audio_handles': {},
+                            'json_handles': {},
+                            'file_path': file_path,
+                        }
+                        
+                        # Create metadata track files (will be stored alongside video)
+                        metadata_dir = os.path.join(video_writer_directory, f'{startup_time_text}_metadata')
+                        os.makedirs(metadata_dir, exist_ok=True)
+                    
+                    # Initialize audio sample collection per slot
+                    self._audio_samples_dict[tag_node_name] = {}  # Dict of {slot_idx: {'samples': [], 'timestamp': float, 'sample_rate': int}}
+                    
+                    # Initialize JSON sample collection per slot
+                    self._json_samples_dict[tag_node_name] = {}  # Dict of {slot_idx: {'samples': [], 'timestamp': float}}
+                    
+                    # Store recording metadata for final merge
+                    self._recording_metadata_dict[tag_node_name] = {
+                        'final_path': file_path,
+                        'temp_path': temp_file_path,
+                        'format': video_format,
+                        'sample_rate': self._DEFAULT_SAMPLE_RATE,  # Default sample rate, can be adjusted based on input
+                        'fps': writer_fps  # Store FPS from input video settings for duration adaptation
                     }
                     
-                    # Create metadata track files (will be stored alongside video)
-                    metadata_dir = os.path.join(video_writer_directory, f'{startup_time_text}_metadata')
-                    os.makedirs(metadata_dir, exist_ok=True)
-                
-                # Initialize audio sample collection per slot
-                self._audio_samples_dict[tag_node_name] = {}  # Dict of {slot_idx: {'samples': [], 'timestamp': float, 'sample_rate': int}}
-                
-                # Initialize JSON sample collection per slot
-                self._json_samples_dict[tag_node_name] = {}  # Dict of {slot_idx: {'samples': [], 'timestamp': float}}
-                
-                # Store recording metadata for final merge
-                self._recording_metadata_dict[tag_node_name] = {
-                    'final_path': file_path,
-                    'temp_path': temp_file_path,
-                    'format': video_format,
-                    'sample_rate': self._DEFAULT_SAMPLE_RATE,  # Default sample rate, can be adjusted based on input
-                    'fps': writer_fps  # Store FPS from input video settings for duration adaptation
-                }
-                
-                self._worker_mode[tag_node_name] = 'legacy'
-                logger.info(f"[VideoWriter] Started legacy mode for: {file_path}")
+                    self._worker_mode[tag_node_name] = 'legacy'
+                    logger.info(f"[VideoWriter] Started legacy mode for: {file_path}")
+                    
+                except Exception as e:
+                    # Critical error during recording start - create crash log
+                    logger.error(f"[VideoWriter] Exception during recording start: {e}")
+                    logger.error(traceback.format_exc())
+                    create_crash_log("recording_start_exception", e, tag_node_name)
+                    
+                    # Update progress bar to show error
+                    tag_node_progress_name = tag_node_name + ':' + self.TYPE_TEXT + ':Progress'
+                    if dpg.does_item_exist(tag_node_progress_name):
+                        dpg.configure_item(tag_node_progress_name, show=True)
+                        dpg.configure_item(tag_node_progress_name, overlay="Error: Exception occurred")
+                        dpg.set_value(tag_node_progress_name, 0.0)
+                    
+                    # Clean up any partial initialization
+                    if tag_node_name in self._video_writer_dict:
+                        try:
+                            self._video_writer_dict[tag_node_name].release()
+                        except:
+                            pass
+                        self._video_writer_dict.pop(tag_node_name, None)
+                    
+                    # Don't change button label - keep it as "Start" so user can try again
+                    logger.error(f"[VideoWriter] Recording start aborted due to exception")
+                    return
 
             dpg.set_item_label(tag_node_button_value_name, self._stop_label)
             
