@@ -46,14 +46,12 @@ def test_videowriter_isopened_validation():
         if not video_writer.isOpened():
             print("✓ VideoWriter initialization failure detected")
             print("✓ isOpened() returned False as expected")
+            print("✓ Test passed: isOpened() validation works correctly")
             video_writer.release()
             return True
         else:
             print("✗ Failed to detect VideoWriter initialization failure")
             return False
-    
-    print("✓ Test passed: isOpened() validation works correctly")
-    return True
 
 
 def test_videowriter_with_invalid_codec():

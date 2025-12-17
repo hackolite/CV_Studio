@@ -1505,8 +1505,9 @@ class VideoWriterNode(Node):
                     if tag_node_name in self._video_writer_dict:
                         try:
                             self._video_writer_dict[tag_node_name].release()
-                        except:
-                            pass
+                        except Exception as release_error:
+                            # Ignore errors during cleanup - we're already in an error state
+                            logger.debug(f"[VideoWriter] Error releasing VideoWriter during cleanup: {release_error}")
                         self._video_writer_dict.pop(tag_node_name, None)
                     
                     # Don't change button label - keep it as "Start" so user can try again
