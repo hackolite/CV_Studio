@@ -123,6 +123,4 @@ def test_no_deprecated_methods_in_youtube():
         "YouTube node should not have deprecated _update method"
 
 
-if __name__ == '__main__':
-    import pytest
-    pytest.main([__file__, '-v'])
+

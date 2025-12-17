@@ -249,7 +249,7 @@ class YoutubeNode(Node):
         # We need to construct the button tag from the node name
         tag_parts = user_data.split(':')
         tag_node_name = ':'.join(tag_parts[:2])  # Get node_id:node_tag
-        node_id = tag_parts[0]
+        node_id = tag_parts[0]  # Extract node_id for state management
         tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
         
         # Get current button label to determine state
