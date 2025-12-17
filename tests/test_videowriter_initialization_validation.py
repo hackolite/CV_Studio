@@ -18,11 +18,17 @@ import shutil
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add project root to path using pathlib for clarity
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 # Import required modules
 import numpy as np
 import cv2
+
+# Test constants
+INVALID_CODEC = 'XXXX'  # Intentionally invalid codec for testing
+INVALID_PATH = os.path.join(os.sep, 'invalid', 'path', 'that', 'does', 'not', 'exist', 'video.mp4')  # Platform-independent invalid path
 
 
 def test_videowriter_isopened_validation():
@@ -60,23 +66,22 @@ def test_videowriter_with_invalid_codec():
     
     # Try to create a VideoWriter with an invalid codec
     # This should fail gracefully
-    invalid_codec = 'XXXX'  # Invalid codec
     
     try:
         video_writer = cv2.VideoWriter(
             '/tmp/test_invalid_codec.mp4',
-            cv2.VideoWriter_fourcc(*invalid_codec),
+            cv2.VideoWriter_fourcc(*INVALID_CODEC),
             30,
             (640, 480)
         )
         
         if not video_writer.isOpened():
-            print(f"✓ VideoWriter with invalid codec '{invalid_codec}' failed as expected")
+            print(f"✓ VideoWriter with invalid codec '{INVALID_CODEC}' failed as expected")
             print("✓ isOpened() correctly returned False")
             video_writer.release()
             return True
         else:
-            print(f"✗ VideoWriter with invalid codec '{invalid_codec}' unexpectedly succeeded")
+            print(f"✗ VideoWriter with invalid codec '{INVALID_CODEC}' unexpectedly succeeded")
             video_writer.release()
             return False
             
@@ -91,11 +96,10 @@ def test_videowriter_with_invalid_path():
     
     # Try to create a VideoWriter with an invalid path
     # This should fail gracefully
-    invalid_path = '/invalid/path/that/does/not/exist/video.mp4'
     
     try:
         video_writer = cv2.VideoWriter(
-            invalid_path,
+            INVALID_PATH,
             cv2.VideoWriter_fourcc(*'mp4v'),
             30,
             (640, 480)
