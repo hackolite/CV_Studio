@@ -452,7 +452,9 @@ class VideoWriterNode(Node):
 
 
         if frame is not None:
-            rec_frame = copy.deepcopy(frame)
+            # Use shallow copy instead of deepcopy - frame data will be resized/encoded immediately
+            # No need for deep copy as we don't hold references to the original frame after processing
+            rec_frame = frame.copy() if frame is not None else None
 
             # Check if using background worker mode
             if tag_node_name in self._background_workers:

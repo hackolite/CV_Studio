@@ -356,7 +356,9 @@ class Node(Node):
 
 
                 if frame is not None:
-                    debug_frame = copy.deepcopy(frame)
+                    # Use copy() instead of deepcopy for visualization - much faster and sufficient
+                    # since draw_object_detection_info modifies the image in-place
+                    debug_frame = frame.copy()
                     debug_frame = self.draw_object_detection_info(
                         debug_frame,
                         score_th,
