@@ -254,15 +254,20 @@ class VideoBackgroundWorker:
     """
     
     # Queue size limits to prevent excessive memory usage
-    MIN_FRAME_QUEUE_SIZE = 50    # Minimum queue size for short recordings
-    MAX_FRAME_QUEUE_SIZE = 300   # Maximum to limit memory (10 seconds at 30 fps)
+    # Memory considerations:
+    # - At 1920x1080x3 bytes: each frame ~6.2 MB
+    # - 100 frames = ~620 MB max queue memory (acceptable)
+    # - 300 frames = ~1.8 GB max queue memory (can cause lag/crash)
+    MIN_FRAME_QUEUE_SIZE = 30    # Minimum queue size for short recordings (~1 second at 30fps)
+    MAX_FRAME_QUEUE_SIZE = 100   # Maximum to limit memory (~3 seconds at 30fps, ~620 MB at 1080p)
     DEFAULT_CHUNK_DURATION = 3.0 # Default audio chunk duration in seconds
     DEFAULT_AUDIO_QUEUE_SIZE = 4  # Default audio queue size (4 elements)
     # Audio queue size calculation for coherence with SyncQueue:
     # - SyncQueue max retention: 10s + 1s overhead = 11s
     # - Total audio duration: audio_queue_size × chunk_duration = 4 × 3.0 = 12s
     # - This ensures audio retention (12s) >= max SyncQueue retention (11s)
-    # - Total image frames: audio_duration × fps = 12 × fps frames
+    # - Frame queue calculation: min(fps × chunk_duration, MAX_FRAME_QUEUE_SIZE)
+    # - For typical 30fps, 3s chunks: min(90, 100) = 90 frames (~558 MB at 1080p)
     
     def __init__(
         self,
@@ -311,9 +316,11 @@ class VideoBackgroundWorker:
         self._state_lock = threading.Lock()
         
         # Calculate optimal queue sizes based on FPS and chunk duration
-        # Image queue size = fps * chunk_duration * audio_queue_size
-        # This ensures the queue can hold enough frames for synchronization with audio chunks
-        calculated_queue_size = int(fps * chunk_duration * self.DEFAULT_AUDIO_QUEUE_SIZE)
+        # Queue only needs to hold one chunk duration worth of frames, not multiple chunks
+        # The audio queue separately holds multiple chunks for sync coherence
+        # Image queue size = fps * chunk_duration (one chunk worth)
+        # This ensures the queue can buffer one audio chunk without excessive memory
+        calculated_queue_size = int(fps * chunk_duration)
         frame_queue_size = max(
             self.MIN_FRAME_QUEUE_SIZE,
             min(calculated_queue_size, self.MAX_FRAME_QUEUE_SIZE)
@@ -326,7 +333,7 @@ class VideoBackgroundWorker:
         )
         
         # Queues with dynamic sizing
-        # Image/frame queue: fps * chunk_duration * audio_queue_size
+        # Image/frame queue: fps * chunk_duration (capped at MAX_FRAME_QUEUE_SIZE)
         self.queue_frames = ThreadSafeQueue(frame_queue_size, "FrameQueue")
         # Video packet queue for encoded video data
         self.queue_video_packets = ThreadSafeQueue(200, "VideoPacketQueue")
