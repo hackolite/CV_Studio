@@ -5,7 +5,6 @@ import threading
 from threading import Lock
 
 import cv2
-import pafy
 import numpy as np
 import dearpygui.dearpygui as dpg
 import yt_dlp
@@ -221,6 +220,11 @@ class YoutubeNode(Node):
         self.small_window_w = 240
         self.small_window_h = 135
         
+        # State management
+        self._is_playing = {}
+        self._last_frame_time = {}
+        self._last_frame = {}
+        
     def convert_cv_to_dpg(self, cv_img, w, h):
         """Converts OpenCV image to DearPyGui format"""
         if cv_img is None:
@@ -245,6 +249,7 @@ class YoutubeNode(Node):
         # We need to construct the button tag from the node name
         tag_parts = user_data.split(':')
         tag_node_name = ':'.join(tag_parts[:2])  # Get node_id:node_tag
+        node_id = tag_parts[0]  # Extract node_id for state management
         tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
         
         # Get current button label to determine state
@@ -265,12 +270,16 @@ class YoutubeNode(Node):
                 print(f"YouTube stream started: {youtube_url}")
                 # Change button label to Stop
                 dpg.set_item_label(tag_node_button_value_name, self._stop_label)
+                # Set playing state
+                self._is_playing[node_id] = True
             except ValueError as e:
                 print(f"Error: {e}")
                 self.cap = None
+                self._is_playing[node_id] = False
             except Exception as e:
                 print(f"Unexpected error: {e}")
                 self.cap = None
+                self._is_playing[node_id] = False
         
         elif label == self._stop_label:
             # Stopping the stream
@@ -281,70 +290,58 @@ class YoutubeNode(Node):
             
             # Change button label back to Start
             dpg.set_item_label(tag_node_button_value_name, self._start_label)
+            # Clear playing state
+            self._is_playing[node_id] = False
         
-    def _update(self, node_id, connection_list, node_image_dict, node_result_dict):
+    def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
         """Updates the video stream image."""
-        print("update YT")
-        ret, frame = False, None
         tag_node_name = f"{node_id}:{self.node_tag}"
         output_value01_tag = f"{tag_node_name}:{self.TYPE_IMAGE}:Output01Value"
+        slider_tag = f"{tag_node_name}:{self.TYPE_INT}:Input02Value"
 
-        self.current_time = time.time()
+        current_time = time.time()
         
-        # Check if capture is initialized
-        if self.cap is not None:
-            try:
-                ret, frame = self.cap.read()
-                print(f"Frame read: ret={ret}, frame shape={frame.shape if frame is not None else None}")
-            except Exception as e:
-                print(f"Error reading frame: {e}")
-                ret, frame = False, None
-
-        if ret and frame is not None:
-            # Convert and update texture
-            texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
-            dpg_set_value(output_value01_tag, texture)
-            print("Texture updated")
-        else:
-            print("No valid frame")
-
-        return {"image": frame, "json": None}   
-
-    
-    def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
-      """Updates the video stream image."""
-      tag_node_name = f"{node_id}:{self.node_tag}"
-      output_value01_tag = f"{tag_node_name}:{self.TYPE_IMAGE}:Output01Value"
-
-      self.current_time = time.time()
-
-      if not hasattr(self, "_last_frame_time"):
-        self._last_frame_time = 0
-      if not hasattr(self, "_frame_interval"):
+        # Initialize frame interval from slider
         try:
-            slider_tag = f"{tag_node_name}:{self.TYPE_INT}:Input02Value"
-            self._frame_interval = max(1, dpg_get_value(slider_tag)) / 1000  # ms -> s
+            frame_interval_ms = dpg_get_value(slider_tag)
+            frame_interval = max(1, frame_interval_ms) / 1000.0  # ms -> s
         except:
-            self._frame_interval = 0.033  # default 33 ms
+            frame_interval = 0.033  # default 33 ms
 
-      if self.cap is not None and self.current_time - self._last_frame_time >= self._frame_interval:
-        try:
-            ret, frame = self.cap.read()
-        except Exception as e:
-            print(f"Video read error: {e}")
-            ret, frame = False, None
-
-        if ret and frame is not None:
-            # Only update if frame is different (avoid jitter on frozen stream)
-            if not hasattr(self, "_last_frame") or not np.array_equal(self._last_frame, frame):
-                self._last_frame = frame
-                texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
-                dpg_set_value(output_value01_tag, texture)
-                self._last_frame_time = self.current_time
+        # Check if playback is active (similar to Video node)
+        is_playing = self._is_playing.get(str(node_id), False)
+        
+        frame = None
+        
+        # Only read frames if playback is active and capture is initialized
+        if self.cap is not None and is_playing:
+            # Check if enough time has passed since last frame
+            last_time = self._last_frame_time.get(str(node_id), None)
+            should_read_frame = (last_time is None) or ((current_time - last_time) >= frame_interval)
+            
+            if should_read_frame:
+                try:
+                    ret, frame = self.cap.read()
+                    if ret and frame is not None:
+                        # Store frame and update display
+                        self._last_frame[str(node_id)] = frame
+                        texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
+                        dpg_set_value(output_value01_tag, texture)
+                        self._last_frame_time[str(node_id)] = current_time
+                    else:
+                        # Use last frame if read fails
+                        frame = self._last_frame.get(str(node_id), None)
+                except Exception as e:
+                    print(f"YouTube read error: {e}")
+                    frame = self._last_frame.get(str(node_id), None)
+            else:
+                # Use last frame when not reading
+                frame = self._last_frame.get(str(node_id), None)
         else:
-            print("No valid frame")
+            # Use last frame when not playing
+            frame = self._last_frame.get(str(node_id), None)
 
-      return {"image": getattr(self, "_last_frame", None), "json": None, "audio": None}
+        return {"image": frame, "json": None, "audio": None}
     
     
     def close(self, node_id):
