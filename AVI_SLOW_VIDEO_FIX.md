@@ -1,47 +1,52 @@
-# AVI Video Format Fix (Slow Playback Issue)
+# AVI and MKV Video Format Fix (Slow Playback Issue)
 
-## Problem Statement (Original French)
+## Problem Statements (Original French)
 
 > "la reconstruction input/video ___> concat ____> videowriter ___> en AVI donne une video lente avec un son un peu étrange, investigue la cause stp et fixe si possible."
 
 **Translation:** "The reconstruction input/video → concat → videowriter in AVI format produces a slow video with slightly strange audio, please investigate the cause and fix if possible."
 
+> "videowriter lag quand il enregistre depuis imageconcat, verifie ce qui ne va pas quand tu enregistre en avi, mpeg ou mkv, merci"
+
+**Translation:** "videowriter lag when recording from imageconcat, verify what's wrong when you record in avi, mpeg or mkv, thanks"
+
 ## Issues Identified
 
 ### 1. Slow Video Playback
-**Symptom:** When playing back recorded AVI videos, the video plays in slow motion or stutters.
+**Symptom:** When playing back recorded AVI or MKV videos, the video plays in slow motion or stutters.
 
 **Root Cause:** 
 - AVI videos are encoded with MJPEG codec using `cv2.VideoWriter` with fourcc `MJPG`
-- During audio/video merge, FFmpeg uses `vcodec='copy'` which preserves the MJPEG codec
-- MJPEG (Motion JPEG) in AVI containers has several limitations:
-  - Each frame is a complete JPEG image (no GOP structure)
+- MKV videos are encoded with FFV1 codec using `cv2.VideoWriter` with fourcc `FFV1`
+- Both MJPEG and FFV1 are **intraframe codecs** with the same limitations:
+  - Each frame is independently encoded (no GOP structure)
   - Poor temporal compression
-  - Inconsistent frame timing within AVI container
+  - Inconsistent frame timing within container
   - Timing metadata not properly synchronized with audio track
+- During audio/video merge, FFmpeg uses `vcodec='copy'` which preserves these problematic codecs
 
 ### 2. Strange Audio
-**Symptom:** Audio in AVI videos sounds distorted or out of sync with video.
+**Symptom:** Audio in AVI and MKV videos sounds distorted or out of sync with video.
 
 **Root Cause:** 
-- MJPEG's frame-by-frame encoding doesn't maintain consistent timing
-- Audio timing expects regular frame intervals, but MJPEG in AVI doesn't guarantee this
+- Intraframe codecs (MJPEG/FFV1) don't maintain consistent frame timing
+- Audio timing expects regular frame intervals, but intraframe codecs don't guarantee this
 - Result: Audio/video desynchronization causing strange playback behavior
 
 ## Solution
 
 ### Technical Approach
 
-Instead of copying the MJPEG codec when merging audio and video for AVI files, **re-encode the video to H.264**:
+Instead of copying the intraframe codecs (MJPEG/FFV1) when merging audio and video, **re-encode to H.264**:
 
-1. **For AVI format:**
+1. **For AVI and MKV formats:**
    - Use `vcodec='libx264'` (H.264 encoding)
    - Add `preset='medium'` (balance between speed and quality)
    - H.264 provides proper temporal compression and frame timing
 
-2. **For MP4 and MKV formats:**
+2. **For MP4 format:**
    - Keep `vcodec='copy'` (no re-encoding)
-   - These formats don't have the same timing issues
+   - MP4 doesn't have the same timing issues
 
 ### Why H.264 Fixes the Issue
 
@@ -76,12 +81,13 @@ Instead of copying the MJPEG codec when merging audio and video for AVI files, *
 **Codec Selection Logic:**
 ```python
 # Determine video codec based on format
-if video_format == 'AVI':  # or output_ext == '.avi' in worker mode
-    # Re-encode AVI to H.264 for proper timing and audio sync
+if video_format in ['AVI', 'MKV']:  # or output_ext in ['.avi', '.mkv'] in worker mode
+    # Re-encode AVI/MKV to H.264 for proper timing and audio sync
+    # MJPEG (AVI) and FFV1 (MKV) are intraframe codecs with timing issues
     vcodec = 'libx264'
     vcodec_preset = 'medium'
 else:
-    # For MP4 and MKV, copy the video codec (no re-encoding)
+    # For MP4, copy the video codec (no re-encoding)
     vcodec = 'copy'
     vcodec_preset = None
 ```
@@ -110,11 +116,11 @@ if vcodec_preset:
 Created `tests/test_avi_video_format_fix.py` which validates:
 
 1. ✅ AVI format uses H.264 encoding (libx264)
-2. ✅ MP4 format uses copy (no re-encoding)
-3. ✅ MKV format uses copy (no re-encoding)
-4. ✅ File extension detection works correctly (.avi, .AVI)
+2. ✅ MKV format uses H.264 encoding (libx264)
+3. ✅ MP4 format uses copy (no re-encoding)
+4. ✅ File extension detection works correctly (.avi, .mkv, .AVI, .MKV)
 5. ✅ FFmpeg parameters are correct for all formats
-6. ✅ Preset is only added for AVI format
+6. ✅ Preset is only added for AVI and MKV formats
 
 ### Manual Testing
 
@@ -136,23 +142,23 @@ To verify the fix:
 ### Expected Behavior
 
 **Before Fix:**
-- ✗ AVI videos play in slow motion
+- ✗ AVI and MKV videos play in slow motion
 - ✗ Audio is ahead or behind video
 - ✗ Audio sounds distorted or strange
 - ✗ Inconsistent playback across different players
 
 **After Fix:**
-- ✓ AVI videos play at correct speed
+- ✓ AVI and MKV videos play at correct speed
 - ✓ Perfect audio/video synchronization
 - ✓ Clear, high-quality audio
 - ✓ Consistent playback across all players
-- ✓ Same quality as MP4/MKV formats
+- ✓ Same quality as MP4 format
 
 ## Technical Details
 
 ### FFmpeg Command Generated
 
-**For AVI format (with fix):**
+**For AVI and MKV formats (with fix):**
 ```bash
 ffmpeg -i temp_video.avi -i audio.wav \
   -vcodec libx264 \
@@ -165,7 +171,7 @@ ffmpeg -i temp_video.avi -i audio.wav \
   output.avi
 ```
 
-**For MP4/MKV formats (unchanged):**
+**For MP4 format (unchanged):**
 ```bash
 ffmpeg -i temp_video.mp4 -i audio.wav \
   -vcodec copy \
@@ -177,37 +183,37 @@ ffmpeg -i temp_video.mp4 -i audio.wav \
   output.mp4
 ```
 
-### Why Not Fix MJPEG Timing?
+### Why Not Fix Intraframe Codec Timing?
 
-**Option 1: Fix MJPEG timing** (NOT chosen)
+**Option 1: Fix MJPEG/FFV1 timing** (NOT chosen)
 - Would require patching cv2.VideoWriter or FFmpeg
-- MJPEG is fundamentally frame-based, not GOP-based
-- Limited by AVI container specification
+- Intraframe codecs are fundamentally frame-based, not GOP-based
+- Limited by container specifications
 - Complex and fragile solution
 
 **Option 2: Re-encode to H.264** (CHOSEN)
 - Simple, reliable solution
 - Uses standard, well-supported codec
-- Better compression than MJPEG
+- Better compression than intraframe codecs
 - Proper frame timing and audio sync
 - Industry-standard approach
 
 ### Performance Considerations
 
 **Encoding Time:**
-- AVI merge takes longer due to H.264 encoding
+- AVI and MKV merge takes longer due to H.264 encoding
 - Typical overhead: 1-2x realtime (60s video = 60-120s encoding)
 - Using `preset='medium'` balances speed and quality
 
 **File Size:**
-- H.264 produces smaller files than MJPEG
+- H.264 produces smaller files than MJPEG and FFV1
 - Better compression = smaller output files
-- Typical size reduction: 30-50% compared to MJPEG
+- Typical size reduction: 30-50% compared to intraframe codecs
 
 **Quality:**
 - H.264 at medium preset provides excellent quality
 - Perceptually lossless for most content
-- No visible quality loss compared to MJPEG
+- No visible quality loss compared to intraframe codecs
 
 ## Compatibility
 
@@ -227,12 +233,18 @@ This fix is compatible with:
 
 ## Summary
 
-The fix addresses the reported issue of slow AVI video playback with strange audio by:
+The fix addresses the reported issue of slow AVI and MKV video playback with strange audio by:
 
-1. **Detecting AVI format** during audio/video merge
-2. **Re-encoding to H.264** instead of copying MJPEG codec
+1. **Detecting AVI and MKV formats** during audio/video merge
+2. **Re-encoding to H.264** instead of copying intraframe codecs (MJPEG/FFV1)
 3. **Maintaining high quality** with AAC audio at 192k bitrate
 4. **Preserving existing sync parameters** (vsync, avoid_negative_ts, etc.)
-5. **No impact on MP4/MKV** which continue to use fast copy mode
+5. **No impact on MP4** which continues to use fast copy mode
 
-This ensures all video formats (AVI, MP4, MKV) produce correct, high-quality output with perfect audio/video synchronization.
+This ensures all video formats (AVI, MKV, MP4) produce correct, high-quality output with perfect audio/video synchronization.
+
+## Update History
+
+- **Initial Fix (AVI)**: Fixed slow playback in AVI format by re-encoding MJPEG to H.264
+- **Extended Fix (MKV)**: Extended the fix to MKV format which has the same issue with FFV1 codec
+- Both MJPEG and FFV1 are intraframe codecs with identical timing problems

@@ -665,16 +665,17 @@ class VideoBackgroundWorker:
                 audio_input = ffmpeg.input(self._temp_audio_path)
                 
                 # Determine video codec based on output format
-                # AVI with MJPEG has timing issues, needs re-encoding to H.264
-                # MP4 and MKV can use copy (no re-encoding needed)
+                # AVI with MJPEG and MKV with FFV1 have timing issues, need re-encoding to H.264
+                # Both are intraframe codecs without temporal compression
+                # MP4 can use copy (no re-encoding needed)
                 output_ext = os.path.splitext(self.output_path)[1].lower()
-                if output_ext == '.avi':
-                    # Re-encode AVI to H.264 for proper timing and audio sync
-                    # MJPEG in AVI containers has frame timing issues that cause slow playback
+                if output_ext in ['.avi', '.mkv']:
+                    # Re-encode AVI/MKV to H.264 for proper timing and audio sync
+                    # MJPEG (AVI) and FFV1 (MKV) are intraframe codecs with frame timing issues
                     vcodec = 'libx264'
                     vcodec_preset = 'medium'  # Balance between speed and quality
                 else:
-                    # For MP4 and MKV, copy the video codec (no re-encoding)
+                    # For MP4, copy the video codec (no re-encoding)
                     vcodec = 'copy'
                     vcodec_preset = None
                 
@@ -688,7 +689,7 @@ class VideoBackgroundWorker:
                 # - avoid_negative_ts='make_zero': Perfect audio/video synchronization
                 # - vsync='cfr': Constant frame rate (prevents drift)
                 # - shortest=None: Stop when shortest stream ends
-                # - vcodec: For AVI, re-encode to H.264; for others, copy codec
+                # - vcodec: For AVI and MKV, re-encode to H.264; for MP4, copy codec
                 output_params = {
                     'vcodec': vcodec,
                     'acodec': 'aac',
