@@ -27,6 +27,7 @@ def get_light_live_stream_url(url):
     ydl_opts = {
         "quiet": True,
         "format": "best[height<=400]",  # Limit to 360p to reduce load
+        "noplaylist": True,  # Extract only the video, ignore playlist parameter
     }
 
     try:
