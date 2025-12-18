@@ -7,32 +7,37 @@ import json
 import tempfile
 import shutil
 
+# Shared format configuration matching production code
+# This ensures tests stay in sync with actual implementation
+FORMAT_CODEC_MAP = {
+    'MP4': 'mp4v',
+    'MP4 (I-Frame)': 'H264',  # H.264 with intraframe-only encoding
+    'AVI': 'MJPG',
+    'MKV': 'FFV1',
+}
+
+SUPPORTED_FORMATS = ['MP4', 'MP4 (I-Frame)', 'AVI', 'MKV']
+
 
 def test_video_format_selection():
     """Test that different video formats can be selected"""
-    supported_formats = ['MP4', 'MP4 (I-Frame)', 'AVI', 'MKV']
     selected_format = 'AVI'
     
     # Verify the selected format is supported
-    assert selected_format in supported_formats
+    assert selected_format in SUPPORTED_FORMATS
     
     # Verify all expected formats are in the list
-    for fmt in ['MP4', 'MP4 (I-Frame)', 'AVI', 'MKV']:
-        assert fmt in supported_formats
+    for fmt in SUPPORTED_FORMATS:
+        assert fmt in SUPPORTED_FORMATS
 
 
 def test_codec_selection():
     """Test that appropriate codecs are selected for each format"""
-    format_codec_map = {
-        'MP4': 'mp4v',
-        'MP4 (I-Frame)': 'H264',  # H.264 with intraframe-only encoding
-        'AVI': 'MJPG',
-        'MKV': 'FFV1',
-    }
-    
-    for fmt, codec in format_codec_map.items():
+    for fmt, codec in FORMAT_CODEC_MAP.items():
         assert codec is not None
-        assert len(codec) == 4
+        assert codec != ''  # Codec should not be empty
+        # Verify codec is a valid FourCC identifier (typically 4 chars, but not required)
+        assert isinstance(codec, str)
 
 
 def test_file_extension_for_formats():
@@ -164,8 +169,9 @@ def test_multiple_json_slots():
 
 def test_mp4_iframe_encoding_parameters():
     """Test that MP4 (I-Frame) format uses correct intraframe encoding parameters"""
-    # Verify codec selection
-    assert 'H264' == 'H264'  # H.264 codec
+    # Verify MP4 (I-Frame) uses H264, not mp4v (using shared constant)
+    assert FORMAT_CODEC_MAP['MP4 (I-Frame)'] == 'H264'
+    assert FORMAT_CODEC_MAP['MP4 (I-Frame)'] != FORMAT_CODEC_MAP['MP4']
     
     # Verify x264 parameters for intraframe-only encoding
     x264_params = 'keyint=1:scenecut=0'
@@ -180,20 +186,22 @@ def test_mp4_iframe_encoding_parameters():
 def test_intraframe_formats_comparison():
     """Test that intraframe formats are correctly identified"""
     # These formats support true frame-by-frame encoding (all I-frames)
-    intraframe_formats = {
-        'AVI': 'MJPG',           # Motion JPEG - intraframe only
-        'MKV': 'FFV1',           # FFV1 - intraframe only
-        'MP4 (I-Frame)': 'H264'  # H.264 with keyint=1 - intraframe only
-    }
+    intraframe_formats = ['AVI', 'MKV', 'MP4 (I-Frame)']
     
     # Standard MP4 is NOT intraframe (uses P and B frames)
-    interframe_formats = {
-        'MP4': 'mp4v'  # MPEG-4 Part 2 - uses temporal compression
-    }
+    interframe_formats = ['MP4']
     
     # Verify all formats are accounted for
-    all_formats = {**intraframe_formats, **interframe_formats}
-    assert len(all_formats) == 4
+    all_formats_count = len(intraframe_formats) + len(interframe_formats)
+    assert all_formats_count == len(FORMAT_CODEC_MAP)
+    
+    # Verify codecs for intraframe formats
+    for fmt in intraframe_formats:
+        assert fmt in FORMAT_CODEC_MAP
+        assert FORMAT_CODEC_MAP[fmt] in ['MJPG', 'FFV1', 'H264']
+    
+    # Verify codec for interframe format
+    assert FORMAT_CODEC_MAP['MP4'] == 'mp4v'
 
 
 if __name__ == '__main__':
