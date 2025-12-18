@@ -31,8 +31,20 @@ except ImportError:
         logs_dir.mkdir(exist_ok=True)
         return logs_dir
 
-# Removed audio/video merging dependencies - video-only mode
-# No longer using ffmpeg, soundfile, or background worker
+"""
+VideoWriter Node - Simplified video-only implementation
+
+This node handles video recording in MP4, AVI, and MKV formats with minimal memory footprint.
+- Direct frame-by-frame writing using cv2.VideoWriter
+- No audio handling
+- No buffering or queuing
+- Accumulates frames directly from concat node
+
+Supported formats:
+- MP4: H.264 codec (mp4v)
+- AVI: MJPEG codec (MJPG)
+- MKV: FFV1 codec (lossless)
+"""
 
 def slow_motion_interpolation(prev_frame, next_frame, alpha):
     """ Generates smooth intermediate frame between 2 images """
@@ -237,16 +249,17 @@ class VideoWriterNode(Node):
         frame = node_image_dict.get(connection_info_src, None)
 
         if frame is not None:
-            # Shallow copy - frame data will be resized immediately
-            rec_frame = frame.copy()
-
             # Direct write to VideoWriter if recording is active
             if tag_node_name in self._video_writer_dict:
-                writer_frame = cv2.resize(rec_frame,
+                # Resize and write directly - no need to copy first
+                writer_frame = cv2.resize(frame,
                                           (writer_width, writer_height),
                                           interpolation=cv2.INTER_CUBIC)
                 self._video_writer_dict[tag_node_name].write(writer_frame)
 
+            # Copy frame for display with recording indicator
+            rec_frame = frame.copy()
+            if tag_node_name in self._video_writer_dict:
                 # Add red recording indicator
                 rec_frame = cv2.circle(rec_frame, (10, 10),
                                        50, (0, 0, 255),
