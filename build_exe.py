@@ -364,6 +364,7 @@ def create_installer(args):
 
 def print_summary(args):
     """Print build summary"""
+    print("\n[7/7] Build Summary")
     print("=" * 70)
     print("  BUILD COMPLETE!")
     print("=" * 70)
