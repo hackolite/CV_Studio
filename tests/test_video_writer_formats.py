@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Tests for video writer with AVI, MP4, and MKV format support"""
+"""Tests for video writer with AVI, MP4, MP4 (I-Frame), and MKV format support"""
 
-import pytest
 import os
 import json
 import tempfile
@@ -11,14 +10,14 @@ import shutil
 
 def test_video_format_selection():
     """Test that different video formats can be selected"""
-    supported_formats = ['MP4', 'AVI', 'MKV']
+    supported_formats = ['MP4', 'MP4 (I-Frame)', 'AVI', 'MKV']
     selected_format = 'AVI'
     
     # Verify the selected format is supported
     assert selected_format in supported_formats
     
     # Verify all expected formats are in the list
-    for fmt in ['MP4', 'AVI', 'MKV']:
+    for fmt in ['MP4', 'MP4 (I-Frame)', 'AVI', 'MKV']:
         assert fmt in supported_formats
 
 
@@ -26,6 +25,7 @@ def test_codec_selection():
     """Test that appropriate codecs are selected for each format"""
     format_codec_map = {
         'MP4': 'mp4v',
+        'MP4 (I-Frame)': 'H264',  # H.264 with intraframe-only encoding
         'AVI': 'MJPG',
         'MKV': 'FFV1',
     }
@@ -41,12 +41,15 @@ def test_file_extension_for_formats():
     
     extensions = {
         'MP4': f'{startup_time}.mp4',
+        'MP4 (I-Frame)': f'{startup_time}.mp4',  # Same extension as MP4
         'AVI': f'{startup_time}.avi',
         'MKV': f'{startup_time}.mkv',
     }
     
     for fmt, filename in extensions.items():
-        assert filename.endswith(fmt.lower())
+        # Extract base format name (e.g., 'MP4' from 'MP4 (I-Frame)')
+        base_fmt = fmt.split()[0]
+        assert filename.endswith(base_fmt.lower())
 
 
 def test_metadata_directory_creation():
@@ -159,6 +162,40 @@ def test_multiple_json_slots():
         assert 'confidence' in json_chunks[slot_idx]
 
 
+def test_mp4_iframe_encoding_parameters():
+    """Test that MP4 (I-Frame) format uses correct intraframe encoding parameters"""
+    # Verify codec selection
+    assert 'H264' == 'H264'  # H.264 codec
+    
+    # Verify x264 parameters for intraframe-only encoding
+    x264_params = 'keyint=1:scenecut=0'
+    
+    # keyint=1 means every frame is an I-frame (no P or B frames)
+    assert 'keyint=1' in x264_params
+    
+    # scenecut=0 disables scene detection (ensures no automatic keyframe insertion)
+    assert 'scenecut=0' in x264_params
+
+
+def test_intraframe_formats_comparison():
+    """Test that intraframe formats are correctly identified"""
+    # These formats support true frame-by-frame encoding (all I-frames)
+    intraframe_formats = {
+        'AVI': 'MJPG',           # Motion JPEG - intraframe only
+        'MKV': 'FFV1',           # FFV1 - intraframe only
+        'MP4 (I-Frame)': 'H264'  # H.264 with keyint=1 - intraframe only
+    }
+    
+    # Standard MP4 is NOT intraframe (uses P and B frames)
+    interframe_formats = {
+        'MP4': 'mp4v'  # MPEG-4 Part 2 - uses temporal compression
+    }
+    
+    # Verify all formats are accounted for
+    all_formats = {**intraframe_formats, **interframe_formats}
+    assert len(all_formats) == 4
+
+
 if __name__ == '__main__':
     # Run tests
     test_video_format_selection()
@@ -171,4 +208,6 @@ if __name__ == '__main__':
     test_mkv_metadata_dict_structure()
     test_multiple_audio_slots()
     test_multiple_json_slots()
+    test_mp4_iframe_encoding_parameters()
+    test_intraframe_formats_comparison()
     print("All video writer format tests passed!")

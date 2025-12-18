@@ -1246,7 +1246,10 @@ Refer to each directory of "node/deep_learning_node/XXXXXXXX" for the license of
         </td>
         <td width="760">
             Node to export the input image as a video<br>
-            Output destination, output size, FPS are specified in "setting.json"
+            Supports multiple formats: <b>MP4</b>, <b>MP4 (I-Frame)</b>, <b>AVI</b>, <b>MKV</b><br>
+            <b>MP4 (I-Frame)</b>: True frame-by-frame encoding with H.264 (all I-frames)<br>
+            Output destination, output size, FPS are specified in "setting.json"<br>
+            See <a href="node/VideoNode/README_VideoWriter.md">README_VideoWriter.md</a> for format details
         </td>
     </tr>
 </table>

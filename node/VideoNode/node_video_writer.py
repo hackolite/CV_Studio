@@ -192,7 +192,7 @@ class FactoryNode:
             ):
                 dpg.add_combo(
                     tag=node.tag_node_name + ':Format',
-                    items=['MP4', 'AVI', 'MKV'],
+                    items=['MP4', 'MP4 (I-Frame)', 'AVI', 'MKV'],
                     default_value='MP4',
                     width=small_window_w,
                     label='Format',
@@ -923,15 +923,26 @@ class VideoWriterNode(Node):
                 # AVI with MJPEG and MKV with FFV1 have timing issues, need re-encoding to H.264
                 # Both are intraframe codecs without temporal compression
                 # MP4 can use copy (no re-encoding needed)
+                # MP4 (I-Frame) uses H.264 with intraframe-only encoding (all I-frames)
                 if video_format in ['AVI', 'MKV']:
                     # Re-encode AVI/MKV to H.264 for proper timing and audio sync
                     # MJPEG (AVI) and FFV1 (MKV) are intraframe codecs with frame timing issues
                     vcodec = 'libx264'
                     vcodec_preset = 'medium'  # Balance between speed and quality
+                    vcodec_params = None
+                elif video_format == 'MP4 (I-Frame)':
+                    # Re-encode with H.264 intraframe-only (all I-frames, no P or B frames)
+                    # This provides true frame-by-frame encoding like MJPEG/FFV1
+                    # but with better compression and modern codec features
+                    vcodec = 'libx264'
+                    vcodec_preset = 'medium'
+                    # x264-params: keyint=1 forces every frame to be an I-frame (intraframe-only)
+                    vcodec_params = 'keyint=1:scenecut=0'
                 else:
-                    # For MP4, copy the video codec (no re-encoding)
+                    # For standard MP4, copy the video codec (no re-encoding)
                     vcodec = 'copy'
                     vcodec_preset = None
+                    vcodec_params = None
                 
                 # Step 5: Merge video and audio with HIGH QUALITY settings (AUDIO PRIORITY)
                 # Audio quality is guaranteed through high bitrate and proper encoding
@@ -943,7 +954,7 @@ class VideoWriterNode(Node):
                 # - avoid_negative_ts='make_zero': Perfect audio/video synchronization
                 # - vsync='cfr': Constant frame rate (prevents drift)
                 # - shortest=None: Stop when shortest stream ends
-                # - vcodec: For AVI and MKV, re-encode to H.264; for MP4, copy codec
+                # - vcodec: For AVI and MKV, re-encode to H.264; for MP4, copy codec; for MP4 (I-Frame), intraframe-only H.264
                 output_params = {
                     'vcodec': vcodec,
                     'acodec': 'aac',
@@ -954,9 +965,13 @@ class VideoWriterNode(Node):
                     'loglevel': 'error'
                 }
                 
-                # Add preset for H.264 encoding (AVI only)
+                # Add preset for H.264 encoding (AVI, MKV, MP4 I-Frame)
                 if vcodec_preset:
                     output_params['preset'] = vcodec_preset
+                
+                # Add x264 parameters for intraframe-only encoding (MP4 I-Frame)
+                if vcodec_params:
+                    output_params['x264-params'] = vcodec_params
                 
                 output = ffmpeg.output(
                     video_input,
@@ -1348,7 +1363,8 @@ class VideoWriterNode(Node):
             format_config = {
                 'AVI': {'ext': '.avi', 'codec': 'MJPG'},
                 'MKV': {'ext': '.mkv', 'codec': 'FFV1'},
-                'MP4': {'ext': '.mp4', 'codec': 'mp4v'}
+                'MP4': {'ext': '.mp4', 'codec': 'mp4v'},
+                'MP4 (I-Frame)': {'ext': '.mp4', 'codec': 'H264'}  # H.264 with intraframe-only encoding
             }
             
             config = format_config.get(video_format, format_config['MP4'])
@@ -1378,7 +1394,8 @@ class VideoWriterNode(Node):
                         sample_rate=self._DEFAULT_SAMPLE_RATE,  # Default, will be updated from incoming audio
                         total_frames=None,  # Unknown initially
                         progress_callback=None,  # Progress is polled in update()
-                        chunk_duration=chunk_duration  # Queue sizing based on chunk duration
+                        chunk_duration=chunk_duration,  # Queue sizing based on chunk duration
+                        video_format=video_format  # Format selection for codec configuration
                     )
                     worker.start()
                     

@@ -279,6 +279,7 @@ class VideoBackgroundWorker:
         total_frames: Optional[int] = None,
         progress_callback: Optional[Callable[[ProgressEvent], None]] = None,
         chunk_duration: float = DEFAULT_CHUNK_DURATION,
+        video_format: str = 'MP4',
     ):
         """
         Initialize background worker.
@@ -292,6 +293,7 @@ class VideoBackgroundWorker:
             total_frames: Total frames to encode (if known)
             progress_callback: Callback for progress updates
             chunk_duration: Audio chunk duration in seconds (must be > 0, default: 5.0)
+            video_format: Video format ('MP4', 'MP4 (I-Frame)', 'AVI', 'MKV')
             
         Raises:
             ValueError: If fps or chunk_duration is not positive
@@ -310,6 +312,7 @@ class VideoBackgroundWorker:
         self.total_frames = total_frames
         self.progress_callback = progress_callback
         self.chunk_duration = chunk_duration
+        self.video_format = video_format
         
         # State
         self._state = WorkerState.IDLE
@@ -671,20 +674,30 @@ class VideoBackgroundWorker:
                 video_input = ffmpeg.input(self._temp_video_path)
                 audio_input = ffmpeg.input(self._temp_audio_path)
                 
-                # Determine video codec based on output format
+                # Determine video codec based on format
                 # AVI with MJPEG and MKV with FFV1 have timing issues, need re-encoding to H.264
                 # Both are intraframe codecs without temporal compression
                 # MP4 can use copy (no re-encoding needed)
-                output_ext = os.path.splitext(self.output_path)[1].lower()
-                if output_ext in ['.avi', '.mkv']:
+                # MP4 (I-Frame) uses H.264 with intraframe-only encoding (all I-frames)
+                if self.video_format in ['AVI', 'MKV']:
                     # Re-encode AVI/MKV to H.264 for proper timing and audio sync
                     # MJPEG (AVI) and FFV1 (MKV) are intraframe codecs with frame timing issues
                     vcodec = 'libx264'
                     vcodec_preset = 'medium'  # Balance between speed and quality
+                    vcodec_params = None
+                elif self.video_format == 'MP4 (I-Frame)':
+                    # Re-encode with H.264 intraframe-only (all I-frames, no P or B frames)
+                    # This provides true frame-by-frame encoding like MJPEG/FFV1
+                    # but with better compression and modern codec features
+                    vcodec = 'libx264'
+                    vcodec_preset = 'medium'
+                    # x264-params: keyint=1 forces every frame to be an I-frame (intraframe-only)
+                    vcodec_params = 'keyint=1:scenecut=0'
                 else:
-                    # For MP4, copy the video codec (no re-encoding)
+                    # For standard MP4, copy the video codec (no re-encoding)
                     vcodec = 'copy'
                     vcodec_preset = None
+                    vcodec_params = None
                 
                 # Merge with HIGH QUALITY audio settings (AUDIO PRIORITY)
                 # Audio quality is guaranteed through high bitrate and proper encoding
@@ -696,7 +709,7 @@ class VideoBackgroundWorker:
                 # - avoid_negative_ts='make_zero': Perfect audio/video synchronization
                 # - vsync='cfr': Constant frame rate (prevents drift)
                 # - shortest=None: Stop when shortest stream ends
-                # - vcodec: For AVI and MKV, re-encode to H.264; for MP4, copy codec
+                # - vcodec: For AVI and MKV, re-encode to H.264; for MP4, copy codec; for MP4 (I-Frame), intraframe-only H.264
                 output_params = {
                     'vcodec': vcodec,
                     'acodec': 'aac',
@@ -707,9 +720,13 @@ class VideoBackgroundWorker:
                     'loglevel': 'error'
                 }
                 
-                # Add preset for H.264 encoding (AVI only)
+                # Add preset for H.264 encoding (AVI, MKV, MP4 I-Frame)
                 if vcodec_preset:
                     output_params['preset'] = vcodec_preset
+                
+                # Add x264 parameters for intraframe-only encoding (MP4 I-Frame)
+                if vcodec_params:
+                    output_params['x264-params'] = vcodec_params
                 
                 output = ffmpeg.output(
                     video_input,
