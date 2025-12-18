@@ -48,17 +48,21 @@ def test_direct_writing_for_avi_mkv():
     print("✓ Direct writing mode activated when worker disabled")
 
 
+def _get_log_message(video_format, file_path):
+    """Helper function to generate log message based on format"""
+    if video_format in ['AVI', 'MKV']:
+        return f"[VideoWriter] Started direct frame-by-frame writing for {video_format}: {file_path}"
+    else:
+        return f"[VideoWriter] Started legacy mode for: {file_path}"
+
+
 def test_format_specific_logging():
     """Test that format-specific logging messages are generated"""
     
     # Test AVI format logging
     video_format = 'AVI'
     file_path = '/tmp/test.avi'
-    
-    if video_format in ['AVI', 'MKV']:
-        log_message = f"[VideoWriter] Started direct frame-by-frame writing for {video_format}: {file_path}"
-    else:
-        log_message = f"[VideoWriter] Started legacy mode for: {file_path}"
+    log_message = _get_log_message(video_format, file_path)
     
     assert "direct frame-by-frame writing" in log_message, "AVI should use direct writing log message"
     assert "AVI" in log_message, "Format name should be in log message"
@@ -66,11 +70,7 @@ def test_format_specific_logging():
     # Test MKV format logging
     video_format = 'MKV'
     file_path = '/tmp/test.mkv'
-    
-    if video_format in ['AVI', 'MKV']:
-        log_message = f"[VideoWriter] Started direct frame-by-frame writing for {video_format}: {file_path}"
-    else:
-        log_message = f"[VideoWriter] Started legacy mode for: {file_path}"
+    log_message = _get_log_message(video_format, file_path)
     
     assert "direct frame-by-frame writing" in log_message, "MKV should use direct writing log message"
     assert "MKV" in log_message, "Format name should be in log message"
@@ -78,11 +78,7 @@ def test_format_specific_logging():
     # Test MP4 format logging
     video_format = 'MP4'
     file_path = '/tmp/test.mp4'
-    
-    if video_format in ['AVI', 'MKV']:
-        log_message = f"[VideoWriter] Started direct frame-by-frame writing for {video_format}: {file_path}"
-    else:
-        log_message = f"[VideoWriter] Started legacy mode for: {file_path}"
+    log_message = _get_log_message(video_format, file_path)
     
     assert "legacy mode" in log_message, "MP4 should use legacy mode log message (when worker not used)"
     
