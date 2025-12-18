@@ -5,6 +5,14 @@ Test suite for AsyncFrameWriter class
 
 Tests the async frame writing functionality that prevents UI freeze
 during video recording.
+
+NOTE: This test file includes a copy of the AsyncFrameWriter class instead of 
+importing from node_video_writer.py because the main module requires dearpygui,
+which is a GUI library not needed for unit testing. This allows tests to run in 
+CI/CD environments without GUI dependencies.
+
+The duplicated code should be kept in sync with the production class manually.
+For integration tests that require the full module, see test_videowriter_*.py files.
 """
 
 import sys
@@ -23,7 +31,7 @@ class Logger:
 
 logger = Logger()
 
-# Import AsyncFrameWriter code directly to avoid dearpygui dependency
+# Duplicate AsyncFrameWriter code for isolated unit testing (avoids dearpygui dependency)
 class AsyncFrameWriter:
     """
     Asynchronous frame writer that runs in a background thread.
@@ -144,8 +152,8 @@ class AsyncFrameWriter:
             # Wait for queue to be empty
             try:
                 self.frame_queue.join()
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"[AsyncFrameWriter] Error waiting for queue: {e}")
                 
             # Wait for thread to finish
             self.writer_thread.join(timeout=timeout)

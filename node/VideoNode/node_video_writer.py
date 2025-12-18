@@ -122,6 +122,32 @@ class AsyncFrameWriter:
     Each write() call on cv2.VideoWriter can take 10-50ms with high resolution
     and slow codecs (MJPEG, FFV1), which blocks the UI thread. By using a queue
     and background thread, the UI remains responsive.
+    
+    Attributes:
+        video_writer: cv2.VideoWriter instance for writing frames
+        frame_queue: Thread-safe queue for buffering frames
+        writer_thread: Background thread that writes frames
+        stop_event: Threading event to signal thread shutdown
+        frames_written: Counter for successfully written frames
+        frames_dropped: Counter for dropped frames (queue full)
+    
+    Methods:
+        start(): Start the background writer thread
+        write(frame): Queue a frame for writing (non-blocking)
+        stop(wait, timeout): Stop the thread and optionally wait for completion
+    
+    Usage Example:
+        >>> video_writer = cv2.VideoWriter('output.mp4', fourcc, 30, (640, 480))
+        >>> async_writer = AsyncFrameWriter(video_writer, max_queue_size=30)
+        >>> async_writer.start()
+        >>> 
+        >>> # Write frames without blocking UI
+        >>> for frame in frames:
+        >>>     async_writer.write(frame)
+        >>> 
+        >>> # Stop and wait for all frames to be written
+        >>> async_writer.stop(wait=True, timeout=10.0)
+        >>> video_writer.release()
     """
     
     def __init__(self, video_writer, max_queue_size=30):
@@ -234,8 +260,8 @@ class AsyncFrameWriter:
             # Wait for queue to be empty
             try:
                 self.frame_queue.join()
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"[AsyncFrameWriter] Error waiting for queue: {e}")
                 
             # Wait for thread to finish
             self.writer_thread.join(timeout=timeout)
