@@ -21,23 +21,29 @@ SUPPORTED_FORMATS = ['MP4', 'MP4 (I-Frame)', 'AVI', 'MKV']
 
 def test_video_format_selection():
     """Test that different video formats can be selected"""
-    selected_format = 'AVI'
+    # Test that we have exactly the expected formats
+    expected_formats = {'MP4', 'MP4 (I-Frame)', 'AVI', 'MKV'}
+    assert set(SUPPORTED_FORMATS) == expected_formats
     
-    # Verify the selected format is supported
-    assert selected_format in SUPPORTED_FORMATS
+    # Verify a sample format is supported
+    assert 'AVI' in SUPPORTED_FORMATS
     
-    # Verify all expected formats are in the list
-    for fmt in SUPPORTED_FORMATS:
-        assert fmt in SUPPORTED_FORMATS
+    # Verify the new I-Frame format is supported
+    assert 'MP4 (I-Frame)' in SUPPORTED_FORMATS
 
 
 def test_codec_selection():
     """Test that appropriate codecs are selected for each format"""
     for fmt, codec in FORMAT_CODEC_MAP.items():
+        # Verify codec is a non-empty string
         assert codec is not None
-        assert codec != ''  # Codec should not be empty
-        # Verify codec is a valid FourCC identifier (typically 4 chars, but not required)
         assert isinstance(codec, str)
+        assert len(codec) > 0
+        
+        # Verify codec is a valid FourCC identifier (all uppercase, 4 chars)
+        # Note: FourCC codes are typically 4 characters, though this is conventional not required
+        assert codec.isupper() or codec.islower()  # Should be consistent case
+        assert 3 <= len(codec) <= 4  # Most FourCC codes are 4 chars, but allow some flexibility
 
 
 def test_file_extension_for_formats():
