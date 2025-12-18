@@ -218,6 +218,9 @@ class VideoWriterNode(Node):
     _start_label = 'Start'
     _stop_label = 'Stop'
     _finalizing_label = 'Finalizing...'
+    
+    # Timeout for waiting on background finalization threads during cleanup
+    _RELEASE_TIMEOUT_SECONDS = 60.0
 
     _prev_frame_flag = False
 
@@ -306,9 +309,9 @@ class VideoWriterNode(Node):
             release_thread = self._release_threads_dict[tag_node_name]
             if release_thread.is_alive():
                 logger.info(f"[VideoWriter] Waiting for background finalization to complete for {tag_node_name}")
-                release_thread.join(timeout=60.0)  # Wait up to 60 seconds
+                release_thread.join(timeout=self._RELEASE_TIMEOUT_SECONDS)
                 if release_thread.is_alive():
-                    logger.warning(f"[VideoWriter] Background finalization still running after 60s for {tag_node_name}")
+                    logger.warning(f"[VideoWriter] Background finalization still running after {self._RELEASE_TIMEOUT_SECONDS}s for {tag_node_name}")
             self._release_threads_dict.pop(tag_node_name, None)
         
         # Release video writer if still active (fallback for edge cases)
@@ -364,8 +367,9 @@ class VideoWriterNode(Node):
             # Still update the button label even on error
             try:
                 dpg.set_item_label(tag_node_button_value_name, self._start_label)
-            except:
-                pass
+            except (SystemError, RuntimeError) as gui_error:
+                # DearPyGui may have been destroyed, log and continue
+                logger.debug(f"[VideoWriter] Could not update button label (GUI may be shutting down): {gui_error}")
         finally:
             # Clean up thread tracking
             if tag_node_name in self._release_threads_dict:
@@ -425,10 +429,11 @@ class VideoWriterNode(Node):
                 
                 # Start background thread to release the video writer
                 # This prevents UI freeze during video file finalization (can take 10-30+ seconds)
+                # Use daemon=False to ensure video files are properly finalized before app exit
                 release_thread = threading.Thread(
                     target=self._release_video_writer_async,
                     args=(tag_node_name, video_writer, tag_node_button_value_name),
-                    daemon=True,
+                    daemon=False,
                     name=f"VideoWriter-Release-{tag_node_name}"
                 )
                 self._release_threads_dict[tag_node_name] = release_thread
