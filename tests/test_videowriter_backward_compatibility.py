@@ -122,8 +122,9 @@ def test_update_method_preserved():
     update_end = content.find('\n    def ', update_start + 1)
     update_content = content[update_start:update_end]
     
-    # Check frame writing logic
-    assert 'if tag_node_name in self._video_writer_dict:' in update_content, \
+    # Check frame writing logic (now using async_writer_dict for async frame writing)
+    assert ('if tag_node_name in self._video_writer_dict:' in update_content or 
+            'if tag_node_name in self._async_writer_dict:' in update_content), \
         "Missing recording check"
     
     assert 'cv2.resize' in update_content, \
@@ -136,7 +137,7 @@ def test_update_method_preserved():
     assert 'cv2.circle' in update_content, \
         "Missing recording indicator (red circle)"
     
-    print("✓ Update method logic preserved")
+    print("✓ Update method logic preserved (now with async frame writing)")
 
 
 def test_close_method_enhanced():
