@@ -4,6 +4,7 @@ import os
 import sys
 import datetime
 import traceback
+import threading
 
 import cv2
 import numpy as np
@@ -212,9 +213,14 @@ class VideoWriterNode(Node):
     _opencv_setting_dict = None
 
     _video_writer_dict = {}  # Store active cv2.VideoWriter instances: {node: writer}
+    _release_threads_dict = {}  # Track background release threads: {node: thread}
     
     _start_label = 'Start'
     _stop_label = 'Stop'
+    _finalizing_label = 'Finalizing...'
+    
+    # Timeout for waiting on background finalization threads during cleanup
+    _RELEASE_TIMEOUT_SECONDS = 60.0
 
     _prev_frame_flag = False
 
@@ -298,9 +304,22 @@ class VideoWriterNode(Node):
     def close(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
         
-        # Release video writer if active
+        # Wait for any background finalization to complete
+        if tag_node_name in self._release_threads_dict:
+            release_thread = self._release_threads_dict[tag_node_name]
+            if release_thread.is_alive():
+                logger.info(f"[VideoWriter] Waiting for background finalization to complete for {tag_node_name}")
+                release_thread.join(timeout=self._RELEASE_TIMEOUT_SECONDS)
+                if release_thread.is_alive():
+                    logger.warning(f"[VideoWriter] Background finalization still running after {self._RELEASE_TIMEOUT_SECONDS}s for {tag_node_name}")
+            self._release_threads_dict.pop(tag_node_name, None)
+        
+        # Release video writer if still active (fallback for edge cases)
         if tag_node_name in self._video_writer_dict:
-            self._video_writer_dict[tag_node_name].release()
+            try:
+                self._video_writer_dict[tag_node_name].release()
+            except Exception as e:
+                logger.error(f"[VideoWriter] Error releasing video writer in close(): {e}")
             self._video_writer_dict.pop(tag_node_name)
 
     def get_setting_dict(self, node_id):
@@ -317,6 +336,44 @@ class VideoWriterNode(Node):
     def set_setting_dict(self, node_id, setting_dict):
         pass
 
+    
+    def _release_video_writer_async(self, tag_node_name, video_writer, tag_node_button_value_name):
+        """
+        Release video writer in background thread to prevent UI freeze.
+        
+        The cv2.VideoWriter.release() method can take 10-30+ seconds for large videos,
+        especially with MJPEG (AVI) and FFV1 (MKV) codecs. Running this in a background
+        thread prevents the UI from freezing.
+        
+        Args:
+            tag_node_name: Node identifier
+            video_writer: cv2.VideoWriter instance to release
+            tag_node_button_value_name: Button tag to update when done
+        """
+        try:
+            logger.info(f"[VideoWriter] Starting background finalization for {tag_node_name}")
+            
+            # Release the video writer (can take 10-30+ seconds)
+            video_writer.release()
+            
+            logger.info(f"[VideoWriter] Background finalization completed for {tag_node_name}")
+            
+            # Update button label back to Start (thread-safe with DearPyGui)
+            dpg.set_item_label(tag_node_button_value_name, self._start_label)
+            
+        except Exception as e:
+            logger.error(f"[VideoWriter] Error during background finalization: {e}")
+            logger.error(traceback.format_exc())
+            # Still update the button label even on error
+            try:
+                dpg.set_item_label(tag_node_button_value_name, self._start_label)
+            except (SystemError, RuntimeError) as gui_error:
+                # DearPyGui may have been destroyed, log and continue
+                logger.debug(f"[VideoWriter] Could not update button label (GUI may be shutting down): {gui_error}")
+        finally:
+            # Clean up thread tracking
+            if tag_node_name in self._release_threads_dict:
+                self._release_threads_dict.pop(tag_node_name, None)
 
     
     def _recording_button(self, sender, data, user_data):
@@ -363,11 +420,24 @@ class VideoWriterNode(Node):
             dpg.set_item_label(tag_node_button_value_name, self._stop_label)
             
         elif label == self._stop_label:
-            # Stop recording
+            # Stop recording - use background thread to prevent UI freeze
             if tag_node_name in self._video_writer_dict:
-                self._video_writer_dict[tag_node_name].release()
-                self._video_writer_dict.pop(tag_node_name)
-                logger.info(f"[VideoWriter] Stopped recording")
-            
-            dpg.set_item_label(tag_node_button_value_name, self._start_label)
+                video_writer = self._video_writer_dict.pop(tag_node_name)
+                
+                # Update button to show we're finalizing
+                dpg.set_item_label(tag_node_button_value_name, self._finalizing_label)
+                
+                # Start background thread to release the video writer
+                # This prevents UI freeze during video file finalization (can take 10-30+ seconds)
+                # Use daemon=False to ensure video files are properly finalized before app exit
+                release_thread = threading.Thread(
+                    target=self._release_video_writer_async,
+                    args=(tag_node_name, video_writer, tag_node_button_value_name),
+                    daemon=False,
+                    name=f"VideoWriter-Release-{tag_node_name}"
+                )
+                self._release_threads_dict[tag_node_name] = release_thread
+                release_thread.start()
+                
+                logger.info(f"[VideoWriter] Stopped recording, finalizing in background")
 
