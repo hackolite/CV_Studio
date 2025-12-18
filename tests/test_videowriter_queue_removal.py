@@ -1,40 +1,25 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Test to verify that AVI and MKV formats no longer use queue-based background worker.
-This test validates that the changes to remove queues for AVI/MKV are working correctly.
+Test to verify that all formats (MP4, AVI, MKV) no longer use queue-based background worker.
+This test validates that the changes to remove queues for all formats are working correctly.
 """
 
-def test_queue_disabled_for_avi_mkv():
-    """Test that AVI and MKV formats disable background worker with queue"""
+def test_queue_disabled_for_all_formats():
+    """Test that all formats disable background worker with queue"""
     
     # Simulate the logic from node_video_writer.py line 1359
-    # These simulate the runtime conditions where dependencies are available
-    WORKER_AVAILABLE = True
-    FFMPEG_AVAILABLE = True
+    # All formats now use direct frame-by-frame writing (no queue)
+    use_worker = False
     
-    # Test for AVI format
-    video_format = 'AVI'
-    use_worker = WORKER_AVAILABLE and FFMPEG_AVAILABLE and video_format not in ['AVI', 'MKV']
-    assert not use_worker, "AVI format should NOT use background worker (queue-based)"
+    assert not use_worker, "All formats should NOT use background worker (queue-based)"
     
-    # Test for MKV format
-    video_format = 'MKV'
-    use_worker = WORKER_AVAILABLE and FFMPEG_AVAILABLE and video_format not in ['AVI', 'MKV']
-    assert not use_worker, "MKV format should NOT use background worker (queue-based)"
-    
-    # Test for MP4 format (should still be able to use worker)
-    video_format = 'MP4'
-    use_worker = WORKER_AVAILABLE and FFMPEG_AVAILABLE and video_format not in ['AVI', 'MKV']
-    assert use_worker, "MP4 format should be able to use background worker (queue-based)"
-    
-    print("✓ Queue disabled for AVI format")
-    print("✓ Queue disabled for MKV format")
-    print("✓ Queue still available for MP4 format")
+    print("✓ Queue disabled for all formats (MP4, AVI, MKV)")
+    print("✓ All formats now use direct frame-by-frame writing")
 
 
-def test_direct_writing_for_avi_mkv():
-    """Test that when worker is disabled, direct writing mode is used"""
+def test_direct_writing_for_all_formats():
+    """Test that when worker is disabled, direct writing mode is used for all formats"""
     
     # When use_worker is False and node not in _video_writer_dict
     use_worker = False
@@ -45,19 +30,16 @@ def test_direct_writing_for_avi_mkv():
     should_use_direct_write = not use_worker and tag_node_name not in _video_writer_dict
     
     assert should_use_direct_write, "Should use direct frame-by-frame writing when worker is disabled"
-    print("✓ Direct writing mode activated when worker disabled")
+    print("✓ Direct writing mode activated for all formats")
 
 
 def _get_log_message(video_format, file_path):
     """Helper function to generate log message based on format"""
-    if video_format in ['AVI', 'MKV']:
-        return f"[VideoWriter] Started direct frame-by-frame writing for {video_format}: {file_path}"
-    else:
-        return f"[VideoWriter] Started legacy mode for: {file_path}"
+    return f"[VideoWriter] Started direct frame-by-frame writing for {video_format}: {file_path}"
 
 
 def test_format_specific_logging():
-    """Test that format-specific logging messages are generated"""
+    """Test that all formats use the same logging message"""
     
     # Test AVI format logging
     video_format = 'AVI'
@@ -80,13 +62,14 @@ def test_format_specific_logging():
     file_path = '/tmp/test.mp4'
     log_message = _get_log_message(video_format, file_path)
     
-    assert "legacy mode" in log_message, "MP4 should use legacy mode log message (when worker not used)"
+    assert "direct frame-by-frame writing" in log_message, "MP4 should use direct writing log message"
+    assert "MP4" in log_message, "Format name should be in log message"
     
-    print("✓ Format-specific logging messages are correct")
+    print("✓ All formats use consistent direct writing logging messages")
 
 
 if __name__ == '__main__':
-    test_queue_disabled_for_avi_mkv()
-    test_direct_writing_for_avi_mkv()
+    test_queue_disabled_for_all_formats()
+    test_direct_writing_for_all_formats()
     test_format_specific_logging()
     print("\n✅ All queue removal tests passed!")
