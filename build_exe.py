@@ -53,7 +53,7 @@ def print_banner():
 
 def check_requirements():
     """Check if required tools are installed"""
-    print("[1/5] Checking requirements...")
+    print("[1/7] Checking requirements...")
     
     # Check Python version
     if sys.version_info < (3, 7):
@@ -104,7 +104,7 @@ def check_requirements():
 
 def clean_build_directories():
     """Clean previous build artifacts"""
-    print("[2/5] Cleaning build directories...")
+    print("[2/7] Cleaning build directories...")
     
     dirs_to_clean = ['build', 'dist', '__pycache__']
     
@@ -131,7 +131,7 @@ def clean_build_directories():
 
 def modify_spec_file(args):
     """Modify spec file based on command line arguments"""
-    print("[3/5] Configuring build...")
+    print("[3/7] Configuring build...")
     
     spec_file = 'CV_Studio.spec'
     
@@ -184,7 +184,7 @@ def modify_spec_file(args):
 
 def build_executable(args):
     """Run PyInstaller to build the executable"""
-    print("[4/5] Building executable...")
+    print("[4/7] Building executable...")
     print("  This may take several minutes...\n")
     
     spec_file = 'CV_Studio.spec'
@@ -208,7 +208,7 @@ def build_executable(args):
 
 def create_documentation():
     """Create README for the built executable"""
-    print("[5/5] Creating documentation...")
+    print("[5/7] Creating documentation...")
     
     readme_content = """# CV_Studio - Standalone Executable
 
@@ -311,8 +311,60 @@ Individual nodes and models may have their own licenses.
         print(f"  ✓ Created {readme_path}\n")
 
 
-def print_summary():
+def create_installer(args):
+    """Create Windows installer using Inno Setup"""
+    if not args.installer:
+        return True
+    
+    print("[6/7] Creating Windows installer...")
+    
+    # Check if Inno Setup is installed
+    inno_paths = [
+        r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+        r"C:\Program Files\Inno Setup 6\ISCC.exe",
+        r"C:\Program Files (x86)\Inno Setup 5\ISCC.exe",
+        r"C:\Program Files\Inno Setup 5\ISCC.exe",
+    ]
+    
+    iscc_path = None
+    for path in inno_paths:
+        if os.path.exists(path):
+            iscc_path = path
+            break
+    
+    if not iscc_path:
+        print("  ⚠ Inno Setup not found!")
+        print("  Please install Inno Setup from: https://jrsoftware.org/isdl.php")
+        print("  Or compile installer.iss manually using Inno Setup Compiler")
+        return False
+    
+    print(f"  ✓ Found Inno Setup: {iscc_path}")
+    
+    # Check if installer script exists
+    if not os.path.exists('installer.iss'):
+        print("  ✗ installer.iss not found!")
+        return False
+    
+    print("  - Compiling installer...")
+    
+    try:
+        result = subprocess.run(
+            [iscc_path, 'installer.iss'],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        print("  ✓ Installer created successfully!\n")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"  ✗ Installer compilation failed:")
+        print(f"  {e.stderr}")
+        return False
+
+
+def print_summary(args):
     """Print build summary"""
+    print("\n[7/7] Build Summary")
     print("=" * 70)
     print("  BUILD COMPLETE!")
     print("=" * 70)
@@ -321,15 +373,38 @@ def print_summary():
     print("  📁 Location: dist/CV_Studio/")
     print("  🚀 Run:      dist/CV_Studio/CV_Studio.exe")
     print()
+    
+    if args.installer and os.path.exists('installer_output'):
+        print("Windows Installer:")
+        installer_files = [f for f in os.listdir('installer_output') if f.endswith('.exe')]
+        if installer_files:
+            print(f"  📀 Installer: installer_output/{installer_files[0]}")
+            print()
+    
     print("Distribution:")
     print("  📦 The entire 'dist/CV_Studio' folder can be distributed")
     print("  📋 Includes all ONNX models and node resources")
     print("  💻 Users just need to run CV_Studio.exe")
     print()
+    
+    if args.installer and os.path.exists('installer_output'):
+        print("  OR distribute the Windows installer:")
+        if installer_files:
+            print(f"  📀 {installer_files[0]}")
+            print("  💾 Professional installation with Start Menu shortcuts")
+        print()
+    
     print("Next steps:")
     print("  1. Test the executable: cd dist/CV_Studio && CV_Studio.exe")
     print("  2. Check all nodes work, especially ONNX object detection")
     print("  3. Zip the CV_Studio folder for distribution")
+    if args.installer:
+        print("  4. Or distribute the installer from installer_output/")
+    print()
+    print("Documentation:")
+    print("  📖 BUILD_EXE_GUIDE.md - Complete guide (English)")
+    print("  📖 BUILD_EXE_GUIDE_FR.md - Guide complet (Français)")
+    print("  ⚡ BUILD_EXE_QUICKREF.md - Quick reference")
     print()
     print("=" * 70)
 
@@ -351,6 +426,8 @@ def main():
                        help='Build with debug information')
     parser.add_argument('--icon', type=str, default=None,
                        help='Path to icon file (.ico)')
+    parser.add_argument('--installer', action='store_true',
+                       help='Create Windows installer using Inno Setup')
     
     args = parser.parse_args()
     
@@ -375,8 +452,14 @@ def main():
     # Create documentation
     create_documentation()
     
+    # Create installer if requested
+    if args.installer:
+        installer_success = create_installer(args)
+        if not installer_success:
+            print("\n⚠ Warning: Installer creation failed, but executable is ready")
+    
     # Print summary
-    print_summary()
+    print_summary(args)
 
 
 if __name__ == '__main__':
