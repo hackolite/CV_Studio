@@ -146,6 +146,9 @@ python build_exe.py --clean --windowed
 
 # Alternative: With custom icon
 python build_exe.py --clean --icon your_icon.ico
+
+# Alternative: Build + Windows installer (requires Inno Setup)
+python build_exe.py --clean --installer
 ```
 
 The build process will:
@@ -155,6 +158,7 @@ The build process will:
 4. ✅ Include all nodes (Input, Process, DL, Audio, etc.)
 5. ✅ Bundle all ONNX models for object detection
 6. ✅ Create the standalone executable
+7. ✅ Create Windows installer (if --installer flag used)
 
 **Build time:** Approximately 5-15 minutes depending on your system.
 
@@ -197,8 +201,9 @@ Test that everything works:
 
 **Étape 8 : Distribution / Step 8: Distribution**
 
-To share your executable:
+You have two distribution options:
 
+**Option A: ZIP Archive (Portable)**
 ```bash
 # Create a ZIP archive
 cd dist
@@ -213,6 +218,25 @@ The ZIP file can be distributed to users who just need to:
 1. Extract the ZIP file
 2. Run `CV_Studio.exe`
 3. No Python installation required!
+
+**Option B: Windows Installer (Professional)**
+
+If you used the `--installer` flag or want to create an installer:
+
+```bash
+# Install Inno Setup from: https://jrsoftware.org/isdl.php
+
+# Compile the installer
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+# Or just: iscc installer.iss (if in PATH)
+```
+
+The installer will be created in `installer_output/CV_Studio_Setup_v1.0.0.exe` and provides:
+- ✅ Professional installation wizard
+- ✅ Start Menu shortcuts
+- ✅ Desktop shortcut (optional)
+- ✅ Clean uninstallation
+- ✅ Multi-language support (EN/FR)
 
 #### 📦 What's included in the executable
 
@@ -239,9 +263,22 @@ python build_exe.py --debug
 # Custom icon (if you have an icon file)
 python build_exe.py --icon your_icon.ico
 
+# Create Windows installer (requires Inno Setup)
+python build_exe.py --clean --installer
+
 # Combine options
-python build_exe.py --clean --windowed --icon your_icon.ico
+python build_exe.py --clean --windowed --icon your_icon.ico --installer
 ```
+
+**Note about PyTorch and ONNX:**
+- CV Studio uses **ONNX Runtime** (included) for AI model inference
+- **PyTorch is NOT required** for the executable to work
+- PyTorch is only needed if you want to:
+  - Train new models
+  - Convert PyTorch models to ONNX
+  - Develop custom PyTorch-based nodes
+- ONNX Runtime provides fast inference with GPU support (CUDA)
+- See the detailed guides for more information on dependencies
 
 #### ⚠️ Dépannage / Troubleshooting
 
