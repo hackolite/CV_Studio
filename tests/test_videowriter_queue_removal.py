@@ -9,23 +9,24 @@ def test_queue_disabled_for_avi_mkv():
     """Test that AVI and MKV formats disable background worker with queue"""
     
     # Simulate the logic from node_video_writer.py line 1359
+    # These simulate the runtime conditions where dependencies are available
     WORKER_AVAILABLE = True
     FFMPEG_AVAILABLE = True
     
     # Test for AVI format
     video_format = 'AVI'
     use_worker = WORKER_AVAILABLE and FFMPEG_AVAILABLE and video_format not in ['AVI', 'MKV']
-    assert use_worker == False, "AVI format should NOT use background worker (queue-based)"
+    assert not use_worker, "AVI format should NOT use background worker (queue-based)"
     
     # Test for MKV format
     video_format = 'MKV'
     use_worker = WORKER_AVAILABLE and FFMPEG_AVAILABLE and video_format not in ['AVI', 'MKV']
-    assert use_worker == False, "MKV format should NOT use background worker (queue-based)"
+    assert not use_worker, "MKV format should NOT use background worker (queue-based)"
     
     # Test for MP4 format (should still be able to use worker)
     video_format = 'MP4'
     use_worker = WORKER_AVAILABLE and FFMPEG_AVAILABLE and video_format not in ['AVI', 'MKV']
-    assert use_worker == True, "MP4 format should be able to use background worker (queue-based)"
+    assert use_worker, "MP4 format should be able to use background worker (queue-based)"
     
     print("✓ Queue disabled for AVI format")
     print("✓ Queue disabled for MKV format")
@@ -43,7 +44,7 @@ def test_direct_writing_for_avi_mkv():
     # The condition from node_video_writer.py that triggers direct write mode
     should_use_direct_write = not use_worker and tag_node_name not in _video_writer_dict
     
-    assert should_use_direct_write == True, "Should use direct frame-by-frame writing when worker is disabled"
+    assert should_use_direct_write, "Should use direct frame-by-frame writing when worker is disabled"
     print("✓ Direct writing mode activated when worker disabled")
 
 
