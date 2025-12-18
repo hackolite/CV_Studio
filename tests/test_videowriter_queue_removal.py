@@ -8,7 +8,7 @@ This test validates that the changes to remove queues for AVI/MKV are working co
 def test_queue_disabled_for_avi_mkv():
     """Test that AVI and MKV formats disable background worker with queue"""
     
-    # Simulate the logic from node_video_writer.py line 1358
+    # Simulate the logic from node_video_writer.py line 1359
     WORKER_AVAILABLE = True
     FFMPEG_AVAILABLE = True
     
@@ -40,7 +40,7 @@ def test_direct_writing_for_avi_mkv():
     tag_node_name = 'test_node:VideoWriter'
     _video_writer_dict = {}  # Empty dict, node not present
     
-    # The condition from line 1410
+    # The condition from node_video_writer.py that triggers direct write mode
     should_use_direct_write = not use_worker and tag_node_name not in _video_writer_dict
     
     assert should_use_direct_write == True, "Should use direct frame-by-frame writing when worker is disabled"
