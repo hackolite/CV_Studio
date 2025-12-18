@@ -1354,9 +1354,9 @@ class VideoWriterNode(Node):
             config = format_config.get(video_format, format_config['MP4'])
             file_path = os.path.join(video_writer_directory, f'{startup_time_text}{config["ext"]}')
 
-            # For AVI and MKV formats, always use direct frame-by-frame writing (no queue)
-            # Only MP4 can optionally use background worker with queue
-            use_worker = WORKER_AVAILABLE and FFMPEG_AVAILABLE and video_format not in ['AVI', 'MKV']
+            # All formats now use direct frame-by-frame writing (no queue)
+            # This provides consistent behavior across all formats and removes queue complexity
+            use_worker = False
             
             if use_worker and tag_node_name not in self._background_workers:
                 # Start background worker
@@ -1446,10 +1446,7 @@ class VideoWriterNode(Node):
                 }
                 
                 self._worker_mode[tag_node_name] = 'legacy'
-                if video_format in ['AVI', 'MKV']:
-                    logger.info(f"[VideoWriter] Started direct frame-by-frame writing for {video_format}: {file_path}")
-                else:
-                    logger.info(f"[VideoWriter] Started legacy mode for: {file_path}")
+                logger.info(f"[VideoWriter] Started direct frame-by-frame writing for {video_format}: {file_path}")
 
             dpg.set_item_label(tag_node_button_value_name, self._stop_label)
             
