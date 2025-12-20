@@ -57,18 +57,13 @@ def create_concat_image(frame_dict, slot_num):
         rows, cols = 3, 3
     
     # Pre-allocate output array - single allocation for entire grid
-    out = np.empty((rows * h, cols * w, 3), dtype=frame_dict[0].dtype)
+    # Use zeros to ensure any unfilled positions are black (though frame_dict should be complete)
+    out = np.zeros((rows * h, cols * w, 3), dtype=frame_dict[0].dtype)
     
     # Copy frames directly into pre-allocated array using slicing
+    # frame_dict should contain all indices 0..slot_num-1, filled by create_image_dict
     for i in range(slot_num):
         if i in frame_dict:
-            r = i // cols
-            c = i % cols
-            out[r*h:(r+1)*h, c*w:(c+1)*w] = frame_dict[i]
-    
-    # Fill remaining grid positions with black if needed
-    for i in range(slot_num, rows * cols):
-        if i < len(frame_dict) and i in frame_dict:
             r = i // cols
             c = i % cols
             out[r*h:(r+1)*h, c*w:(c+1)*w] = frame_dict[i]
