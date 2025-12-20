@@ -339,11 +339,12 @@ class VideoWriterNode(Node):
         frame = node_image_dict.get(connection_info_src, None)
 
         if frame is not None:
-            # Submit frame to write queue (non-blocking)
+            # Submit frame to write queue (non-blocking) - only copy when recording
             if tag_node_name in self._write_queues_dict:
                 try:
                     # Use put_nowait to avoid blocking the UI thread
                     # If queue is full, drop the frame rather than waiting
+                    # Only copy frame when actually recording to save memory
                     self._write_queues_dict[tag_node_name].put_nowait(frame.copy())
                 except queue.Full:
                     # Track dropped frames
@@ -353,9 +354,9 @@ class VideoWriterNode(Node):
 
             # Prepare display frame with recording indicator
             if tag_node_name in self._video_writer_dict:
-                # Add red recording indicator directly on the frame
-                # Using the original frame reference and drawing on it is faster than copying
-                display_frame = cv2.circle(frame, (10, 10), 50, (0, 0, 255), thickness=-1)
+                # Create a copy before drawing the recording indicator to avoid corrupting the original frame
+                display_frame = frame.copy()
+                cv2.circle(display_frame, (10, 10), 50, (0, 0, 255), thickness=-1)
             else:
                 display_frame = frame
 
