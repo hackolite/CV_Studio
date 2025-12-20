@@ -93,15 +93,13 @@ def test_videowriter_uses_copy_not_deepcopy():
         content = f.read()
     
     # Check that we're using .copy() instead of deepcopy in the frame processing
-    assert 'rec_frame = frame.copy()' in content, \
+    # The current implementation uses frame.copy() directly in put_nowait
+    assert 'frame.copy()' in content, \
         "Video writer should use frame.copy() for recording"
     
-    # Verify that the old deepcopy pattern for rec_frame is removed
-    lines = content.split('\n')
-    for i, line in enumerate(lines):
-        if 'rec_frame = ' in line and 'copy' in line:
-            assert 'deepcopy' not in line, \
-                f"Line {i+1} should not use deepcopy for rec_frame: {line}"
+    # Verify that deepcopy is not used anywhere in the file
+    assert 'deepcopy(frame' not in content, \
+        "Video writer should not use deepcopy for frame copying"
 
 
 def test_memory_efficiency_simulation():

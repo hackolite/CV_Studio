@@ -54,6 +54,8 @@ def create_concat_image(frame_dict, slot_num):
         hconcat_image01 = cv2.hconcat([frame_dict[0], frame_dict[1]])
         hconcat_image02 = cv2.hconcat([frame_dict[2], frame_dict[3]])
         frame = cv2.vconcat([hconcat_image01, hconcat_image02])
+        # Explicitly delete intermediate arrays to help garbage collector
+        del hconcat_image01, hconcat_image02
         display_frame = frame
     
     elif slot_num == 5 or slot_num == 6:
@@ -63,6 +65,8 @@ def create_concat_image(frame_dict, slot_num):
         hconcat_image01 = cv2.hconcat([frame_dict[0], frame_dict[1], frame_dict[2]])
         hconcat_image02 = cv2.hconcat([frame_dict[3], frame_dict[4], frame_dict[5]])
         frame = cv2.vconcat([hconcat_image01, hconcat_image02])
+        # Explicitly delete intermediate arrays to help garbage collector
+        del hconcat_image01, hconcat_image02
         display_frame = frame
     
     elif slot_num == 7 or slot_num == 8 or slot_num == 9:
@@ -74,6 +78,8 @@ def create_concat_image(frame_dict, slot_num):
         hconcat_image02 = cv2.hconcat([frame_dict[3], frame_dict[4], frame_dict[5]])
         hconcat_image03 = cv2.hconcat([frame_dict[6], frame_dict[7], frame_dict[8]])
         frame = cv2.vconcat([hconcat_image01, hconcat_image02, hconcat_image03])
+        # Explicitly delete intermediate arrays to help garbage collector
+        del hconcat_image01, hconcat_image02, hconcat_image03
         display_frame = frame
 
     return frame, display_frame
@@ -452,6 +458,9 @@ class Node(Node):
                     # cv2.resize creates a new array, so no additional copy needed after draw
                     resize_frame = cv2.resize(frame, (resize_width, resize_height))
                     frame_dict[output_index] = resize_frame
+                    # Explicitly delete frame after resize to help garbage collector
+                    # Note: resize_frame is now referenced by frame_dict, so we only delete frame
+                    del frame
 
                     frame_exist_flag = True
                 else:
