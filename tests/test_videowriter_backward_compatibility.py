@@ -122,7 +122,9 @@ def test_update_method_preserved():
     update_end = content.find('\n    def ', update_start + 1)
     update_content = content[update_start:update_end]
     
-    # Check frame writing logic (now using write_queues_dict for threaded frame writing)
+    # Check frame writing logic (accepts various dictionary names for backward compatibility)
+    # Current implementation uses write_queues_dict, but we check for alternatives
+    # to support different implementation approaches (threaded, async, direct)
     assert ('if tag_node_name in self._write_queues_dict:' in update_content or 
             'if tag_node_name in self._video_writer_dict:' in update_content or 
             'if tag_node_name in self._async_writer_dict:' in update_content), \
