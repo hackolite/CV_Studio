@@ -226,6 +226,11 @@ class YoutubeNode(Node):
         self._last_frame_time = {}
         self._last_frame = {}
         
+        # Timestamp management for FPS-based timing
+        self._frame_count = {}  # Track frame number for each node
+        self._stream_start_time = {}  # Track when the stream started
+        self._stream_fps = {}  # Track FPS from the stream
+        
     def convert_cv_to_dpg(self, cv_img, w, h):
         """Converts OpenCV image to DearPyGui format"""
         if cv_img is None:
@@ -269,6 +274,24 @@ class YoutubeNode(Node):
                 # Initialize the video capture
                 self.cap = get_light_live_stream_url(youtube_url)
                 print(f"YouTube stream started: {youtube_url}")
+                
+                # Initialize frame count and timing for timestamp generation
+                self._frame_count[node_id] = 0
+                self._stream_start_time[node_id] = time.time()
+                
+                # Try to get FPS from the stream (default to 24 if unavailable)
+                try:
+                    stream_fps = self.cap.get(cv2.CAP_PROP_FPS)
+                    if stream_fps > 0:
+                        self._stream_fps[node_id] = stream_fps
+                        print(f"YouTube stream FPS: {stream_fps}")
+                    else:
+                        self._stream_fps[node_id] = 24.0  # Default to 24 FPS
+                        print("YouTube stream FPS unavailable, using default 24 FPS")
+                except:
+                    self._stream_fps[node_id] = 24.0  # Default to 24 FPS
+                    print("Failed to get YouTube stream FPS, using default 24 FPS")
+                
                 # Change button label to Stop
                 dpg.set_item_label(tag_node_button_value_name, self._stop_label)
                 # Set playing state
@@ -288,6 +311,11 @@ class YoutubeNode(Node):
                 self.cap.release()
                 self.cap = None
                 print("YouTube stream stopped")
+            
+            # Clean up state
+            self._frame_count.pop(node_id, None)
+            self._stream_start_time.pop(node_id, None)
+            self._stream_fps.pop(node_id, None)
             
             # Change button label back to Start
             dpg.set_item_label(tag_node_button_value_name, self._start_label)
@@ -313,6 +341,7 @@ class YoutubeNode(Node):
         is_playing = self._is_playing.get(str(node_id), False)
         
         frame = None
+        frame_timestamp = None
         
         # Only read frames if playback is active and capture is initialized
         if self.cap is not None and is_playing:
@@ -324,11 +353,25 @@ class YoutubeNode(Node):
                 try:
                     ret, frame = self.cap.read()
                     if ret and frame is not None:
+                        # Increment frame count for timestamp calculation
+                        self._frame_count[str(node_id)] = self._frame_count.get(str(node_id), 0) + 1
+                        
                         # Store frame and update display
                         self._last_frame[str(node_id)] = frame
                         texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
                         dpg_set_value(output_value01_tag, texture)
                         self._last_frame_time[str(node_id)] = current_time
+                        
+                        # Calculate FPS-based timestamp for this frame
+                        # Similar to Video node implementation (lines 1096-1109 in node_video.py)
+                        # The timestamp is based on the frame number and the stream FPS
+                        # This ensures consistent timestamps regardless of processing speed
+                        stream_fps = self._stream_fps.get(str(node_id), 24.0)
+                        if stream_fps > 0:
+                            current_frame_num = self._frame_count.get(str(node_id), 0)
+                            # Calculate timestamp = frame_number / FPS
+                            # This gives us the theoretical time position of this frame in the stream
+                            frame_timestamp = current_frame_num / stream_fps
                     else:
                         # Use last frame if read fails
                         frame = self._last_frame.get(str(node_id), None)
@@ -342,13 +385,29 @@ class YoutubeNode(Node):
             # Use last frame when not playing
             frame = self._last_frame.get(str(node_id), None)
 
-        return {"image": frame, "json": None, "audio": None}
+        # Return frame with FPS-based timestamp for proper synchronization
+        # The timestamp will be preserved through processing/vision nodes and used by VideoWriter
+        return {
+            "image": frame, 
+            "json": None, 
+            "audio": None,
+            "timestamp": frame_timestamp  # FPS-based timestamp for synchronization
+        }
     
     
     def close(self, node_id):
         if self.cap is not None:
             self.cap.release()
             self.cap = None
+        
+        # Clean up all state for this node
+        node_id_str = str(node_id)
+        self._frame_count.pop(node_id_str, None)
+        self._stream_start_time.pop(node_id_str, None)
+        self._stream_fps.pop(node_id_str, None)
+        self._is_playing.pop(node_id_str, None)
+        self._last_frame_time.pop(node_id_str, None)
+        self._last_frame.pop(node_id_str, None)
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
