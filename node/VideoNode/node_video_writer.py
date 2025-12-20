@@ -230,6 +230,10 @@ class VideoWriterNode(Node):
     _RELEASE_TIMEOUT_SECONDS = 60.0
     _WRITE_THREAD_TIMEOUT = 5.0
     
+    # Hot-path optimization: Throttle texture uploads during recording
+    # Display 1 frame every N frames to reduce CPU load
+    _PREVIEW_THROTTLE = 10  # Update display every 10 frames during recording
+    
     # FPS mapping for combo box values
     _FPS_MAP = {
         '24 FPS': 24,
@@ -239,6 +243,8 @@ class VideoWriterNode(Node):
     }
 
     _prev_frame_flag = False
+    _frame_counter_dict = {}  # {node: int} for throttling texture uploads
+    _is_recording_dict = {}   # {node: bool} for fast hot-path check
 
     def __init__(self):
         pass
@@ -347,6 +353,7 @@ class VideoWriterNode(Node):
             self._release_threads_dict.pop(tag_node_name, None)
             self._frame_count_dict.pop(tag_node_name, None)
             self._dropped_frames_dict.pop(tag_node_name, None)
+            self._frame_counter_dict.pop(tag_node_name, None)
 
     def update(
         self,
@@ -356,56 +363,100 @@ class VideoWriterNode(Node):
         node_result_dict,
         node_audio_dict,
     ):
+        """
+        REAL-TIME HOT PATH - Performance-critical method called every frame.
+        
+        DESIGN CONSTRAINTS:
+        - Must never block the UI thread
+        - Must avoid expensive operations (resize, texture upload, allocations)
+        - Must minimize work when recording is active
+        - Frame writing is handled by background thread (_writer_thread)
+        """
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01Value'
-        tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
 
+        # Parse connection to find source node
         connection_info_src = ''
         for connection_info in connection_list:
             connection_info_src = connection_info[0]
             connection_info_src = connection_info_src.split(':')[:2]
             connection_info_src = ':'.join(connection_info_src)
 
+        # Get display dimensions from config
         small_window_w = self._opencv_setting_dict['process_width']
         small_window_h = self._opencv_setting_dict['process_height']
 
         frame = node_image_dict.get(connection_info_src, None)
+        
+        # Check if currently recording (fast dict lookup, no GUI calls)
+        is_recording = tag_node_name in self._write_queues_dict
 
         if frame is not None:
-            # Submit frame to write queue (non-blocking) - only copy when recording
-            if tag_node_name in self._write_queues_dict:
+            # ============ FRAME WRITING (NON-BLOCKING) ============
+            # Only copy and submit frame when actively recording
+            # Avoids memory allocation overhead when not recording
+            if is_recording:
                 try:
-                    # Use put_nowait to avoid blocking the UI thread
-                    # If queue is full, drop the frame rather than waiting
-                    # Only copy frame when actually recording to save memory
+                    # HOT PATH: Use put_nowait to never block UI thread
+                    # Drop frames when queue is full rather than waiting
+                    # Only copy frame when recording to save memory (~6MB per frame at HD)
                     self._write_queues_dict[tag_node_name].put_nowait(frame.copy())
                 except queue.Full:
-                    # Track dropped frames
+                    # Track dropped frames for diagnostics
                     self._dropped_frames_dict[tag_node_name] = self._dropped_frames_dict.get(tag_node_name, 0) + 1
-                    if self._dropped_frames_dict[tag_node_name] % 30 == 1:  # Log every 30 dropped frames
-                        logger.warning(f"[VideoWriter] Frame dropped for {tag_node_name} - queue full (total dropped: {self._dropped_frames_dict[tag_node_name]})")
+                    if self._dropped_frames_dict[tag_node_name] % 30 == 1:  # Log every 30 drops
+                        logger.warning(f"[VideoWriter] Frame dropped for {tag_node_name} - queue full (total: {self._dropped_frames_dict[tag_node_name]})")
 
-            # Prepare display frame
-            # Memory optimization: Resize to display size
-            # This avoids making a full-size copy of potentially large frames from ImageConcat
-            display_frame = cv2.resize(frame, (small_window_w, small_window_h))
-
-            texture = self.convert_cv_to_dpg(
-                display_frame,
-                small_window_w,
-                small_window_h,
-            )
-            dpg_set_value(input_value01_tag, texture)
-            # Explicitly delete display_frame and texture to help garbage collector
-            del display_frame, texture
+            # ============ DISPLAY UPDATE (THROTTLED DURING RECORDING) ============
+            # HOT PATH OPTIMIZATION: Reduce texture upload frequency during recording
+            # Texture upload (convert_cv_to_dpg + dpg_set_value) is expensive:
+            # - cv2.resize consumes CPU
+            # - GPU texture upload has driver overhead
+            # - At 30fps, this is 30 uploads/sec which causes lag
+            
+            should_update_display = True
+            
+            if is_recording:
+                # Throttle: Only update display every Nth frame during recording
+                # This reduces CPU/GPU load significantly while still showing progress
+                frame_counter = self._frame_counter_dict.get(tag_node_name, 0)
+                self._frame_counter_dict[tag_node_name] = frame_counter + 1
+                
+                # Only update display every _PREVIEW_THROTTLE frames (e.g., 1 in 10)
+                should_update_display = (frame_counter % self._PREVIEW_THROTTLE == 0)
+            
+            if should_update_display:
+                # CRITICAL: Upstream nodes must provide UI-sized frames
+                # We accept frames "as is" without resizing
+                # This assumes frame is already at (small_window_w, small_window_h)
+                # If frame size doesn't match, resize as fallback (log warning)
+                if frame.shape[1] != small_window_w or frame.shape[0] != small_window_h:
+                    # Fallback resize - this should ideally not happen
+                    # Upstream nodes should provide correctly-sized frames
+                    display_frame = cv2.resize(frame, (small_window_w, small_window_h))
+                else:
+                    display_frame = frame
+                
+                # Convert and upload texture to GPU
+                # NOTE: convert_cv_to_dpg performs a resize internally, but since
+                # display_frame is already at the target size (small_window_w, small_window_h),
+                # this resize becomes a no-op that just ensures format consistency
+                texture = self.convert_cv_to_dpg(
+                    display_frame,
+                    small_window_w,
+                    small_window_h,
+                )
+                dpg_set_value(input_value01_tag, texture)
             
         else:
-            # No frame received - check if we should auto-stop recording
-            label = dpg.get_item_label(tag_node_button_value_name)
-            if label == self._stop_label and self._prev_frame_flag:
+            # ============ NO FRAME - AUTO-STOP LOGIC ============
+            # HOT PATH: Use cached recording state instead of dpg.get_item_label
+            # dpg.get_item_label causes GUI roundtrip which is expensive
+            if is_recording and self._prev_frame_flag:
                 # Stream ended while recording - auto-stop
                 self._recording_button(None, None, tag_node_name)
 
+                # Clear display with black frame
                 black_image = np.zeros((small_window_h, small_window_w, 3))
                 texture = self.convert_cv_to_dpg(
                     black_image,
@@ -413,8 +464,6 @@ class VideoWriterNode(Node):
                     small_window_h,
                 )
                 dpg_set_value(input_value01_tag, texture)
-                # Explicitly delete temporary objects to help garbage collector
-                del black_image, texture
 
         # Track frame presence for auto-stop detection
         self._prev_frame_flag = (frame is not None)
@@ -448,6 +497,7 @@ class VideoWriterNode(Node):
         # Clean up write queue and stop flag
         self._write_queues_dict.pop(tag_node_name, None)
         self._stop_flags_dict.pop(tag_node_name, None)
+        self._frame_counter_dict.pop(tag_node_name, None)
         
         # Wait for finalization thread if active
         if tag_node_name in self._release_threads_dict:
@@ -471,6 +521,7 @@ class VideoWriterNode(Node):
         # Clear tracking dictionaries
         self._frame_count_dict.pop(tag_node_name, None)
         self._dropped_frames_dict.pop(tag_node_name, None)
+        self._frame_counter_dict.pop(tag_node_name, None)
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
@@ -590,6 +641,7 @@ class VideoWriterNode(Node):
                 # Initialize counters
                 self._frame_count_dict[tag_node_name] = 0
                 self._dropped_frames_dict[tag_node_name] = 0
+                self._frame_counter_dict[tag_node_name] = 0  # For throttling display updates
                 
                 # Start write thread
                 write_thread = threading.Thread(
@@ -619,6 +671,7 @@ class VideoWriterNode(Node):
                 self._write_queues_dict.pop(tag_node_name, None)
                 self._write_threads_dict.pop(tag_node_name, None)
                 self._stop_flags_dict.pop(tag_node_name, None)
+                self._frame_counter_dict.pop(tag_node_name, None)
             
         elif label == self._stop_label:
             # ============ STOP RECORDING ============
@@ -645,6 +698,7 @@ class VideoWriterNode(Node):
                 # Clean up queue and stop flag
                 self._write_queues_dict.pop(tag_node_name, None)
                 self._stop_flags_dict.pop(tag_node_name, None)
+                self._frame_counter_dict.pop(tag_node_name, None)  # Clean up throttle counter
                 
                 # Start background finalization
                 if tag_node_name in self._video_writer_dict:
