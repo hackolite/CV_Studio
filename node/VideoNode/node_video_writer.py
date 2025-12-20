@@ -438,7 +438,9 @@ class VideoWriterNode(Node):
                     display_frame = frame
                 
                 # Convert and upload texture to GPU
-                # NOTE: convert_cv_to_dpg does resize internally, but frame is already small
+                # NOTE: convert_cv_to_dpg performs a resize internally, but since
+                # display_frame is already at the target size (small_window_w, small_window_h),
+                # this resize becomes a no-op that just ensures format consistency
                 texture = self.convert_cv_to_dpg(
                     display_frame,
                     small_window_w,
