@@ -375,6 +375,8 @@ class VideoWriterNode(Node):
                 small_window_h,
             )
             dpg_set_value(input_value01_tag, texture)
+            # Explicitly delete display_frame and texture to help garbage collector
+            del display_frame, texture
             
         else:
             # No frame received - check if we should auto-stop recording
@@ -390,6 +392,8 @@ class VideoWriterNode(Node):
                     small_window_h,
                 )
                 dpg_set_value(input_value01_tag, texture)
+                # Explicitly delete temporary objects to help garbage collector
+                del black_image, texture
 
         # Track frame presence for auto-stop detection
         self._prev_frame_flag = (frame is not None)
