@@ -153,6 +153,18 @@ class FactoryNode:
             ):
                 dpg.add_image(node.tag_node_input01_value_name)
 
+            # Add resolution selector
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_name + ':Resolution',
+                    items=['HD (1280x720)', '640x480', '320x240'],
+                    default_value='HD (1280x720)',
+                    width=small_window_w,
+                    label='Resolution',
+                )
+            
             # Add format selector
             with dpg.node_attribute(
                     attribute_type=dpg.mvNode_Attr_Static,
@@ -204,12 +216,6 @@ class VideoWriterNode(Node):
     _QUEUE_MAX_SIZE = 60  # Buffer up to 60 frames (2 seconds at 30fps)
     _RELEASE_TIMEOUT_SECONDS = 60.0
     _WRITE_THREAD_TIMEOUT = 5.0
-    
-    # Recording indicator configuration (for display frame)
-    _INDICATOR_X = 10  # X position in pixels
-    _INDICATOR_Y = 10  # Y position in pixels
-    _INDICATOR_RADIUS = 5  # Radius in pixels (scaled for small display frame)
-    _INDICATOR_COLOR = (0, 0, 255)  # BGR color (red)
 
     _prev_frame_flag = False
 
@@ -358,20 +364,10 @@ class VideoWriterNode(Node):
                     if self._dropped_frames_dict[tag_node_name] % 30 == 1:  # Log every 30 dropped frames
                         logger.warning(f"[VideoWriter] Frame dropped for {tag_node_name} - queue full (total dropped: {self._dropped_frames_dict[tag_node_name]})")
 
-            # Prepare display frame with recording indicator
-            # Memory optimization: Resize first, then draw indicator only if needed
+            # Prepare display frame without recording indicator to save resources
+            # Memory optimization: Resize to display size
             # This avoids making a full-size copy of potentially large frames from ImageConcat
             display_frame = cv2.resize(frame, (small_window_w, small_window_h))
-            if tag_node_name in self._video_writer_dict:
-                # Draw recording indicator on the already-resized display frame
-                # This modifies display_frame in-place but it's already a copy from cv2.resize
-                cv2.circle(
-                    display_frame,
-                    (self._INDICATOR_X, self._INDICATOR_Y),
-                    self._INDICATOR_RADIUS,
-                    self._INDICATOR_COLOR,
-                    thickness=-1
-                )
 
             texture = self.convert_cv_to_dpg(
                 display_frame,
@@ -486,8 +482,18 @@ class VideoWriterNode(Node):
                 datetime_now = datetime.datetime.now()
                 startup_time_text = datetime_now.strftime('%Y%m%d_%H%M%S')
                 
-                writer_width = self._opencv_setting_dict['video_writer_width']
-                writer_height = self._opencv_setting_dict['video_writer_height']
+                # Get selected resolution
+                resolution_tag = tag_node_name + ':Resolution'
+                resolution_text = dpg_get_value(resolution_tag)
+                
+                # Parse resolution from text (e.g., "HD (1280x720)" -> 1280x720)
+                resolution_map = {
+                    'HD (1280x720)': (1280, 720),
+                    '640x480': (640, 480),
+                    '320x240': (320, 240)
+                }
+                writer_width, writer_height = resolution_map.get(resolution_text, (1280, 720))
+                
                 writer_fps = self._opencv_setting_dict['video_writer_fps']
                 video_writer_directory = self._opencv_setting_dict['video_writer_directory']
 
@@ -540,7 +546,11 @@ class VideoWriterNode(Node):
                 self._write_threads_dict[tag_node_name] = write_thread
                 write_thread.start()
                 
-                logger.info(f"[VideoWriter] Started threaded recording {video_format}: {file_path}")
+                # Disable resolution and format dropdowns during recording
+                dpg.configure_item(resolution_tag, enabled=False)
+                dpg.configure_item(format_tag, enabled=False)
+                
+                logger.info(f"[VideoWriter] Started threaded recording {video_format} at {resolution_text}: {file_path}")
                 dpg.set_item_label(tag_node_button_value_name, self._stop_label)
                 
             except Exception as e:
@@ -556,6 +566,12 @@ class VideoWriterNode(Node):
         elif label == self._stop_label:
             # ============ STOP RECORDING ============
             try:
+                # Re-enable resolution and format dropdowns
+                resolution_tag = tag_node_name + ':Resolution'
+                format_tag = tag_node_name + ':Format'
+                dpg.configure_item(resolution_tag, enabled=True)
+                dpg.configure_item(format_tag, enabled=True)
+                
                 # Signal write thread to stop
                 if tag_node_name in self._write_queues_dict:
                     try:
