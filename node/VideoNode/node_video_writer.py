@@ -162,7 +162,7 @@ class FactoryNode:
                     items=['HD (1280x720)', '640x480', '320x240'],
                     default_value='HD (1280x720)',
                     width=small_window_w,
-                    label='Resolution',
+                    label='',
                 )
             
             # Add format selector
@@ -174,7 +174,7 @@ class FactoryNode:
                     items=['MP4', 'AVI', 'MKV'],
                     default_value='MP4',
                     width=small_window_w,
-                    label='Format',
+                    label='',
                 )
             
             # Add FPS selector
@@ -186,7 +186,7 @@ class FactoryNode:
                     items=['24 FPS', '25 FPS', '30 FPS', '60 FPS'],
                     default_value='24 FPS',
                     width=small_window_w,
-                    label='Frame Rate',
+                    label='',
                 )
 
             with dpg.node_attribute(
