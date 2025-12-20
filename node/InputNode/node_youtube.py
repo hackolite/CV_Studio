@@ -130,6 +130,7 @@ class FactoryNode:
                     tag=node.tag_node_input01_value_name,
                     label='URL',
                     width=node.small_window_w - 30,
+                    default_value='https://www.youtube.com/watch?v=gFRtAAmiFbE',
                 )
 
             with dpg.node_attribute(
