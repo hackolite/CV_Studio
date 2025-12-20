@@ -228,6 +228,14 @@ class VideoWriterNode(Node):
     _QUEUE_MAX_SIZE = 60  # Buffer up to 60 frames (2 seconds at 30fps)
     _RELEASE_TIMEOUT_SECONDS = 60.0
     _WRITE_THREAD_TIMEOUT = 5.0
+    
+    # FPS mapping for combo box values
+    _FPS_MAP = {
+        '24 FPS': 24,
+        '25 FPS': 25,
+        '30 FPS': 30,
+        '60 FPS': 60
+    }
 
     _prev_frame_flag = False
 
@@ -538,14 +546,8 @@ class VideoWriterNode(Node):
                 fps_tag = tag_node_name + ':FPS'
                 fps_text = dpg_get_value(fps_tag)
                 
-                # Parse FPS from text (e.g., "24 FPS" -> 24)
-                fps_map = {
-                    '24 FPS': 24,
-                    '25 FPS': 25,
-                    '30 FPS': 30,
-                    '60 FPS': 60
-                }
-                writer_fps = fps_map.get(fps_text, 24)
+                # Parse FPS from text using class constant
+                writer_fps = self._FPS_MAP.get(fps_text, 24)
                 
                 video_writer_directory = self._opencv_setting_dict['video_writer_directory']
 
