@@ -90,12 +90,6 @@ def test_fps_value_used_in_recording():
 
 def test_fps_combo_disabled_during_recording():
     """Test that FPS combo is disabled during recording"""
-    with open(os.path.join(os.path.dirname(__file__), '..', 'node', 'VideoNode', 'node_video_writer.py'), 'r') as f:
-        content = f.read()
-
-
-def test_fps_combo_disabled_during_recording():
-    """Test that FPS combo is disabled during recording"""
     content = _read_video_writer_content()
     
     # Check that FPS is disabled when starting
