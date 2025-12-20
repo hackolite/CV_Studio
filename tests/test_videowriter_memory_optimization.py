@@ -22,12 +22,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 def test_resize_before_indicator_optimization():
     """
-    Test the new optimization: resize first, then draw indicator on small frame.
+    Test the memory optimization: resize frame to display size.
     
     This avoids making a full-size copy of potentially large frames from ImageConcat.
-    OLD: copy full frame (6MB) → draw indicator → resize to display (0.2MB)
-    NEW: resize to display (0.2MB) → draw indicator on resized frame
+    NEW: resize to display (0.2MB) - no indicator to save resources
     
+    Note: Recording indicator has been removed to save CPU resources as requested.
     Memory saved: 6MB per frame, or 180MB/second at 30fps
     """
     import cv2
@@ -43,12 +43,10 @@ def test_resize_before_indicator_optimization():
     display_width = 320
     display_height = 180
     
-    # NEW OPTIMIZED APPROACH:
-    # 1. Resize first (creates a small copy automatically)
+    # OPTIMIZED APPROACH:
+    # Resize first (creates a small copy automatically)
+    # No recording indicator drawn (removed to save resources)
     display_frame = cv2.resize(large_frame, (display_width, display_height))
-    
-    # 2. Draw indicator on the already-resized frame (modifies in-place)
-    cv2.circle(display_frame, (10, 10), 5, (0, 0, 255), thickness=-1)
     
     # Verify original frame is NOT corrupted
     assert np.array_equal(large_frame[100, 100], original_pixel), \
@@ -57,10 +55,6 @@ def test_resize_before_indicator_optimization():
     # Verify display frame has correct size
     assert display_frame.shape == (display_height, display_width, 3), \
         f"Display frame has wrong size: {display_frame.shape}"
-    
-    # Verify indicator is present (red pixel at position)
-    assert display_frame[10, 10][2] == 255, \
-        f"Recording indicator missing! Pixel is {display_frame[10, 10]}"
     
     # Calculate memory savings
     large_frame_bytes = large_frame.nbytes
@@ -137,10 +131,10 @@ def test_display_frame_always_resized():
     """
     Test that display frame is always resized, regardless of recording state.
     
-    The new optimization resizes first for both recording and non-recording states.
+    The optimization resizes frames for display to save memory.
     This is more efficient because:
     1. Resize creates a small copy automatically (necessary for display)
-    2. Recording indicator is drawn on the small copy (if recording)
+    2. No recording indicator is drawn (removed to save CPU resources)
     3. No separate full-size copy is needed
     """
     import cv2
@@ -158,20 +152,19 @@ def test_display_frame_always_resized():
     assert display_frame_not_recording.shape == (display_height, display_width, 3), \
         "Display frame should be resized when not recording"
     
-    # No indicator when not recording
+    # No indicator (removed to save resources)
     assert display_frame_not_recording[10, 10][2] != 255, \
-        "No indicator should be present when not recording"
+        "No indicator should be present (removed to save resources)"
     
-    # Test 2: Recording - resize then add indicator
+    # Test 2: Recording - resize only (no indicator drawn)
     display_frame_recording = cv2.resize(large_frame, (display_width, display_height))
-    cv2.circle(display_frame_recording, (10, 10), 5, (0, 0, 255), thickness=-1)
     
     assert display_frame_recording.shape == (display_height, display_width, 3), \
         "Display frame should be resized when recording"
     
-    # Indicator present when recording
-    assert display_frame_recording[10, 10][2] == 255, \
-        "Indicator should be present when recording"
+    # No indicator drawn (removed to save CPU resources)
+    assert display_frame_recording[10, 10][2] != 255, \
+        "No indicator should be drawn when recording (removed to save resources)"
     
     # Original frame unchanged in both cases
     assert large_frame[10, 10][2] != 255, \
@@ -187,7 +180,7 @@ if __name__ == "__main__":
     print("=" * 70)
     print()
     
-    print("Test 1: Resize-before-indicator optimization")
+    print("Test 1: Frame resize optimization")
     print("-" * 70)
     stats = test_resize_before_indicator_optimization()
     print(f"✓ Test passed")
@@ -213,7 +206,8 @@ if __name__ == "__main__":
     print("✅ All VideoWriter memory optimization tests passed!")
     print()
     print("Summary:")
-    print("• Display frame resized BEFORE drawing recording indicator")
+    print("• Display frame resized for efficient display")
+    print("• Recording indicator removed to save CPU resources")
     print("• Eliminates unnecessary full-size frame copy")
     print("• Memory savings: 2-6 MB per frame (input size dependent)")
     print("• At 30fps: 60-180 MB/second saved when recording")
