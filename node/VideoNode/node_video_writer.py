@@ -331,21 +331,26 @@ class VideoWriterNode(Node):
             # Write frame directly to video file if recording
             if is_recording:
                 try:
-                    video_writer = self._video_writer_dict[tag_node_name]
-                    writer_width = self._writer_width_dict[tag_node_name]
-                    writer_height = self._writer_height_dict[tag_node_name]
+                    video_writer = self._video_writer_dict.get(tag_node_name)
+                    writer_width = self._writer_width_dict.get(tag_node_name)
+                    writer_height = self._writer_height_dict.get(tag_node_name)
                     
-                    # Resize and write frame directly
-                    # Using INTER_LINEAR for better performance
-                    writer_frame = cv2.resize(
-                        frame,
-                        (writer_width, writer_height),
-                        interpolation=cv2.INTER_LINEAR
-                    )
-                    video_writer.write(writer_frame)
-                    
-                    # Update frame count
-                    self._frame_count_dict[tag_node_name] = self._frame_count_dict.get(tag_node_name, 0) + 1
+                    # Verify all required data is present
+                    if video_writer is None or writer_width is None or writer_height is None:
+                        logger.warning(f"[VideoWriter] Missing writer data for {tag_node_name}, skipping frame")
+                    else:
+                        # Resize and write frame directly
+                        # Using INTER_LINEAR for better performance
+                        writer_frame = cv2.resize(
+                            frame,
+                            (writer_width, writer_height),
+                            interpolation=cv2.INTER_LINEAR
+                        )
+                        video_writer.write(writer_frame)
+                        
+                        # Update frame count efficiently
+                        current_count = self._frame_count_dict.get(tag_node_name, 0)
+                        self._frame_count_dict[tag_node_name] = current_count + 1
                     
                 except Exception as e:
                     logger.error(f"[VideoWriter] Error writing frame for {tag_node_name}: {e}")
