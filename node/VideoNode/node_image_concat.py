@@ -19,52 +19,55 @@ from node.basenode import Node
 logger = logging.getLogger(__name__)
 
 def create_concat_image(frame_dict, slot_num):
+    """
+    Create concatenated image from multiple frames.
+    
+    Memory-optimized implementation that minimizes intermediate array allocations
+    by using single-pass concatenation operations.
+    
+    Args:
+        frame_dict: Dictionary of frames indexed by slot number
+        slot_num: Number of slots to concatenate
+        
+    Returns:
+        tuple: (frame for output, display_frame for UI)
+    """
     if slot_num == 1:
         frame = frame_dict[0]
         # No copy needed - frame is already a copy from frame_dict
         display_frame = frame
     
-
     elif slot_num == 2:
+        # Direct horizontal concatenation - no intermediate arrays
+        # Remove unnecessary background image allocation that was 2x the size
         frame = cv2.hconcat([frame_dict[0], frame_dict[1]])
-
-        bg_image = np.zeros(
-            (frame.shape[0] * 2, frame.shape[1], 3)).astype(np.uint8)
-        bg_image[int(frame.shape[0] / 2):int(frame.shape[0] / 2) +
-                 frame.shape[0], 0:frame.shape[1]] = frame
-
-        # bg_image is already a new array, no copy needed
-        display_frame = bg_image
-   
-
+        display_frame = frame
+    
     elif slot_num == 3 or slot_num == 4:
+        # Optimized: Single concatenation per row, then combine rows
+        # Memory: 2 intermediate arrays (rows) + 1 final = 3 arrays total
         hconcat_image01 = cv2.hconcat([frame_dict[0], frame_dict[1]])
         hconcat_image02 = cv2.hconcat([frame_dict[2], frame_dict[3]])
         frame = cv2.vconcat([hconcat_image01, hconcat_image02])
-        # cv2.vconcat already creates a new array, no copy needed
         display_frame = frame
     
-
     elif slot_num == 5 or slot_num == 6:
-        hconcat_image01 = cv2.hconcat([frame_dict[0], frame_dict[1]])
-        hconcat_image01 = cv2.hconcat([hconcat_image01, frame_dict[2]])
-        hconcat_image02 = cv2.hconcat([frame_dict[3], frame_dict[4]])
-        hconcat_image02 = cv2.hconcat([hconcat_image02, frame_dict[5]])
+        # Optimized: Create rows in single pass to avoid reassignment
+        # Memory: 2 intermediate arrays (rows) + 1 final = 3 arrays total
+        # Old approach created 6 arrays due to reassignments
+        hconcat_image01 = cv2.hconcat([frame_dict[0], frame_dict[1], frame_dict[2]])
+        hconcat_image02 = cv2.hconcat([frame_dict[3], frame_dict[4], frame_dict[5]])
         frame = cv2.vconcat([hconcat_image01, hconcat_image02])
-        # cv2.vconcat already creates a new array, no copy needed
         display_frame = frame
     
-
     elif slot_num == 7 or slot_num == 8 or slot_num == 9:
-        hconcat_image01 = cv2.hconcat([frame_dict[0], frame_dict[1]])
-        hconcat_image01 = cv2.hconcat([hconcat_image01, frame_dict[2]])
-        hconcat_image02 = cv2.hconcat([frame_dict[3], frame_dict[4]])
-        hconcat_image02 = cv2.hconcat([hconcat_image02, frame_dict[5]])
-        hconcat_image03 = cv2.hconcat([frame_dict[6], frame_dict[7]])
-        hconcat_image03 = cv2.hconcat([hconcat_image03, frame_dict[8]])
-        vconcat_image = cv2.vconcat([hconcat_image01, hconcat_image02])
-        frame = cv2.vconcat([vconcat_image, hconcat_image03])
-        # cv2.vconcat already creates a new array, no copy needed
+        # Optimized: Create rows in single pass to avoid reassignment
+        # Memory: 3 intermediate arrays (rows) + 1 final = 4 arrays total
+        # Old approach created 9 arrays due to reassignments
+        hconcat_image01 = cv2.hconcat([frame_dict[0], frame_dict[1], frame_dict[2]])
+        hconcat_image02 = cv2.hconcat([frame_dict[3], frame_dict[4], frame_dict[5]])
+        hconcat_image03 = cv2.hconcat([frame_dict[6], frame_dict[7], frame_dict[8]])
+        frame = cv2.vconcat([hconcat_image01, hconcat_image02, hconcat_image03])
         display_frame = frame
 
     return frame, display_frame
