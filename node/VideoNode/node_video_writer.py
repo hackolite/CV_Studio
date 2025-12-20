@@ -5,7 +5,6 @@ import sys
 import datetime
 import traceback
 import threading
-import queue
 
 import cv2
 import numpy as np
@@ -34,24 +33,19 @@ except ImportError:
         return logs_dir
 
 """
-VideoWriter Node - Simplified video-only implementation
+VideoWriter Node - Direct frame-by-frame implementation
 
 This node handles video recording in MP4, AVI, and MKV formats with minimal memory footprint.
 - Direct frame-by-frame writing using cv2.VideoWriter
 - No audio handling
 - No buffering or queuing
-- Accumulates frames directly from concat node
+- Frames written immediately as they arrive from ImageConcat
 
 Supported formats:
 - MP4: H.264 codec (mp4v)
 - AVI: MJPEG codec (MJPG)
 - MKV: FFV1 codec (lossless)
 """
-
-def slow_motion_interpolation(prev_frame, next_frame, alpha):
-    """ Generates smooth intermediate frame between 2 images """
-    return cv2.addWeighted(prev_frame, 1 - alpha, next_frame, alpha, 0)
-
 
 def create_crash_log(operation_name, exception, tag_node_name=None):
     """
@@ -112,164 +106,6 @@ def create_crash_log(operation_name, exception, tag_node_name=None):
         logger.error(f"[VideoWriter] Original error: {exception}")
         logger.error(traceback.format_exc())
         return None
-
-
-class AsyncFrameWriter:
-    """
-    Asynchronous frame writer that runs in a background thread.
-    
-    This class prevents UI freezing by writing video frames in a separate thread.
-    Each write() call on cv2.VideoWriter can take 10-50ms with high resolution
-    and slow codecs (MJPEG, FFV1), which blocks the UI thread. By using a queue
-    and background thread, the UI remains responsive.
-    
-    Attributes:
-        video_writer: cv2.VideoWriter instance for writing frames
-        frame_queue: Thread-safe queue for buffering frames
-        writer_thread: Background thread that writes frames
-        stop_event: Threading event to signal thread shutdown
-        frames_written: Counter for successfully written frames
-        frames_dropped: Counter for dropped frames (queue full)
-    
-    Methods:
-        start(): Start the background writer thread
-        write(frame): Queue a frame for writing (non-blocking)
-        stop(wait, timeout): Stop the thread and optionally wait for completion
-    
-    Usage Example:
-        >>> video_writer = cv2.VideoWriter('output.mp4', fourcc, 30, (640, 480))
-        >>> async_writer = AsyncFrameWriter(video_writer, max_queue_size=30)
-        >>> async_writer.start()
-        >>> 
-        >>> # Write frames without blocking UI
-        >>> for frame in frames:
-        >>>     async_writer.write(frame)
-        >>> 
-        >>> # Stop and wait for all frames to be written
-        >>> async_writer.stop(wait=True, timeout=10.0)
-        >>> video_writer.release()
-    """
-    
-    def __init__(self, video_writer, max_queue_size=30):
-        """
-        Initialize the async frame writer.
-        
-        Args:
-            video_writer: cv2.VideoWriter instance to write frames to
-            max_queue_size: Maximum number of frames to buffer (default 30 = ~1 second at 30fps)
-        """
-        self.video_writer = video_writer
-        self.frame_queue = queue.Queue(maxsize=max_queue_size)
-        self.writer_thread = None
-        self.stop_event = threading.Event()
-        self.error = None
-        self.frames_written = 0
-        self.frames_dropped = 0
-        
-    def start(self):
-        """Start the background writer thread"""
-        if self.writer_thread is not None:
-            logger.warning("[AsyncFrameWriter] Writer thread already started")
-            return
-            
-        self.stop_event.clear()
-        self.writer_thread = threading.Thread(
-            target=self._writer_worker,
-            name="AsyncFrameWriter",
-            daemon=True
-        )
-        self.writer_thread.start()
-        logger.info("[AsyncFrameWriter] Background writer thread started")
-        
-    def write(self, frame):
-        """
-        Queue a frame for writing (non-blocking).
-        
-        Args:
-            frame: Video frame to write
-            
-        Returns:
-            True if frame was queued, False if queue is full (frame dropped)
-        """
-        if self.stop_event.is_set():
-            return False
-            
-        try:
-            # Non-blocking put with immediate timeout
-            # If queue is full, drop the frame to avoid blocking UI
-            self.frame_queue.put(frame, block=False)
-            return True
-        except queue.Full:
-            self.frames_dropped += 1
-            if self.frames_dropped % 10 == 1:  # Log every 10th dropped frame
-                logger.warning(f"[AsyncFrameWriter] Frame queue full, dropped {self.frames_dropped} frames")
-            return False
-            
-    def _writer_worker(self):
-        """Background thread that writes frames to cv2.VideoWriter"""
-        try:
-            logger.info("[AsyncFrameWriter] Writer worker started")
-            
-            while not self.stop_event.is_set():
-                try:
-                    # Wait for a frame with timeout to check stop_event periodically
-                    frame = self.frame_queue.get(timeout=0.1)
-                    
-                    # Write frame to video file (this can take 10-50ms)
-                    self.video_writer.write(frame)
-                    self.frames_written += 1
-                    
-                    self.frame_queue.task_done()
-                    
-                except queue.Empty:
-                    # No frame available, continue loop to check stop_event
-                    continue
-                    
-            # Process remaining frames in queue before stopping
-            while not self.frame_queue.empty():
-                try:
-                    frame = self.frame_queue.get_nowait()
-                    self.video_writer.write(frame)
-                    self.frames_written += 1
-                    self.frame_queue.task_done()
-                except queue.Empty:
-                    break
-                    
-            logger.info(f"[AsyncFrameWriter] Writer worker finished, wrote {self.frames_written} frames, dropped {self.frames_dropped} frames")
-            
-        except Exception as e:
-            self.error = e
-            logger.error(f"[AsyncFrameWriter] Error in writer worker: {e}")
-            logger.error(traceback.format_exc())
-            
-    def stop(self, wait=True, timeout=10.0):
-        """
-        Stop the writer thread and optionally wait for it to finish.
-        
-        Args:
-            wait: If True, wait for thread to finish writing remaining frames
-            timeout: Maximum time to wait for thread to finish
-        """
-        if self.writer_thread is None:
-            return
-            
-        # Signal thread to stop
-        self.stop_event.set()
-        
-        if wait and self.writer_thread.is_alive():
-            # Wait for queue to be empty
-            try:
-                self.frame_queue.join()
-            except Exception as e:
-                logger.warning(f"[AsyncFrameWriter] Error waiting for queue: {e}")
-                
-            # Wait for thread to finish
-            self.writer_thread.join(timeout=timeout)
-            
-            if self.writer_thread.is_alive():
-                logger.warning(f"[AsyncFrameWriter] Writer thread still alive after {timeout}s timeout")
-        
-        self.writer_thread = None
 
 
 class FactoryNode:
@@ -372,8 +208,8 @@ class VideoWriterNode(Node):
     _opencv_setting_dict = None
 
     _video_writer_dict = {}  # Store active cv2.VideoWriter instances: {node: writer}
-    _async_writer_dict = {}  # Store active AsyncFrameWriter instances: {node: async_writer}
     _release_threads_dict = {}  # Track background release threads: {node: thread}
+    _frame_count_dict = {}  # Track frames written per node: {node: count}
     
     _start_label = 'Start'
     _stop_label = 'Stop'
@@ -415,17 +251,22 @@ class VideoWriterNode(Node):
         frame = node_image_dict.get(connection_info_src, None)
 
         if frame is not None:
-            # Async write to VideoWriter if recording is active
-            if tag_node_name in self._async_writer_dict:
-                # Resize and write via async writer to prevent UI freeze
+            # Direct write to VideoWriter if recording is active (no queue)
+            if tag_node_name in self._video_writer_dict:
+                # Resize and write directly - frame is written immediately as it arrives
                 writer_frame = cv2.resize(frame,
                                           (writer_width, writer_height),
                                           interpolation=cv2.INTER_CUBIC)
-                self._async_writer_dict[tag_node_name].write(writer_frame)
+                self._video_writer_dict[tag_node_name].write(writer_frame)
+                
+                # Track frame count
+                if tag_node_name not in self._frame_count_dict:
+                    self._frame_count_dict[tag_node_name] = 0
+                self._frame_count_dict[tag_node_name] += 1
 
             # Copy frame for display with recording indicator
             rec_frame = frame.copy()
-            if tag_node_name in self._async_writer_dict:
+            if tag_node_name in self._video_writer_dict:
                 # Add red recording indicator
                 rec_frame = cv2.circle(rec_frame, (10, 10),
                                        50, (0, 0, 255),
@@ -464,15 +305,6 @@ class VideoWriterNode(Node):
     def close(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
         
-        # Stop async writer if active
-        if tag_node_name in self._async_writer_dict:
-            try:
-                async_writer = self._async_writer_dict[tag_node_name]
-                async_writer.stop(wait=True, timeout=10.0)
-            except Exception as e:
-                logger.error(f"[VideoWriter] Error stopping async writer in close(): {e}")
-            self._async_writer_dict.pop(tag_node_name, None)
-        
         # Wait for any background finalization to complete
         if tag_node_name in self._release_threads_dict:
             release_thread = self._release_threads_dict[tag_node_name]
@@ -490,6 +322,10 @@ class VideoWriterNode(Node):
             except Exception as e:
                 logger.error(f"[VideoWriter] Error releasing video writer in close(): {e}")
             self._video_writer_dict.pop(tag_node_name)
+        
+        # Clear frame count
+        if tag_node_name in self._frame_count_dict:
+            self._frame_count_dict.pop(tag_node_name)
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
@@ -506,7 +342,7 @@ class VideoWriterNode(Node):
         pass
 
     
-    def _release_video_writer_async(self, tag_node_name, async_writer, video_writer, tag_node_button_value_name):
+    def _release_video_writer_async(self, tag_node_name, video_writer, tag_node_button_value_name):
         """
         Release video writer in background thread to prevent UI freeze.
         
@@ -516,20 +352,19 @@ class VideoWriterNode(Node):
         
         Args:
             tag_node_name: Node identifier
-            async_writer: AsyncFrameWriter instance to stop first
             video_writer: cv2.VideoWriter instance to release
             tag_node_button_value_name: Button tag to update when done
         """
         try:
             logger.info(f"[VideoWriter] Starting background finalization for {tag_node_name}")
             
-            # First, stop the async writer and wait for it to finish writing frames
-            async_writer.stop(wait=True, timeout=10.0)
+            # Get frame count before clearing
+            frame_count = self._frame_count_dict.get(tag_node_name, 0)
             
             # Release the video writer (can take 10-30+ seconds)
             video_writer.release()
             
-            logger.info(f"[VideoWriter] Background finalization completed for {tag_node_name}")
+            logger.info(f"[VideoWriter] Background finalization completed for {tag_node_name}, wrote {frame_count} frames")
             
             # Update button label back to Start (thread-safe with DearPyGui)
             dpg.set_item_label(tag_node_button_value_name, self._start_label)
@@ -547,6 +382,9 @@ class VideoWriterNode(Node):
             # Clean up thread tracking
             if tag_node_name in self._release_threads_dict:
                 self._release_threads_dict.pop(tag_node_name, None)
+            # Clear frame count
+            if tag_node_name in self._frame_count_dict:
+                self._frame_count_dict.pop(tag_node_name, None)
 
     
     def _recording_button(self, sender, data, user_data):
@@ -581,7 +419,7 @@ class VideoWriterNode(Node):
             config = format_config.get(video_format, format_config['MP4'])
             file_path = os.path.join(video_writer_directory, f'{startup_time_text}{config["ext"]}')
 
-            # Create video writer
+            # Create video writer - direct writing, no queue
             video_writer = cv2.VideoWriter(
                 file_path,
                 cv2.VideoWriter_fourcc(*config['codec']),
@@ -589,37 +427,35 @@ class VideoWriterNode(Node):
                 (writer_width, writer_height),
             )
             
-            # Wrap in async writer to prevent UI freeze during frame writing
-            async_writer = AsyncFrameWriter(video_writer, max_queue_size=30)
-            async_writer.start()
-            
-            # Store both for later access
+            # Store writer for direct frame writing
             self._video_writer_dict[tag_node_name] = video_writer
-            self._async_writer_dict[tag_node_name] = async_writer
             
-            logger.info(f"[VideoWriter] Started recording {video_format}: {file_path}")
+            # Initialize frame counter
+            self._frame_count_dict[tag_node_name] = 0
+            
+            logger.info(f"[VideoWriter] Started direct frame-by-frame recording {video_format}: {file_path}")
             dpg.set_item_label(tag_node_button_value_name, self._stop_label)
             
         elif label == self._stop_label:
             # Stop recording - use background thread to prevent UI freeze
-            if tag_node_name in self._async_writer_dict:
-                async_writer = self._async_writer_dict.pop(tag_node_name)
+            if tag_node_name in self._video_writer_dict:
                 video_writer = self._video_writer_dict.pop(tag_node_name)
                 
                 # Update button to show we're finalizing
                 dpg.set_item_label(tag_node_button_value_name, self._finalizing_label)
                 
-                # Start background thread to stop async writer and release the video writer
+                # Start background thread to release the video writer
                 # This prevents UI freeze during video file finalization (can take 10-30+ seconds)
                 # Use daemon=False to ensure video files are properly finalized before app exit
                 release_thread = threading.Thread(
                     target=self._release_video_writer_async,
-                    args=(tag_node_name, async_writer, video_writer, tag_node_button_value_name),
+                    args=(tag_node_name, video_writer, tag_node_button_value_name),
                     daemon=False,
                     name=f"VideoWriter-Release-{tag_node_name}"
                 )
                 self._release_threads_dict[tag_node_name] = release_thread
                 release_thread.start()
                 
-                logger.info(f"[VideoWriter] Stopped recording, finalizing in background")
+                frame_count = self._frame_count_dict.get(tag_node_name, 0)
+                logger.info(f"[VideoWriter] Stopped recording, finalizing in background ({frame_count} frames written)")
 
