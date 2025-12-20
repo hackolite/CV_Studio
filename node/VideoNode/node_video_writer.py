@@ -219,6 +219,7 @@ class VideoWriterNode(Node):
     _release_threads_dict = {}   # {node: threading.Thread}
     _frame_count_dict = {}       # {node: int}
     _dropped_frames_dict = {}    # {node: int}
+    _stop_flags_dict = {}        # {node: threading.Event} for clean thread stopping
     
     _start_label = 'Start'
     _stop_label = 'Stop'
@@ -256,19 +257,20 @@ class VideoWriterNode(Node):
             writer_height: Target video height
         """
         write_queue = self._write_queues_dict.get(tag_node_name)
-        if not write_queue:
-            logger.error(f"[VideoWriter] No queue found for {tag_node_name}")
+        stop_flag = self._stop_flags_dict.get(tag_node_name)
+        if not write_queue or not stop_flag:
+            logger.error(f"[VideoWriter] No queue or stop flag found for {tag_node_name}")
             return
         
         logger.info(f"[VideoWriter] Write thread started for {tag_node_name}")
         
         try:
-            while True:
+            while not stop_flag.is_set():
                 try:
                     # Wait for frame with timeout to allow periodic checks
-                    frame = write_queue.get(timeout=1.0)
+                    frame = write_queue.get(timeout=0.1)
                     
-                    # None is the stop signal
+                    # None is also a stop signal (legacy)
                     if frame is None:
                         logger.info(f"[VideoWriter] Write thread received stop signal for {tag_node_name}")
                         break
@@ -288,10 +290,7 @@ class VideoWriterNode(Node):
                     write_queue.task_done()
                     
                 except queue.Empty:
-                    # Timeout - check if we should continue
-                    if tag_node_name not in self._write_queues_dict:
-                        # Queue was removed, stop thread
-                        break
+                    # Timeout - check stop flag and continue
                     continue
                     
         except Exception as e:
@@ -384,7 +383,7 @@ class VideoWriterNode(Node):
                     if self._dropped_frames_dict[tag_node_name] % 30 == 1:  # Log every 30 dropped frames
                         logger.warning(f"[VideoWriter] Frame dropped for {tag_node_name} - queue full (total dropped: {self._dropped_frames_dict[tag_node_name]})")
 
-            # Prepare display frame without recording indicator to save resources
+            # Prepare display frame
             # Memory optimization: Resize to display size
             # This avoids making a full-size copy of potentially large frames from ImageConcat
             display_frame = cv2.resize(frame, (small_window_w, small_window_h))
@@ -430,17 +429,13 @@ class VideoWriterNode(Node):
         
         logger.info(f"[VideoWriter] Closing node {tag_node_name}")
         
-        # Stop write thread if active
+        # Stop write thread if active using stop flag (cleaner than queue)
+        if tag_node_name in self._stop_flags_dict:
+            self._stop_flags_dict[tag_node_name].set()
+        
         if tag_node_name in self._write_threads_dict:
             write_thread = self._write_threads_dict[tag_node_name]
             if write_thread.is_alive():
-                # Signal thread to stop
-                if tag_node_name in self._write_queues_dict:
-                    try:
-                        self._write_queues_dict[tag_node_name].put(None, timeout=1.0)
-                    except queue.Full:
-                        pass
-                
                 # Wait for thread to finish
                 write_thread.join(timeout=self._WRITE_THREAD_TIMEOUT)
                 if write_thread.is_alive():
@@ -448,9 +443,9 @@ class VideoWriterNode(Node):
             
             self._write_threads_dict.pop(tag_node_name, None)
         
-        # Clean up write queue
-        if tag_node_name in self._write_queues_dict:
-            self._write_queues_dict.pop(tag_node_name, None)
+        # Clean up write queue and stop flag
+        self._write_queues_dict.pop(tag_node_name, None)
+        self._stop_flags_dict.pop(tag_node_name, None)
         
         # Wait for finalization thread if active
         if tag_node_name in self._release_threads_dict:
@@ -586,6 +581,10 @@ class VideoWriterNode(Node):
                 write_queue = queue.Queue(maxsize=self._QUEUE_MAX_SIZE)
                 self._write_queues_dict[tag_node_name] = write_queue
                 
+                # Create stop flag for clean thread termination
+                stop_flag = threading.Event()
+                self._stop_flags_dict[tag_node_name] = stop_flag
+                
                 # Initialize counters
                 self._frame_count_dict[tag_node_name] = 0
                 self._dropped_frames_dict[tag_node_name] = 0
@@ -617,6 +616,7 @@ class VideoWriterNode(Node):
                 self._video_writer_dict.pop(tag_node_name, None)
                 self._write_queues_dict.pop(tag_node_name, None)
                 self._write_threads_dict.pop(tag_node_name, None)
+                self._stop_flags_dict.pop(tag_node_name, None)
             
         elif label == self._stop_label:
             # ============ STOP RECORDING ============
@@ -629,22 +629,20 @@ class VideoWriterNode(Node):
                 dpg.configure_item(format_tag, enabled=True)
                 dpg.configure_item(fps_tag, enabled=True)
                 
-                # Signal write thread to stop
-                if tag_node_name in self._write_queues_dict:
-                    try:
-                        self._write_queues_dict[tag_node_name].put(None, timeout=1.0)
-                    except queue.Full:
-                        logger.warning(f"[VideoWriter] Could not send stop signal to write thread (queue full)")
+                # Signal write thread to stop using the stop flag (always succeeds, never blocks)
+                if tag_node_name in self._stop_flags_dict:
+                    self._stop_flags_dict[tag_node_name].set()
                 
-                # Wait for write thread to finish
+                # Wait for write thread to finish processing remaining frames in queue
                 if tag_node_name in self._write_threads_dict:
                     write_thread = self._write_threads_dict.pop(tag_node_name)
                     write_thread.join(timeout=self._WRITE_THREAD_TIMEOUT)
                     if write_thread.is_alive():
                         logger.warning(f"[VideoWriter] Write thread did not stop cleanly for {tag_node_name}")
                 
-                # Clean up queue
+                # Clean up queue and stop flag
                 self._write_queues_dict.pop(tag_node_name, None)
+                self._stop_flags_dict.pop(tag_node_name, None)
                 
                 # Start background finalization
                 if tag_node_name in self._video_writer_dict:
