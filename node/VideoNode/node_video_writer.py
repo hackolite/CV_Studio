@@ -259,9 +259,8 @@ class VideoWriterNode(Node):
                                           interpolation=cv2.INTER_CUBIC)
                 self._video_writer_dict[tag_node_name].write(writer_frame)
                 
-                # Track frame count
-                if tag_node_name not in self._frame_count_dict:
-                    self._frame_count_dict[tag_node_name] = 0
+                # Track frame count (use setdefault for efficiency)
+                self._frame_count_dict.setdefault(tag_node_name, 0)
                 self._frame_count_dict[tag_node_name] += 1
 
             # Copy frame for display with recording indicator
@@ -321,11 +320,10 @@ class VideoWriterNode(Node):
                 self._video_writer_dict[tag_node_name].release()
             except Exception as e:
                 logger.error(f"[VideoWriter] Error releasing video writer in close(): {e}")
-            self._video_writer_dict.pop(tag_node_name)
+            self._video_writer_dict.pop(tag_node_name, None)
         
         # Clear frame count
-        if tag_node_name in self._frame_count_dict:
-            self._frame_count_dict.pop(tag_node_name)
+        self._frame_count_dict.pop(tag_node_name, None)
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag

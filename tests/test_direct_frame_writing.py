@@ -13,10 +13,16 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Get paths to test files
+test_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(test_dir)
+video_writer_path = os.path.join(project_root, 'node', 'VideoNode', 'node_video_writer.py')
+image_concat_path = os.path.join(project_root, 'node', 'VideoNode', 'node_image_concat.py')
+
 
 def test_no_queue_import():
     """Verify that queue module is not imported in VideoWriter"""
-    with open('node/VideoNode/node_video_writer.py', 'r') as f:
+    with open(video_writer_path, 'r') as f:
         code = f.read()
     
     assert 'import queue' not in code, "queue module should not be imported"
@@ -26,7 +32,7 @@ def test_no_queue_import():
 
 def test_no_async_frame_writer():
     """Verify that AsyncFrameWriter class is removed"""
-    with open('node/VideoNode/node_video_writer.py', 'r') as f:
+    with open(video_writer_path, 'r') as f:
         code = f.read()
     
     assert 'class AsyncFrameWriter' not in code, "AsyncFrameWriter class should be removed"
@@ -36,7 +42,7 @@ def test_no_async_frame_writer():
 
 def test_no_frame_queue_usage():
     """Verify that frame_queue is not used anywhere"""
-    with open('node/VideoNode/node_video_writer.py', 'r') as f:
+    with open(video_writer_path, 'r') as f:
         code = f.read()
     
     assert 'frame_queue' not in code, "frame_queue should not be used"
@@ -46,7 +52,7 @@ def test_no_frame_queue_usage():
 
 def test_direct_writing_implemented():
     """Verify that direct frame writing is implemented"""
-    with open('node/VideoNode/node_video_writer.py', 'r') as f:
+    with open(video_writer_path, 'r') as f:
         code = f.read()
     
     # Check for direct write call
@@ -61,7 +67,7 @@ def test_direct_writing_implemented():
 
 def test_no_async_writer_dict():
     """Verify that _async_writer_dict is removed"""
-    with open('node/VideoNode/node_video_writer.py', 'r') as f:
+    with open(video_writer_path, 'r') as f:
         code = f.read()
     
     assert '_async_writer_dict' not in code, "_async_writer_dict should be removed"
@@ -70,7 +76,7 @@ def test_no_async_writer_dict():
 
 def test_documentation_updated():
     """Verify that documentation reflects direct writing"""
-    with open('node/VideoNode/node_video_writer.py', 'r') as f:
+    with open(video_writer_path, 'r') as f:
         code = f.read()
     
     # Check that docstring mentions direct writing
@@ -86,7 +92,7 @@ def test_documentation_updated():
 
 def test_imageconcat_no_queue():
     """Verify that ImageConcat doesn't use queues"""
-    with open('node/VideoNode/node_image_concat.py', 'r') as f:
+    with open(image_concat_path, 'r') as f:
         code = f.read()
     
     assert 'import queue' not in code, "ImageConcat should not import queue"
@@ -96,7 +102,7 @@ def test_imageconcat_no_queue():
 
 def test_imageconcat_returns_data_structure():
     """Verify that ImageConcat returns proper data structure for VideoWriter"""
-    with open('node/VideoNode/node_image_concat.py', 'r') as f:
+    with open(image_concat_path, 'r') as f:
         code = f.read()
     
     # Check that ImageConcat returns a dict with image, audio, and json keys
