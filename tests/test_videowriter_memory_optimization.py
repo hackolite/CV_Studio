@@ -67,13 +67,12 @@ def test_resize_before_indicator_optimization():
     display_frame_bytes = display_frame.nbytes
     memory_saved = large_frame_bytes - display_frame_bytes
     
-    print(f"✓ Resize-first optimization test passed")
-    print(f"  Large frame: {large_frame_bytes / (1024*1024):.2f} MB")
-    print(f"  Display frame: {display_frame_bytes / (1024*1024):.2f} MB")
-    print(f"  Memory saved: {memory_saved / (1024*1024):.2f} MB per frame")
-    print(f"  At 30fps: {memory_saved * 30 / (1024*1024):.1f} MB/second saved")
-    
-    return memory_saved
+    return {
+        'large_frame_mb': large_frame_bytes / (1024*1024),
+        'display_frame_mb': display_frame_bytes / (1024*1024),
+        'memory_saved_mb': memory_saved / (1024*1024),
+        'fps_30_saved_mb': memory_saved * 30 / (1024*1024)
+    }
 
 
 def test_frame_copy_only_when_recording():
@@ -83,9 +82,10 @@ def test_frame_copy_only_when_recording():
     This optimization dramatically reduces memory usage:
     - When recording: frame is copied to queue (necessary for thread safety)
     - When not recording: no queue copy needed
-    """
-    # Simulate test without importing node (to avoid dearpygui dependency)
     
+    Note: This test does not import VideoWriterNode to avoid dearpygui dependency.
+    It validates the logic that would be used in the actual node.
+    """
     # Create a test frame (simulate ImageConcat output)
     test_frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
     test_frame[:, :] = [100, 150, 200]
@@ -104,8 +104,6 @@ def test_frame_copy_only_when_recording():
     if tag_node_name in write_queues_dict:
         # This should NOT execute
         assert False, "Should not try to copy frame when not recording"
-    
-    print("✓ No frame copy to queue when not recording")
     
     # Test 2: Recording active - queue exists
     # Frame SHOULD be copied to queue
@@ -133,8 +131,6 @@ def test_frame_copy_only_when_recording():
     # But with same data
     assert np.array_equal(queued_frame, test_frame), \
         "Queued frame should have same data as original"
-    
-    print("✓ Frame copied to queue when recording (necessary for thread safety)")
 
 
 def test_display_frame_always_resized():
@@ -166,8 +162,6 @@ def test_display_frame_always_resized():
     assert display_frame_not_recording[10, 10][2] != 255, \
         "No indicator should be present when not recording"
     
-    print("✓ Display frame resized (no indicator) when not recording")
-    
     # Test 2: Recording - resize then add indicator
     display_frame_recording = cv2.resize(large_frame, (display_width, display_height))
     cv2.circle(display_frame_recording, (10, 10), 5, (0, 0, 255), thickness=-1)
@@ -183,8 +177,6 @@ def test_display_frame_always_resized():
     assert large_frame[10, 10][2] != 255, \
         "Original frame should never be modified"
     
-    print("✓ Display frame resized with indicator when recording")
-    
     # Both approaches produce small frames (memory efficient)
     assert display_frame_not_recording.nbytes == display_frame_recording.nbytes, \
         "Both display frames should have same size (small)"
@@ -197,26 +189,33 @@ if __name__ == "__main__":
     
     print("Test 1: Resize-before-indicator optimization")
     print("-" * 70)
-    test_resize_before_indicator_optimization()
+    stats = test_resize_before_indicator_optimization()
+    print(f"✓ Test passed")
+    print(f"  Large frame: {stats['large_frame_mb']:.2f} MB")
+    print(f"  Display frame: {stats['display_frame_mb']:.2f} MB")
+    print(f"  Memory saved: {stats['memory_saved_mb']:.2f} MB per frame")
+    print(f"  At 30fps: {stats['fps_30_saved_mb']:.1f} MB/second saved")
     print()
     
     print("Test 2: Frame copy only when recording")
     print("-" * 70)
     test_frame_copy_only_when_recording()
+    print("✓ Test passed - queue copy logic validated")
     print()
     
     print("Test 3: Display frame always resized")
     print("-" * 70)
     test_display_frame_always_resized()
+    print("✓ Test passed - display resize logic validated")
     print()
     
     print("=" * 70)
     print("✅ All VideoWriter memory optimization tests passed!")
     print()
-    print("Summary of optimization:")
-    print("1. Display frame is resized BEFORE drawing recording indicator")
-    print("2. This eliminates unnecessary full-size frame copy")
-    print("3. Memory savings: 2-6 MB per frame depending on input size")
-    print("4. At 30fps: 60-180 MB/second saved when recording")
-    print("5. Original frame is never modified (thread-safe)")
-    print("6. Queue copy still made for thread safety (necessary)")
+    print("Summary:")
+    print("• Display frame resized BEFORE drawing recording indicator")
+    print("• Eliminates unnecessary full-size frame copy")
+    print("• Memory savings: 2-6 MB per frame (input size dependent)")
+    print("• At 30fps: 60-180 MB/second saved when recording")
+    print("• Original frame never modified (thread-safe)")
+    print("• Queue copy retained for thread safety (necessary)")

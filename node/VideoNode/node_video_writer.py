@@ -204,6 +204,12 @@ class VideoWriterNode(Node):
     _QUEUE_MAX_SIZE = 60  # Buffer up to 60 frames (2 seconds at 30fps)
     _RELEASE_TIMEOUT_SECONDS = 60.0
     _WRITE_THREAD_TIMEOUT = 5.0
+    
+    # Recording indicator configuration (for display frame)
+    _INDICATOR_X = 10  # X position in pixels
+    _INDICATOR_Y = 10  # Y position in pixels
+    _INDICATOR_RADIUS = 5  # Radius in pixels (scaled for small display frame)
+    _INDICATOR_COLOR = (0, 0, 255)  # BGR color (red)
 
     _prev_frame_flag = False
 
@@ -359,7 +365,13 @@ class VideoWriterNode(Node):
             if tag_node_name in self._video_writer_dict:
                 # Draw recording indicator on the already-resized display frame
                 # This modifies display_frame in-place but it's already a copy from cv2.resize
-                cv2.circle(display_frame, (10, 10), 5, (0, 0, 255), thickness=-1)
+                cv2.circle(
+                    display_frame,
+                    (self._INDICATOR_X, self._INDICATOR_Y),
+                    self._INDICATOR_RADIUS,
+                    self._INDICATOR_COLOR,
+                    thickness=-1
+                )
 
             texture = self.convert_cv_to_dpg(
                 display_frame,
