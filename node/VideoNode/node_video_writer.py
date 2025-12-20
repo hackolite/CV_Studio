@@ -5,7 +5,6 @@ import sys
 import datetime
 import traceback
 import threading
-import queue
 
 import cv2
 import numpy as np
@@ -32,12 +31,12 @@ except ImportError:
         return logs_dir
 
 """
-VideoWriter Node - Optimized threaded implementation
+VideoWriter Node - Simplified direct frame writing implementation
 
-This node handles video recording in MP4, AVI, and MKV formats with minimal UI lag.
-- Threaded frame writing using queue.Queue
-- Non-blocking frame submission
-- Background finalization
+This node handles video recording in MP4, AVI, and MKV formats with minimal memory usage.
+- Direct frame-by-frame writing (no queues)
+- Immediate write operations
+- Background finalization to prevent UI freeze
 - No audio handling
 
 Supported formats:
@@ -214,21 +213,17 @@ class VideoWriterNode(Node):
 
     # Dictionaries for managing video writing
     _video_writer_dict = {}      # {node: cv2.VideoWriter}
-    _write_queues_dict = {}      # {node: queue.Queue}
-    _write_threads_dict = {}     # {node: threading.Thread}
     _release_threads_dict = {}   # {node: threading.Thread}
     _frame_count_dict = {}       # {node: int}
-    _dropped_frames_dict = {}    # {node: int}
-    _stop_flags_dict = {}        # {node: threading.Event} for clean thread stopping
+    _writer_width_dict = {}      # {node: int} for frame resizing
+    _writer_height_dict = {}     # {node: int} for frame resizing
     
     _start_label = 'Start'
     _stop_label = 'Stop'
     _finalizing_label = 'Finalizing...'
     
     # Configuration
-    _QUEUE_MAX_SIZE = 6  # Buffer up to 60 frames (2 seconds at 30fps)
     _RELEASE_TIMEOUT_SECONDS = 60.0
-    _WRITE_THREAD_TIMEOUT = 5.0
     
     # Hot-path optimization: Throttle texture uploads during recording
     # Display 1 frame every N frames to reduce CPU load
@@ -244,69 +239,9 @@ class VideoWriterNode(Node):
 
     _prev_frame_flag = False
     _frame_counter_dict = {}  # {node: int} for throttling texture uploads
-    _is_recording_dict = {}   # {node: bool} for fast hot-path check
 
     def __init__(self):
         pass
-
-    def _writer_thread(self, tag_node_name, video_writer, writer_width, writer_height):
-        """
-        Background thread that processes frames from the queue and writes them to disk.
-        
-        This thread runs continuously while recording is active, processing frames
-        from the queue without blocking the UI thread.
-        
-        Args:
-            tag_node_name: Node identifier
-            video_writer: cv2.VideoWriter instance
-            writer_width: Target video width
-            writer_height: Target video height
-        """
-        write_queue = self._write_queues_dict.get(tag_node_name)
-        stop_flag = self._stop_flags_dict.get(tag_node_name)
-        if not write_queue or not stop_flag:
-            logger.error(f"[VideoWriter] Missing queue or stop flag for {tag_node_name}: "
-                        f"queue={bool(write_queue)}, stop_flag={bool(stop_flag)}")
-            return
-        
-        logger.info(f"[VideoWriter] Write thread started for {tag_node_name}")
-        
-        try:
-            while not stop_flag.is_set():
-                try:
-                    # Wait for frame with timeout to allow periodic checks
-                    # Using 0.5s as balance between responsiveness and CPU efficiency
-                    frame = write_queue.get(timeout=0.5)
-                    
-                    # None is also a stop signal (legacy)
-                    if frame is None:
-                        logger.info(f"[VideoWriter] Write thread received stop signal for {tag_node_name}")
-                        break
-                    
-                    # Resize and write frame
-                    # Using INTER_LINEAR instead of INTER_CUBIC for better performance
-                    writer_frame = cv2.resize(
-                        frame,
-                        (writer_width, writer_height),
-                        interpolation=cv2.INTER_LINEAR
-                    )
-                    video_writer.write(writer_frame)
-                    
-                    # Update frame count
-                    self._frame_count_dict[tag_node_name] = self._frame_count_dict.get(tag_node_name, 0) + 1
-                    
-                    write_queue.task_done()
-                    
-                except queue.Empty:
-                    # Timeout - check stop flag and continue
-                    continue
-                    
-        except Exception as e:
-            logger.error(f"[VideoWriter] Error in write thread for {tag_node_name}: {e}")
-            logger.error(traceback.format_exc())
-            create_crash_log("write_thread", e, tag_node_name)
-        
-        logger.info(f"[VideoWriter] Write thread stopped for {tag_node_name}")
 
     def _release_video_writer_async(self, tag_node_name, video_writer, tag_node_button_value_name):
         """
@@ -325,12 +260,11 @@ class VideoWriterNode(Node):
             logger.info(f"[VideoWriter] Starting background finalization for {tag_node_name}")
             
             frame_count = self._frame_count_dict.get(tag_node_name, 0)
-            dropped_count = self._dropped_frames_dict.get(tag_node_name, 0)
             
             # Release the video writer (can take 10-30+ seconds)
             video_writer.release()
             
-            logger.info(f"[VideoWriter] Finalization completed for {tag_node_name}: {frame_count} frames written, {dropped_count} frames dropped")
+            logger.info(f"[VideoWriter] Finalization completed for {tag_node_name}: {frame_count} frames written")
             
             # Update button label back to Start (thread-safe with DearPyGui)
             try:
@@ -352,8 +286,9 @@ class VideoWriterNode(Node):
             # Clean up tracking dictionaries
             self._release_threads_dict.pop(tag_node_name, None)
             self._frame_count_dict.pop(tag_node_name, None)
-            self._dropped_frames_dict.pop(tag_node_name, None)
             self._frame_counter_dict.pop(tag_node_name, None)
+            self._writer_width_dict.pop(tag_node_name, None)
+            self._writer_height_dict.pop(tag_node_name, None)
 
     def update(
         self,
@@ -367,10 +302,10 @@ class VideoWriterNode(Node):
         REAL-TIME HOT PATH - Performance-critical method called every frame.
         
         DESIGN CONSTRAINTS:
-        - Must never block the UI thread
-        - Must avoid expensive operations (resize, texture upload, allocations)
-        - Must minimize work when recording is active
-        - Frame writing is handled by background thread (_writer_thread)
+        - Must never block the UI thread for long periods
+        - Must avoid expensive operations when possible
+        - Direct frame writing approach (no queues/threads)
+        - Frame writing happens immediately in this method
         """
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01Value'
@@ -388,24 +323,38 @@ class VideoWriterNode(Node):
 
         frame = node_image_dict.get(connection_info_src, None)
         
-        # Check if currently recording (fast dict lookup, no GUI calls)
-        is_recording = tag_node_name in self._write_queues_dict
+        # Check if currently recording (fast dict lookup)
+        is_recording = tag_node_name in self._video_writer_dict
 
         if frame is not None:
-            # ============ FRAME WRITING (NON-BLOCKING) ============
-            # Only copy and submit frame when actively recording
-            # Avoids memory allocation overhead when not recording
+            # ============ FRAME WRITING (DIRECT) ============
+            # Write frame directly to video file if recording
             if is_recording:
                 try:
-                    # HOT PATH: Use put_nowait to never block UI thread
-                    # Drop frames when queue is full rather than waiting
-                    # Only copy frame when recording to save memory (~6MB per frame at HD)
-                    self._write_queues_dict[tag_node_name].put_nowait(frame.copy())
-                except queue.Full:
-                    # Track dropped frames for diagnostics
-                    self._dropped_frames_dict[tag_node_name] = self._dropped_frames_dict.get(tag_node_name, 0) + 1
-                    if self._dropped_frames_dict[tag_node_name] % 30 == 1:  # Log every 30 drops
-                        logger.warning(f"[VideoWriter] Frame dropped for {tag_node_name} - queue full (total: {self._dropped_frames_dict[tag_node_name]})")
+                    video_writer = self._video_writer_dict.get(tag_node_name)
+                    writer_width = self._writer_width_dict.get(tag_node_name)
+                    writer_height = self._writer_height_dict.get(tag_node_name)
+                    
+                    # Verify all required data is present
+                    if video_writer is None or writer_width is None or writer_height is None:
+                        logger.warning(f"[VideoWriter] Missing writer data for {tag_node_name}, skipping frame")
+                    else:
+                        # Resize and write frame directly
+                        # Using INTER_LINEAR for better performance
+                        writer_frame = cv2.resize(
+                            frame,
+                            (writer_width, writer_height),
+                            interpolation=cv2.INTER_LINEAR
+                        )
+                        video_writer.write(writer_frame)
+                        
+                        # Update frame count efficiently
+                        current_count = self._frame_count_dict.get(tag_node_name, 0)
+                        self._frame_count_dict[tag_node_name] = current_count + 1
+                    
+                except Exception as e:
+                    logger.error(f"[VideoWriter] Error writing frame for {tag_node_name}: {e}")
+                    logger.error(traceback.format_exc())
 
             # ============ DISPLAY UPDATE (THROTTLED DURING RECORDING) ============
             # HOT PATH OPTIMIZATION: Reduce texture upload frequency during recording
@@ -450,8 +399,7 @@ class VideoWriterNode(Node):
             
         else:
             # ============ NO FRAME - AUTO-STOP LOGIC ============
-            # HOT PATH: Use cached recording state instead of dpg.get_item_label
-            # dpg.get_item_label causes GUI roundtrip which is expensive
+            # Use cached recording state
             if is_recording and self._prev_frame_flag:
                 # Stream ended while recording - auto-stop
                 self._recording_button(None, None, tag_node_name)
@@ -474,30 +422,11 @@ class VideoWriterNode(Node):
         """
         Clean up resources when node is closed.
         
-        Ensures all threads are stopped and video writers are released properly.
+        Ensures video writers are released properly.
         """
         tag_node_name = str(node_id) + ':' + self.node_tag
         
         logger.info(f"[VideoWriter] Closing node {tag_node_name}")
-        
-        # Stop write thread if active using stop flag (cleaner than queue)
-        if tag_node_name in self._stop_flags_dict:
-            self._stop_flags_dict[tag_node_name].set()
-        
-        if tag_node_name in self._write_threads_dict:
-            write_thread = self._write_threads_dict[tag_node_name]
-            if write_thread.is_alive():
-                # Wait for thread to finish
-                write_thread.join(timeout=self._WRITE_THREAD_TIMEOUT)
-                if write_thread.is_alive():
-                    logger.warning(f"[VideoWriter] Write thread still running after {self._WRITE_THREAD_TIMEOUT}s for {tag_node_name}")
-            
-            self._write_threads_dict.pop(tag_node_name, None)
-        
-        # Clean up write queue and stop flag
-        self._write_queues_dict.pop(tag_node_name, None)
-        self._stop_flags_dict.pop(tag_node_name, None)
-        self._frame_counter_dict.pop(tag_node_name, None)
         
         # Wait for finalization thread if active
         if tag_node_name in self._release_threads_dict:
@@ -520,8 +449,9 @@ class VideoWriterNode(Node):
         
         # Clear tracking dictionaries
         self._frame_count_dict.pop(tag_node_name, None)
-        self._dropped_frames_dict.pop(tag_node_name, None)
         self._frame_counter_dict.pop(tag_node_name, None)
+        self._writer_width_dict.pop(tag_node_name, None)
+        self._writer_height_dict.pop(tag_node_name, None)
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
@@ -627,38 +557,21 @@ class VideoWriterNode(Node):
                     logger.error(f"[VideoWriter] Failed to open video writer for {file_path}")
                     return
                 
-                # Store writer
+                # Store writer and dimensions for direct frame writing
                 self._video_writer_dict[tag_node_name] = video_writer
-                
-                # Create queue for frames
-                write_queue = queue.Queue(maxsize=self._QUEUE_MAX_SIZE)
-                self._write_queues_dict[tag_node_name] = write_queue
-                
-                # Create stop flag for clean thread termination
-                stop_flag = threading.Event()
-                self._stop_flags_dict[tag_node_name] = stop_flag
+                self._writer_width_dict[tag_node_name] = writer_width
+                self._writer_height_dict[tag_node_name] = writer_height
                 
                 # Initialize counters
                 self._frame_count_dict[tag_node_name] = 0
-                self._dropped_frames_dict[tag_node_name] = 0
                 self._frame_counter_dict[tag_node_name] = 0  # For throttling display updates
-                
-                # Start write thread
-                write_thread = threading.Thread(
-                    target=self._writer_thread,
-                    args=(tag_node_name, video_writer, writer_width, writer_height),
-                    daemon=True,
-                    name=f"VideoWriter-Write-{tag_node_name}"
-                )
-                self._write_threads_dict[tag_node_name] = write_thread
-                write_thread.start()
                 
                 # Disable resolution, format, and FPS dropdowns during recording
                 dpg.configure_item(resolution_tag, enabled=False)
                 dpg.configure_item(format_tag, enabled=False)
                 dpg.configure_item(fps_tag, enabled=False)
                 
-                logger.info(f"[VideoWriter] Started threaded recording {video_format} at {resolution_text} {fps_text}: {file_path}")
+                logger.info(f"[VideoWriter] Started direct frame-by-frame recording {video_format} at {resolution_text} {fps_text}: {file_path}")
                 dpg.set_item_label(tag_node_button_value_name, self._stop_label)
                 
             except Exception as e:
@@ -668,9 +581,8 @@ class VideoWriterNode(Node):
                 
                 # Clean up on error
                 self._video_writer_dict.pop(tag_node_name, None)
-                self._write_queues_dict.pop(tag_node_name, None)
-                self._write_threads_dict.pop(tag_node_name, None)
-                self._stop_flags_dict.pop(tag_node_name, None)
+                self._writer_width_dict.pop(tag_node_name, None)
+                self._writer_height_dict.pop(tag_node_name, None)
                 self._frame_counter_dict.pop(tag_node_name, None)
             
         elif label == self._stop_label:
@@ -684,21 +596,10 @@ class VideoWriterNode(Node):
                 dpg.configure_item(format_tag, enabled=True)
                 dpg.configure_item(fps_tag, enabled=True)
                 
-                # Signal write thread to stop using the stop flag (always succeeds, never blocks)
-                if tag_node_name in self._stop_flags_dict:
-                    self._stop_flags_dict[tag_node_name].set()
-                
-                # Wait for write thread to finish processing remaining frames in queue
-                if tag_node_name in self._write_threads_dict:
-                    write_thread = self._write_threads_dict.pop(tag_node_name)
-                    write_thread.join(timeout=self._WRITE_THREAD_TIMEOUT)
-                    if write_thread.is_alive():
-                        logger.warning(f"[VideoWriter] Write thread did not stop cleanly for {tag_node_name}")
-                
-                # Clean up queue and stop flag
-                self._write_queues_dict.pop(tag_node_name, None)
-                self._stop_flags_dict.pop(tag_node_name, None)
-                self._frame_counter_dict.pop(tag_node_name, None)  # Clean up throttle counter
+                # Clean up dimensions and throttle counter
+                self._writer_width_dict.pop(tag_node_name, None)
+                self._writer_height_dict.pop(tag_node_name, None)
+                self._frame_counter_dict.pop(tag_node_name, None)
                 
                 # Start background finalization
                 if tag_node_name in self._video_writer_dict:
@@ -718,8 +619,7 @@ class VideoWriterNode(Node):
                     release_thread.start()
                     
                     frame_count = self._frame_count_dict.get(tag_node_name, 0)
-                    dropped_count = self._dropped_frames_dict.get(tag_node_name, 0)
-                    logger.info(f"[VideoWriter] Stopped recording, finalizing in background ({frame_count} frames written, {dropped_count} dropped)")
+                    logger.info(f"[VideoWriter] Stopped recording, finalizing in background ({frame_count} frames written)")
                     
             except Exception as e:
                 logger.error(f"[VideoWriter] Error stopping recording: {e}")
