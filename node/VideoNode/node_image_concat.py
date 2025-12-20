@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-import re
 import copy
 import logging
 
@@ -20,10 +19,10 @@ logger = logging.getLogger(__name__)
 
 def create_concat_image(frame_dict, slot_num):
     """
-    Create concatenated image from multiple frames.
+    Create concatenated image from multiple frames using pre-allocation.
     
-    Memory-optimized implementation that minimizes intermediate array allocations
-    by using single-pass concatenation operations.
+    Memory-optimized implementation that uses pre-allocated array and direct slicing
+    instead of cv2.hconcat/vconcat to minimize intermediate array allocations.
     
     Args:
         frame_dict: Dictionary of frames indexed by slot number (0-based).
@@ -41,48 +40,40 @@ def create_concat_image(frame_dict, slot_num):
         frame = frame_dict[0]
         # No copy needed - frame is already a copy from frame_dict
         display_frame = frame
+        return frame, display_frame
     
-    elif slot_num == 2:
-        # Direct horizontal concatenation - no intermediate arrays
-        # Remove unnecessary background image allocation that was 2x the size
-        frame = cv2.hconcat([frame_dict[0], frame_dict[1]])
-        display_frame = frame
+    # Get frame dimensions from first frame
+    h, w = frame_dict[0].shape[:2]
     
-    elif slot_num == 3 or slot_num == 4:
-        # Optimized: Single concatenation per row, then combine rows
-        # Memory: 2 intermediate arrays (rows) + 1 final = 3 arrays total
-        hconcat_image01 = cv2.hconcat([frame_dict[0], frame_dict[1]])
-        hconcat_image02 = cv2.hconcat([frame_dict[2], frame_dict[3]])
-        frame = cv2.vconcat([hconcat_image01, hconcat_image02])
-        # Explicitly delete intermediate arrays to help garbage collector
-        del hconcat_image01, hconcat_image02
-        display_frame = frame
+    # Calculate grid dimensions based on slot count
+    # Grid layout mapping: 1→1x1, 2→1x2, 3-4→2x2, 5-6→2x3, 7-9→3x3
+    if slot_num == 2:
+        rows, cols = 1, 2
+    elif slot_num <= 4:
+        rows, cols = 2, 2
+    elif slot_num <= 6:
+        rows, cols = 2, 3
+    else:  # slot_num <= 9
+        rows, cols = 3, 3
     
-    elif slot_num == 5 or slot_num == 6:
-        # Optimized: Create rows in single pass to avoid reassignment
-        # Memory: 2 intermediate arrays (rows) + 1 final = 3 arrays total
-        # Old approach created 6 arrays due to reassignments
-        hconcat_image01 = cv2.hconcat([frame_dict[0], frame_dict[1], frame_dict[2]])
-        hconcat_image02 = cv2.hconcat([frame_dict[3], frame_dict[4], frame_dict[5]])
-        frame = cv2.vconcat([hconcat_image01, hconcat_image02])
-        # Explicitly delete intermediate arrays to help garbage collector
-        del hconcat_image01, hconcat_image02
-        display_frame = frame
+    # Pre-allocate output array - single allocation for entire grid
+    out = np.empty((rows * h, cols * w, 3), dtype=frame_dict[0].dtype)
     
-    elif slot_num == 7 or slot_num == 8 or slot_num == 9:
-        # Optimized: Create rows in single pass to avoid reassignment
-        # Memory: 3 intermediate arrays (rows) + 1 final = 4 arrays total
-        # Old approach created 9 arrays due to reassignments
-        # Note: frame_dict is pre-filled with all indices 0-8 by create_image_dict()
-        hconcat_image01 = cv2.hconcat([frame_dict[0], frame_dict[1], frame_dict[2]])
-        hconcat_image02 = cv2.hconcat([frame_dict[3], frame_dict[4], frame_dict[5]])
-        hconcat_image03 = cv2.hconcat([frame_dict[6], frame_dict[7], frame_dict[8]])
-        frame = cv2.vconcat([hconcat_image01, hconcat_image02, hconcat_image03])
-        # Explicitly delete intermediate arrays to help garbage collector
-        del hconcat_image01, hconcat_image02, hconcat_image03
-        display_frame = frame
-
-    return frame, display_frame
+    # Copy frames directly into pre-allocated array using slicing
+    for i in range(slot_num):
+        if i in frame_dict:
+            r = i // cols
+            c = i % cols
+            out[r*h:(r+1)*h, c*w:(c+1)*w] = frame_dict[i]
+    
+    # Fill remaining grid positions with black if needed
+    for i in range(slot_num, rows * cols):
+        if i < len(frame_dict) and i in frame_dict:
+            r = i // cols
+            c = i % cols
+            out[r*h:(r+1)*h, c*w:(c+1)*w] = frame_dict[i]
+    
+    return out, out
 
 class FactoryNode:
     node_label = 'ImageConcat'
@@ -204,6 +195,7 @@ class Node(Node):
     _max_slot_number = 9
     _slot_id = {}
     _slot_types = {}  # Track the type of each slot (IMAGE, AUDIO, JSON)
+    _black_cache = {}  # Cache for black images by (width, height)
     
     # Reference height for classification text scaling (in pixels)
     _REFERENCE_HEIGHT = 480.0
@@ -218,6 +210,22 @@ class Node(Node):
 
     def __init__(self):
         pass
+
+    def get_black(self, width, height):
+        """
+        Get or create a cached black image of the specified dimensions.
+        
+        Args:
+            width: Image width in pixels
+            height: Image height in pixels
+            
+        Returns:
+            Black image (numpy array) of shape (height, width, 3) with dtype uint8
+        """
+        key = (width, height)
+        if key not in self._black_cache:
+            self._black_cache[key] = np.zeros((height, width, 3), np.uint8)
+        return self._black_cache[key]
 
     def draw_classification_info(
         self,
@@ -407,7 +415,7 @@ class Node(Node):
         ):
             frame_exist_flag = False
 
-            black_image = np.zeros((resize_height, resize_width, 3)).astype(np.uint8)
+            black_image = self.get_black(resize_width, resize_height)
 
             # Build a list of IMAGE slot indices (0-indexed)
             image_slot_indices = []
@@ -531,10 +539,16 @@ class Node(Node):
         
         for connection_info in connection_list:
 
-            slot_number = re.sub(r'\D', '', connection_info[1].split(':')[-1])
-            if slot_number == '':
+            # Extract slot number using string split instead of regex
+            # connection_info[1] format: "NodeID:NodeType:TYPE:InputXX"
+            # We want to extract XX from "InputXX"
+            input_part = connection_info[1].split(':')[-1]  # Get "InputXX"
+            if not input_part.startswith('Input'):
                 continue
-            slot_number = int(slot_number) - 1
+            slot_number_str = input_part[5:]  # Remove "Input" prefix, get "XX"
+            if not slot_number_str.isdigit():
+                continue
+            slot_number = int(slot_number_str) - 1
 
             connection_type = connection_info[0].split(':')[2]
             logger.debug(f"[ImageConcat] Slot {slot_number}: connection type = {connection_type}")
