@@ -157,7 +157,7 @@ class FactoryNode:
                     items=['HD (1280x720)', '640x480'],
                     default_value='640x480',
                     width=small_window_w,
-                    label='Output Resolution',
+                    label='',
                 )
                 dpg.add_combo(
                     tag=node.tag_node_name + ':SlotType',
