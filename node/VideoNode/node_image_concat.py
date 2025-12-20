@@ -459,7 +459,8 @@ class Node(Node):
                     resize_frame = cv2.resize(frame, (resize_width, resize_height))
                     frame_dict[output_index] = resize_frame
                     # Explicitly delete frame after resize to help garbage collector
-                    del frame, resize_frame
+                    # Note: resize_frame is now referenced by frame_dict, so we only delete frame
+                    del frame
 
                     frame_exist_flag = True
                 else:

@@ -106,15 +106,16 @@ elif slot_num == 7 or slot_num == 8 or slot_num == 9:
 resize_frame = cv2.resize(frame, (resize_width, resize_height))
 frame_dict[output_index] = resize_frame
 # Explicitly delete frame after resize to help garbage collector
-del frame, resize_frame
+# Note: resize_frame is now referenced by frame_dict, so we only delete frame
+del frame
 
 frame_exist_flag = True
 ```
 
 **Memory Impact:**
 - `frame`: Original full-size frame (varies by source)
-- `resize_frame`: Resized frame (~0.2 MB for 320×180)
-- Total freed: Original frame size per slot
+- Freed: Original frame size per slot
+- `resize_frame` is kept (referenced by `frame_dict`)
 - With multiple slots: Significant memory freed
 
 #### 3. VideoWriter - Display Frame Cleanup

@@ -97,13 +97,9 @@ def test_videowriter_uses_copy_not_deepcopy():
     assert 'frame.copy()' in content, \
         "Video writer should use frame.copy() for recording"
     
-    # Verify that deepcopy is not used for frame copying
-    lines = content.split('\n')
-    for i, line in enumerate(lines):
-        # Check lines that involve frame copying
-        if 'frame' in line and 'copy' in line and 'put_nowait' in line:
-            assert 'deepcopy' not in line, \
-                f"Line {i+1} should not use deepcopy for frame: {line}"
+    # Verify that deepcopy is not used anywhere in the file
+    assert 'deepcopy(frame' not in content, \
+        "Video writer should not use deepcopy for frame copying"
 
 
 def test_memory_efficiency_simulation():
