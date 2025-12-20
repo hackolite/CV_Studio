@@ -105,8 +105,8 @@ elif slot_num == 2:
 ```
 
 **Memory Savings:**
-- Old: 2 arrays (460KB + 900KB) = 1,360 KB
-- New: 1 array (460KB)
+- Old: frame (460KB) + bg_image (900KB) = 1,360 KB total
+- New: frame (460KB) only = 460 KB total
 - **Saves: 900 KB per frame** (66% reduction)
 
 #### Six-Slot Case

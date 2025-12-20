@@ -26,11 +26,16 @@ def create_concat_image(frame_dict, slot_num):
     by using single-pass concatenation operations.
     
     Args:
-        frame_dict: Dictionary of frames indexed by slot number
-        slot_num: Number of slots to concatenate
+        frame_dict: Dictionary of frames indexed by slot number (0-based).
+                   All required indices must exist (filled with black_image if needed).
+        slot_num: Number of slots to concatenate (1-9)
         
     Returns:
         tuple: (frame for output, display_frame for UI)
+        
+    Note:
+        frame_dict is pre-filled by create_image_dict() with all required indices,
+        using black_image for missing frames. This ensures all dictionary accesses are safe.
     """
     if slot_num == 1:
         frame = frame_dict[0]
@@ -64,6 +69,7 @@ def create_concat_image(frame_dict, slot_num):
         # Optimized: Create rows in single pass to avoid reassignment
         # Memory: 3 intermediate arrays (rows) + 1 final = 4 arrays total
         # Old approach created 9 arrays due to reassignments
+        # Note: frame_dict is pre-filled with all indices 0-8 by create_image_dict()
         hconcat_image01 = cv2.hconcat([frame_dict[0], frame_dict[1], frame_dict[2]])
         hconcat_image02 = cv2.hconcat([frame_dict[3], frame_dict[4], frame_dict[5]])
         hconcat_image03 = cv2.hconcat([frame_dict[6], frame_dict[7], frame_dict[8]])

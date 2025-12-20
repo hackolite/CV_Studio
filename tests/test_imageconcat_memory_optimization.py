@@ -137,41 +137,43 @@ def test_memory_efficiency_comparison():
     - 6-slot: Only 3 arrays (2 row concats + 1 final)
     - 9-slot: Only 4 arrays (3 row concats + 1 final)
     """
-    # Create test frames
+    # Create test frame (reuse same frame object since function doesn't modify inputs)
     frame_240_320 = np.random.randint(0, 255, (240, 320, 3), dtype=np.uint8)
     
     # Calculate memory per frame: 240 * 320 * 3 bytes = 230,400 bytes ≈ 225 KB
     bytes_per_frame = 240 * 320 * 3
     
-    # Test 2-slot case
-    frame_dict_2 = {0: frame_240_320.copy(), 1: frame_240_320.copy()}
+    # Test 2-slot case (reuse frame object)
+    frame_dict_2 = {0: frame_240_320, 1: frame_240_320}
     result_2, _ = create_concat_image(frame_dict_2, 2)
     # Old approach: created bg_image of 2x size = 480 * 640 * 3 = 921,600 bytes ≈ 900 KB
     # New approach: only concat result = 240 * 640 * 3 = 460,800 bytes ≈ 450 KB
     # Savings: 460,800 bytes ≈ 450 KB (50% reduction)
     assert result_2.shape == (240, 640, 3)
     
-    # Test 6-slot case
-    frame_dict_6 = {i: frame_240_320.copy() for i in range(6)}
+    # Test 6-slot case (reuse frame object)
+    frame_dict_6 = {i: frame_240_320 for i in range(6)}
     result_6, _ = create_concat_image(frame_dict_6, 6)
     # Old approach: 6 intermediate arrays due to reassignment
     # New approach: 3 arrays total (2 row concats + 1 final)
     # Savings: 3 fewer intermediate arrays = ~675 KB
     assert result_6.shape == (480, 960, 3)
     
-    # Test 9-slot case
-    frame_dict_9 = {i: frame_240_320.copy() for i in range(9)}
+    # Test 9-slot case (reuse frame object)
+    frame_dict_9 = {i: frame_240_320 for i in range(9)}
     result_9, _ = create_concat_image(frame_dict_9, 9)
     # Old approach: 9 intermediate arrays due to reassignment
     # New approach: 4 arrays total (3 row concats + 1 final)
     # Savings: 5 fewer intermediate arrays = ~1.1 MB
     assert result_9.shape == (720, 960, 3)
     
-    print("Memory efficiency test passed!")
-    print(f"Per-frame memory: {bytes_per_frame:,} bytes ({bytes_per_frame/1024:.1f} KB)")
-    print(f"2-slot concat saves: ~450 KB (50% reduction)")
-    print(f"6-slot concat saves: ~675 KB by avoiding 3 extra arrays")
-    print(f"9-slot concat saves: ~1.1 MB by avoiding 5 extra arrays")
+    # Return memory stats for main block to report
+    return {
+        'bytes_per_frame': bytes_per_frame,
+        '2_slot_savings_kb': 450,
+        '6_slot_savings_kb': 675,
+        '9_slot_savings_kb': 1100
+    }
 
 
 def test_cv2_hconcat_accepts_list():
@@ -236,8 +238,12 @@ if __name__ == '__main__':
     test_nine_slots_single_pass_concat()
     print("✓ Nine slots single-pass test passed")
     
-    test_memory_efficiency_comparison()
+    memory_stats = test_memory_efficiency_comparison()
     print("✓ Memory efficiency comparison passed")
+    print(f"  Per-frame memory: {memory_stats['bytes_per_frame']:,} bytes ({memory_stats['bytes_per_frame']/1024:.1f} KB)")
+    print(f"  2-slot concat saves: ~{memory_stats['2_slot_savings_kb']} KB (50% reduction)")
+    print(f"  6-slot concat saves: ~{memory_stats['6_slot_savings_kb']} KB by avoiding 3 extra arrays")
+    print(f"  9-slot concat saves: ~{memory_stats['9_slot_savings_kb']} KB by avoiding 5 extra arrays")
     
     test_cv2_hconcat_accepts_list()
     print("✓ cv2.hconcat multi-image test passed")
