@@ -288,9 +288,9 @@ class YoutubeNode(Node):
                     else:
                         self._stream_fps[node_id] = 24.0  # Default to 24 FPS
                         print("YouTube stream FPS unavailable, using default 24 FPS")
-                except:
+                except (cv2.error, AttributeError) as e:
                     self._stream_fps[node_id] = 24.0  # Default to 24 FPS
-                    print("Failed to get YouTube stream FPS, using default 24 FPS")
+                    print(f"Failed to get YouTube stream FPS ({e}), using default 24 FPS")
                 
                 # Change button label to Stop
                 dpg.set_item_label(tag_node_button_value_name, self._stop_label)
@@ -363,7 +363,7 @@ class YoutubeNode(Node):
                         self._last_frame_time[str(node_id)] = current_time
                         
                         # Calculate FPS-based timestamp for this frame
-                        # Similar to Video node implementation (lines 1096-1109 in node_video.py)
+                        # Similar to Video node implementation
                         # The timestamp is based on the frame number and the stream FPS
                         # This ensures consistent timestamps regardless of processing speed
                         stream_fps = self._stream_fps.get(str(node_id), 24.0)
@@ -387,11 +387,13 @@ class YoutubeNode(Node):
 
         # Return frame with FPS-based timestamp for proper synchronization
         # The timestamp will be preserved through processing/vision nodes and used by VideoWriter
+        # Note: timestamp can be None if no frame was captured, which is correct -
+        # main.py will create a new timestamp automatically when timestamp is None (line 184-188)
         return {
             "image": frame, 
             "json": None, 
             "audio": None,
-            "timestamp": frame_timestamp  # FPS-based timestamp for synchronization
+            "timestamp": frame_timestamp  # FPS-based timestamp for synchronization (None if no frame)
         }
     
     
