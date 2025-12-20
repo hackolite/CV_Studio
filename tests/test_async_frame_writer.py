@@ -3,8 +3,15 @@
 """
 Test suite for AsyncFrameWriter class
 
-Tests the async frame writing functionality that prevents UI freeze
-during video recording.
+DEPRECATED: AsyncFrameWriter has been removed from the production code.
+This test file is kept for historical reference only.
+
+The VideoWriter node now uses direct frame-by-frame writing without queues
+or async buffering. See test_direct_frame_writing.py for current tests.
+
+Previous functionality:
+- Tests the async frame writing functionality that prevents UI freeze
+  during video recording.
 
 NOTE: This test file includes a copy of the AsyncFrameWriter class instead of 
 importing from node_video_writer.py because the main module requires dearpygui,
