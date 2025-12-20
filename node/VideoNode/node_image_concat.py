@@ -160,6 +160,13 @@ class FactoryNode:
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_combo(
+                    tag=node.tag_node_name + ':Resolution',
+                    items=['HD (1280x720)', '640x480'],
+                    default_value='640x480',
+                    width=small_window_w,
+                    label='Output Resolution',
+                )
+                dpg.add_combo(
                     tag=node.tag_node_name + ':SlotType',
                     items=['IMAGE', 'AUDIO', 'JSON'],
                     default_value='IMAGE',
@@ -187,7 +194,7 @@ class FactoryNode:
 
 
 class Node(Node):
-    _ver = '0.0.2'
+    _ver = '0.0.3'
 
     node_label = 'ImageConcat'
     node_tag = 'ImageConcat'
@@ -493,8 +500,27 @@ class Node(Node):
 
         small_window_w = self._opencv_setting_dict['process_width']
         small_window_h = self._opencv_setting_dict['process_height']
-        resize_width = self._opencv_setting_dict['result_width']
-        resize_height = self._opencv_setting_dict['result_height']
+        
+        # Get the selected resolution from the combo box
+        resolution_tag = self.tag_node_name + ':Resolution'
+        try:
+            selected_resolution = dpg_get_value(resolution_tag)
+        except:
+            # Combo doesn't exist yet or dpg not initialized
+            selected_resolution = None
+        
+        # Parse resolution and set resize dimensions
+        if selected_resolution == 'HD (1280x720)':
+            resize_width = 1280
+            resize_height = 720
+        elif selected_resolution == '640x480':
+            resize_width = 640
+            resize_height = 480
+        else:
+            # Fallback to default settings if combo doesn't exist yet or invalid value
+            resize_width = self._opencv_setting_dict['result_width']
+            resize_height = self._opencv_setting_dict['result_height']
+        
         draw_info_on_result = self._opencv_setting_dict['draw_info_on_result']
 
 
@@ -651,11 +677,20 @@ class Node(Node):
 
         pos = dpg.get_item_pos(tag_node_name)
 
+        # Get resolution setting with error handling
+        resolution_tag = tag_node_name + ':Resolution'
+        try:
+            selected_resolution = dpg_get_value(resolution_tag)
+        except:
+            # Combo doesn't exist or dpg not initialized
+            selected_resolution = '640x480'  # Default
+
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
         setting_dict['slot_id'] = self._slot_id[tag_node_name]
         setting_dict['slot_types'] = self._slot_types.get(tag_node_name, {})
+        setting_dict['resolution'] = selected_resolution
 
         return setting_dict
 
@@ -666,6 +701,12 @@ class Node(Node):
 
         slot_number = int(setting_dict['slot_id'])
         slot_types = setting_dict.get('slot_types', {})
+        
+        # Restore resolution setting
+        resolution = setting_dict.get('resolution', '640x480')
+        resolution_tag = tag_node_name + ':Resolution'
+        if dpg.does_item_exist(resolution_tag):
+            dpg_set_value(resolution_tag, resolution)
         
         # Initialize slot types if not present
         if tag_node_name not in self._slot_types:
