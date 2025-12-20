@@ -226,7 +226,7 @@ class VideoWriterNode(Node):
     _finalizing_label = 'Finalizing...'
     
     # Configuration
-    _QUEUE_MAX_SIZE = 60  # Buffer up to 60 frames (2 seconds at 30fps)
+    _QUEUE_MAX_SIZE = 6  # Buffer up to 60 frames (2 seconds at 30fps)
     _RELEASE_TIMEOUT_SECONDS = 60.0
     _WRITE_THREAD_TIMEOUT = 5.0
     
