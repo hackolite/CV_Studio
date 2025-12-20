@@ -259,7 +259,8 @@ class VideoWriterNode(Node):
         write_queue = self._write_queues_dict.get(tag_node_name)
         stop_flag = self._stop_flags_dict.get(tag_node_name)
         if not write_queue or not stop_flag:
-            logger.error(f"[VideoWriter] No queue or stop flag found for {tag_node_name}")
+            logger.error(f"[VideoWriter] Missing queue or stop flag for {tag_node_name}: "
+                        f"queue={bool(write_queue)}, stop_flag={bool(stop_flag)}")
             return
         
         logger.info(f"[VideoWriter] Write thread started for {tag_node_name}")
@@ -268,7 +269,8 @@ class VideoWriterNode(Node):
             while not stop_flag.is_set():
                 try:
                     # Wait for frame with timeout to allow periodic checks
-                    frame = write_queue.get(timeout=0.1)
+                    # Using 0.5s as balance between responsiveness and CPU efficiency
+                    frame = write_queue.get(timeout=0.5)
                     
                     # None is also a stop signal (legacy)
                     if frame is None:
