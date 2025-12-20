@@ -176,6 +176,18 @@ class FactoryNode:
                     width=small_window_w,
                     label='Format',
                 )
+            
+            # Add FPS selector
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_name + ':FPS',
+                    items=['24 FPS', '25 FPS', '30 FPS', '60 FPS'],
+                    default_value='24 FPS',
+                    width=small_window_w,
+                    label='Frame Rate',
+                )
 
             with dpg.node_attribute(
                     tag=node.tag_node_button_name,
@@ -462,11 +474,35 @@ class VideoWriterNode(Node):
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
+        
+        # Save resolution, format, and FPS settings
+        resolution_tag = tag_node_name + ':Resolution'
+        format_tag = tag_node_name + ':Format'
+        fps_tag = tag_node_name + ':FPS'
+        
+        if dpg.does_item_exist(resolution_tag):
+            setting_dict['resolution'] = dpg_get_value(resolution_tag)
+        if dpg.does_item_exist(format_tag):
+            setting_dict['format'] = dpg_get_value(format_tag)
+        if dpg.does_item_exist(fps_tag):
+            setting_dict['fps'] = dpg_get_value(fps_tag)
 
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
-        pass
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        
+        # Restore resolution, format, and FPS settings
+        resolution_tag = tag_node_name + ':Resolution'
+        format_tag = tag_node_name + ':Format'
+        fps_tag = tag_node_name + ':FPS'
+        
+        if 'resolution' in setting_dict and dpg.does_item_exist(resolution_tag):
+            dpg_set_value(resolution_tag, setting_dict['resolution'])
+        if 'format' in setting_dict and dpg.does_item_exist(format_tag):
+            dpg_set_value(format_tag, setting_dict['format'])
+        if 'fps' in setting_dict and dpg.does_item_exist(fps_tag):
+            dpg_set_value(fps_tag, setting_dict['fps'])
 
     def _recording_button(self, sender, data, user_data):
         """
@@ -498,7 +534,19 @@ class VideoWriterNode(Node):
                 }
                 writer_width, writer_height = resolution_map.get(resolution_text, (1280, 720))
                 
-                writer_fps = self._opencv_setting_dict['video_writer_fps']
+                # Get selected FPS
+                fps_tag = tag_node_name + ':FPS'
+                fps_text = dpg_get_value(fps_tag)
+                
+                # Parse FPS from text (e.g., "24 FPS" -> 24)
+                fps_map = {
+                    '24 FPS': 24,
+                    '25 FPS': 25,
+                    '30 FPS': 30,
+                    '60 FPS': 60
+                }
+                writer_fps = fps_map.get(fps_text, 24)
+                
                 video_writer_directory = self._opencv_setting_dict['video_writer_directory']
 
                 os.makedirs(video_writer_directory, exist_ok=True)
@@ -550,11 +598,12 @@ class VideoWriterNode(Node):
                 self._write_threads_dict[tag_node_name] = write_thread
                 write_thread.start()
                 
-                # Disable resolution and format dropdowns during recording
+                # Disable resolution, format, and FPS dropdowns during recording
                 dpg.configure_item(resolution_tag, enabled=False)
                 dpg.configure_item(format_tag, enabled=False)
+                dpg.configure_item(fps_tag, enabled=False)
                 
-                logger.info(f"[VideoWriter] Started threaded recording {video_format} at {resolution_text}: {file_path}")
+                logger.info(f"[VideoWriter] Started threaded recording {video_format} at {resolution_text} {fps_text}: {file_path}")
                 dpg.set_item_label(tag_node_button_value_name, self._stop_label)
                 
             except Exception as e:
@@ -570,11 +619,13 @@ class VideoWriterNode(Node):
         elif label == self._stop_label:
             # ============ STOP RECORDING ============
             try:
-                # Re-enable resolution and format dropdowns
+                # Re-enable resolution, format, and FPS dropdowns
                 resolution_tag = tag_node_name + ':Resolution'
                 format_tag = tag_node_name + ':Format'
+                fps_tag = tag_node_name + ':FPS'
                 dpg.configure_item(resolution_tag, enabled=True)
                 dpg.configure_item(format_tag, enabled=True)
+                dpg.configure_item(fps_tag, enabled=True)
                 
                 # Signal write thread to stop
                 if tag_node_name in self._write_queues_dict:
