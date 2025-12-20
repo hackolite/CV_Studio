@@ -62,10 +62,13 @@ def create_concat_image(frame_dict, slot_num):
     
     # Pre-allocate output array - single allocation for entire grid
     # Use zeros to ensure any unfilled positions are black (though frame_dict should be complete)
+    # Note: Assumes 3-channel BGR format (standard OpenCV convention)
     out = np.zeros((rows * h, cols * w, 3), dtype=frame_dict[0].dtype)
     
     # Copy frames directly into pre-allocated array using slicing
     # frame_dict should contain all indices 0..slot_num-1, filled by create_image_dict
+    # The 'if i in frame_dict' check provides defense-in-depth even though the contract
+    # guarantees all indices exist - minimal performance cost for safety
     for i in range(slot_num):
         if i in frame_dict:
             r = i // cols
@@ -220,6 +223,10 @@ class Node(Node):
             
         Returns:
             Black image (numpy array) of shape (height, width, 3) with dtype uint8
+            
+        Note:
+            Assumes 3-channel BGR format (OpenCV standard). All images in the system
+            use this format consistently.
         """
         key = (width, height)
         if key not in self._black_cache:
