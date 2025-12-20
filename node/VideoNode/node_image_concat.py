@@ -503,7 +503,11 @@ class Node(Node):
         
         # Get the selected resolution from the combo box
         resolution_tag = self.tag_node_name + ':Resolution'
-        selected_resolution = dpg_get_value(resolution_tag)
+        try:
+            selected_resolution = dpg_get_value(resolution_tag)
+        except:
+            # Combo doesn't exist yet or dpg not initialized
+            selected_resolution = None
         
         # Parse resolution and set resize dimensions
         if selected_resolution == 'HD (1280x720)':
@@ -673,9 +677,13 @@ class Node(Node):
 
         pos = dpg.get_item_pos(tag_node_name)
 
-        # Get resolution setting
+        # Get resolution setting with error handling
         resolution_tag = tag_node_name + ':Resolution'
-        selected_resolution = dpg_get_value(resolution_tag)
+        try:
+            selected_resolution = dpg_get_value(resolution_tag)
+        except:
+            # Combo doesn't exist or dpg not initialized
+            selected_resolution = '640x480'  # Default
 
         setting_dict = {}
         setting_dict['ver'] = self._ver

@@ -1,6 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Tests for ImageConcat resolution options - Unit tests for create_concat_image function"""
+"""Tests for ImageConcat resolution options - Unit tests for create_concat_image function
+
+Note: This test file includes a standalone copy of create_concat_image() to avoid
+dependencies on dearpygui and other UI components. This allows the tests to run
+in isolation without requiring the full application environment.
+"""
 
 import numpy as np
 import cv2
@@ -9,7 +14,12 @@ import cv2
 def create_concat_image(frame_dict, slot_num):
     """
     Simplified version of create_concat_image for testing
-    (copied from node_image_concat.py)
+    (copied from node_image_concat.py - kept in sync manually)
+    
+    This is intentionally duplicated to:
+    1. Avoid dearpygui dependency in tests
+    2. Allow unit testing without full UI initialization
+    3. Ensure resolution logic testing is isolated
     """
     if slot_num == 1:
         frame = frame_dict[0]
