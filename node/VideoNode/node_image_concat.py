@@ -36,6 +36,10 @@ def create_concat_image(frame_dict, slot_num):
         frame_dict is pre-filled by create_image_dict() with all required indices,
         using black_image for missing frames. This ensures all dictionary accesses are safe.
     """
+    # Defensive check: ensure frame_dict has at least index 0
+    if not frame_dict or 0 not in frame_dict:
+        raise ValueError("frame_dict must contain at least index 0")
+    
     if slot_num == 1:
         frame = frame_dict[0]
         # No copy needed - frame is already a copy from frame_dict
