@@ -153,6 +153,9 @@ class VideoWriterNode(Node):
     _stop_label = 'Stop'
     _finalizing_label = 'Finalizing...'
     
+    # Thread management constants
+    _RELEASE_THREAD_TIMEOUT = 5.0  # seconds to wait for release thread on close
+    
     # FPS mapping
     _FPS_MAP = {
         '24 FPS': 24,
@@ -274,7 +277,7 @@ class VideoWriterNode(Node):
             release_thread = self._release_threads_dict[tag_node_name]
             if release_thread.is_alive():
                 logger.info(f"[VideoWriter] Waiting for background release thread to complete for {tag_node_name}")
-                release_thread.join(timeout=5.0)  # Wait up to 5 seconds
+                release_thread.join(timeout=self._RELEASE_THREAD_TIMEOUT)
             self._release_threads_dict.pop(tag_node_name, None)
         
         # If video writer still exists (not released yet), release it now
@@ -402,11 +405,13 @@ class VideoWriterNode(Node):
                 dpg.configure_item(tag_node_button_value_name, enabled=False)
                 
                 # Create and start background release thread
+                # Using daemon=False to ensure video file is properly finalized
+                # even if main process is shutting down
                 release_thread = threading.Thread(
                     target=self._release_video_writer_async,
                     args=(tag_node_name, video_writer),
                     name=f"VideoWriter-Release-{tag_node_name}",
-                    daemon=True
+                    daemon=False
                 )
                 self._release_threads_dict[tag_node_name] = release_thread
                 release_thread.start()
