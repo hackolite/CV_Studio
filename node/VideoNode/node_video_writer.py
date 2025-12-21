@@ -228,12 +228,20 @@ class Node(DpgNodeABC):
 
             # 録画開始
             if tag_node_name not in self._video_writer_dict:
-                self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
-                    video_writer_directory + '/' + startup_time_text + '.mp4',
+                file_path = os.path.join(video_writer_directory, startup_time_text + '.mp4')
+                video_writer = cv2.VideoWriter(
+                    file_path,
                     cv2.VideoWriter_fourcc(*"mp4v"),
                     writer_fps,
                     (writer_width, writer_height),
                 )
+                
+                if video_writer.isOpened():
+                    self._video_writer_dict[tag_node_name] = video_writer
+                else:
+                    # Failed to open video writer
+                    video_writer.release()
+                    return
 
             dpg.set_item_label(tag_node_button_value_name, self._stop_label)
         elif label == self._stop_label:
