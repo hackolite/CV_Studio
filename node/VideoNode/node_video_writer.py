@@ -162,6 +162,8 @@ class VideoWriterNode(Node):
     _prev_frame_flag = False
 
     def __init__(self):
+        small_window_w = self._opencv_setting_dict['process_width']
+        small_window_h = self._opencv_setting_dict['process_height']
         self.black_image = np.zeros((small_window_h, small_window_w, 3))
 
     def update(
