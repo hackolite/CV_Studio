@@ -201,7 +201,10 @@ class VideoWriterNode(Node):
                 #writer.write(writer_frame)
 
             # Update display
-            texture = self.convert_cv_to_dpg(self.black_image, small_window_w, small_window_h)
+            #small_window_w = self._opencv_setting_dict['process_width']
+            #small_window_h = self._opencv_setting_dict['process_height']
+            black_image = np.zeros((small_window_h, small_window_w, 3))
+            texture = self.convert_cv_to_dpg(black_image, small_window_w, small_window_h)
             dpg_set_value(input_value01_tag, texture)
         else:
             # Auto-stop if stream ended
