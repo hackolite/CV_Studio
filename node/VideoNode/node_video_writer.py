@@ -65,7 +65,7 @@ class Node(DpgNodeABC):
         small_window_h = self._opencv_setting_dict['process_height']
 
         # 初期化用黒画像
-        black_image = np.zeros((small_window_w, small_window_h, 3))
+        black_image = np.zeros((small_window_h, small_window_w, 3))
         black_texture = convert_cv_to_dpg(
             black_image,
             small_window_w,
@@ -116,7 +116,7 @@ class Node(DpgNodeABC):
         connection_list,
         node_image_dict,
         node_result_dict,
-        node_audio_dict=None,
+        node_audio_dict,
     ):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01Value'
@@ -170,7 +170,7 @@ class Node(DpgNodeABC):
                 # 録画停止
                 self._recording_button(None, None, tag_node_name)
                 # 初期化用黒画像
-                black_image = np.zeros((small_window_w, small_window_h, 3))
+                black_image = np.zeros((small_window_h, small_window_w, 3))
                 # 画面反映
                 texture = convert_cv_to_dpg(
                     black_image,
@@ -184,7 +184,7 @@ class Node(DpgNodeABC):
         else:
             self._prev_frame_flag = False
 
-        return frame, None
+        return {"image": frame, "json": None, "audio": None}
 
     def close(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
@@ -238,8 +238,9 @@ class Node(DpgNodeABC):
             dpg.set_item_label(tag_node_button_value_name, self._stop_label)
         elif label == self._stop_label:
             # 録画終了
-            self._video_writer_dict[tag_node_name].release()
-            self._video_writer_dict.pop(tag_node_name)
+            if tag_node_name in self._video_writer_dict:
+                self._video_writer_dict[tag_node_name].release()
+                self._video_writer_dict.pop(tag_node_name)
 
             dpg.set_item_label(tag_node_button_value_name, self._start_label)
 
