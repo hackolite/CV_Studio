@@ -162,10 +162,11 @@ class VideoWriterNode(Node):
     _prev_frame_flag = False
 
     def __init__(self):
-        small_window_w = self._opencv_setting_dict['process_width']
-        small_window_h = self._opencv_setting_dict['process_height']
-        self.black_image = np.zeros((small_window_h, small_window_w, 3))
-
+        #small_window_w = self._opencv_setting_dict['process_width']
+        #small_window_h = self._opencv_setting_dict['process_height']
+        #self.black_image = np.zeros((small_window_h, small_window_w, 3))
+        pass
+        
     def update(
         self,
         node_id,
@@ -207,7 +208,7 @@ class VideoWriterNode(Node):
             if tag_node_name in self._video_writer_dict and self._prev_frame_flag:
                 self._recording_button(None, None, tag_node_name)
                 
-                black_image = np.zeros((small_window_h, small_window_w, 3))
+                self.black_image = np.zeros((small_window_h, small_window_w, 3))
                 texture = self.convert_cv_to_dpg(black_image, small_window_w, small_window_h)
                 dpg_set_value(input_value01_tag, texture)
 
