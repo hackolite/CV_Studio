@@ -345,13 +345,19 @@ class VideoWriterNode(Node):
         """Helper method to close all metadata file handles"""
         # Close all audio handles
         for handle in metadata.get('audio_handles', {}).values():
-            if not handle.closed:
-                handle.close()
+            try:
+                if not handle.closed:
+                    handle.close()
+            except Exception as e:
+                print(f"Error closing audio handle: {e}")
         
         # Close all JSON handles
         for handle in metadata.get('json_handles', {}).values():
-            if not handle.closed:
-                handle.close()
+            try:
+                if not handle.closed:
+                    handle.close()
+            except Exception as e:
+                print(f"Error closing JSON handle: {e}")
 
     def _merge_audio_video_ffmpeg(self, video_path, audio_samples, sample_rate, output_path, progress_callback=None):
         """
@@ -457,27 +463,45 @@ class VideoWriterNode(Node):
     def close(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
         
-        # Wait for any ongoing merge threads to complete
-        if tag_node_name in self._merge_threads_dict:
-            thread = self._merge_threads_dict[tag_node_name]
-            if thread.is_alive():
-                print(f"Waiting for merge to complete for {tag_node_name}...")
-                thread.join(timeout=30)  # Wait up to 30 seconds
-            self._merge_threads_dict.pop(tag_node_name, None)
-        
-        # Clean up merge progress
-        if tag_node_name in self._merge_progress_dict:
-            self._merge_progress_dict.pop(tag_node_name)
-        
-        if tag_node_name in self._video_writer_dict:
-            self._video_writer_dict[tag_node_name].release()
-            self._video_writer_dict.pop(tag_node_name)
-        
-        # Clean up MKV metadata if exists
-        if tag_node_name in self._mkv_metadata_dict:
-            metadata = self._mkv_metadata_dict[tag_node_name]
-            self._close_metadata_handles(metadata)
-            self._mkv_metadata_dict.pop(tag_node_name)
+        try:
+            # Wait for any ongoing merge threads to complete
+            if tag_node_name in self._merge_threads_dict:
+                try:
+                    thread = self._merge_threads_dict[tag_node_name]
+                    if thread.is_alive():
+                        print(f"Waiting for merge to complete for {tag_node_name}...")
+                        thread.join(timeout=30)  # Wait up to 30 seconds
+                except Exception as e:
+                    print(f"Error waiting for merge thread: {e}")
+                finally:
+                    self._merge_threads_dict.pop(tag_node_name, None)
+            
+            # Clean up merge progress
+            if tag_node_name in self._merge_progress_dict:
+                self._merge_progress_dict.pop(tag_node_name, None)
+            
+            # Release video writer
+            if tag_node_name in self._video_writer_dict:
+                try:
+                    self._video_writer_dict[tag_node_name].release()
+                except Exception as e:
+                    print(f"Error releasing video writer in close: {e}")
+                finally:
+                    self._video_writer_dict.pop(tag_node_name, None)
+            
+            # Clean up MKV metadata if exists
+            if tag_node_name in self._mkv_metadata_dict:
+                try:
+                    metadata = self._mkv_metadata_dict[tag_node_name]
+                    self._close_metadata_handles(metadata)
+                except Exception as e:
+                    print(f"Error closing metadata in close: {e}")
+                finally:
+                    self._mkv_metadata_dict.pop(tag_node_name, None)
+                    
+        except Exception as e:
+            print(f"Unexpected error in close method: {e}")
+            traceback.print_exc()
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
@@ -630,59 +654,97 @@ class VideoWriterNode(Node):
 
             dpg.set_item_label(tag_node_button_value_name, self._stop_label)
         elif label == self._stop_label:
+            try:
+                # Release video writer and ensure file is flushed to disk
+                if tag_node_name in self._video_writer_dict:
+                    try:
+                        self._video_writer_dict[tag_node_name].release()
+                    except Exception as e:
+                        print(f"Error releasing video writer: {e}")
+                        traceback.print_exc()
+                    finally:
+                        # Always remove from dict even if release fails
+                        self._video_writer_dict.pop(tag_node_name, None)
+                
+                # Merge audio and video if audio samples were collected
+                if tag_node_name in self._audio_samples_dict and len(self._audio_samples_dict[tag_node_name]) > 0:
+                    if tag_node_name in self._recording_metadata_dict:
+                        try:
+                            metadata = self._recording_metadata_dict[tag_node_name]
+                            temp_path = metadata['temp_path']
+                            final_path = metadata['final_path']
+                            sample_rate = metadata['sample_rate']
+                            
+                            # Copy audio samples for the thread (to avoid race conditions)
+                            audio_samples_copy = copy.deepcopy(self._audio_samples_dict[tag_node_name])
+                            
+                            # Start merge in a separate thread to prevent UI freezing
+                            merge_thread = threading.Thread(
+                                target=self._async_merge_thread,
+                                args=(tag_node_name, temp_path, audio_samples_copy, sample_rate, final_path),
+                                daemon=True
+                            )
+                            merge_thread.start()
+                            
+                            # Store thread reference for tracking
+                            self._merge_threads_dict[tag_node_name] = merge_thread
+                            
+                            print(f"Started async merge for: {final_path}")
+                        except Exception as e:
+                            print(f"Error starting audio/video merge: {e}")
+                            traceback.print_exc()
+                        finally:
+                            # Clean up metadata
+                            self._recording_metadata_dict.pop(tag_node_name, None)
+                else:
+                    # No audio samples, just rename temp file to final name
+                    if tag_node_name in self._recording_metadata_dict:
+                        try:
+                            metadata = self._recording_metadata_dict[tag_node_name]
+                            temp_path = metadata['temp_path']
+                            final_path = metadata['final_path']
+                            
+                            if os.path.exists(temp_path):
+                                os.rename(temp_path, final_path)
+                                print(f"Video without audio saved to: {final_path}")
+                            else:
+                                print(f"Warning: Temporary video file not found: {temp_path}")
+                        except Exception as e:
+                            print(f"Error saving video file: {e}")
+                            traceback.print_exc()
+                        finally:
+                            self._recording_metadata_dict.pop(tag_node_name, None)
+                
+                # Clean up audio samples
+                if tag_node_name in self._audio_samples_dict:
+                    self._audio_samples_dict.pop(tag_node_name, None)
+                
+                # Close metadata file handles if MKV
+                if tag_node_name in self._mkv_metadata_dict:
+                    try:
+                        metadata = self._mkv_metadata_dict[tag_node_name]
+                        self._close_metadata_handles(metadata)
+                    except Exception as e:
+                        print(f"Error closing metadata handles: {e}")
+                        traceback.print_exc()
+                    finally:
+                        self._mkv_metadata_dict.pop(tag_node_name, None)
 
-            # Release video writer and ensure file is flushed to disk
-            if tag_node_name in self._video_writer_dict:
-                self._video_writer_dict[tag_node_name].release()
-                self._video_writer_dict.pop(tag_node_name)
-            
-            # Merge audio and video if audio samples were collected
-            if tag_node_name in self._audio_samples_dict and len(self._audio_samples_dict[tag_node_name]) > 0:
-                if tag_node_name in self._recording_metadata_dict:
-                    metadata = self._recording_metadata_dict[tag_node_name]
-                    temp_path = metadata['temp_path']
-                    final_path = metadata['final_path']
-                    sample_rate = metadata['sample_rate']
+                # Always update button label, even if errors occurred
+                try:
+                    if dpg.does_item_exist(tag_node_button_value_name):
+                        dpg.set_item_label(tag_node_button_value_name, self._start_label)
+                except Exception as e:
+                    print(f"Error updating button label: {e}")
+                    traceback.print_exc()
                     
-                    # Copy audio samples for the thread (to avoid race conditions)
-                    audio_samples_copy = copy.deepcopy(self._audio_samples_dict[tag_node_name])
-                    
-                    # Start merge in a separate thread to prevent UI freezing
-                    merge_thread = threading.Thread(
-                        target=self._async_merge_thread,
-                        args=(tag_node_name, temp_path, audio_samples_copy, sample_rate, final_path),
-                        daemon=True
-                    )
-                    merge_thread.start()
-                    
-                    # Store thread reference for tracking
-                    self._merge_threads_dict[tag_node_name] = merge_thread
-                    
-                    print(f"Started async merge for: {final_path}")
-                    
-                    # Clean up metadata
-                    self._recording_metadata_dict.pop(tag_node_name)
-            else:
-                # No audio samples, just rename temp file to final name
-                if tag_node_name in self._recording_metadata_dict:
-                    metadata = self._recording_metadata_dict[tag_node_name]
-                    temp_path = metadata['temp_path']
-                    final_path = metadata['final_path']
-                    
-                    if os.path.exists(temp_path):
-                        os.rename(temp_path, final_path)
-                    print(f"Video without audio saved to: {final_path}")
-                    
-                    self._recording_metadata_dict.pop(tag_node_name)
-            
-            # Clean up audio samples
-            if tag_node_name in self._audio_samples_dict:
-                self._audio_samples_dict.pop(tag_node_name)
-            
-            # Close metadata file handles if MKV
-            if tag_node_name in self._mkv_metadata_dict:
-                metadata = self._mkv_metadata_dict[tag_node_name]
-                self._close_metadata_handles(metadata)
-                self._mkv_metadata_dict.pop(tag_node_name)
-
-            dpg.set_item_label(tag_node_button_value_name, self._start_label)
+            except Exception as e:
+                # Catch-all for any unexpected errors
+                print(f"Unexpected error while stopping video recording: {e}")
+                traceback.print_exc()
+                # Try to update button label anyway
+                try:
+                    if dpg.does_item_exist(tag_node_button_value_name):
+                        dpg.set_item_label(tag_node_button_value_name, self._start_label)
+                except:
+                    pass
