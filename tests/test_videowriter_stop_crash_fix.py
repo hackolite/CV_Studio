@@ -10,10 +10,11 @@ import tempfile
 import os
 import sys
 import shutil
+from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 
 # Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Mock dependencies before importing the module
 sys.modules['cv2'] = MagicMock()

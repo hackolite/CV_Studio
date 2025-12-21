@@ -746,5 +746,6 @@ class VideoWriterNode(Node):
                 try:
                     if dpg.does_item_exist(tag_node_button_value_name):
                         dpg.set_item_label(tag_node_button_value_name, self._start_label)
-                except:
+                except Exception:
+                    # Ignore errors in final cleanup attempt
                     pass
