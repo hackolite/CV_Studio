@@ -194,8 +194,8 @@ class VideoWriterNode(Node):
                 writer = self._video_writer_dict[tag_node_name]
                 writer_width, writer_height = self._writer_settings_dict[tag_node_name]
                 
-                writer_frame = cv2.resize(frame, (writer_width, writer_height))
-                writer.write(writer_frame)
+                #writer_frame = cv2.resize(frame, (writer_width, writer_height))
+                #writer.write(writer_frame)
 
             # Update display
             texture = self.convert_cv_to_dpg(frame, small_window_w, small_window_h)
