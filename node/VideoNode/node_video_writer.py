@@ -3,6 +3,7 @@
 import os
 import sys
 import datetime
+import threading
 
 import cv2
 import numpy as np
@@ -146,10 +147,11 @@ class VideoWriterNode(Node):
     # Simple state tracking
     _video_writer_dict = {}  # {node: cv2.VideoWriter}
     _writer_settings_dict = {}  # {node: (width, height)}
-    _release_threads_dict = {}  # Kept for backward compatibility (empty)
+    _release_threads_dict = {}  # {node: threading.Thread} - tracks background release threads
     
     _start_label = 'Start'
     _stop_label = 'Stop'
+    _finalizing_label = 'Finalizing...'
     
     # FPS mapping
     _FPS_MAP = {
@@ -218,10 +220,64 @@ class VideoWriterNode(Node):
         self._prev_frame_flag = (frame is not None)
         return {"image": frame, "json": None, "audio": None}
 
+    def _release_video_writer_async(self, tag_node_name, video_writer):
+        """
+        Release video writer in background thread to prevent UI freeze.
+        
+        When stopping recording, the cv2.VideoWriter.release() call can take
+        significant time (especially for large files or certain codecs), which
+        would freeze the UI if done on the main thread.
+        
+        This method runs the release in a background thread and updates the UI
+        when complete.
+        
+        Args:
+            tag_node_name: Node identifier
+            video_writer: cv2.VideoWriter instance to release
+        """
+        try:
+            logger.info(f"[VideoWriter] Starting async release for {tag_node_name}")
+            # Release the video writer (this may take time)
+            video_writer.release()
+            logger.info(f"[VideoWriter] Video writer released successfully for {tag_node_name}")
+            
+            # Update button label back to Start (on main thread via DPG)
+            tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
+            if dpg.does_item_exist(tag_node_button_value_name):
+                dpg.set_item_label(tag_node_button_value_name, self._start_label)
+            
+            # Re-enable UI controls
+            resolution_tag = tag_node_name + ':Resolution'
+            format_tag = tag_node_name + ':Format'
+            fps_tag = tag_node_name + ':FPS'
+            if dpg.does_item_exist(resolution_tag):
+                dpg.configure_item(resolution_tag, enabled=True)
+            if dpg.does_item_exist(format_tag):
+                dpg.configure_item(format_tag, enabled=True)
+            if dpg.does_item_exist(fps_tag):
+                dpg.configure_item(fps_tag, enabled=True)
+            
+            logger.info(f"[VideoWriter] Stopped recording")
+            
+        except Exception as e:
+            logger.error(f"[VideoWriter] Error during async release: {e}", exc_info=True)
+        finally:
+            # Clean up thread tracking
+            self._release_threads_dict.pop(tag_node_name, None)
+
     def close(self, node_id):
         """Clean up when node is closed."""
         tag_node_name = str(node_id) + ':' + self.node_tag
         
+        # Wait for any background release threads to complete
+        if tag_node_name in self._release_threads_dict:
+            release_thread = self._release_threads_dict[tag_node_name]
+            if release_thread.is_alive():
+                logger.info(f"[VideoWriter] Waiting for background release thread to complete for {tag_node_name}")
+                release_thread.join(timeout=5.0)  # Wait up to 5 seconds
+            self._release_threads_dict.pop(tag_node_name, None)
+        
+        # If video writer still exists (not released yet), release it now
         if tag_node_name in self._video_writer_dict:
             self._video_writer_dict[tag_node_name].release()
             self._video_writer_dict.pop(tag_node_name, None)
@@ -331,19 +387,31 @@ class VideoWriterNode(Node):
                     logger.error(f"[VideoWriter] Failed to open: {file_path}")
             
         elif label == self._stop_label:
-            # Stop recording
+            # Stop recording - use async release to prevent UI freeze
             if tag_node_name in self._video_writer_dict:
-                self._video_writer_dict[tag_node_name].release()
+                video_writer = self._video_writer_dict[tag_node_name]
+                
+                # Remove from active writers immediately
                 self._video_writer_dict.pop(tag_node_name, None)
                 self._writer_settings_dict.pop(tag_node_name, None)
                 
-                # Re-enable UI
-                resolution_tag = tag_node_name + ':Resolution'
-                format_tag = tag_node_name + ':Format'
-                fps_tag = tag_node_name + ':FPS'
-                dpg.configure_item(resolution_tag, enabled=True)
-                dpg.configure_item(format_tag, enabled=True)
-                dpg.configure_item(fps_tag, enabled=True)
+                # Update button to show finalizing state
+                dpg.set_item_label(tag_node_button_value_name, self._finalizing_label)
                 
-                logger.info(f"[VideoWriter] Stopped recording")
-                dpg.set_item_label(tag_node_button_value_name, self._start_label)
+                # Disable button during finalization to prevent double-clicks
+                dpg.configure_item(tag_node_button_value_name, enabled=False)
+                
+                # Create and start background release thread
+                release_thread = threading.Thread(
+                    target=self._release_video_writer_async,
+                    args=(tag_node_name, video_writer),
+                    name=f"VideoWriter-Release-{tag_node_name}",
+                    daemon=True
+                )
+                self._release_threads_dict[tag_node_name] = release_thread
+                release_thread.start()
+                
+                logger.info(f"[VideoWriter] Started background release thread for {tag_node_name}")
+                
+                # Re-enable button after starting thread
+                dpg.configure_item(tag_node_button_value_name, enabled=True)
