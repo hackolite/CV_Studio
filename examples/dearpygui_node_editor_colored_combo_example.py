@@ -17,6 +17,17 @@ Ce script démontre :
 import dearpygui.dearpygui as dpg
 
 
+def delete_item_if_exists(item_tag):
+    """
+    Supprime un item DearPyGui s'il existe.
+    
+    Args:
+        item_tag: Tag de l'item à supprimer
+    """
+    if dpg.does_item_exist(item_tag):
+        dpg.delete_item(item_tag)
+
+
 def brighter(color_tuple, factor=1.3):
     """
     Prend un tuple RGBA (0-255) et renvoie un tuple un peu plus clair.
@@ -52,6 +63,7 @@ DOMAINS = {
 }
 
 # Variable globale pour stocker la sélection actuelle
+# Note: Pour une application production, ces variables devraient être encapsulées dans une classe
 current_domain = "Vision"
 domain_themes = {}
 node_theme_cache = {}
@@ -71,8 +83,7 @@ def create_combo_theme(domain_name, base_color):
     theme_tag = f"combo_theme_{domain_name}"
     
     # Supprimer le thème s'il existe déjà
-    if dpg.does_item_exist(theme_tag):
-        dpg.delete_item(theme_tag)
+    delete_item_if_exists(theme_tag)
     
     # Couleur hover (plus claire)
     hover_color = brighter(base_color, 1.2)
@@ -106,8 +117,7 @@ def create_node_theme(domain_name, base_color):
     theme_tag = f"node_theme_{domain_name}"
     
     # Supprimer le thème s'il existe déjà
-    if dpg.does_item_exist(theme_tag):
-        dpg.delete_item(theme_tag)
+    delete_item_if_exists(theme_tag)
     
     # Couleur plus sombre pour le node
     dark_color = (

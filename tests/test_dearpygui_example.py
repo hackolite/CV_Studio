@@ -7,6 +7,7 @@ This test verifies that all functions work correctly without needing a display.
 
 import sys
 import os
+import traceback
 
 # Add the examples directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -147,7 +148,6 @@ def main():
         return 1
     except Exception as e:
         print(f"\n✗ Unexpected error: {e}")
-        import traceback
         traceback.print_exc()
         return 1
 
