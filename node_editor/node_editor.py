@@ -23,6 +23,9 @@ logger = get_logger(__name__)
 
 def node_style(module_name):
     tuple_style = STYLE[module_name]["style"][0]
+    # Constant for text color to ensure consistency
+    TEXT_COLOR_BLACK = (0, 0, 0, 255)
+    
     with dpg.theme() as custom_theme:
         with dpg.theme_component(dpg.mvNode):
             # Jaune plein pour la barre de titre
@@ -41,7 +44,24 @@ def node_style(module_name):
             )
             # Texte en noir
             dpg.add_theme_color(
-                dpg.mvThemeCol_Text, (0, 0, 0, 255), category=dpg.mvThemeCat_Core
+                dpg.mvThemeCol_Text, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
+            )
+        
+        # Add combo box (drop list) styling with node color
+        with dpg.theme_component(dpg.mvCombo):
+            # Use the node's color for combo box background
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBg, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBgHovered, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBgActive, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            # Keep text in black for readability
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Text, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
             )
     return custom_theme
 
