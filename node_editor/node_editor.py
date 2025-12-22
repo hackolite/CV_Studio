@@ -165,6 +165,38 @@ def node_style(module_name):
     return custom_theme
 
 
+def menu_style(module_name):
+    """Create a theme for menu items based on node category colors
+    
+    Args:
+        module_name: The category name (Input, VisionProcess, VisionModel, etc.)
+    
+    Returns:
+        A DearPyGUI theme for menu items
+    """
+    tuple_style = STYLE[module_name]["style"][0]
+    # Constant for text color to ensure consistency
+    TEXT_COLOR_BLACK = (0, 0, 0, 255)
+    
+    with dpg.theme() as menu_theme:
+        with dpg.theme_component(dpg.mvMenuItem):
+            # Menu item background color
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Header, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_HeaderHovered, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_HeaderActive, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            # Keep text in black for readability
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Text, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
+            )
+    return menu_theme
+
+
 class DpgNodeEditor(object):
     _ver = "0.0.1"
 
@@ -271,6 +303,10 @@ class DpgNodeEditor(object):
                 for menu_info in menu_dict.items():
                     menu_label = menu_info[0]
                     logger.debug(f"Creating menu: {menu_label}")
+                    
+                    # Create menu theme for this category
+                    category_menu_theme = menu_style(menu_label)
+                    
                     with dpg.menu(label=menu_label):
                         node_sources_path = os.path.join(
                             node_dir,
@@ -305,12 +341,16 @@ class DpgNodeEditor(object):
                                 module = import_module(import_path)
                                 factorynode = module.FactoryNode()
                                 # print("Factory Instance :", factorynode.node_tag)
+                                menu_item_tag = "Menu_" + factorynode.node_tag
                                 dpg.add_menu_item(
-                                    tag="Menu_" + factorynode.node_tag,
+                                    tag=menu_item_tag,
                                     label=factorynode.node_label,
                                     callback=self._callback_add_node,
                                     user_data=factorynode.node_tag,
                                 )
+                                
+                                # Apply the menu theme to this menu item
+                                dpg.bind_item_theme(menu_item_tag, category_menu_theme)
 
                                 factorynode.style = node_style(menu_label)
                                 self._node_factory_list[factorynode.node_tag] = factorynode
