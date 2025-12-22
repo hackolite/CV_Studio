@@ -63,6 +63,105 @@ def node_style(module_name):
             dpg.add_theme_color(
                 dpg.mvThemeCol_Text, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
             )
+        
+        # Add input fields styling with node color (mvInputInt, mvInputFloat, mvInputText, etc.)
+        with dpg.theme_component(dpg.mvInputInt):
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBg, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBgHovered, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBgActive, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Text, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
+            )
+        
+        with dpg.theme_component(dpg.mvInputFloat):
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBg, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBgHovered, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBgActive, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Text, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
+            )
+        
+        with dpg.theme_component(dpg.mvInputText):
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBg, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBgHovered, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBgActive, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Text, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
+            )
+        
+        # Add slider styling with node color (mvSliderInt, mvSliderFloat)
+        with dpg.theme_component(dpg.mvSliderInt):
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBg, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBgHovered, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBgActive, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_SliderGrab, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_SliderGrabActive, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Text, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
+            )
+        
+        with dpg.theme_component(dpg.mvSliderFloat):
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBg, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBgHovered, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBgActive, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_SliderGrab, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_SliderGrabActive, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Text, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
+            )
+        
+        # Add button styling with node color
+        with dpg.theme_component(dpg.mvButton):
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Button, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_ButtonHovered, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_ButtonActive, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Text, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
+            )
     return custom_theme
 
 
