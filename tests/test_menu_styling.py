@@ -28,7 +28,7 @@ class TestMenuStyling(unittest.TestCase):
         """Cleanup DearPyGUI context"""
         try:
             dpg.destroy_context()
-        except:
+        except Exception:
             pass
     
     def test_menu_style_returns_theme(self):
