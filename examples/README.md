@@ -117,7 +117,7 @@ main()
 └── dpg.destroy_context()
 ```
 
-### Captures d'écran
+### Aperçu visuel
 
 Lorsque vous exécutez l'exemple, vous verrez :
 - Une fenêtre avec un combo box en haut
@@ -125,6 +125,34 @@ Lorsque vous exécutez l'exemple, vous verrez :
 - En dessous, un node editor avec trois nodes
 - Les nodes ont la même couleur que le domaine
 - En changeant le domaine dans le combo box, les couleurs et les nodes changent
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Node Editor avec Combo Coloré                          [x]  │
+├─────────────────────────────────────────────────────────────┤
+│ Sélectionner un domaine : [Vision ▼]  ← Fond bleu          │
+│─────────────────────────────────────────────────────────────│
+│ Les nodes ci-dessous appartiennent au domaine sélectionné. │
+│ Changez le domaine pour voir différentes couleurs.         │
+│─────────────────────────────────────────────────────────────│
+│                                                             │
+│  ┌────────────────┐  ┌──────────────────┐  ┌──────────┐   │
+│  │ Camera Input   │  │ Image Processing │  │ Object   │   │
+│  │ (Bleu)         │  │ (Bleu)           │  │Detection │   │
+│  ├────────────────┤  ├──────────────────┤  ├──────────┤   │
+│  │ ● Input 1      │  │ ● Input 2        │  │ ● Input 3│   │
+│  │              ● │  │                ● │  │        ● │   │
+│  │ Output 1       │  │ Output 2         │  │ Output 3 │   │
+│  └────────────────┘  └──────────────────┘  └──────────┘   │
+│                                                             │
+│                                            [Minimap]        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Interaction :**
+- Cliquez sur le combo box pour voir les trois domaines (Vision, Audio, Network)
+- Survolez les options : elles deviennent plus claires
+- Sélectionnez un domaine : les nodes changent de nom et de couleur
 
 ### Personnalisation
 

@@ -323,6 +323,14 @@ Load a previously saved processing pipeline from a JSON file.
 
 Here are some practical examples to help you get started with common computer vision tasks:
 
+#### Standalone Examples
+
+For complete, runnable code examples including DearPyGui usage patterns, see the **[examples/](examples/)** directory:
+
+- **[dearpygui_node_editor_colored_combo_example.py](examples/dearpygui_node_editor_colored_combo_example.py)** - Demonstrates node editor with themed combo boxes, domain-based coloring, and dynamic UI updates
+
+See **[examples/README.md](examples/README.md)** for detailed documentation on each example.
+
 #### Example 1: Basic Image Processing Pipeline
 
 **Task:** Apply blur and edge detection to an image
