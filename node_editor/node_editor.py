@@ -43,6 +43,23 @@ def node_style(module_name):
             dpg.add_theme_color(
                 dpg.mvThemeCol_Text, (0, 0, 0, 255), category=dpg.mvThemeCat_Core
             )
+        
+        # Add combo box (drop list) styling with node color
+        with dpg.theme_component(dpg.mvCombo):
+            # Use the node's color for combo box background
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBg, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBgHovered, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_FrameBgActive, tuple_style, category=dpg.mvThemeCat_Core
+            )
+            # Keep text in black for readability
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Text, (0, 0, 0, 255), category=dpg.mvThemeCat_Core
+            )
     return custom_theme
 
 
