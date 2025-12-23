@@ -36,18 +36,18 @@ class ServerLauncher:
         print(f"✓ Started API Server on {host}:{port}")
         return process
     
-    def start_websocket_server(self, host='localhost', port=8765, data_type='image', interval=1.0):
+    def start_websocket_server(self, host='localhost', port=8765, interval=1.0):
         """Start WebSocket server"""
         script = os.path.join(self.base_dir, 'websocket_server.py')
         process = subprocess.Popen(
             [sys.executable, script, '--host', host, '--port', str(port), 
-             '--type', data_type, '--interval', str(interval)],
+             '--interval', str(interval)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True
         )
         self.processes.append(('WebSocket', process))
-        print(f"✓ Started WebSocket Server on {host}:{port} (type: {data_type})")
+        print(f"✓ Started WebSocket Server on {host}:{port}")
         return process
     
     def start_webrtc_server(self, host='0.0.0.0', port=8081, data_type='image'):
@@ -68,8 +68,7 @@ class ServerLauncher:
         if config is None:
             config = {
                 'api': {'host': 'localhost', 'port': 8080},
-                'websocket_image': {'host': 'localhost', 'port': 8765, 'type': 'image'},
-                'websocket_float': {'host': 'localhost', 'port': 8766, 'type': 'float'},
+                'websocket': {'host': 'localhost', 'port': 8765},
                 'webrtc': {'host': '0.0.0.0', 'port': 8081, 'type': 'image'},
             }
         
@@ -81,19 +80,11 @@ class ServerLauncher:
         if 'api' in config:
             self.start_api_server(**config['api'])
         
-        # Start WebSocket servers
-        if 'websocket_image' in config:
+        # Start WebSocket server
+        if 'websocket' in config:
             self.start_websocket_server(
-                host=config['websocket_image']['host'],
-                port=config['websocket_image']['port'],
-                data_type='image'
-            )
-        
-        if 'websocket_float' in config:
-            self.start_websocket_server(
-                host=config['websocket_float']['host'],
-                port=config['websocket_float']['port'],
-                data_type='float'
+                host=config['websocket']['host'],
+                port=config['websocket']['port']
             )
         
         # Start WebRTC server
@@ -233,8 +224,7 @@ def main():
     parser.add_argument('--webrtc-only', action='store_true', help='Start only WebRTC server')
     parser.add_argument('--test', action='store_true', help='Run tests after starting servers')
     parser.add_argument('--api-port', type=int, default=8080, help='API server port')
-    parser.add_argument('--ws-image-port', type=int, default=8765, help='WebSocket image server port')
-    parser.add_argument('--ws-float-port', type=int, default=8766, help='WebSocket float server port')
+    parser.add_argument('--ws-port', type=int, default=8765, help='WebSocket server port')
     parser.add_argument('--webrtc-port', type=int, default=8081, help='WebRTC server port')
     
     args = parser.parse_args()
@@ -254,16 +244,14 @@ def main():
     if args.api_only:
         config['api'] = {'host': 'localhost', 'port': args.api_port}
     elif args.websocket_only:
-        config['websocket_image'] = {'host': 'localhost', 'port': args.ws_image_port, 'type': 'image'}
-        config['websocket_float'] = {'host': 'localhost', 'port': args.ws_float_port, 'type': 'float'}
+        config['websocket'] = {'host': 'localhost', 'port': args.ws_port}
     elif args.webrtc_only:
         config['webrtc'] = {'host': '0.0.0.0', 'port': args.webrtc_port, 'type': 'image'}
     else:
         # Start all servers
         config = {
             'api': {'host': 'localhost', 'port': args.api_port},
-            'websocket_image': {'host': 'localhost', 'port': args.ws_image_port, 'type': 'image'},
-            'websocket_float': {'host': 'localhost', 'port': args.ws_float_port, 'type': 'float'},
+            'websocket': {'host': 'localhost', 'port': args.ws_port},
             'webrtc': {'host': '0.0.0.0', 'port': args.webrtc_port, 'type': 'image'},
         }
     
