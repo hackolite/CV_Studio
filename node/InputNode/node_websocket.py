@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-import numpy as np
 import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
@@ -39,23 +38,7 @@ class FactoryNode:
         node.tag_node_output_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJson'
         node.tag_node_output_json_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJsonValue'
 
-        node.tag_node_output_image_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':OutputImage'
-        node.tag_node_output_image_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':OutputImageValue'
-
-        # Create black image texture
         small_window_w = 240
-        small_window_h = 135
-        black_image = np.zeros((small_window_w, small_window_h, 3), dtype=np.float32)
-        black_texture = black_image.tobytes()
-
-        with dpg.texture_registry(show=False):
-            dpg.add_raw_texture(
-                small_window_w,
-                small_window_h,
-                black_texture,
-                tag=node.tag_node_output_image_value_name,
-                format=dpg.mvFormat_Float_rgb,
-            )
 
         # Create yellow theme for buttons
         with dpg.theme() as yellow_button_theme:
@@ -88,9 +71,6 @@ class FactoryNode:
                 dpg.bind_item_theme(btn, yellow_button_theme)
                 
             # Outputs
-            with dpg.node_attribute(tag=node.tag_node_output_image_name, attribute_type=dpg.mvNode_Attr_Output):
-                dpg.add_image(node.tag_node_output_image_value_name)
-            
             with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Output):
                 add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
                     

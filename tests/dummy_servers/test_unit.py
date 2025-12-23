@@ -44,12 +44,10 @@ class TestServerClasses(unittest.TestCase):
             server = DummyWebSocketServer(
                 host='localhost',
                 port=9999,
-                data_type='image',
                 interval=1.0
             )
             self.assertEqual(server.host, 'localhost')
             self.assertEqual(server.port, 9999)
-            self.assertEqual(server.data_type, 'image')
             self.assertEqual(server.interval, 1.0)
             self.assertEqual(len(server.clients), 0)
         except ImportError:
@@ -62,10 +60,8 @@ class TestServerClasses(unittest.TestCase):
             server = DummyWebSocketServer(
                 host='localhost',
                 port=9999,
-                data_type='float',
                 interval=0.5
             )
-            self.assertEqual(server.data_type, 'float')
             self.assertEqual(server.interval, 0.5)
         except ImportError:
             self.skipTest("websockets library not installed")
