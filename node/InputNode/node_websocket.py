@@ -18,7 +18,7 @@ class FactoryNode:
         """Adds a node to the processing graph with link field and Start button."""
         
         # Generate tags for Node and its attributes
-        node = WebsocketNode()  # Use MQTTNode class instead of generic Node
+        node = WebsocketNode()
         node.tag_node_name = f"{node_id}:{node.node_tag}"
         
         tag_input_url = f"{node.tag_node_name}:InputURL"
@@ -80,10 +80,8 @@ class FactoryNode:
         return node
 
 
-class WebsocketNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
+class WebsocketNode(BaseNode):  # Renamed to avoid confusion with BaseNode
     _ver = '0.0.1'
-    #node_label = 'MQTT'
-    #node_tag = 'MQTT'
 
     def __init__(self):
         super().__init__()  # Call parent constructor
@@ -122,12 +120,12 @@ class WebsocketNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNo
 if __name__ == "__main__":
     dpg.create_context()
     
-    with dpg.window(label="Test MQTT Node", width=800, height=600):
+    with dpg.window(label="Test WebSocket Node", width=800, height=600):
         with dpg.node_editor(label="Node Editor"):
             factory = FactoryNode()
             factory.add_node(parent=dpg.last_item(), node_id=1, pos=[100, 100])
     
-    dpg.create_viewport(title='Test MQTT Node', width=900, height=700)
+    dpg.create_viewport(title='Test WebSocket Node', width=900, height=700)
     dpg.setup_dearpygui()
     dpg.show_viewport()
     dpg.start_dearpygui()
