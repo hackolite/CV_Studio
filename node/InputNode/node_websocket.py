@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-import numpy as np
 import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
@@ -19,7 +18,7 @@ class FactoryNode:
         """Adds a node to the processing graph with link field and Start button."""
         
         # Generate tags for Node and its attributes
-        node = WebsocketNode()  # Use MQTTNode class instead of generic Node
+        node = WebsocketNode()
         node.tag_node_name = f"{node_id}:{node.node_tag}"
         
         tag_input_url = f"{node.tag_node_name}:InputURL"
@@ -39,23 +38,7 @@ class FactoryNode:
         node.tag_node_output_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJson'
         node.tag_node_output_json_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJsonValue'
 
-        node.tag_node_output_image_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':OutputImage'
-        node.tag_node_output_image_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':OutputImageValue'
-
-        # Create black image texture
         small_window_w = 240
-        small_window_h = 135
-        black_image = np.zeros((small_window_w, small_window_h, 3), dtype=np.float32)
-        black_texture = black_image.tobytes()
-
-        with dpg.texture_registry(show=False):
-            dpg.add_raw_texture(
-                small_window_w,
-                small_window_h,
-                black_texture,
-                tag=node.tag_node_output_image_value_name,
-                format=dpg.mvFormat_Float_rgb,
-            )
 
         # Create yellow theme for buttons
         with dpg.theme() as yellow_button_theme:
@@ -80,7 +63,7 @@ class FactoryNode:
         with dpg.node(tag=node.tag_node_name, parent=parent, label=node.node_label, pos=pos):  
             # Input field for link
             with dpg.node_attribute(tag=node.tag_node_input_text_name, attribute_type=dpg.mvNode_Attr_Static):
-                dpg.add_input_text(tag=node.tag_node_input_text_value_name, width=small_window_w, hint="Entrer une URL")
+                dpg.add_input_text(tag=node.tag_node_input_text_value_name, width=small_window_w, hint="Enter a URL")
         
             # Start button
             with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
@@ -88,9 +71,6 @@ class FactoryNode:
                 dpg.bind_item_theme(btn, yellow_button_theme)
                 
             # Outputs
-            with dpg.node_attribute(tag=node.tag_node_output_image_name, attribute_type=dpg.mvNode_Attr_Output):
-                dpg.add_image(node.tag_node_output_image_value_name)
-            
             with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Output):
                 add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
                     
@@ -100,10 +80,9 @@ class FactoryNode:
         return node
 
 
-class WebsocketNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
+class WebsocketNode(BaseNode):
+    """WebSocket node for processing WebSocket connections with audio and JSON outputs."""
     _ver = '0.0.1'
-    #node_label = 'MQTT'
-    #node_tag = 'MQTT'
 
     def __init__(self):
         super().__init__()  # Call parent constructor
@@ -142,12 +121,12 @@ class WebsocketNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNo
 if __name__ == "__main__":
     dpg.create_context()
     
-    with dpg.window(label="Test MQTT Node", width=800, height=600):
+    with dpg.window(label="Test WebSocket Node", width=800, height=600):
         with dpg.node_editor(label="Node Editor"):
             factory = FactoryNode()
             factory.add_node(parent=dpg.last_item(), node_id=1, pos=[100, 100])
     
-    dpg.create_viewport(title='Test MQTT Node', width=900, height=700)
+    dpg.create_viewport(title='Test WebSocket Node', width=900, height=700)
     dpg.setup_dearpygui()
     dpg.show_viewport()
     dpg.start_dearpygui()

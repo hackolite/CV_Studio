@@ -41,24 +41,15 @@ class TestDummyServers(unittest.TestCase):
         cls.processes.append(cls.api_process)
         print("✓ Started API server on port 8080")
         
-        # Start WebSocket server (image)
-        ws_script = os.path.join(cls.base_dir, 'websocket_server.py')
-        cls.ws_image_process = subprocess.Popen(
-            [sys.executable, ws_script, '--port', '8765', '--type', 'image'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        cls.processes.append(cls.ws_image_process)
-        print("✓ Started WebSocket server (image) on port 8765")
-        
         # Start WebSocket server (float)
+        ws_script = os.path.join(cls.base_dir, 'websocket_server.py')
         cls.ws_float_process = subprocess.Popen(
-            [sys.executable, ws_script, '--port', '8766', '--type', 'float'],
+            [sys.executable, ws_script, '--port', '8765'],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
         cls.processes.append(cls.ws_float_process)
-        print("✓ Started WebSocket server (float) on port 8766")
+        print("✓ Started WebSocket server (float) on port 8765")
         
         # Wait for servers to start
         print("\nWaiting for servers to initialize...")
@@ -114,34 +105,6 @@ class TestDummyServers(unittest.TestCase):
         self.assertTrue(image_data.startswith(b'\x89PNG'))
         print(f"✓ API image endpoint test passed (size: {len(image_data)} bytes)")
     
-    def test_websocket_image_server(self):
-        """Test WebSocket server with image data"""
-        try:
-            import websockets
-            import asyncio
-            
-            async def test():
-                uri = "ws://localhost:8765"
-                async with websockets.connect(uri) as websocket:
-                    # Receive welcome message
-                    welcome = await websocket.recv()
-                    welcome_data = json.loads(welcome)
-                    self.assertEqual(welcome_data['type'], 'welcome')
-                    
-                    # Receive image data
-                    message = await websocket.recv()
-                    data = json.loads(message)
-                    self.assertEqual(data['type'], 'image')
-                    self.assertIn('data', data)
-                    self.assertIn('width', data)
-                    self.assertIn('height', data)
-                    print(f"✓ WebSocket image test passed ({data['width']}x{data['height']})")
-            
-            asyncio.run(test())
-            
-        except ImportError:
-            self.skipTest("websockets library not installed")
-    
     def test_websocket_float_server(self):
         """Test WebSocket server with float data"""
         try:
@@ -149,7 +112,7 @@ class TestDummyServers(unittest.TestCase):
             import asyncio
             
             async def test():
-                uri = "ws://localhost:8766"
+                uri = "ws://localhost:8765"
                 async with websockets.connect(uri) as websocket:
                     # Receive welcome message
                     welcome = await websocket.recv()

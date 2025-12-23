@@ -44,34 +44,23 @@ curl http://localhost:8080/status
 
 WebSocket server that streams data continuously.
 
-**Data Types:**
-- `image` - Streams random images as base64-encoded PNG
+**Data Type:**
 - `float` - Streams random float values
 
 **Usage:**
 ```bash
-# Stream images (default)
-python websocket_server.py --type image --port 8765
+# Stream floats (default port 8765)
+python websocket_server.py
 
-# Stream floats
-python websocket_server.py --type float --port 8766
+# Custom port
+python websocket_server.py --port 8766
 
 # Custom interval (seconds between messages)
-python websocket_server.py --type image --interval 0.5
+python websocket_server.py --interval 0.5
 ```
 
 **Message Format:**
 ```json
-// Image message
-{
-  "type": "image",
-  "data": "base64_encoded_png_data...",
-  "format": "png",
-  "width": 640,
-  "height": 480,
-  "timestamp": 1234567890.123
-}
-
 // Float message
 {
   "type": "float",
@@ -120,13 +109,12 @@ python run_servers.py --websocket-only
 python run_servers.py --webrtc-only
 
 # Custom ports
-python run_servers.py --api-port 9000 --ws-image-port 9001 --ws-float-port 9002
+python run_servers.py --api-port 9000 --ws-port 9001
 ```
 
 **Default Configuration:**
 - API Server: `http://localhost:8080`
-- WebSocket (images): `ws://localhost:8765`
-- WebSocket (floats): `ws://localhost:8766`
+- WebSocket (floats): `ws://localhost:8765`
 - WebRTC: `http://localhost:8081`
 
 ## Demo Script
@@ -139,11 +127,10 @@ python demo.py
 ```
 
 This will:
-1. Start API server and WebSocket servers
+1. Start API server and WebSocket server
 2. Connect to each server and fetch data
-3. Display received images and float values
-4. Save example images to `/tmp/`
-5. Stop all servers gracefully
+3. Display received float values
+4. Stop all servers gracefully
 
 ## Testing
 
@@ -228,7 +215,7 @@ pip install numpy Pillow websockets aiohttp aiortc
 These servers can be used to test the input nodes in CV_Studio:
 
 1. **API Node**: Point to `http://localhost:8080/image` or `http://localhost:8080/float`
-2. **WebSocket Node**: Connect to `ws://localhost:8765` or `ws://localhost:8766`
+2. **WebSocket Node**: Connect to `ws://localhost:8765`
 3. **WebRTC Node**: Connect to `http://localhost:8081`
 
 ## Architecture
