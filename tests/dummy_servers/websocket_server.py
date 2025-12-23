@@ -18,7 +18,7 @@ except ImportError:
 
 
 class DummyWebSocketServer:
-    """Dummy WebSocket Server that streams floats"""
+    """Dummy WebSocket Server for testing that continuously streams float data via WebSocket connections."""
     
     def __init__(self, host='localhost', port=8765, interval=1.0):
         self.host = host

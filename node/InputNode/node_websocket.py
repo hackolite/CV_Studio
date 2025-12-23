@@ -63,7 +63,7 @@ class FactoryNode:
         with dpg.node(tag=node.tag_node_name, parent=parent, label=node.node_label, pos=pos):  
             # Input field for link
             with dpg.node_attribute(tag=node.tag_node_input_text_name, attribute_type=dpg.mvNode_Attr_Static):
-                dpg.add_input_text(tag=node.tag_node_input_text_value_name, width=small_window_w, hint="Entrer une URL")
+                dpg.add_input_text(tag=node.tag_node_input_text_value_name, width=small_window_w, hint="Enter a URL")
         
             # Start button
             with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
@@ -80,7 +80,8 @@ class FactoryNode:
         return node
 
 
-class WebsocketNode(BaseNode):  # Renamed to avoid confusion with BaseNode
+class WebsocketNode(BaseNode):
+    """WebSocket node for processing WebSocket connections with audio and JSON outputs."""
     _ver = '0.0.1'
 
     def __init__(self):
