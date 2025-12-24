@@ -162,6 +162,9 @@ class OverlayNode(Node):
     
     def __init__(self):
         super().__init__()
+        # Override parent class values
+        self.node_label = 'Overlay'
+        self.node_tag = 'Overlay'
     
     def _flatten_dict(self, d, parent_key='', sep='_'):
         """Flatten nested dictionary for display"""
