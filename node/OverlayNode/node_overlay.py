@@ -314,7 +314,7 @@ class OverlayNode(Node):
             elif connection_type == self.TYPE_JSON:
                 # Get source JSON data
                 connection_info_src = ':'.join(connection_info[0].split(':')[:2])
-                json_data = node_result_dict.get(connection_info_src, {}).get('json', None)
+                json_data = node_result_dict.get(connection_info_src, None)
         
         # Get UI settings
         font_scale = dpg_get_value(font_scale_tag)
