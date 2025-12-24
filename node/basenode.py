@@ -850,6 +850,17 @@ class Node:
         class_names,
         track_id_dict,
     ):
+        # Calculate font scale based on image height
+        # Reference height: 720px, base font scale: 0.5
+        # This makes font size proportional to image size
+        image_height = image.shape[0]
+        font_scale = max(0.3, min(1.0, (image_height / 720.0) * 0.5))
+        
+        # Calculate vertical offset and thickness based on font scale
+        vertical_offset_1 = int(36 * (font_scale / 0.5))
+        vertical_offset_2 = int(12 * (font_scale / 0.5))
+        thickness = max(1, int(2 * (font_scale / 0.5)))
+        
         for id, bbox, score, class_id in zip(track_ids, bboxes, scores, class_ids):
             x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
 
@@ -868,22 +879,22 @@ class Node:
             image = cv2.putText(
                 image,
                 text,
-                (x1, y1 - 36),
+                (x1, y1 - vertical_offset_1),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
+                font_scale,
                 color,
-                thickness=2,
+                thickness=thickness,
             )
 
             text = "CID:%s(%s)" % (str(int(class_id)), class_names[int(class_id)])
             image = cv2.putText(
                 image,
                 text,
-                (x1, y1 - 12),
+                (x1, y1 - vertical_offset_2),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
+                font_scale,
                 color,
-                thickness=2,
+                thickness=thickness,
             )
 
         return image
