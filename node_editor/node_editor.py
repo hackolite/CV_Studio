@@ -119,10 +119,10 @@ def node_style(module_name):
                 dpg.mvThemeCol_FrameBgActive, tuple_style, category=dpg.mvThemeCat_Core
             )
             dpg.add_theme_color(
-                dpg.mvThemeCol_SliderGrab, tuple_style, category=dpg.mvThemeCat_Core
+                dpg.mvThemeCol_SliderGrab, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
             )
             dpg.add_theme_color(
-                dpg.mvThemeCol_SliderGrabActive, tuple_style, category=dpg.mvThemeCat_Core
+                dpg.mvThemeCol_SliderGrabActive, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
             )
             dpg.add_theme_color(
                 dpg.mvThemeCol_Text, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
@@ -139,10 +139,10 @@ def node_style(module_name):
                 dpg.mvThemeCol_FrameBgActive, tuple_style, category=dpg.mvThemeCat_Core
             )
             dpg.add_theme_color(
-                dpg.mvThemeCol_SliderGrab, tuple_style, category=dpg.mvThemeCat_Core
+                dpg.mvThemeCol_SliderGrab, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
             )
             dpg.add_theme_color(
-                dpg.mvThemeCol_SliderGrabActive, tuple_style, category=dpg.mvThemeCat_Core
+                dpg.mvThemeCol_SliderGrabActive, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
             )
             dpg.add_theme_color(
                 dpg.mvThemeCol_Text, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
