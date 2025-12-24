@@ -22,7 +22,7 @@ class TestMOTDynamicFontScaling(unittest.TestCase):
         
         test_cases = [
             # (image_height, expected_min, expected_max)
-            (360, 0.3, 0.3),      # Small image (360p) -> min font scale (0.25 clamped to 0.3)
+            (360, 0.3, 0.3),      # Small image (360p) -> 0.25 before clamping, 0.3 after
             (480, 0.3, 0.35),     # Medium-small (480p) -> ~0.33
             (720, 0.49, 0.51),    # Reference height (720p) -> 0.5
             (1080, 0.74, 0.76),   # HD (1080p) -> 0.75
@@ -93,23 +93,38 @@ class TestMOTDynamicFontScaling(unittest.TestCase):
     def test_proportional_scaling(self):
         """Test that font scale is proportional to image height"""
         
-        # Reference: 720p with font scale 0.5
-        ref_height = 720
+        # Test with heights that won't hit the max limit
+        # Reference: 360p with font scale 0.3
+        ref_height = 360
         ref_font_scale = max(0.3, min(1.0, (ref_height / 720.0) * 0.5))
         
-        # Double the height
-        double_height = 1440
+        # Double the height to 720p
+        double_height = 720
         double_font_scale = max(0.3, min(1.0, (double_height / 720.0) * 0.5))
         
-        # The ratio should be approximately 2 (within the max limit of 1.0)
-        if double_font_scale < 1.0:  # If not capped by maximum
-            ratio = double_font_scale / ref_font_scale
-            self.assertAlmostEqual(ratio, 2.0, places=1,
-                msg=f"Scaling should be roughly proportional, got ratio {ratio}")
-        else:
-            # If capped, just verify it's at the maximum
-            self.assertEqual(double_font_scale, 1.0,
-                "Font scale should be capped at 1.0 for very large images")
+        # Since 360p is at the minimum (0.3) and 720p is 0.5,
+        # we can't test pure proportional scaling at the minimum
+        # Instead, test with heights that are in the linear range
+        
+        # Test 720p to 1080p (both within range, no clamping)
+        height1 = 720
+        font1 = max(0.3, min(1.0, (height1 / 720.0) * 0.5))
+        
+        height2 = 1080
+        font2 = max(0.3, min(1.0, (height2 / 720.0) * 0.5))
+        
+        # The ratio should be 1080/720 = 1.5
+        if font1 >= 0.3 and font2 <= 1.0:  # Both in linear range
+            ratio = font2 / font1
+            expected_ratio = height2 / height1
+            self.assertAlmostEqual(ratio, expected_ratio, places=1,
+                msg=f"Scaling should be proportional: {ratio:.2f} should be close to {expected_ratio:.2f}")
+        
+        # Test that maximum is properly capped
+        height3 = 2160  # 4K
+        font3 = max(0.3, min(1.0, (height3 / 720.0) * 0.5))
+        self.assertEqual(font3, 1.0,
+            "Font scale should be capped at 1.0 for very large images")
 
 
 class TestMOTCodeImplementation(unittest.TestCase):
