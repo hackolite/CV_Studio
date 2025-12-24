@@ -251,16 +251,6 @@ class OverlayNode(Node):
         alpha = bg_color[3] / 255.0
         cv2.addWeighted(overlay, alpha, output_image, 1 - alpha, 0, output_image)
         
-        # Draw border
-        border_color = tuple(int(c * 0.7) for c in self._rgba_to_bgr(text_color))
-        cv2.rectangle(
-            output_image,
-            (x, y),
-            (x + panel_width, y + panel_height),
-            border_color,
-            2
-        )
-        
         # Draw text lines
         text_x = x + padding
         text_y = y + padding + int(25 * font_scale)

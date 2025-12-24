@@ -19,12 +19,10 @@ The Weather node fetches real-time weather data from the Open-Meteo API based on
 
 ### Outputs
 - **JSON**: Weather data including:
-  - `current_weather.temperature`: Temperature in Celsius
-  - `current_weather.windspeed`: Wind speed in km/h
-  - `current_weather.winddirection`: Wind direction in degrees
-  - `current_weather.weathercode`: Weather condition code
-  - `current_weather.is_day`: Day/night indicator
-  - `current_weather.time`: Timestamp
+  - `latitude`: Geographical latitude
+  - `longitude`: Geographical longitude
+  - `elevation`: Elevation in meters
+  - `current_weather_time`: Timestamp of current weather observation
 
 ### Usage
 1. Add the Weather node from the Input menu
@@ -60,7 +58,7 @@ The Overlay node displays JSON key-value pairs on top of an image in a stylish, 
   - Example: `{"location": {"city": "Paris"}}` becomes `location_city: Paris`
 - **Smart Formatting**: Float values are displayed with 2 decimal places
 - **Semi-Transparent Panel**: Background panel with configurable transparency
-- **Border**: Subtle border around the panel for better visibility
+- **Clean Design**: No border for a modern, unobtrusive appearance
 - **Responsive**: Automatically adjusts panel size based on content
 
 ### Usage Example: Weather Display

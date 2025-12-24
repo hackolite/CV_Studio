@@ -170,13 +170,24 @@ class WeatherNode(Node):
             # Parse JSON response
             data = response.json()
             
-            # Store the data
-            self._last_weather_data = data
+            # Filter data to only include latitude, longitude, elevation, and current_weather.time
+            # Provide default values to ensure consistent data structure
+            filtered_data = {
+                "latitude": data.get("latitude", None),
+                "longitude": data.get("longitude", None),
+                "elevation": data.get("elevation", None),
+                "current_weather_time": None
+            }
+            
+            # Add the time from current_weather if available
+            if 'current_weather' in data and 'time' in data['current_weather']:
+                filtered_data["current_weather_time"] = data['current_weather']['time']
+            
+            # Store the filtered data
+            self._last_weather_data = filtered_data
             
             logger.info(f"Weather data fetched successfully for ({lat}, {lon})")
-            if 'current_weather' in data:
-                temp = data['current_weather'].get('temperature', 'N/A')
-                logger.info(f"Temperature: {temp}°C")
+            logger.info(f"Filtered data: {filtered_data}")
             
         except ValueError as e:
             logger.error(f"Invalid latitude or longitude format: {e}")
