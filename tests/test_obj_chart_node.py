@@ -15,10 +15,28 @@ def test_obj_chart_node_import():
     """Test that ObjChart node can be imported"""
     from node.VisualNode.node_obj_chart import FactoryNode, Node
     
-    assert FactoryNode.node_label == 'ObjChart'
-    assert FactoryNode.node_tag == 'ObjChart'
-    assert Node.node_label == 'ObjChart'
-    assert Node.node_tag == 'ObjChart'
+    assert FactoryNode.node_label == 'objchart'
+    assert FactoryNode.node_tag == 'objchart'
+    assert Node.node_label == 'objchart'
+    assert Node.node_tag == 'objchart'
+
+
+def test_obj_chart_class_dropdown_items():
+    """Test that class dropdown items contain class names"""
+    from node.VisualNode.node_obj_chart import get_class_dropdown_items
+    
+    items = get_class_dropdown_items()
+    
+    # Check that "All" is the first item
+    assert items[0] == "All"
+    
+    # Check that items contain class names with IDs
+    assert "0: person" in items
+    assert "2: car" in items
+    assert "1: bicycle" in items
+    
+    # Check that all COCO classes are present (80 classes + "All")
+    assert len(items) == 81
 
 
 def test_obj_chart_time_bucket():

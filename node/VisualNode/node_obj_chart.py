@@ -12,6 +12,7 @@ from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
 from node.basenode import Node as Chart
+from node.DLNode.object_detection.coco_class_names import coco_class_names
 
 import matplotlib
 matplotlib.use('Agg')  # force backend non-GUI
@@ -19,9 +20,18 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 
+def get_class_dropdown_items():
+    """Generate dropdown items with class IDs and names from COCO dataset"""
+    items = ["All"]
+    # Add common COCO classes with their names
+    for class_id, class_name in coco_class_names.items():
+        items.append(f"{class_id}: {class_name}")
+    return items
+
+
 class FactoryNode:
-    node_label = 'ObjChart'
-    node_tag = 'ObjChart'
+    node_label = 'objchart'
+    node_tag = 'objchart'
     
 
     def __init__(self):
@@ -148,7 +158,7 @@ class FactoryNode:
                 dpg.add_combo(
                     tag=f"{node.tag_node_name}:ClassSlot:0",
                     label="Class 1",
-                    items=["All", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+                    items=get_class_dropdown_items(),
                     default_value="All",
                     width=small_window_w - 100,
                 )
@@ -181,8 +191,8 @@ class FactoryNode:
 class Node(Chart):
     _ver = '0.0.1'
 
-    node_label = 'ObjChart'
-    node_tag = 'ObjChart'
+    node_label = 'objchart'
+    node_tag = 'objchart'
     
     def __init__(self, opencv_setting_dict=None):
         super().__init__()
@@ -221,7 +231,7 @@ class Node(Chart):
             dpg.add_combo(
                 tag=new_slot_tag,
                 label=f"Class {slot_count + 1}",
-                items=["All", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+                items=get_class_dropdown_items(),
                 default_value="All",
                 width=combo_width,
                 parent=class_slots_tag,
@@ -432,9 +442,15 @@ class Node(Chart):
                             if selected_value and selected_value != "":
                                 if selected_value == "All":
                                     selected_classes.append("All")
+                                elif ":" in selected_value:
+                                    # Parse "ID: name" format to extract class ID
+                                    class_id = int(selected_value.split(":")[0].strip())
+                                    selected_classes.append(class_id)
                                 else:
-                                    selected_classes.append(int(selected_value))
-                        except (ValueError, TypeError):
+                                    # Fallback: try to parse as plain integer (for backwards compatibility)
+                                    class_id = int(selected_value)
+                                    selected_classes.append(class_id)
+                        except (ValueError, TypeError, IndexError):
                             # Skip invalid values
                             pass
             
