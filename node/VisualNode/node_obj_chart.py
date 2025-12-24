@@ -269,9 +269,17 @@ class Node(Chart):
         Args:
             time_unit: "minute" or "hour"
             selected_classes: list of class IDs to display
-            class_names_dict: mapping of class ID to class name
+            class_names_dict: mapping of class ID to class name from detection JSON
             chart_type: "bar", "line", or "area" for visualization type
         """
+        # Merge class_names_dict with COCO class names (COCO as fallback)
+        merged_class_names = {}
+        for class_id in coco_class_names.keys():
+            merged_class_names[str(class_id)] = coco_class_names[class_id]
+        # Override with detection JSON class names if provided
+        if class_names_dict:
+            merged_class_names.update(class_names_dict)
+        
         fig, ax = plt.subplots(figsize=(8, 4), dpi=100)
         
         # Get sorted time buckets (last N buckets)
@@ -310,8 +318,8 @@ class Node(Chart):
                     # Get class name for legend
                     if class_id == "All":
                         label = "All Classes"
-                    elif class_names_dict and str(class_id) in class_names_dict:
-                        label = f"{class_id}: {class_names_dict[str(class_id)]}"
+                    elif str(class_id) in merged_class_names:
+                        label = f"{class_id}: {merged_class_names[str(class_id)]}"
                     else:
                         label = f"Class {class_id}"
                     
@@ -325,8 +333,8 @@ class Node(Chart):
                     # Get class name for legend
                     if class_id == "All":
                         label = "All Classes"
-                    elif class_names_dict and str(class_id) in class_names_dict:
-                        label = f"{class_id}: {class_names_dict[str(class_id)]}"
+                    elif str(class_id) in merged_class_names:
+                        label = f"{class_id}: {merged_class_names[str(class_id)]}"
                     else:
                         label = f"Class {class_id}"
                     
@@ -344,8 +352,8 @@ class Node(Chart):
                     # Get class name for legend
                     if class_id == "All":
                         label = "All Classes"
-                    elif class_names_dict and str(class_id) in class_names_dict:
-                        label = f"{class_id}: {class_names_dict[str(class_id)]}"
+                    elif str(class_id) in merged_class_names:
+                        label = f"{class_id}: {merged_class_names[str(class_id)]}"
                     else:
                         label = f"Class {class_id}"
                     labels.append(label)

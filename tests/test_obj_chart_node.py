@@ -196,5 +196,54 @@ def test_obj_chart_24h_cleanup():
     assert node.time_counts[0][recent_bucket] == 10
 
 
+def test_obj_chart_coco_class_names_fallback():
+    """Test that COCO class names are used when class_names_dict is empty"""
+    from node.VisualNode.node_obj_chart import Node
+    import numpy as np
+    
+    node = Node(opencv_setting_dict={
+        'process_height': 400,
+        'process_width': 600
+    })
+    
+    # Add test data for COCO classes
+    bucket = node.get_time_bucket("minute")
+    node.time_counts[0][bucket] = 10  # person
+    node.time_counts[2][bucket] = 5   # car
+    node.time_counts[56][bucket] = 3  # chair
+    
+    # Render chart with EMPTY class_names_dict (should use COCO names)
+    chart_image = node.render_chart("minute", [0, 2, 56], {}, "bar")
+    
+    assert chart_image is not None
+    assert isinstance(chart_image, np.ndarray)
+    # The chart should be generated successfully with COCO class names
+    # (person, car, chair) even without class_names_dict
+
+
+def test_obj_chart_custom_class_names_override():
+    """Test that custom class names from detection JSON override COCO names"""
+    from node.VisualNode.node_obj_chart import Node
+    import numpy as np
+    
+    node = Node(opencv_setting_dict={
+        'process_height': 400,
+        'process_width': 600
+    })
+    
+    # Add test data
+    bucket = node.get_time_bucket("minute")
+    node.time_counts[0][bucket] = 10
+    node.time_counts[1][bucket] = 5
+    
+    # Render with custom class names that override COCO names
+    custom_names = {"0": "custom_person", "1": "custom_vehicle"}
+    chart_image = node.render_chart("minute", [0, 1], custom_names, "line")
+    
+    assert chart_image is not None
+    assert isinstance(chart_image, np.ndarray)
+    # The chart should use custom names instead of COCO names
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
