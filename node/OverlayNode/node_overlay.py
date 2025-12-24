@@ -312,9 +312,11 @@ class OverlayNode(Node):
                 image_src = node_image_dict.get(connection_info_src, None)
             
             elif connection_type == self.TYPE_JSON:
-                # Get source JSON data
+                # Get source JSON data directly from node_result_dict
+                # Note: node_result_dict stores the JSON data directly (not wrapped in a dict)
+                # main.py extracts data["json"] from node update() and stores it as-is
                 connection_info_src = ':'.join(connection_info[0].split(':')[:2])
-                json_data = node_result_dict.get(connection_info_src, {}).get('json', None)
+                json_data = node_result_dict.get(connection_info_src, None)
         
         # Get UI settings
         font_scale = dpg_get_value(font_scale_tag)
