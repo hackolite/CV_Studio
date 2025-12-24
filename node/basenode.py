@@ -28,6 +28,8 @@ class PortType:
 
 class Node:
     _ver = "0.0.1"
+    # Note: node_label set to "Weather" as per requirement to rename basenode
+    # Child classes override this with their specific labels
     node_label = "Weather"
     node_tag = "BaseNode"
     node_data = None

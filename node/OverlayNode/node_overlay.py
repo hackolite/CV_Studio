@@ -162,7 +162,7 @@ class OverlayNode(Node):
     
     def __init__(self):
         super().__init__()
-        # Override parent class values
+        # Set node-specific labels
         self.node_label = 'Overlay'
         self.node_tag = 'Overlay'
     
@@ -176,6 +176,10 @@ class OverlayNode(Node):
             else:
                 items.append((new_key, v))
         return dict(items)
+    
+    def _rgba_to_bgr(self, rgba_color):
+        """Convert RGBA color tuple to BGR tuple for OpenCV"""
+        return (int(rgba_color[2]), int(rgba_color[1]), int(rgba_color[0]))
     
     def _draw_overlay(self, image, data_dict, font_scale, text_color, bg_color, position):
         """Draw overlay information on image in a stylish way"""
@@ -239,7 +243,7 @@ class OverlayNode(Node):
             overlay,
             (x, y),
             (x + panel_width, y + panel_height),
-            (int(bg_color[2]), int(bg_color[1]), int(bg_color[0])),
+            self._rgba_to_bgr(bg_color),
             -1
         )
         
@@ -248,11 +252,12 @@ class OverlayNode(Node):
         cv2.addWeighted(overlay, alpha, output_image, 1 - alpha, 0, output_image)
         
         # Draw border
+        border_color = tuple(int(c * 0.7) for c in self._rgba_to_bgr(text_color))
         cv2.rectangle(
             output_image,
             (x, y),
             (x + panel_width, y + panel_height),
-            (int(text_color[2] * 0.7), int(text_color[1] * 0.7), int(text_color[0] * 0.7)),
+            border_color,
             2
         )
         
@@ -260,6 +265,7 @@ class OverlayNode(Node):
         text_x = x + padding
         text_y = y + padding + int(25 * font_scale)
         
+        text_bgr = self._rgba_to_bgr(text_color)
         for line in lines:
             cv2.putText(
                 output_image,
@@ -267,7 +273,7 @@ class OverlayNode(Node):
                 (text_x, text_y),
                 font,
                 font_scale,
-                (int(text_color[2]), int(text_color[1]), int(text_color[0])),
+                text_bgr,
                 thickness,
                 cv2.LINE_AA
             )
