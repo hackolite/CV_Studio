@@ -667,7 +667,7 @@ def draw_multi_object_tracking_info(
             text,
             (x1, y1 - 36),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.9,
+            0.5,
             color,
             thickness=2,
         )
@@ -679,7 +679,7 @@ def draw_multi_object_tracking_info(
             text,
             (x1, y1 - 12),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.9,
+            0.5,
             color,
             thickness=2,
         )
