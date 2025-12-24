@@ -42,6 +42,9 @@ class FactoryNode:
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict['input_window_width']
         small_window_h = node._opencv_setting_dict['input_window_height']
+        
+        node._small_window_w = small_window_w
+        node._small_window_h = small_window_h
 
         # Create yellow theme for buttons
         with dpg.theme() as yellow_button_theme:
@@ -117,8 +120,6 @@ class TemperatureNode(Node):
     node_tag = 'Temperature'
 
     _opencv_setting_dict = None
-    _last_temperature_data = None
-    _fetching = False
     
     TYPE_TEXT = "TEXT"
     TYPE_JSON = "JSON"
@@ -211,7 +212,6 @@ class TemperatureNode(Node):
     def close(self, node_id):
         """Cleanup when node is closed"""
         self._last_temperature_data = None
-        pass
 
     def get_setting_dict(self, node_id):
         """Save node settings for export"""
