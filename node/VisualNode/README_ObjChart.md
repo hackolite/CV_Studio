@@ -174,6 +174,35 @@ Potential improvements:
 - Custom color schemes
 - Adjustable history length and display window
 - Video timestamp synchronization
+- **Download button to save chart images** ✅ (Implemented)
+
+## Download Feature
+
+### Overview
+The ObjChart node now includes a **"Download Chart Image"** button that allows users to save the currently displayed chart as a PNG image file.
+
+### How to Use
+1. Ensure the ObjChart node is displaying a chart (either with detection data or an empty chart)
+2. Click the **"Download Chart Image"** button in the node
+3. The chart will be saved to the current working directory with a timestamp-based filename
+4. The filename format is: `objchart_YYYYMMDD_HHMMSS.png`
+5. A confirmation message will be printed in the console
+
+### Features
+- **Timestamp-based naming**: Each downloaded image has a unique filename based on the exact time of download
+- **High quality**: The saved image is the full-resolution matplotlib chart (typically 800x400 pixels)
+- **No interruption**: Downloading doesn't affect the node's operation or data collection
+- **Format**: Images are saved in PNG format for lossless quality
+
+### Examples
+```python
+# After downloading, you'll see a message like:
+# ✅ Chart image saved to: objchart_20251224_210217.png
+```
+
+### Error Handling
+- If no chart is available: `⚠️ No chart image available to download`
+- If there's a save error: `❌ Error saving chart image: [error details]`
 
 ## Testing
 

@@ -185,7 +185,7 @@ class FactoryNode:
                 dpg.add_button(
                     tag=node.tag_node_download_button_name,
                     label="Download Chart Image",
-                    callback=lambda s, a, u: Node.download_chart_callback(s, a, u),
+                    callback=Node.download_chart_callback,
                     user_data=node,  # Pass the node instance directly
                     width=small_window_w - 100,
                 )
@@ -260,7 +260,7 @@ class Node(Chart):
         """Callback to download the current chart image"""
         node_instance = user_data
         
-        if node_instance and hasattr(node_instance, 'current_chart_image'):
+        if node_instance:
             chart_image = node_instance.current_chart_image
             
             if chart_image is not None:
