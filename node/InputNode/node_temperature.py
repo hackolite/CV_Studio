@@ -2,11 +2,15 @@
 # -*- coding: utf-8 -*-
 import time
 import json
+import logging
 import requests
 import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.basenode import Node
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 
 class FactoryNode:
@@ -40,8 +44,8 @@ class FactoryNode:
         node.tag_node_output_json_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJsonValue'
 
         node._opencv_setting_dict = opencv_setting_dict
-        small_window_w = node._opencv_setting_dict['input_window_width']
-        small_window_h = node._opencv_setting_dict['input_window_height']
+        small_window_w = node._opencv_setting_dict.get('input_window_width', 240)
+        small_window_h = node._opencv_setting_dict.get('input_window_height', 135)
         
         node._small_window_w = small_window_w
         node._small_window_h = small_window_h
@@ -126,8 +130,6 @@ class TemperatureNode(Node):
     
     def __init__(self):
         super().__init__()
-        self._small_window_w = 240
-        self._small_window_h = 135
         self._last_temperature_data = None
         self._fetching = False
         
@@ -171,23 +173,25 @@ class TemperatureNode(Node):
             # Store the data
             self._last_temperature_data = data
             
-            print(f"Temperature data fetched successfully for ({lat}, {lon})")
-            print(f"Temperature: {data.get('current_weather', {}).get('temperature', 'N/A')}°C")
+            logger.info(f"Temperature data fetched successfully for ({lat}, {lon})")
+            if 'current_weather' in data:
+                temp = data['current_weather'].get('temperature', 'N/A')
+                logger.info(f"Temperature: {temp}°C")
             
         except ValueError as e:
-            print(f"Error: Invalid latitude or longitude format: {e}")
+            logger.error(f"Invalid latitude or longitude format: {e}")
             self._last_temperature_data = {
                 "error": "Invalid coordinates format",
                 "details": str(e)
             }
         except requests.RequestException as e:
-            print(f"Error fetching temperature data: {e}")
+            logger.error(f"Error fetching temperature data: {e}")
             self._last_temperature_data = {
                 "error": "Failed to fetch data",
                 "details": str(e)
             }
         except Exception as e:
-            print(f"Unexpected error: {e}")
+            logger.exception(f"Unexpected error fetching temperature data: {e}")
             self._last_temperature_data = {
                 "error": "Unexpected error",
                 "details": str(e)
