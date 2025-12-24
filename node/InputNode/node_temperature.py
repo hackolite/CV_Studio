@@ -171,13 +171,15 @@ class WeatherNode(Node):
             data = response.json()
             
             # Filter data to only include latitude, longitude, elevation, and current_weather.time
+            # Provide default values to ensure consistent data structure
             filtered_data = {
-                "latitude": data.get("latitude"),
-                "longitude": data.get("longitude"),
-                "elevation": data.get("elevation"),
+                "latitude": data.get("latitude", None),
+                "longitude": data.get("longitude", None),
+                "elevation": data.get("elevation", None),
+                "current_weather_time": None
             }
             
-            # Add only the time from current_weather
+            # Add the time from current_weather if available
             if 'current_weather' in data and 'time' in data['current_weather']:
                 filtered_data["current_weather_time"] = data['current_weather']['time']
             
