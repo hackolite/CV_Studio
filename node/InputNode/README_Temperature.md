@@ -30,23 +30,14 @@ https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_we
 
 ### Example Output
 
+The node filters the API response to only include essential location and time information:
+
 ```json
 {
   "latitude": 48.8566,
   "longitude": 2.3522,
-  "generationtime_ms": 0.123,
-  "utc_offset_seconds": 0,
-  "timezone": "GMT",
-  "timezone_abbreviation": "GMT",
   "elevation": 42.0,
-  "current_weather": {
-    "temperature": 15.2,
-    "windspeed": 10.5,
-    "winddirection": 180,
-    "weathercode": 0,
-    "is_day": 1,
-    "time": "2025-12-24T11:00"
-  }
+  "current_weather_time": "2025-12-24T11:00"
 }
 ```
 

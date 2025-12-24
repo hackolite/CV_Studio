@@ -16,12 +16,11 @@ Ce document décrit les changements apportés au système de nodes de CV Studio 
 - ✅ **Variables internes**: `_last_temperature_data` → `_last_weather_data`
 
 ### Fonctionnalité
-Le node Weather récupère les données météorologiques en temps réel depuis l'API Open-Meteo :
-- Température
-- Vitesse du vent
-- Direction du vent
-- Code météo
-- Heure
+Le node Weather récupère les données météorologiques en temps réel depuis l'API Open-Meteo et filtre les données pour ne retourner que :
+- Latitude
+- Longitude
+- Élévation
+- Heure de l'observation météorologique actuelle
 
 ### Utilisation
 1. Ajouter le node depuis le menu Input
@@ -82,9 +81,9 @@ Le node offre de nombreuses options pour un affichage très design :
 - Arrière-plan avec transparence réglable
 - Meilleure lisibilité sur n'importe quelle image
 
-✨ **Bordure Élégante**
-- Contour subtil autour du panneau
-- Améliore la visibilité
+✨ **Design Épuré**
+- Pas de bordure pour un aspect moderne et discret
+- Apparence professionnelle et élégante
 
 ✨ **Formatage Automatique**
 - Les nombres à virgule sont affichés avec 2 décimales
