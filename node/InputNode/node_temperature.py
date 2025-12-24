@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 
 class FactoryNode:
-    node_label = 'Temperature'
-    node_tag = 'Temperature'
+    node_label = 'Weather'
+    node_tag = 'Weather'
     
     def __init__(self):
         pass
@@ -28,7 +28,7 @@ class FactoryNode:
         opencv_setting_dict=None,
         callback=None,
     ):
-        node = TemperatureNode() 
+        node = WeatherNode() 
         
         node.tag_node_name = str(node_id) + ':' + self.node_tag
         node.tag_node_latitude_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Latitude'
@@ -93,7 +93,7 @@ class FactoryNode:
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
                 btn_fetch = dpg.add_button(
-                    label='Fetch Temperature',
+                    label='Fetch Weather',
                     tag=node.tag_node_button_value_name,
                     width=node._small_window_w,
                     callback=node._button_fetch,
@@ -117,11 +117,11 @@ class FactoryNode:
         return node
 
 
-class TemperatureNode(Node):
+class WeatherNode(Node):
     _ver = '1.0.0'
 
-    node_label = 'Temperature'
-    node_tag = 'Temperature'
+    node_label = 'Weather'
+    node_tag = 'Weather'
 
     _opencv_setting_dict = None
     
@@ -130,7 +130,7 @@ class TemperatureNode(Node):
     
     def __init__(self):
         super().__init__()
-        self._last_temperature_data = None
+        self._last_weather_data = None
         self._fetching = False
         
     def _button_fetch(self, sender, app_data, user_data):
@@ -148,13 +148,13 @@ class TemperatureNode(Node):
             latitude = dpg_get_value(latitude_tag)
             longitude = dpg_get_value(longitude_tag)
             
-            # Fetch temperature data
-            self._fetch_temperature_data(latitude, longitude)
+            # Fetch weather data
+            self._fetch_weather_data(latitude, longitude)
         finally:
             self._fetching = False
 
-    def _fetch_temperature_data(self, latitude, longitude):
-        """Fetch temperature data from Open-Meteo API"""
+    def _fetch_weather_data(self, latitude, longitude):
+        """Fetch weather data from Open-Meteo API"""
         try:
             # Convert to float to validate
             lat = float(latitude)
@@ -171,28 +171,28 @@ class TemperatureNode(Node):
             data = response.json()
             
             # Store the data
-            self._last_temperature_data = data
+            self._last_weather_data = data
             
-            logger.info(f"Temperature data fetched successfully for ({lat}, {lon})")
+            logger.info(f"Weather data fetched successfully for ({lat}, {lon})")
             if 'current_weather' in data:
                 temp = data['current_weather'].get('temperature', 'N/A')
                 logger.info(f"Temperature: {temp}°C")
             
         except ValueError as e:
             logger.error(f"Invalid latitude or longitude format: {e}")
-            self._last_temperature_data = {
+            self._last_weather_data = {
                 "error": "Invalid coordinates format",
                 "details": str(e)
             }
         except requests.RequestException as e:
-            logger.error(f"Error fetching temperature data: {e}")
-            self._last_temperature_data = {
+            logger.error(f"Error fetching weather data: {e}")
+            self._last_weather_data = {
                 "error": "Failed to fetch data",
                 "details": str(e)
             }
         except Exception as e:
-            logger.exception(f"Unexpected error fetching temperature data: {e}")
-            self._last_temperature_data = {
+            logger.exception(f"Unexpected error fetching weather data: {e}")
+            self._last_weather_data = {
                 "error": "Unexpected error",
                 "details": str(e)
             }
@@ -206,16 +206,16 @@ class TemperatureNode(Node):
         node_audio_dict,
     ):
         """Update method called by the node editor"""
-        # Return the last fetched temperature data
+        # Return the last fetched weather data
         return {
             "image": None, 
-            "json": self._last_temperature_data, 
+            "json": self._last_weather_data, 
             "audio": None
         }
 
     def close(self, node_id):
         """Cleanup when node is closed"""
-        self._last_temperature_data = None
+        self._last_weather_data = None
 
     def get_setting_dict(self, node_id):
         """Save node settings for export"""
