@@ -68,10 +68,10 @@ class TestSliderCursorColors(unittest.TestCase):
 
 
 class TestMOTLabelFontScale(unittest.TestCase):
-    """Test that MOT node labels have appropriate font scale"""
+    """Test that MOT node labels have appropriate dynamic font scale"""
     
-    def test_basenode_mot_label_font_scale(self):
-        """Test that basenode.py uses font scale 0.5 for MOT labels"""
+    def test_basenode_mot_label_dynamic_font_scale(self):
+        """Test that basenode.py uses dynamic font scale based on image height"""
         
         basenode_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -82,17 +82,23 @@ class TestMOTLabelFontScale(unittest.TestCase):
         with open(basenode_path, 'r') as f:
             content = f.read()
         
-        # Look for the draw_multi_object_tracking_info method
-        # and check for font scale 0.5
-        font_scale_pattern = r'cv2\.FONT_HERSHEY_SIMPLEX,\s*0\.5,'
-        matches = re.findall(font_scale_pattern, content)
+        # Check that draw_multi_object_tracking_info calculates font_scale dynamically
+        # Should find the formula that calculates font scale based on image height
+        self.assertIn('image_height = image.shape[0]', content,
+                     "Should get image height from image.shape[0]")
+        self.assertIn('font_scale = max(0.3, min(1.0, (image_height / 720.0) * 0.5))', content,
+                     "Should calculate font_scale dynamically based on image height")
+        
+        # Check that cv2.putText uses the calculated font_scale variable
+        font_scale_usage_pattern = r'cv2\.FONT_HERSHEY_SIMPLEX,\s*font_scale,'
+        matches = re.findall(font_scale_usage_pattern, content)
         
         # Should find at least 2 occurrences (TID and CID labels)
         self.assertGreaterEqual(len(matches), 2,
-                               "MOT labels should use font scale 0.5 for better readability")
+                               "MOT labels should use the dynamically calculated font_scale variable")
     
-    def test_draw_util_mot_label_font_scale(self):
-        """Test that draw_util.py uses font scale 0.5 for MOT labels"""
+    def test_draw_util_mot_label_dynamic_font_scale(self):
+        """Test that draw_util.py uses dynamic font scale based on image height"""
         
         draw_util_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -105,14 +111,20 @@ class TestMOTLabelFontScale(unittest.TestCase):
         with open(draw_util_path, 'r') as f:
             content = f.read()
         
-        # Look for the draw_multi_object_tracking_info function
-        # and check for font scale 0.5
-        font_scale_pattern = r'cv2\.FONT_HERSHEY_SIMPLEX,\s*0\.5,'
-        matches = re.findall(font_scale_pattern, content)
+        # Check that draw_multi_object_tracking_info calculates font_scale dynamically
+        # Should find the formula that calculates font scale based on image height
+        self.assertIn('image_height = image.shape[0]', content,
+                     "Should get image height from image.shape[0]")
+        self.assertIn('font_scale = max(0.3, min(1.0, (image_height / 720.0) * 0.5))', content,
+                     "Should calculate font_scale dynamically based on image height")
+        
+        # Check that cv2.putText uses the calculated font_scale variable
+        font_scale_usage_pattern = r'cv2\.FONT_HERSHEY_SIMPLEX,\s*font_scale,'
+        matches = re.findall(font_scale_usage_pattern, content)
         
         # Should find at least 2 occurrences (TID and CID labels)
         self.assertGreaterEqual(len(matches), 2,
-                               "MOT labels should use font scale 0.5 for better readability")
+                               "MOT labels should use the dynamically calculated font_scale variable")
 
 
 if __name__ == '__main__':
