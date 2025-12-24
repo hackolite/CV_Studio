@@ -442,9 +442,13 @@ class Node(Chart):
                             if selected_value and selected_value != "":
                                 if selected_value == "All":
                                     selected_classes.append("All")
-                                else:
+                                elif ":" in selected_value:
                                     # Parse "ID: name" format to extract class ID
                                     class_id = int(selected_value.split(":")[0].strip())
+                                    selected_classes.append(class_id)
+                                else:
+                                    # Fallback: try to parse as plain integer (for backwards compatibility)
+                                    class_id = int(selected_value)
                                     selected_classes.append(class_id)
                         except (ValueError, TypeError, IndexError):
                             # Skip invalid values
