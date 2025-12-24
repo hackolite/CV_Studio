@@ -28,7 +28,7 @@ class PortType:
 
 class Node:
     _ver = "0.0.1"
-    node_label = "BaseNode"
+    node_label = "Weather"
     node_tag = "BaseNode"
     node_data = None
 
@@ -45,7 +45,7 @@ class Node:
 
     def __init__(self, node_id=1, connection_dict=None, opencv_setting_dict=None):
         self.id = self.generate_id()
-        self.node_label = "BaseNode"
+        self.node_label = "Weather"
         self.node_tag = "BaseNode"
         self.tag_node_name = f"{node_id}:{self.node_tag}"
         # Générer les tags dynamiquement en fonction du dictionnaire
