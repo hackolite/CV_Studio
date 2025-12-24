@@ -273,12 +273,16 @@ class Node(Chart):
             chart_type: "bar", "line", or "area" for visualization type
         """
         # Merge class_names_dict with COCO class names (COCO as fallback)
+        # Only add names for selected classes to improve performance
         merged_class_names = {}
-        for class_id in coco_class_names.keys():
-            merged_class_names[str(class_id)] = coco_class_names[class_id]
-        # Override with detection JSON class names if provided
-        if class_names_dict:
-            merged_class_names.update(class_names_dict)
+        for class_id in selected_classes:
+            if class_id != "All":
+                class_id_str = str(class_id)
+                # First try detection JSON, then COCO names
+                if class_names_dict and class_id_str in class_names_dict:
+                    merged_class_names[class_id_str] = class_names_dict[class_id_str]
+                elif class_id in coco_class_names:
+                    merged_class_names[class_id_str] = coco_class_names[class_id]
         
         fig, ax = plt.subplots(figsize=(8, 4), dpi=100)
         
