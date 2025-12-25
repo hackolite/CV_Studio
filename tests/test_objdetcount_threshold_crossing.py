@@ -1,8 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Test for ObjDetCount trigger behavior when outside threshold range
-Tests that the trigger is active when count is OUTSIDE the threshold range [min, max]
+Test for ObjDetCount trigger behavior when outside threshold range.
+Tests that the trigger is active when count is OUTSIDE the threshold range [min, max].
+
+Note: This file was originally named for testing threshold crossing behavior,
+but now tests the "outside range" behavior after the requirements changed.
 """
 import time
 from collections import deque

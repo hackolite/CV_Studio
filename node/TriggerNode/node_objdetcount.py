@@ -381,7 +381,7 @@ class Node(BaseNode):
         # This means the count is either below min_threshold or above max_threshold
         trigger_active = not within_threshold
         
-        # Update previous state for next iteration (used for blinking detection)
+        # Update previous state for potential future use
         self.previous_within_threshold = within_threshold
         
         # Create output JSON
