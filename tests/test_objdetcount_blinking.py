@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Test for ObjDetCount node blinking feature
-Tests that the node blinks white for 3 seconds when trigger is activated
+Tests that the node blinks white continuously while trigger is active
 
 Note: pytest is not imported to allow standalone execution.
 This test can still be run with pytest if needed.
@@ -65,8 +65,8 @@ class MockNode:
     
     def handle_blink_effect(self, trigger_active, current_time):
         """
-        Handle the blinking effect when trigger is activated.
-        Blinks white/original/white for 3 seconds.
+        Handle the blinking effect when trigger is active.
+        Blinks white/original continuously while trigger is active.
         """
         # Detect trigger activation (transition from False to True)
         if trigger_active and not self.previous_trigger_state:
@@ -74,30 +74,31 @@ class MockNode:
             self.blink_start_time = current_time
             self.blink_active = True
         
+        # Detect trigger deactivation (transition from True to False)
+        if not trigger_active and self.previous_trigger_state:
+            # Stop blinking and restore original theme
+            if self.original_theme is not None:
+                self.mock_bind_theme(self.original_theme)
+            self.blink_active = False
+            self.blink_start_time = None
+        
         # Update previous state for next iteration
         self.previous_trigger_state = trigger_active
         
-        # Handle active blinking
-        if self.blink_active and self.blink_start_time is not None:
+        # Handle active blinking - blink continuously while trigger is active
+        if self.blink_active and self.blink_start_time is not None and trigger_active:
             elapsed = current_time - self.blink_start_time
             
-            if elapsed < self.TOTAL_BLINK_DURATION:  # Blink for 3 seconds
-                # Blink pattern: alternate between white and original color
-                cycle_time = elapsed % self.BLINK_CYCLE_DURATION
-                
-                if cycle_time < self.WHITE_PHASE_DURATION:
-                    # Show white
-                    self.mock_bind_theme(self.white_theme)
-                else:
-                    # Show original color
-                    if self.original_theme is not None:
-                        self.mock_bind_theme(self.original_theme)
+            # Blink pattern: alternate between white and original color
+            cycle_time = elapsed % self.BLINK_CYCLE_DURATION
+            
+            if cycle_time < self.WHITE_PHASE_DURATION:
+                # Show white
+                self.mock_bind_theme(self.white_theme)
             else:
-                # Blinking finished, restore original theme
+                # Show original color
                 if self.original_theme is not None:
                     self.mock_bind_theme(self.original_theme)
-                self.blink_active = False
-                self.blink_start_time = None
 
 
 def test_blink_starts_on_trigger_activation():
@@ -122,7 +123,7 @@ def test_blink_starts_on_trigger_activation():
 
 
 def test_blink_duration_is_3_seconds():
-    """Test that blinking lasts for exactly 3 seconds"""
+    """Test that blinking continues as long as trigger is active"""
     node = MockNode()
     base_time = time.time()
     
@@ -142,13 +143,17 @@ def test_blink_duration_is_3_seconds():
     node.handle_blink_effect(True, base_time + 2.5)
     assert node.blink_active, "Should still be blinking at 2.5s"
     
-    # At 2.9s - should still be blinking
-    node.handle_blink_effect(True, base_time + 2.9)
-    assert node.blink_active, "Should still be blinking at 2.9s"
+    # At 3.5s - should STILL be blinking (continuous blinking)
+    node.handle_blink_effect(True, base_time + 3.5)
+    assert node.blink_active, "Should still be blinking at 3.5s"
     
-    # At 3.1s - should stop blinking
-    node.handle_blink_effect(True, base_time + 3.1)
-    assert not node.blink_active, "Should stop blinking after 3 seconds"
+    # At 10.0s - should STILL be blinking (continuous blinking)
+    node.handle_blink_effect(True, base_time + 10.0)
+    assert node.blink_active, "Should still be blinking at 10.0s"
+    
+    # Only stops when trigger becomes False
+    node.handle_blink_effect(False, base_time + 10.1)
+    assert not node.blink_active, "Should stop blinking when trigger becomes False"
     assert node.blink_start_time is None, "Blink start time should be reset"
 
 
@@ -191,7 +196,7 @@ def test_blink_pattern_alternates_white_and_original():
 
 
 def test_no_blink_when_trigger_stays_true():
-    """Test that blinking only starts on transition from False to True"""
+    """Test that blinking continues while trigger stays true"""
     node = MockNode()
     base_time = time.time()
     
@@ -200,18 +205,22 @@ def test_no_blink_when_trigger_stays_true():
     first_blink_start = node.blink_start_time
     assert first_blink_start is not None, "Should start blinking on first activation"
     
-    # Wait for blinking to finish
+    # Blinking should continue as long as trigger stays True
     node.handle_blink_effect(True, base_time + 3.1)
-    assert not node.blink_active, "Blinking should finish after 3 seconds"
+    assert node.blink_active, "Blinking should continue while trigger is True"
     
-    # Trigger stays True - should not restart blinking
-    node.handle_blink_effect(True, base_time + 4.0)
-    assert node.blink_start_time is None, "Should not restart blinking when trigger stays True"
-    assert not node.blink_active, "Should not be blinking"
+    # Trigger stays True - should keep blinking
+    node.handle_blink_effect(True, base_time + 5.0)
+    assert node.blink_start_time is not None, "Should keep blinking when trigger stays True"
+    assert node.blink_active, "Should still be blinking"
+    
+    # Blinking continues at 10 seconds
+    node.handle_blink_effect(True, base_time + 10.0)
+    assert node.blink_active, "Should still be blinking at 10 seconds"
 
 
 def test_blink_restarts_on_new_activation():
-    """Test that blinking can restart on a new trigger activation"""
+    """Test that blinking stops when trigger becomes False and restarts on new activation"""
     node = MockNode()
     base_time = time.time()
     
@@ -219,21 +228,23 @@ def test_blink_restarts_on_new_activation():
     node.handle_blink_effect(True, base_time)
     assert node.blink_active, "Should start blinking"
     
-    # Wait for blinking to finish
-    node.handle_blink_effect(True, base_time + 3.1)
-    assert not node.blink_active, "Blinking should finish"
+    # Blinking continues at 5 seconds
+    node.handle_blink_effect(True, base_time + 5.0)
+    assert node.blink_active, "Blinking should continue while trigger is True"
     
-    # Trigger goes False
-    node.handle_blink_effect(False, base_time + 4.0)
+    # Trigger goes False - blinking should stop
+    node.handle_blink_effect(False, base_time + 6.0)
+    assert not node.blink_active, "Blinking should stop when trigger becomes False"
+    assert node.blink_start_time is None, "Blink start time should be reset"
     
     # Trigger becomes True again - should restart blinking
-    node.handle_blink_effect(True, base_time + 5.0)
+    node.handle_blink_effect(True, base_time + 7.0)
     assert node.blink_active, "Should restart blinking on new activation"
-    assert node.blink_start_time == base_time + 5.0, "Should set new blink start time"
+    assert node.blink_start_time == base_time + 7.0, "Should set new blink start time"
 
 
 def test_theme_restored_after_blinking():
-    """Test that original theme is restored after blinking completes"""
+    """Test that original theme is restored when trigger becomes inactive"""
     node = MockNode()
     base_time = time.time()
     
@@ -243,12 +254,19 @@ def test_theme_restored_after_blinking():
     # Clear theme history
     node.applied_themes = []
     
-    # Wait for blinking to finish
-    node.handle_blink_effect(True, base_time + 3.1)
+    # Blinking continues while trigger is True
+    node.handle_blink_effect(True, base_time + 5.0)
+    assert node.blink_active, "Should still be blinking"
     
-    # Check that the last applied theme is the original theme
+    # Clear theme history again before deactivation
+    node.applied_themes = []
+    
+    # Trigger becomes False - should restore original theme
+    node.handle_blink_effect(False, base_time + 5.1)
+    
+    # Check that the theme was restored
     assert len(node.applied_themes) > 0, "Should have applied at least one theme"
-    assert node.applied_themes[-1][1] == node.original_theme, "Should restore original theme after blinking"
+    assert node.applied_themes[-1][1] == node.original_theme, "Should restore original theme when trigger becomes False"
 
 
 if __name__ == '__main__':
