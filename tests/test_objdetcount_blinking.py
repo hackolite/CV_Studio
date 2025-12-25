@@ -107,14 +107,14 @@ def test_blink_starts_on_trigger_activation():
     trigger_active = False
     node.handle_blink_effect(trigger_active, current_time)
     
-    assert node.blink_active == False, "Blinking should not be active when trigger is False"
+    assert not node.blink_active, "Blinking should not be active when trigger is False"
     assert node.blink_start_time is None, "Blink start time should be None"
     
     # Second update: trigger becomes True
     trigger_active = True
     node.handle_blink_effect(trigger_active, current_time)
     
-    assert node.blink_active == True, "Blinking should be active when trigger becomes True"
+    assert node.blink_active, "Blinking should be active when trigger becomes True"
     assert node.blink_start_time is not None, "Blink start time should be set"
     assert abs(node.blink_start_time - current_time) < 0.01, "Blink start time should be current time"
 
@@ -130,23 +130,23 @@ def test_blink_duration_is_3_seconds():
     # Simulate updates during blinking
     # At 0.5s - should still be blinking
     node.handle_blink_effect(True, base_time + 0.5)
-    assert node.blink_active == True, "Should still be blinking at 0.5s"
+    assert node.blink_active, "Should still be blinking at 0.5s"
     
     # At 1.5s - should still be blinking
     node.handle_blink_effect(True, base_time + 1.5)
-    assert node.blink_active == True, "Should still be blinking at 1.5s"
+    assert node.blink_active, "Should still be blinking at 1.5s"
     
     # At 2.5s - should still be blinking
     node.handle_blink_effect(True, base_time + 2.5)
-    assert node.blink_active == True, "Should still be blinking at 2.5s"
+    assert node.blink_active, "Should still be blinking at 2.5s"
     
     # At 2.9s - should still be blinking
     node.handle_blink_effect(True, base_time + 2.9)
-    assert node.blink_active == True, "Should still be blinking at 2.9s"
+    assert node.blink_active, "Should still be blinking at 2.9s"
     
     # At 3.1s - should stop blinking
     node.handle_blink_effect(True, base_time + 3.1)
-    assert node.blink_active == False, "Should stop blinking after 3 seconds"
+    assert not node.blink_active, "Should stop blinking after 3 seconds"
     assert node.blink_start_time is None, "Blink start time should be reset"
 
 
@@ -200,12 +200,12 @@ def test_no_blink_when_trigger_stays_true():
     
     # Wait for blinking to finish
     node.handle_blink_effect(True, base_time + 3.1)
-    assert node.blink_active == False, "Blinking should finish after 3 seconds"
+    assert not node.blink_active, "Blinking should finish after 3 seconds"
     
     # Trigger stays True - should not restart blinking
     node.handle_blink_effect(True, base_time + 4.0)
     assert node.blink_start_time is None, "Should not restart blinking when trigger stays True"
-    assert node.blink_active == False, "Should not be blinking"
+    assert not node.blink_active, "Should not be blinking"
 
 
 def test_blink_restarts_on_new_activation():
@@ -215,18 +215,18 @@ def test_blink_restarts_on_new_activation():
     
     # First activation
     node.handle_blink_effect(True, base_time)
-    assert node.blink_active == True, "Should start blinking"
+    assert node.blink_active, "Should start blinking"
     
     # Wait for blinking to finish
     node.handle_blink_effect(True, base_time + 3.1)
-    assert node.blink_active == False, "Blinking should finish"
+    assert not node.blink_active, "Blinking should finish"
     
     # Trigger goes False
     node.handle_blink_effect(False, base_time + 4.0)
     
     # Trigger becomes True again - should restart blinking
     node.handle_blink_effect(True, base_time + 5.0)
-    assert node.blink_active == True, "Should restart blinking on new activation"
+    assert node.blink_active, "Should restart blinking on new activation"
     assert node.blink_start_time == base_time + 5.0, "Should set new blink start time"
 
 
