@@ -377,11 +377,11 @@ class Node(BaseNode):
             # Check both min and max thresholds
             within_threshold = (min_threshold <= count_in_window <= max_threshold)
         
-        # Trigger only on crossing: entering or leaving the threshold range
-        # Detect edge transitions: outside→inside or inside→outside
-        trigger_active = (within_threshold != self.previous_within_threshold)
+        # Trigger is active when count is OUTSIDE the threshold range
+        # This means the count is either below min_threshold or above max_threshold
+        trigger_active = not within_threshold
         
-        # Update previous state for next iteration
+        # Update previous state for potential future use
         self.previous_within_threshold = within_threshold
         
         # Create output JSON
