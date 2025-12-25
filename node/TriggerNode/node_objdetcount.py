@@ -52,11 +52,11 @@ class Node(BaseNode):
     _opencv_setting_dict = None
     
     # Blinking effect constants
-    RED_COLOR = (255, 0, 0, 255)  # Bright red for blinking
+    WHITE_COLOR = (255, 255, 255, 255)  # Bright white for blinking
     TEXT_COLOR_BLACK = (0, 0, 0, 255)  # Black text for readability
     TOTAL_BLINK_DURATION = 3.0  # Total duration of blinking in seconds
-    BLINK_CYCLE_DURATION = 1.0  # Duration of one red/original cycle in seconds
-    RED_PHASE_DURATION = 0.5  # Duration of red phase within each cycle
+    BLINK_CYCLE_DURATION = 1.0  # Duration of one white/original cycle in seconds
+    WHITE_PHASE_DURATION = 0.5  # Duration of white phase within each cycle
 
     def __init__(self):
         # Detection accumulator: stores timestamps of detections
@@ -68,7 +68,9 @@ class Node(BaseNode):
         self.blink_active = False
         self.previous_trigger_state = False
         self.original_theme = None
-        self.red_theme = None
+        self.white_theme = None
+        # Track previous threshold state for edge detection
+        self.previous_within_threshold = False
 
     def add_node(
         self,
@@ -190,34 +192,34 @@ class Node(BaseNode):
 
         self.tag_node_name = tag_node_name
         
-        # Create red theme for blinking
-        self._create_red_theme()
+        # Create white theme for blinking
+        self._create_white_theme()
         
         return self
     
-    def _create_red_theme(self):
-        """Create a red theme for blinking effect"""
-        with dpg.theme() as red_theme:
+    def _create_white_theme(self):
+        """Create a white theme for blinking effect"""
+        with dpg.theme() as white_theme:
             with dpg.theme_component(dpg.mvNode):
                 dpg.add_theme_color(
-                    dpg.mvNodeCol_TitleBar, self.RED_COLOR, category=dpg.mvThemeCat_Nodes
+                    dpg.mvNodeCol_TitleBar, self.WHITE_COLOR, category=dpg.mvThemeCat_Nodes
                 )
                 dpg.add_theme_color(
-                    dpg.mvNodeCol_TitleBarHovered, self.RED_COLOR, category=dpg.mvThemeCat_Nodes
+                    dpg.mvNodeCol_TitleBarHovered, self.WHITE_COLOR, category=dpg.mvThemeCat_Nodes
                 )
                 dpg.add_theme_color(
-                    dpg.mvNodeCol_TitleBarSelected, self.RED_COLOR, category=dpg.mvThemeCat_Nodes
+                    dpg.mvNodeCol_TitleBarSelected, self.WHITE_COLOR, category=dpg.mvThemeCat_Nodes
                 )
                 dpg.add_theme_color(
                     dpg.mvThemeCol_Text, self.TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
                 )
         
-        self.red_theme = red_theme
+        self.white_theme = white_theme
     
     def _handle_blink_effect(self, node_id, trigger_active, current_time):
         """
         Handle the blinking effect when trigger is activated.
-        Blinks red/original/red for 3 seconds.
+        Blinks white/original/white for 3 seconds.
         """
         tag_node_name = str(node_id) + ':' + self.node_tag
         
@@ -242,14 +244,14 @@ class Node(BaseNode):
             elapsed = current_time - self.blink_start_time
             
             if elapsed < self.TOTAL_BLINK_DURATION:  # Blink for 3 seconds
-                # Blink pattern: alternate between red and original color
+                # Blink pattern: alternate between white and original color
                 # Each cycle lasts BLINK_CYCLE_DURATION seconds
                 cycle_time = elapsed % self.BLINK_CYCLE_DURATION
                 
                 try:
-                    if cycle_time < self.RED_PHASE_DURATION:
-                        # Show red
-                        dpg.bind_item_theme(tag_node_name, self.red_theme)
+                    if cycle_time < self.WHITE_PHASE_DURATION:
+                        # Show white
+                        dpg.bind_item_theme(tag_node_name, self.white_theme)
                     else:
                         # Show original color
                         if self.original_theme is not None:
@@ -363,20 +365,36 @@ class Node(BaseNode):
         # Count detections in the current window
         count_in_window = len(self.detection_timestamps)
         
-        # Determine if threshold is exceeded
-        # Trigger is True if count is within [min_threshold, max_threshold]
+        # Determine if count is within threshold range
+        # Within range if count is between [min_threshold, max_threshold]
         # If max_threshold is 0, it means no upper limit
-        trigger_active = False
+        within_threshold = False
         
         if max_threshold == 0:
             # No upper limit, only check minimum
-            trigger_active = (count_in_window >= min_threshold)
+            within_threshold = (count_in_window >= min_threshold)
         else:
             # Check both min and max thresholds
-            trigger_active = (min_threshold <= count_in_window <= max_threshold)
+            within_threshold = (min_threshold <= count_in_window <= max_threshold)
+        
+        # Trigger only on crossing: entering or leaving the threshold range
+        # Detect edge transitions: outside→inside or inside→outside
+        trigger_active = (within_threshold != self.previous_within_threshold)
+        
+        # Update previous state for next iteration
+        self.previous_within_threshold = within_threshold
         
         # Create output JSON
         output_json = {"BOOL": trigger_active}
+        
+        # Update output text to display count
+        tag_node_output01_value_name = tag_node_name + ':' + self.TYPE_JSON + ':Output01Value'
+        try:
+            output_text = f'Count: {count_in_window} (Trigger: {trigger_active})'
+            dpg_set_value(tag_node_output01_value_name, output_text)
+        except (SystemError, AttributeError):
+            # GUI item may not be accessible
+            pass
         
         # Handle blinking effect when trigger activates
         self._handle_blink_effect(node_id, trigger_active, current_time)
