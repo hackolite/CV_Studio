@@ -56,6 +56,12 @@ class Node(BaseNode):
         self.detection_timestamps = deque()
         # Current class names from detection JSON
         self.current_class_names = {}
+        # Blinking state tracking
+        self.blink_start_time = None
+        self.blink_active = False
+        self.previous_trigger_state = False
+        self.original_theme = None
+        self.red_theme = None
 
     def add_node(
         self,
@@ -176,7 +182,86 @@ class Node(BaseNode):
                 )
 
         self.tag_node_name = tag_node_name
+        
+        # Create red theme for blinking
+        self._create_red_theme()
+        
         return self
+    
+    def _create_red_theme(self):
+        """Create a red theme for blinking effect"""
+        RED_COLOR = (255, 0, 0, 255)  # Bright red
+        TEXT_COLOR_BLACK = (0, 0, 0, 255)
+        
+        with dpg.theme() as red_theme:
+            with dpg.theme_component(dpg.mvNode):
+                dpg.add_theme_color(
+                    dpg.mvNodeCol_TitleBar, RED_COLOR, category=dpg.mvThemeCat_Nodes
+                )
+                dpg.add_theme_color(
+                    dpg.mvNodeCol_TitleBarHovered, RED_COLOR, category=dpg.mvThemeCat_Nodes
+                )
+                dpg.add_theme_color(
+                    dpg.mvNodeCol_TitleBarSelected, RED_COLOR, category=dpg.mvThemeCat_Nodes
+                )
+                dpg.add_theme_color(
+                    dpg.mvThemeCol_Text, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
+                )
+        
+        self.red_theme = red_theme
+    
+    def _handle_blink_effect(self, node_id, trigger_active, current_time):
+        """
+        Handle the blinking effect when trigger is activated.
+        Blinks red/original/red for 3 seconds.
+        """
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        
+        # Detect trigger activation (transition from False to True)
+        if trigger_active and not self.previous_trigger_state:
+            # Start blinking
+            self.blink_start_time = current_time
+            self.blink_active = True
+            # Store original theme if not already stored
+            if self.original_theme is None:
+                try:
+                    self.original_theme = dpg.get_item_theme(tag_node_name)
+                except (SystemError, AttributeError):
+                    # If we can't get the theme, we'll just use None
+                    pass
+        
+        # Update previous state for next iteration
+        self.previous_trigger_state = trigger_active
+        
+        # Handle active blinking
+        if self.blink_active and self.blink_start_time is not None:
+            elapsed = current_time - self.blink_start_time
+            
+            if elapsed < 3.0:  # Blink for 3 seconds
+                # Blink pattern: 0-0.5s red, 0.5-1s original, 1-1.5s red, 1.5-2s original, 2-2.5s red, 2.5-3s original
+                # This gives 3 red blinks over 3 seconds
+                cycle_time = elapsed % 1.0  # Repeat every 1 second
+                
+                try:
+                    if cycle_time < 0.5:
+                        # Show red
+                        dpg.bind_item_theme(tag_node_name, self.red_theme)
+                    else:
+                        # Show original color
+                        if self.original_theme is not None:
+                            dpg.bind_item_theme(tag_node_name, self.original_theme)
+                except (SystemError, AttributeError):
+                    # GUI item may not be accessible, skip theme change
+                    pass
+            else:
+                # Blinking finished, restore original theme
+                try:
+                    if self.original_theme is not None:
+                        dpg.bind_item_theme(tag_node_name, self.original_theme)
+                except (SystemError, AttributeError):
+                    pass
+                self.blink_active = False
+                self.blink_start_time = None
 
     def update(
         self,
@@ -288,6 +373,9 @@ class Node(BaseNode):
         
         # Create output JSON
         output_json = {"BOOL": trigger_active}
+        
+        # Handle blinking effect when trigger activates
+        self._handle_blink_effect(node_id, trigger_active, current_time)
         
         return {"image": None, "json": output_json, "audio": None}
 
