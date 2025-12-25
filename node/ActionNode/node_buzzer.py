@@ -26,7 +26,7 @@ class FactoryNode:
         node = BuzzerNode()
         node.tag_node_name = f"{node_id}:{node.node_tag}"
         
-        tag_node_name = str(node_id) + ':' + node.node_tag
+        tag_node_name = node.tag_node_name
         
         # JSON Input
         node.tag_node_input_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':InputJson'
@@ -72,7 +72,7 @@ class FactoryNode:
                 dpg.add_slider_float(
                     tag=tag_node_duration_value_name,
                     label="Buzz Duration (s)",
-                    default_value=5.0,
+                    default_value=BuzzerNode.DEFAULT_DURATION,
                     min_value=0.1,
                     max_value=10.0,
                     width=300,
@@ -86,7 +86,7 @@ class FactoryNode:
                 dpg.add_slider_float(
                     tag=tag_node_delay_value_name,
                     label="Insensitivity Delay (s)",
-                    default_value=0.0,
+                    default_value=BuzzerNode.DEFAULT_INSENSITIVITY_DELAY,
                     min_value=0.0,
                     max_value=60.0,
                     width=300,
@@ -110,6 +110,10 @@ class FactoryNode:
 
 class BuzzerNode(BaseNode):
     _ver = '0.0.1'
+    
+    # Default configuration values
+    DEFAULT_DURATION = 5.0
+    DEFAULT_INSENSITIVITY_DELAY = 0.0
 
     def __init__(self):
         super().__init__()
@@ -190,8 +194,8 @@ class BuzzerNode(BaseNode):
             buzz_duration = float(dpg_get_value(tag_node_duration_value_name))
             insensitivity_delay = float(dpg_get_value(tag_node_delay_value_name))
         except (ValueError, TypeError):
-            buzz_duration = 5.0
-            insensitivity_delay = 0.0
+            buzz_duration = self.DEFAULT_DURATION
+            insensitivity_delay = self.DEFAULT_INSENSITIVITY_DELAY
         
         current_time = time.time()
         
@@ -250,8 +254,12 @@ class BuzzerNode(BaseNode):
     def close(self, node_id):
         """Clean up when node is closed"""
         # Stop any active buzzing
-        if self._is_buzzing:
-            sd.stop()
+        try:
+            if self._is_buzzing:
+                sd.stop()
+        except Exception:
+            # Ignore errors if no playback is active
+            pass
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
@@ -274,8 +282,8 @@ class BuzzerNode(BaseNode):
         tag_node_duration_value_name = tag_node_name + ':DurationValue'
         tag_node_delay_value_name = tag_node_name + ':DelayValue'
 
-        duration_value = float(setting_dict.get(tag_node_duration_value_name, 5.0))
-        delay_value = float(setting_dict.get(tag_node_delay_value_name, 0.0))
+        duration_value = float(setting_dict.get(tag_node_duration_value_name, self.DEFAULT_DURATION))
+        delay_value = float(setting_dict.get(tag_node_delay_value_name, self.DEFAULT_INSENSITIVITY_DELAY))
         
         dpg_set_value(tag_node_duration_value_name, duration_value)
         dpg_set_value(tag_node_delay_value_name, delay_value)
