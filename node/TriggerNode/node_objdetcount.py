@@ -28,6 +28,20 @@ class FactoryNode:
     def __init__(self):
         pass
 
+    def add_node(
+        self,
+        parent,
+        node_id,
+        pos=None,
+        opencv_setting_dict=None,
+        callback=None,
+    ):
+        """Creates and adds an ObjDetCount node to the processing graph."""
+        if pos is None:
+            pos = [0, 0]
+        node = Node()
+        return node.add_node(parent, node_id, pos, opencv_setting_dict, callback)
+
 
 class Node(BaseNode):
     _ver = '0.0.1'
@@ -47,10 +61,12 @@ class Node(BaseNode):
         self,
         parent,
         node_id,
-        pos=[0, 0],
+        pos=None,
         opencv_setting_dict=None,
         callback=None,
     ):
+        if pos is None:
+            pos = [0, 0]
         # Tag names
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_input01_name = tag_node_name + ':' + self.TYPE_JSON + ':Input01'
