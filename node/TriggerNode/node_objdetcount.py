@@ -4,8 +4,6 @@ import time
 from datetime import datetime, timedelta
 from collections import defaultdict, deque
 
-import cv2
-import numpy as np
 import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
