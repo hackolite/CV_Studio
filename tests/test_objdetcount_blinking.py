@@ -6,10 +6,16 @@ Tests that the node blinks red for 3 seconds when trigger is activated
 """
 import time
 from collections import deque
+import pytest
 
 
 class MockNode:
     """Mock ObjDetCount node for testing blinking logic"""
+    
+    # Use the same constants as the real node
+    TOTAL_BLINK_DURATION = 3.0
+    BLINK_CYCLE_DURATION = 1.0
+    RED_PHASE_DURATION = 0.5
     
     def __init__(self):
         self.detection_timestamps = deque()
@@ -73,11 +79,11 @@ class MockNode:
         if self.blink_active and self.blink_start_time is not None:
             elapsed = current_time - self.blink_start_time
             
-            if elapsed < 3.0:  # Blink for 3 seconds
-                # Blink pattern: 0-0.5s red, 0.5-1s original, 1-1.5s red, 1.5-2s original, 2-2.5s red, 2.5-3s original
-                cycle_time = elapsed % 1.0  # Repeat every 1 second
+            if elapsed < self.TOTAL_BLINK_DURATION:  # Blink for 3 seconds
+                # Blink pattern: alternate between red and original color
+                cycle_time = elapsed % self.BLINK_CYCLE_DURATION
                 
-                if cycle_time < 0.5:
+                if cycle_time < self.RED_PHASE_DURATION:
                     # Show red
                     self.mock_bind_theme(self.red_theme)
                 else:
@@ -242,25 +248,3 @@ def test_theme_restored_after_blinking():
     assert len(node.applied_themes) > 0, "Should have applied at least one theme"
     assert node.applied_themes[-1][1] == node.original_theme, "Should restore original theme after blinking"
 
-
-if __name__ == '__main__':
-    # Run tests
-    test_blink_starts_on_trigger_activation()
-    print("✓ test_blink_starts_on_trigger_activation passed")
-    
-    test_blink_duration_is_3_seconds()
-    print("✓ test_blink_duration_is_3_seconds passed")
-    
-    test_blink_pattern_alternates_red_and_original()
-    print("✓ test_blink_pattern_alternates_red_and_original passed")
-    
-    test_no_blink_when_trigger_stays_true()
-    print("✓ test_no_blink_when_trigger_stays_true passed")
-    
-    test_blink_restarts_on_new_activation()
-    print("✓ test_blink_restarts_on_new_activation passed")
-    
-    test_theme_restored_after_blinking()
-    print("✓ test_theme_restored_after_blinking passed")
-    
-    print("\n✅ All blinking tests passed!")

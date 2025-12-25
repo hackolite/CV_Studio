@@ -50,6 +50,13 @@ class Node(BaseNode):
     node_tag = 'ObjDetCount'
 
     _opencv_setting_dict = None
+    
+    # Blinking effect constants
+    RED_COLOR = (255, 0, 0, 255)  # Bright red for blinking
+    TEXT_COLOR_BLACK = (0, 0, 0, 255)  # Black text for readability
+    TOTAL_BLINK_DURATION = 3.0  # Total duration of blinking in seconds
+    BLINK_CYCLE_DURATION = 1.0  # Duration of one red/original cycle in seconds
+    RED_PHASE_DURATION = 0.5  # Duration of red phase within each cycle
 
     def __init__(self):
         # Detection accumulator: stores timestamps of detections
@@ -190,22 +197,19 @@ class Node(BaseNode):
     
     def _create_red_theme(self):
         """Create a red theme for blinking effect"""
-        RED_COLOR = (255, 0, 0, 255)  # Bright red
-        TEXT_COLOR_BLACK = (0, 0, 0, 255)
-        
         with dpg.theme() as red_theme:
             with dpg.theme_component(dpg.mvNode):
                 dpg.add_theme_color(
-                    dpg.mvNodeCol_TitleBar, RED_COLOR, category=dpg.mvThemeCat_Nodes
+                    dpg.mvNodeCol_TitleBar, self.RED_COLOR, category=dpg.mvThemeCat_Nodes
                 )
                 dpg.add_theme_color(
-                    dpg.mvNodeCol_TitleBarHovered, RED_COLOR, category=dpg.mvThemeCat_Nodes
+                    dpg.mvNodeCol_TitleBarHovered, self.RED_COLOR, category=dpg.mvThemeCat_Nodes
                 )
                 dpg.add_theme_color(
-                    dpg.mvNodeCol_TitleBarSelected, RED_COLOR, category=dpg.mvThemeCat_Nodes
+                    dpg.mvNodeCol_TitleBarSelected, self.RED_COLOR, category=dpg.mvThemeCat_Nodes
                 )
                 dpg.add_theme_color(
-                    dpg.mvThemeCol_Text, TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
+                    dpg.mvThemeCol_Text, self.TEXT_COLOR_BLACK, category=dpg.mvThemeCat_Core
                 )
         
         self.red_theme = red_theme
@@ -237,13 +241,13 @@ class Node(BaseNode):
         if self.blink_active and self.blink_start_time is not None:
             elapsed = current_time - self.blink_start_time
             
-            if elapsed < 3.0:  # Blink for 3 seconds
-                # Blink pattern: 0-0.5s red, 0.5-1s original, 1-1.5s red, 1.5-2s original, 2-2.5s red, 2.5-3s original
-                # This gives 3 red blinks over 3 seconds
-                cycle_time = elapsed % 1.0  # Repeat every 1 second
+            if elapsed < self.TOTAL_BLINK_DURATION:  # Blink for 3 seconds
+                # Blink pattern: alternate between red and original color
+                # Each cycle lasts BLINK_CYCLE_DURATION seconds
+                cycle_time = elapsed % self.BLINK_CYCLE_DURATION
                 
                 try:
-                    if cycle_time < 0.5:
+                    if cycle_time < self.RED_PHASE_DURATION:
                         # Show red
                         dpg.bind_item_theme(tag_node_name, self.red_theme)
                     else:
