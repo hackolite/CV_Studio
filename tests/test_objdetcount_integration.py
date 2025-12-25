@@ -95,8 +95,7 @@ def test_signature_compatibility_with_node_editor():
     
     params = add_node_match.group(1)
     
-    # The node_editor calls add_node with these parameters
-    # from node_editor.py line 389-394:
+    # The node_editor calls add_node with these parameters:
     # node = factorynode.add_node(
     #     self._node_editor_tag,       # parent
     #     self._node_id,               # node_id
