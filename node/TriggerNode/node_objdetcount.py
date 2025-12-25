@@ -218,8 +218,8 @@ class Node(BaseNode):
     
     def _handle_blink_effect(self, node_id, trigger_active, current_time):
         """
-        Handle the blinking effect when trigger is activated.
-        Blinks white/original/white for 3 seconds.
+        Handle the blinking effect when trigger is active.
+        Blinks white/original continuously while trigger is active.
         """
         tag_node_name = str(node_id) + ':' + self.node_tag
         
@@ -236,38 +236,39 @@ class Node(BaseNode):
                     # If we can't get the theme, we'll just use None
                     pass
         
+        # Detect trigger deactivation (transition from True to False)
+        if not trigger_active and self.previous_trigger_state:
+            # Stop blinking and restore original theme
+            try:
+                if self.original_theme is not None:
+                    dpg.bind_item_theme(tag_node_name, self.original_theme)
+            except (SystemError, AttributeError):
+                pass
+            self.blink_active = False
+            self.blink_start_time = None
+        
         # Update previous state for next iteration
         self.previous_trigger_state = trigger_active
         
-        # Handle active blinking
-        if self.blink_active and self.blink_start_time is not None:
+        # Handle active blinking - blink continuously while trigger is active
+        if self.blink_active and self.blink_start_time is not None and trigger_active:
             elapsed = current_time - self.blink_start_time
             
-            if elapsed < self.TOTAL_BLINK_DURATION:  # Blink for 3 seconds
-                # Blink pattern: alternate between white and original color
-                # Each cycle lasts BLINK_CYCLE_DURATION seconds
-                cycle_time = elapsed % self.BLINK_CYCLE_DURATION
-                
-                try:
-                    if cycle_time < self.WHITE_PHASE_DURATION:
-                        # Show white
-                        dpg.bind_item_theme(tag_node_name, self.white_theme)
-                    else:
-                        # Show original color
-                        if self.original_theme is not None:
-                            dpg.bind_item_theme(tag_node_name, self.original_theme)
-                except (SystemError, AttributeError):
-                    # GUI item may not be accessible, skip theme change
-                    pass
-            else:
-                # Blinking finished, restore original theme
-                try:
+            # Blink pattern: alternate between white and original color
+            # Each cycle lasts BLINK_CYCLE_DURATION seconds
+            cycle_time = elapsed % self.BLINK_CYCLE_DURATION
+            
+            try:
+                if cycle_time < self.WHITE_PHASE_DURATION:
+                    # Show white
+                    dpg.bind_item_theme(tag_node_name, self.white_theme)
+                else:
+                    # Show original color
                     if self.original_theme is not None:
                         dpg.bind_item_theme(tag_node_name, self.original_theme)
-                except (SystemError, AttributeError):
-                    pass
-                self.blink_active = False
-                self.blink_start_time = None
+            except (SystemError, AttributeError):
+                # GUI item may not be accessible, skip theme change
+                pass
 
     def update(
         self,
