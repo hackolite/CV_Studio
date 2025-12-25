@@ -28,6 +28,18 @@ class FactoryNode:
     def __init__(self):
         pass
 
+    def add_node(
+        self,
+        parent,
+        node_id,
+        pos=[0, 0],
+        opencv_setting_dict=None,
+        callback=None,
+    ):
+        """Creates and adds an ObjDetCount node to the processing graph."""
+        node = Node()
+        return node.add_node(parent, node_id, pos, opencv_setting_dict, callback)
+
 
 class Node(BaseNode):
     _ver = '0.0.1'
