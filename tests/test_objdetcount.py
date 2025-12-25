@@ -28,7 +28,8 @@ class MockNode:
                     count = sum(1 for cid in class_ids if int(cid) == target_class_id)
                     for _ in range(count):
                         self.detection_timestamps.append(current_time)
-                except (ValueError, IndexError):
+                except (ValueError, IndexError, TypeError):
+                    # Skip invalid class format - expected when parsing class selection fails
                     pass
     
     def clean_old_timestamps(self, current_time, window_duration):

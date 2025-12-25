@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import time
-from datetime import datetime, timedelta
-from collections import defaultdict, deque
+from collections import deque
 
 import dearpygui.dearpygui as dpg
 
@@ -196,8 +195,8 @@ class Node(BaseNode):
             min_threshold = int(dpg_get_value(tag_node_min_threshold_value_name))
             max_threshold = int(dpg_get_value(tag_node_max_threshold_value_name))
             window_duration = float(dpg_get_value(tag_node_window_duration_value_name))
-        except:
-            # Default values if there's an error
+        except (ValueError, TypeError) as e:
+            # Default values if conversion fails
             selected_class = "All"
             min_threshold = 0
             max_threshold = 10
@@ -224,7 +223,8 @@ class Node(BaseNode):
                 # Update combo box items
                 try:
                     dpg.configure_item(tag_node_class_select_value_name, items=new_items)
-                except:
+                except (SystemError, AttributeError):
+                    # GUI item may not exist yet or be accessible
                     pass
 
         # Process detections
@@ -246,7 +246,8 @@ class Node(BaseNode):
                         count = sum(1 for cid in class_ids if int(cid) == target_class_id)
                         for _ in range(count):
                             self.detection_timestamps.append(current_time)
-                    except (ValueError, IndexError):
+                    except (ValueError, IndexError, TypeError):
+                        # Skip invalid class format - expected when class string is malformed
                         pass
         
         # Clean up old timestamps outside the sliding window
