@@ -2,11 +2,13 @@
 # -*- coding: utf-8 -*-
 """
 Test for ObjDetCount node blinking feature
-Tests that the node blinks red for 3 seconds when trigger is activated
+Tests that the node blinks white for 3 seconds when trigger is activated
+
+Note: pytest is not imported to allow standalone execution.
+This test can still be run with pytest if needed.
 """
 import time
 from collections import deque
-import pytest
 
 
 class MockNode:
@@ -15,7 +17,7 @@ class MockNode:
     # Use the same constants as the real node
     TOTAL_BLINK_DURATION = 3.0
     BLINK_CYCLE_DURATION = 1.0
-    RED_PHASE_DURATION = 0.5
+    WHITE_PHASE_DURATION = 0.5
     
     def __init__(self):
         self.detection_timestamps = deque()
@@ -23,7 +25,7 @@ class MockNode:
         self.blink_active = False
         self.previous_trigger_state = False
         self.original_theme = "original_theme_mock"
-        self.red_theme = "red_theme_mock"
+        self.white_theme = "white_theme_mock"
         self.applied_themes = []  # Track theme changes for testing
     
     def process_detections(self, class_ids, selected_class, current_time):
@@ -64,7 +66,7 @@ class MockNode:
     def handle_blink_effect(self, trigger_active, current_time):
         """
         Handle the blinking effect when trigger is activated.
-        Blinks red/original/red for 3 seconds.
+        Blinks white/original/white for 3 seconds.
         """
         # Detect trigger activation (transition from False to True)
         if trigger_active and not self.previous_trigger_state:
@@ -80,12 +82,12 @@ class MockNode:
             elapsed = current_time - self.blink_start_time
             
             if elapsed < self.TOTAL_BLINK_DURATION:  # Blink for 3 seconds
-                # Blink pattern: alternate between red and original color
+                # Blink pattern: alternate between white and original color
                 cycle_time = elapsed % self.BLINK_CYCLE_DURATION
                 
-                if cycle_time < self.RED_PHASE_DURATION:
-                    # Show red
-                    self.mock_bind_theme(self.red_theme)
+                if cycle_time < self.WHITE_PHASE_DURATION:
+                    # Show white
+                    self.mock_bind_theme(self.white_theme)
                 else:
                     # Show original color
                     if self.original_theme is not None:
@@ -150,8 +152,8 @@ def test_blink_duration_is_3_seconds():
     assert node.blink_start_time is None, "Blink start time should be reset"
 
 
-def test_blink_pattern_alternates_red_and_original():
-    """Test that the blink pattern alternates between red and original theme"""
+def test_blink_pattern_alternates_white_and_original():
+    """Test that the blink pattern alternates between white and original theme"""
     node = MockNode()
     base_time = time.time()
     
@@ -159,29 +161,29 @@ def test_blink_pattern_alternates_red_and_original():
     node.handle_blink_effect(True, base_time)
     
     # Check theme at different times
-    # At 0.0s - should be red (start of cycle)
+    # At 0.0s - should be white (start of cycle)
     node.handle_blink_effect(True, base_time + 0.0)
-    assert node.applied_themes[-1][1] == node.red_theme, "Should show red at 0.0s"
+    assert node.applied_themes[-1][1] == node.white_theme, "Should show white at 0.0s"
     
-    # At 0.25s - should be red (within first 0.5s)
+    # At 0.25s - should be white (within first 0.5s)
     node.handle_blink_effect(True, base_time + 0.25)
-    assert node.applied_themes[-1][1] == node.red_theme, "Should show red at 0.25s"
+    assert node.applied_themes[-1][1] == node.white_theme, "Should show white at 0.25s"
     
     # At 0.6s - should be original (0.5-1.0s)
     node.handle_blink_effect(True, base_time + 0.6)
     assert node.applied_themes[-1][1] == node.original_theme, "Should show original at 0.6s"
     
-    # At 1.0s - should be red (start of second cycle)
+    # At 1.0s - should be white (start of second cycle)
     node.handle_blink_effect(True, base_time + 1.0)
-    assert node.applied_themes[-1][1] == node.red_theme, "Should show red at 1.0s"
+    assert node.applied_themes[-1][1] == node.white_theme, "Should show white at 1.0s"
     
     # At 1.6s - should be original (1.5-2.0s)
     node.handle_blink_effect(True, base_time + 1.6)
     assert node.applied_themes[-1][1] == node.original_theme, "Should show original at 1.6s"
     
-    # At 2.1s - should be red (start of third cycle)
+    # At 2.1s - should be white (start of third cycle)
     node.handle_blink_effect(True, base_time + 2.1)
-    assert node.applied_themes[-1][1] == node.red_theme, "Should show red at 2.1s"
+    assert node.applied_themes[-1][1] == node.white_theme, "Should show white at 2.1s"
     
     # At 2.7s - should be original (2.5-3.0s)
     node.handle_blink_effect(True, base_time + 2.7)
@@ -247,4 +249,27 @@ def test_theme_restored_after_blinking():
     # Check that the last applied theme is the original theme
     assert len(node.applied_themes) > 0, "Should have applied at least one theme"
     assert node.applied_themes[-1][1] == node.original_theme, "Should restore original theme after blinking"
+
+
+if __name__ == '__main__':
+    # Run tests
+    test_blink_starts_on_trigger_activation()
+    print("✓ test_blink_starts_on_trigger_activation passed")
+    
+    test_blink_duration_is_3_seconds()
+    print("✓ test_blink_duration_is_3_seconds passed")
+    
+    test_blink_pattern_alternates_white_and_original()
+    print("✓ test_blink_pattern_alternates_white_and_original passed")
+    
+    test_no_blink_when_trigger_stays_true()
+    print("✓ test_no_blink_when_trigger_stays_true passed")
+    
+    test_blink_restarts_on_new_activation()
+    print("✓ test_blink_restarts_on_new_activation passed")
+    
+    test_theme_restored_after_blinking()
+    print("✓ test_theme_restored_after_blinking passed")
+    
+    print("\n✅ All blinking tests passed!")
 
