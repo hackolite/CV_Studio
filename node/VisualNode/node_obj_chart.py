@@ -69,6 +69,9 @@ class FactoryNode:
         # Class selection slots
         node.tag_node_class_slots_name = node.tag_node_name + ':ClassSlots'
         node.tag_node_add_slot_name = node.tag_node_name + ':AddSlot'
+        
+        # Download button
+        node.tag_node_download_button_name = node.tag_node_name + ':DownloadButton'
 
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict['process_width']
@@ -175,6 +178,18 @@ class FactoryNode:
                     width=small_window_w - 100,
                 )
 
+            # Download button
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_button(
+                    tag=node.tag_node_download_button_name,
+                    label="Download Chart Image",
+                    callback=Node.download_chart_callback,
+                    user_data=node,  # Pass the node instance directly
+                    width=small_window_w - 100,
+                )
+
             if use_pref_counter:
                 with dpg.node_attribute(
                         tag=node.tag_node_output02_name,
@@ -213,6 +228,9 @@ class Node(Chart):
         # 24-hour data retention (1440 minutes max)
         self.max_data_age_hours = 24
         self.max_buckets = 30  # For display purposes
+        
+        # Store current chart image for download
+        self.current_chart_image = None
 
     @staticmethod
     def add_class_slot_callback(sender, app_data, user_data):
@@ -236,6 +254,30 @@ class Node(Chart):
                 width=combo_width,
                 parent=class_slots_tag,
             )
+    
+    @staticmethod
+    def download_chart_callback(sender, app_data, user_data):
+        """Callback to download the current chart image"""
+        node_instance = user_data
+        
+        if node_instance:
+            chart_image = node_instance.current_chart_image
+            
+            if chart_image is not None:
+                # Generate filename with timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"objchart_{timestamp}.png"
+                
+                # Save the image
+                try:
+                    cv2.imwrite(filename, chart_image)
+                    print(f"✅ Chart image saved to: {filename}")
+                except Exception as e:
+                    print(f"❌ Error saving chart image: {e}")
+            else:
+                print("⚠️ No chart image available to download")
+        else:
+            print("❌ Could not access node instance")
 
     def get_time_bucket(self, time_unit):
         """Get current time bucket based on aggregation unit"""
@@ -484,6 +526,9 @@ class Node(Chart):
                           str(elapsed_time).zfill(4) + 'ms')
 
         if chart_image is not None:
+            # Store the current chart image for download
+            self.current_chart_image = chart_image
+            
             texture = self.convert_cv_to_dpg(
                 chart_image,
                 small_window_w,
