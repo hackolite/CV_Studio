@@ -216,7 +216,7 @@ class Node(BaseNode):
                     dpg.delete_item(tag_node_checkbox_name)
                 self.num_slots -= 1
             except (SystemError, AttributeError):
-                # GUI item may not be accessible
+                # GUI item may not be accessible during node deletion or UI updates
                 pass
     
     def _create_white_theme(self):
@@ -289,7 +289,7 @@ class Node(BaseNode):
                     if self.original_theme is not None:
                         dpg.bind_item_theme(tag_node_name, self.original_theme)
             except (SystemError, AttributeError):
-                # GUI item may not be accessible, skip theme change
+                # GUI item may not be accessible during node deletion or UI updates, skip theme change
                 pass
 
     def update(
@@ -366,7 +366,7 @@ class Node(BaseNode):
             output_text = f'Activations: {activations_count} (Status: {trigger_text})'
             dpg_set_value(tag_node_output01_value_name, output_text)
         except (SystemError, AttributeError):
-            # GUI item may not be accessible
+            # GUI item may not be accessible during update cycle or when node is being destroyed
             pass
         
         # Handle blinking effect when trigger is active
