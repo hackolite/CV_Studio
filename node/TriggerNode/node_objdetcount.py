@@ -390,7 +390,8 @@ class Node(BaseNode):
         # Update output text to display count
         tag_node_output01_value_name = tag_node_name + ':' + self.TYPE_JSON + ':Output01Value'
         try:
-            output_text = f'Count: {count_in_window} (Trigger: {trigger_active})'
+            trigger_text = 'Active' if trigger_active else 'Inactive'
+            output_text = f'Count: {count_in_window} (Trigger: {trigger_text})'
             dpg_set_value(tag_node_output01_value_name, output_text)
         except (SystemError, AttributeError):
             # GUI item may not be accessible

@@ -3,6 +3,9 @@
 """
 Test for ObjDetCount node blinking feature
 Tests that the node blinks white for 3 seconds when trigger is activated
+
+Note: pytest is not imported to allow standalone execution.
+This test can still be run with pytest if needed.
 """
 import time
 from collections import deque
