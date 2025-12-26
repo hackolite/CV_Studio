@@ -479,9 +479,6 @@ class MicrophoneNode(Node):
             # Try to get audio data from buffer (non-blocking)
             try:
                 audio_data = self._audio_buffer.get_nowait()
-                # Flatten to ensure it's 1D for mono, or keep 2D for stereo
-                if channels == 1:
-                    audio_data = audio_data.flatten()
                 
                 # Update indicator to show recording is active (throttled to prevent lag)
                 self._update_indicator_throttled(indicator_tag, 'active')
@@ -489,6 +486,7 @@ class MicrophoneNode(Node):
                 # Process output mode
                 if output_mode == 'dB Intensity':
                     # Calculate RMS and convert to decibels
+                    # Handle both mono and stereo properly by computing overall RMS
                     rms = np.sqrt(np.mean(audio_data**2))
                     # Avoid log of zero
                     if rms > 0:
@@ -497,9 +495,21 @@ class MicrophoneNode(Node):
                         db_value = -np.inf
                     # Create a simple array with the dB value
                     audio_data = np.array([db_value], dtype=np.float32)
+                else:
+                    # Full Signal mode: Flatten to ensure consistent 1D output for both mono and stereo
+                    # This makes downstream processing consistent
+                    audio_data = audio_data.flatten()
                 
                 # Get timestamp for this chunk
                 chunk_timestamp = time.time()
+                
+                # Calculate sample count properly
+                if output_mode == 'Full Signal':
+                    # In Full Signal mode, audio_data is always flattened to 1D
+                    samples_count = len(audio_data)
+                else:
+                    # In dB Intensity mode, there's only one value
+                    samples_count = 1
                 
                 # Create audio dict in the expected format with timestamp
                 audio_output = {
@@ -517,7 +527,7 @@ class MicrophoneNode(Node):
                     'channels': channels,
                     'chunk_duration': chunk_duration,
                     'output_mode': output_mode,
-                    'samples': len(audio_data) if output_mode == 'Full Signal' else 1,
+                    'samples': samples_count,
                 }
                 
                 if output_mode == 'dB Intensity':

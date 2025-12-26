@@ -33,8 +33,11 @@ Contrôle le taux de mise à jour maximal du node microphone. Cela aide à prév
 
 **Mode Signal Complet:**
 - Retourne tous les échantillons audio sous forme de tableau numpy
+- **Format de données**: Toujours aplati en tableau 1D peu importe mono/stéréo
+  - Mono: Contient les échantillons en séquence
+  - Stéréo: Contient les échantillons entrelacés (G, D, G, D, ...)
 - Adapté pour le traitement audio en aval (spectrogrammes, analyse, etc.)
-- Format de données: tableau float32 avec valeurs entre -1.0 et 1.0
+- Valeurs: tableau float32 avec valeurs entre -1.0 et 1.0
 
 **Mode Intensité dB:**
 - Calcule le RMS (Root Mean Square) du chunk audio
@@ -58,13 +61,13 @@ Contrôle le taux de mise à jour maximal du node microphone. Cela aide à prév
 - Capture l'audio sur un seul canal
 - Utilise moins de mémoire et de puissance de traitement
 - Adapté pour la plupart des applications vocales et d'analyse
-- La sortie est un tableau 1D
+- La sortie est aplatie en tableau 1D
 
 **Mode Stéréo:**
 - Capture l'audio sur deux canaux
 - Préserve l'information audio spatiale
 - Adapté pour l'enregistrement musical ou l'analyse audio spatiale
-- La sortie est un tableau 2D (échantillons x 2)
+- La sortie est aplatie en tableau 1D avec échantillons entrelacés (G, D, G, D, ...)
 
 ### 4. Horodatage (Timestamp) pour Chaque Chunk
 **Fonctionnalité**: Horodatage automatique  

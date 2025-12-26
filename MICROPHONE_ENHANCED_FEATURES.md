@@ -33,8 +33,11 @@ Controls the maximum update rate of the microphone node. This helps prevent syst
 
 **Full Signal Mode:**
 - Returns the complete audio samples as a numpy array
+- **Data format**: Always flattened to 1D array regardless of mono/stereo
+  - Mono: Contains samples in sequence
+  - Stereo: Contains interleaved samples (L, R, L, R, ...)
 - Suitable for downstream audio processing (spectrograms, analysis, etc.)
-- Data format: float32 array with values between -1.0 and 1.0
+- Values: float32 array with values between -1.0 and 1.0
 
 **dB Intensity Mode:**
 - Calculates RMS (Root Mean Square) of the audio chunk
@@ -58,13 +61,13 @@ Controls the maximum update rate of the microphone node. This helps prevent syst
 - Captures audio from a single channel
 - Uses less memory and processing power
 - Suitable for most voice and analysis applications
-- Output is a 1D array
+- Output is flattened to a 1D array
 
 **Stereo Mode:**
 - Captures audio from two channels
 - Preserves spatial audio information
 - Suitable for music recording or spatial audio analysis
-- Output is a 2D array (samples x 2)
+- Output is flattened to a 1D array with interleaved samples (L, R, L, R, ...)
 
 ### 4. Timestamp for Each Chunk
 **Feature**: Automatic timestamping  
