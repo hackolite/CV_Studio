@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 Test for the enhanced Microphone node functionality.
-Tests the new parameters: FPS limit, output mode, channels, and timestamp.
+Tests the parameters: output mode, channels, and timestamp.
+Note: FPS limit was removed per requirements.
 """
 import sys
 import os
@@ -17,19 +18,13 @@ def test_microphone_enhanced_attributes():
     
     node = MicrophoneNode()
     
-    # Verify new internal state attributes
-    assert hasattr(node, '_last_update_time'), "Node missing _last_update_time attribute"
-    assert hasattr(node, '_fps_limit'), "Node missing _fps_limit attribute"
+    # Verify internal state attributes (FPS limit was removed per requirements)
     assert hasattr(node, '_current_channels'), "Node missing _current_channels attribute"
     
     # Verify initial values
-    assert node._last_update_time == 0.0, "Node should start with _last_update_time = 0.0"
-    assert node._fps_limit == 30.0, "Node should start with _fps_limit = 30.0"
     assert node._current_channels == 1, "Node should start with _current_channels = 1"
     
     print("✓ Microphone node enhanced attributes verified")
-    print(f"  _last_update_time: {node._last_update_time}")
-    print(f"  _fps_limit: {node._fps_limit}")
     print(f"  _current_channels: {node._current_channels}")
     
     return True
@@ -45,20 +40,17 @@ def test_microphone_factory_new_inputs():
     node_id = 1
     node.tag_node_name = str(node_id) + ':' + node.node_tag
     
-    # Test new input tags
-    tag_input04 = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input04'
+    # Test input tags (FPS was Input04, now Output Mode is Input04)
+    tag_input04 = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input04'
     tag_input05 = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input05'
-    tag_input06 = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input06'
     
     # Verify tag structure
-    assert ':FLOAT:Input04' in tag_input04, "FPS input tag should contain ':FLOAT:Input04'"
-    assert ':TEXT:Input05' in tag_input05, "Output mode input tag should contain ':TEXT:Input05'"
-    assert ':TEXT:Input06' in tag_input06, "Channels input tag should contain ':TEXT:Input06'"
+    assert ':TEXT:Input04' in tag_input04, "Output mode input tag should contain ':TEXT:Input04'"
+    assert ':TEXT:Input05' in tag_input05, "Channels input tag should contain ':TEXT:Input05'"
     
-    print("✓ Microphone node new input tags verified")
-    print(f"  FPS input tag: {tag_input04}")
-    print(f"  Output mode input tag: {tag_input05}")
-    print(f"  Channels input tag: {tag_input06}")
+    print("✓ Microphone node input tags verified")
+    print(f"  Output mode input tag: {tag_input04}")
+    print(f"  Channels input tag: {tag_input05}")
     
     return True
 
@@ -168,32 +160,10 @@ def test_output_structure():
 
 
 def test_fps_limiting_logic():
-    """Test FPS limiting logic"""
-    import time
-    
-    fps_limit = 30.0
-    min_interval = 1.0 / fps_limit
-    
-    print(f"✓ FPS limiting logic verified")
-    print(f"  FPS limit: {fps_limit}")
-    print(f"  Min interval between updates: {min_interval:.4f}s")
-    print(f"  Expected max updates per second: {1/min_interval:.1f}")
-    
-    # Test the timing logic
-    last_update_time = 0.0
-    current_time = 0.1
-    time_since_last = current_time - last_update_time
-    
-    should_update = time_since_last >= min_interval
-    assert should_update == True, "Should update when enough time has passed"
-    
-    # Test too soon
-    current_time = 0.01
-    time_since_last = current_time - last_update_time
-    should_update = time_since_last >= min_interval
-    assert should_update == False, "Should not update when not enough time has passed"
-    
-    print(f"  Timing logic working correctly")
+    """Test FPS limiting logic - DEPRECATED: FPS limit was removed per requirements"""
+    # This test is no longer applicable since FPS limiting was removed
+    print(f"⚠️ FPS limiting was removed per requirements")
+    print(f"  This test is deprecated")
     
     return True
 
@@ -208,7 +178,6 @@ if __name__ == '__main__':
         ("dB Calculation", test_db_calculation),
         ("Timestamp Format", test_timestamp_format),
         ("Output Structure", test_output_structure),
-        ("FPS Limiting Logic", test_fps_limiting_logic),
     ]
     
     passed = 0
