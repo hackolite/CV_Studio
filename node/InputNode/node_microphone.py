@@ -52,17 +52,13 @@ class FactoryNode:
         node.tag_node_input03_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input03'
         node.tag_node_input03_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input03Value'
         
-        # FPS limit input
-        node.tag_node_input04_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input04'
-        node.tag_node_input04_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input04Value'
-        
         # Output mode (Full Signal or dB Intensity)
-        node.tag_node_input05_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input05'
-        node.tag_node_input05_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input05Value'
+        node.tag_node_input04_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input04'
+        node.tag_node_input04_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input04Value'
         
         # Channels (Mono/Stereo)
-        node.tag_node_input06_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input06'
-        node.tag_node_input06_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input06Value'
+        node.tag_node_input05_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input05'
+        node.tag_node_input05_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input05Value'
         
         # Audio output
         node.tag_node_output_audio_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudio'
@@ -167,44 +163,29 @@ class FactoryNode:
                     format="%.1f",
                 )
 
-            # FPS limit
-            with dpg.node_attribute(
-                    tag=node.tag_node_input04_name,
-                    attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_slider_float(
-                    label="FPS Limit",
-                    width=node.small_window_w - 20,
-                    tag=node.tag_node_input04_value_name,
-                    default_value=30.0,
-                    min_value=1.0,
-                    max_value=60.0,
-                    format="%.0f",
-                )
-
             # Output mode selection
             with dpg.node_attribute(
-                    tag=node.tag_node_input05_name,
+                    tag=node.tag_node_input04_name,
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_combo(
                     ['Full Signal', 'dB Intensity'],
                     width=node.small_window_w - 20,
                     label="Output Mode",
-                    tag=node.tag_node_input05_value_name,
+                    tag=node.tag_node_input04_value_name,
                     default_value='Full Signal',
                 )
 
             # Channels selection
             with dpg.node_attribute(
-                    tag=node.tag_node_input06_name,
+                    tag=node.tag_node_input05_name,
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_combo(
                     ['Mono', 'Stereo'],
                     width=node.small_window_w - 20,
                     label="Channels",
-                    tag=node.tag_node_input06_value_name,
+                    tag=node.tag_node_input05_value_name,
                     default_value='Mono',
                 )
 
@@ -291,9 +272,6 @@ class MicrophoneNode(Node):
         self._ui_update_counter = 0
         self._ui_update_interval = 15  # Update UI every N frames
         self._last_indicator_state = None  # Track last state to avoid redundant updates
-        # FPS limiting
-        self._last_update_time = 0.0
-        self._fps_limit = 30.0
 
     def _audio_callback(self, indata, frames, time_info, status):
         """Callback for audio stream - runs in separate thread"""
@@ -388,10 +366,10 @@ class MicrophoneNode(Node):
         if should_update:
             try:
                 if state == 'active':
-                    dpg.set_value(indicator_tag, "Audio: ●")
+                    dpg.set_value(indicator_tag, "Audio:OK")
                     dpg.configure_item(indicator_tag, color=(0, 255, 0, 255))
                 else:  # inactive
-                    dpg.set_value(indicator_tag, "Audio: ")
+                    dpg.set_value(indicator_tag, "Audio:")
                     dpg.configure_item(indicator_tag, color=(128, 128, 128, 255))
                 self._last_indicator_state = state
             except (SystemError, ValueError, Exception):
@@ -423,18 +401,16 @@ class MicrophoneNode(Node):
         input_value01_tag = tag_node_name + ':' + self.TYPE_INT + ':Input01Value'
         input_value02_tag = tag_node_name + ':' + self.TYPE_INT + ':Input02Value'
         input_value03_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
-        input_value04_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input04Value'
+        input_value04_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input04Value'
         input_value05_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input05Value'
-        input_value06_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input06Value'
         indicator_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Indicator'
 
         # Get settings
         device_str = dpg_get_value(input_value01_tag)
         sample_rate_str = dpg_get_value(input_value02_tag)
         chunk_duration = dpg_get_value(input_value03_tag)
-        fps_limit = dpg_get_value(input_value04_tag)
-        output_mode = dpg_get_value(input_value05_tag)
-        channels_mode = dpg_get_value(input_value06_tag)
+        output_mode = dpg_get_value(input_value04_tag)
+        channels_mode = dpg_get_value(input_value05_tag)
 
         audio_data = None
         sample_rate = 44100  # Default
@@ -446,17 +422,6 @@ class MicrophoneNode(Node):
             # Reset indicator when not recording (throttled)
             self._update_indicator_throttled(indicator_tag, 'inactive')
             return {"image": None, "json": None, "audio": None}
-        
-        # FPS limiting
-        current_time = time.time()
-        if fps_limit > 0:
-            min_interval = 1.0 / fps_limit
-            time_since_last = current_time - self._last_update_time
-            if time_since_last < min_interval:
-                # Not enough time has passed, skip this update
-                return {"image": None, "json": None, "audio": None}
-        
-        self._last_update_time = current_time
         
         try:
             # Parse device index from string "idx: name"
