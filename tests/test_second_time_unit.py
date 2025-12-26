@@ -5,7 +5,7 @@ Test for second time unit addition to objchart node
 """
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Add the parent directory to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -52,7 +52,7 @@ def test_second_time_format_in_chart():
     for i in range(5):
         bucket = now.replace(microsecond=0)
         node.time_counts["All"][bucket] = i + 1
-        now = now.replace(second=now.second + 1)
+        now = now + timedelta(seconds=1)
     
     # Render chart with "second" time unit
     chart_image = node.render_chart("second", ["All"], {}, "bar")

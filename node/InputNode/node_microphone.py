@@ -459,7 +459,8 @@ class MicrophoneNode(Node):
                         # Make decibels positive by multiplying by -1
                         db_value = -db_value
                     else:
-                        db_value = 0  # Use 0 instead of -inf for zero RMS
+                        # For zero RMS (silence), use a large positive value consistent with positive dB scale
+                        db_value = 120.0  # Represents silence in positive dB scale
                     # Create a simple array with the dB value
                     audio_data = np.array([db_value], dtype=np.float32)
                 else:
