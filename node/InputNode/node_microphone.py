@@ -263,7 +263,7 @@ class FactoryNode:
 
 
 class MicrophoneNode(Node):
-    _ver = '0.0.1'
+    _ver = '0.0.2'
 
     node_label = 'Microphone'
     node_tag = 'Microphone'
