@@ -352,6 +352,9 @@ class Node(Chart):
             
             x_pos = np.arange(len(x_labels))
             
+            # Check if we're dealing with dB data (special case)
+            is_db_data = "dB" in selected_classes
+            
             # Plot based on chart type
             if chart_type == "bar":
                 # Plot bars for each selected class
@@ -364,6 +367,8 @@ class Node(Chart):
                     # Get class name for legend
                     if class_id == "All":
                         label = "All Classes"
+                    elif class_id == "dB":
+                        label = "Decibel Intensity (dB)"
                     elif str(class_id) in merged_class_names:
                         label = f"{class_id}: {merged_class_names[str(class_id)]}"
                     else:
@@ -379,6 +384,8 @@ class Node(Chart):
                     # Get class name for legend
                     if class_id == "All":
                         label = "All Classes"
+                    elif class_id == "dB":
+                        label = "Decibel Intensity (dB)"
                     elif str(class_id) in merged_class_names:
                         label = f"{class_id}: {merged_class_names[str(class_id)]}"
                     else:
@@ -398,6 +405,8 @@ class Node(Chart):
                     # Get class name for legend
                     if class_id == "All":
                         label = "All Classes"
+                    elif class_id == "dB":
+                        label = "Decibel Intensity (dB)"
                     elif str(class_id) in merged_class_names:
                         label = f"{class_id}: {merged_class_names[str(class_id)]}"
                     else:
@@ -406,9 +415,14 @@ class Node(Chart):
                 
                 ax.stackplot(x_pos, *counts_by_class, labels=labels, alpha=0.7)
             
+            # Set appropriate axis labels based on data type
             ax.set_xlabel(f'Time ({time_unit})')
-            ax.set_ylabel('Detection Count')
-            ax.set_title('Object Detection Accumulation Over Time')
+            if is_db_data:
+                ax.set_ylabel('Decibel Intensity (dB)')
+                ax.set_title('Microphone Decibel Intensity Over Time')
+            else:
+                ax.set_ylabel('Detection Count')
+                ax.set_title('Object Detection Accumulation Over Time')
             ax.set_xticks(x_pos)
             ax.set_xticklabels(x_labels, rotation=45, ha='right')
             ax.legend(loc='upper left')
@@ -470,50 +484,65 @@ class Node(Chart):
         chart_image = None
         
         if node_result and isinstance(node_result, dict):
-            # Extract detection data
-            class_ids = node_result.get('class_ids', [])
-            class_names = node_result.get('class_names', {})
-            
-            if class_ids:
+            # Check if this is microphone dB intensity data
+            if 'db_value' in node_result and 'output_mode' in node_result and node_result.get('output_mode') == 'dB Intensity':
+                # Handle microphone dB intensity data
+                db_value = node_result.get('db_value', 0)
+                
                 # Get current time bucket
                 current_bucket = self.get_time_bucket(time_unit)
                 
-                # Accumulate counts for each class
-                for class_id in class_ids:
-                    self.time_counts[int(class_id)][current_bucket] += 1
-                    self.time_counts["All"][current_bucket] += 1
+                # Store dB value as a special "dB" class identifier
+                self.time_counts["dB"][current_bucket] = db_value
+                
+                # Render chart with dB data
+                selected_classes = ["dB"]
+                chart_image = self.render_chart(time_unit, selected_classes, {"dB": "Decibel Intensity"}, chart_type)
+            else:
+                # Extract detection data (original behavior)
+                class_ids = node_result.get('class_ids', [])
+                class_names = node_result.get('class_names', {})
             
-            # Get selected classes from slots
-            selected_classes = []
-            class_slots_tag = f"{tag_node_name}:ClassSlots"
+                if class_ids:
+                    # Get current time bucket
+                    current_bucket = self.get_time_bucket(time_unit)
+                    
+                    # Accumulate counts for each class
+                    for class_id in class_ids:
+                        self.time_counts[int(class_id)][current_bucket] += 1
+                        self.time_counts["All"][current_bucket] += 1
+                
+                # Get selected classes from slots
+                selected_classes = []
+                class_slots_tag = f"{tag_node_name}:ClassSlots"
             
-            if dpg.does_item_exist(class_slots_tag):
-                children = dpg.get_item_children(class_slots_tag, slot=1)
-                if children:
-                    for child in children:
-                        try:
-                            selected_value = dpg_get_value(child)
-                            if selected_value and selected_value != "":
-                                if selected_value == "All":
-                                    selected_classes.append("All")
-                                elif ":" in selected_value:
-                                    # Parse "ID: name" format to extract class ID
-                                    class_id = int(selected_value.split(":")[0].strip())
-                                    selected_classes.append(class_id)
-                                else:
-                                    # Fallback: try to parse as plain integer (for backwards compatibility)
-                                    class_id = int(selected_value)
-                                    selected_classes.append(class_id)
-                        except (ValueError, TypeError, IndexError):
-                            # Skip invalid values
-                            pass
-            
-            # If no classes selected, default to "All"
-            if not selected_classes:
-                selected_classes = ["All"]
-            
-            # Render chart with selected chart type
-            chart_image = self.render_chart(time_unit, selected_classes, class_names, chart_type)
+                if dpg.does_item_exist(class_slots_tag):
+                    children = dpg.get_item_children(class_slots_tag, slot=1)
+                    if children:
+                        for child in children:
+                            try:
+                                selected_value = dpg_get_value(child)
+                                if selected_value and selected_value != "":
+                                    if selected_value == "All":
+                                        selected_classes.append("All")
+                                    elif ":" in selected_value:
+                                        # Parse "ID: name" format to extract class ID
+                                        class_id = int(selected_value.split(":")[0].strip())
+                                        selected_classes.append(class_id)
+                                    else:
+                                        # Fallback: try to parse as plain integer (for backwards compatibility)
+                                        class_id = int(selected_value)
+                                        selected_classes.append(class_id)
+                            except (ValueError, TypeError, IndexError):
+                                # Skip invalid values
+                                pass
+                
+                # If no classes selected, default to "All"
+                if not selected_classes:
+                    selected_classes = ["All"]
+                
+                # Render chart with selected chart type
+                chart_image = self.render_chart(time_unit, selected_classes, class_names, chart_type)
 
         else:
             # No detection data yet, render empty chart

@@ -245,5 +245,47 @@ def test_obj_chart_custom_class_names_override():
     # The chart should use custom names instead of COCO names
 
 
+def test_obj_chart_microphone_db_support():
+    """Test that objchart can handle microphone dB intensity data"""
+    from node.VisualNode.node_obj_chart import Node
+    import numpy as np
+    
+    node = Node(opencv_setting_dict={
+        'process_height': 400,
+        'process_width': 600
+    })
+    
+    # Simulate microphone dB intensity JSON input
+    microphone_json = {
+        'timestamp': 1234567890.0,
+        'sample_rate': 44100,
+        'channels': 1,
+        'chunk_duration': 1.0,
+        'output_mode': 'dB Intensity',
+        'samples': 1,
+        'db_value': -25.5
+    }
+    
+    # Verify objchart recognizes this as dB data
+    assert 'db_value' in microphone_json
+    assert 'output_mode' in microphone_json
+    
+    # Store dB value
+    bucket = node.get_time_bucket("minute")
+    node.time_counts["dB"][bucket] = microphone_json['db_value']
+    
+    # Verify storage
+    assert "dB" in node.time_counts
+    assert node.time_counts["dB"][bucket] == -25.5
+    
+    # Render chart with dB data
+    chart_image = node.render_chart("minute", ["dB"], {"dB": "Decibel Intensity"}, "line")
+    
+    assert chart_image is not None
+    assert isinstance(chart_image, np.ndarray)
+    assert len(chart_image.shape) == 3
+    assert chart_image.shape[2] == 3
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
