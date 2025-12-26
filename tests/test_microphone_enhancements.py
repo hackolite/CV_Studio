@@ -62,17 +62,20 @@ def test_db_calculation():
     # Test with typical audio values
     test_signal = np.array([0.1, 0.2, 0.15, 0.3], dtype=np.float32)
     rms = np.sqrt(np.mean(test_signal**2))
-    db_value = 20 * np.log10(rms)
+    db_value_original = 20 * np.log10(rms)
+    # Apply the same transformation as in the node (multiply by -1 to make positive)
+    db_value = -db_value_original
     
     # RMS should be around 0.19
     assert 0.15 < rms < 0.25, f"RMS should be around 0.19, got {rms}"
     
-    # dB should be negative (less than full scale)
-    assert db_value < 0, f"dB should be negative for values < 1.0, got {db_value}"
+    # dB should now be positive (after multiplication by -1)
+    assert db_value > 0, f"dB should be positive after transformation, got {db_value}"
     
     print("✓ Decibel calculation logic verified")
     print(f"  Test signal RMS: {rms:.4f}")
-    print(f"  Test signal dB: {db_value:.2f}")
+    print(f"  Test signal dB (original): {db_value_original:.2f}")
+    print(f"  Test signal dB (positive): {db_value:.2f}")
     
     # Test with zero signal
     zero_signal = np.zeros(10, dtype=np.float32)
