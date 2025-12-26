@@ -135,7 +135,7 @@ class FactoryNode:
                 dpg.add_combo(
                     tag=node.tag_node_time_agg_value_name,
                     label="Time Unit",
-                    items=["minute", "hour"],
+                    items=["second", "minute", "hour"],
                     default_value="minute",
                     width=small_window_w - 100,
                 )
@@ -282,7 +282,9 @@ class Node(Chart):
     def get_time_bucket(self, time_unit):
         """Get current time bucket based on aggregation unit"""
         now = datetime.now()
-        if time_unit == "minute":
+        if time_unit == "second":
+            return now.replace(microsecond=0)
+        elif time_unit == "minute":
             return now.replace(second=0, microsecond=0)
         else:  # hour
             return now.replace(minute=0, second=0, microsecond=0)
@@ -345,7 +347,9 @@ class Node(Chart):
             # Prepare data for selected classes
             x_labels = []
             for bucket in sorted_buckets:
-                if time_unit == "minute":
+                if time_unit == "second":
+                    x_labels.append(bucket.strftime("%H:%M:%S"))
+                elif time_unit == "minute":
                     x_labels.append(bucket.strftime("%H:%M"))
                 else:
                     x_labels.append(bucket.strftime("%H:00"))

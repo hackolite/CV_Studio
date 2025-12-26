@@ -456,8 +456,10 @@ class MicrophoneNode(Node):
                     # Avoid log of zero
                     if rms > 0:
                         db_value = 20 * np.log10(rms)
+                        # Make decibels positive by multiplying by -1
+                        db_value = -db_value
                     else:
-                        db_value = -np.inf
+                        db_value = 0  # Use 0 instead of -inf for zero RMS
                     # Create a simple array with the dB value
                     audio_data = np.array([db_value], dtype=np.float32)
                 else:
