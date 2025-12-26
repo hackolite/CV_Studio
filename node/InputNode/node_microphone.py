@@ -52,6 +52,18 @@ class FactoryNode:
         node.tag_node_input03_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input03'
         node.tag_node_input03_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input03Value'
         
+        # FPS limit input
+        node.tag_node_input04_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input04'
+        node.tag_node_input04_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input04Value'
+        
+        # Output mode (Full Signal or dB Intensity)
+        node.tag_node_input05_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input05'
+        node.tag_node_input05_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input05Value'
+        
+        # Channels (Mono/Stereo)
+        node.tag_node_input06_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input06'
+        node.tag_node_input06_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input06Value'
+        
         # Audio output
         node.tag_node_output_audio_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudio'
         node.tag_node_output_audio_value_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudioValue'
@@ -155,6 +167,47 @@ class FactoryNode:
                     format="%.1f",
                 )
 
+            # FPS limit
+            with dpg.node_attribute(
+                    tag=node.tag_node_input04_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_float(
+                    label="FPS Limit",
+                    width=node.small_window_w - 20,
+                    tag=node.tag_node_input04_value_name,
+                    default_value=30.0,
+                    min_value=1.0,
+                    max_value=60.0,
+                    format="%.0f",
+                )
+
+            # Output mode selection
+            with dpg.node_attribute(
+                    tag=node.tag_node_input05_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    ['Full Signal', 'dB Intensity'],
+                    width=node.small_window_w - 20,
+                    label="Output Mode",
+                    tag=node.tag_node_input05_value_name,
+                    default_value='Full Signal',
+                )
+
+            # Channels selection
+            with dpg.node_attribute(
+                    tag=node.tag_node_input06_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    ['Mono', 'Stereo'],
+                    width=node.small_window_w - 20,
+                    label="Channels",
+                    tag=node.tag_node_input06_value_name,
+                    default_value='Mono',
+                )
+
             # Start/Stop button
             with dpg.node_attribute(
                     tag=node.tag_node_button_name,
@@ -232,11 +285,15 @@ class MicrophoneNode(Node):
         self._audio_stream = None
         self._audio_buffer = queue.Queue(maxsize=10)  # Limit buffer size to prevent memory issues
         self._current_sample_rate = 44100
+        self._current_channels = 1
         self._lock = threading.Lock()
         # UI update throttling to prevent lag
         self._ui_update_counter = 0
         self._ui_update_interval = 15  # Update UI every N frames
         self._last_indicator_state = None  # Track last state to avoid redundant updates
+        # FPS limiting
+        self._last_update_time = 0.0
+        self._fps_limit = 30.0
 
     def _audio_callback(self, indata, frames, time_info, status):
         """Callback for audio stream - runs in separate thread"""
@@ -259,7 +316,7 @@ class MicrophoneNode(Node):
             except queue.Empty:
                 pass
     
-    def _start_stream(self, device_idx, sample_rate, chunk_duration):
+    def _start_stream(self, device_idx, sample_rate, chunk_duration, channels):
         """Start the non-blocking audio stream"""
         with self._lock:
             # Stop existing stream if any
@@ -272,15 +329,16 @@ class MicrophoneNode(Node):
                 # Create and start the input stream
                 self._audio_stream = sd.InputStream(
                     device=device_idx,
-                    channels=1,
+                    channels=channels,
                     samplerate=sample_rate,
                     blocksize=blocksize,
                     dtype='float32',
                     callback=self._audio_callback,
                 )
                 self._current_sample_rate = sample_rate
+                self._current_channels = channels
                 self._audio_stream.start()
-                print(f"🎤 Audio stream started (device: {device_idx}, sample_rate: {sample_rate}, blocksize: {blocksize})")
+                print(f"🎤 Audio stream started (device: {device_idx}, sample_rate: {sample_rate}, channels: {channels}, blocksize: {blocksize})")
             except Exception as e:
                 print(f"⚠️ Error starting audio stream: {e}")
                 self._audio_stream = None
@@ -365,12 +423,18 @@ class MicrophoneNode(Node):
         input_value01_tag = tag_node_name + ':' + self.TYPE_INT + ':Input01Value'
         input_value02_tag = tag_node_name + ':' + self.TYPE_INT + ':Input02Value'
         input_value03_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
+        input_value04_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input04Value'
+        input_value05_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input05Value'
+        input_value06_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input06Value'
         indicator_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Indicator'
 
         # Get settings
         device_str = dpg_get_value(input_value01_tag)
         sample_rate_str = dpg_get_value(input_value02_tag)
         chunk_duration = dpg_get_value(input_value03_tag)
+        fps_limit = dpg_get_value(input_value04_tag)
+        output_mode = dpg_get_value(input_value05_tag)
+        channels_mode = dpg_get_value(input_value06_tag)
 
         audio_data = None
         sample_rate = 44100  # Default
@@ -383,38 +447,83 @@ class MicrophoneNode(Node):
             self._update_indicator_throttled(indicator_tag, 'inactive')
             return {"image": None, "json": None, "audio": None}
         
+        # FPS limiting
+        current_time = time.time()
+        if fps_limit > 0:
+            min_interval = 1.0 / fps_limit
+            time_since_last = current_time - self._last_update_time
+            if time_since_last < min_interval:
+                # Not enough time has passed, skip this update
+                return {"image": None, "json": None, "audio": None}
+        
+        self._last_update_time = current_time
+        
         try:
             # Parse device index from string "idx: name"
             device_idx = int(device_str.split(':')[0])
             sample_rate = int(sample_rate_str)
+            channels = 1 if channels_mode == 'Mono' else 2
             
             # Start stream if not already running or settings changed
             with self._lock:
                 stream_needs_restart = (
                     self._audio_stream is None or 
                     not self._audio_stream.active or
-                    self._current_sample_rate != sample_rate
+                    self._current_sample_rate != sample_rate or
+                    self._current_channels != channels
                 )
             
             if stream_needs_restart:
-                self._start_stream(device_idx, sample_rate, chunk_duration)
+                self._start_stream(device_idx, sample_rate, chunk_duration, channels)
             
             # Try to get audio data from buffer (non-blocking)
             try:
                 audio_data = self._audio_buffer.get_nowait()
-                # Flatten to ensure it's 1D
-                audio_data = audio_data.flatten()
+                # Flatten to ensure it's 1D for mono, or keep 2D for stereo
+                if channels == 1:
+                    audio_data = audio_data.flatten()
                 
                 # Update indicator to show recording is active (throttled to prevent lag)
                 self._update_indicator_throttled(indicator_tag, 'active')
                 
-                # Create audio dict in the expected format
+                # Process output mode
+                if output_mode == 'dB Intensity':
+                    # Calculate RMS and convert to decibels
+                    rms = np.sqrt(np.mean(audio_data**2))
+                    # Avoid log of zero
+                    if rms > 0:
+                        db_value = 20 * np.log10(rms)
+                    else:
+                        db_value = -np.inf
+                    # Create a simple array with the dB value
+                    audio_data = np.array([db_value], dtype=np.float32)
+                
+                # Get timestamp for this chunk
+                chunk_timestamp = time.time()
+                
+                # Create audio dict in the expected format with timestamp
                 audio_output = {
                     'data': audio_data,
-                    'sample_rate': sample_rate
+                    'sample_rate': sample_rate,
+                    'timestamp': chunk_timestamp,
+                    'channels': channels,
+                    'output_mode': output_mode
                 }
                 
-                return {"image": None, "json": None, "audio": audio_output}
+                # Also create JSON output with metadata
+                json_output = {
+                    'timestamp': chunk_timestamp,
+                    'sample_rate': sample_rate,
+                    'channels': channels,
+                    'chunk_duration': chunk_duration,
+                    'output_mode': output_mode,
+                    'samples': len(audio_data) if output_mode == 'Full Signal' else 1,
+                }
+                
+                if output_mode == 'dB Intensity':
+                    json_output['db_value'] = float(audio_data[0])
+                
+                return {"image": None, "json": json_output, "audio": audio_output}
                 
             except queue.Empty:
                 # No audio data available yet, return None
