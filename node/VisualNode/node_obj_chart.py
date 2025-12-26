@@ -485,7 +485,7 @@ class Node(Chart):
         
         if node_result and isinstance(node_result, dict):
             # Check if this is microphone dB intensity data
-            if 'db_value' in node_result and 'output_mode' in node_result:
+            if 'db_value' in node_result and 'output_mode' in node_result and node_result.get('output_mode') == 'dB Intensity':
                 # Handle microphone dB intensity data
                 db_value = node_result.get('db_value', 0)
                 
