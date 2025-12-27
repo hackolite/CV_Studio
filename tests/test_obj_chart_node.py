@@ -15,10 +15,10 @@ def test_obj_chart_node_import():
     """Test that ObjChart node can be imported"""
     from node.VisualNode.node_obj_chart import FactoryNode, Node
     
-    assert FactoryNode.node_label == 'objchart'
-    assert FactoryNode.node_tag == 'objchart'
-    assert Node.node_label == 'objchart'
-    assert Node.node_tag == 'objchart'
+    assert FactoryNode.node_label == 'ObjChart'
+    assert FactoryNode.node_tag == 'ObjChart'
+    assert Node.node_label == 'ObjChart'
+    assert Node.node_tag == 'ObjChart'
 
 
 def test_obj_chart_class_dropdown_items():

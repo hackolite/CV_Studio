@@ -30,8 +30,8 @@ def get_class_dropdown_items():
 
 
 class FactoryNode:
-    node_label = 'objchart'
-    node_tag = 'objchart'
+    node_label = 'ObjChart'
+    node_tag = 'ObjChart'
     
 
     def __init__(self):
@@ -95,6 +95,21 @@ class FactoryNode:
                 tag=node.tag_node_output01_value_name,
                 format=dpg.mvFormat_Float_rgb,
             )
+
+        # Create file dialog for saving chart image
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        with dpg.file_dialog(
+            directory_selector=False,
+            show=False,
+            modal=True,
+            height=int(small_window_h * 3),
+            default_filename=f"objchart_{timestamp}",
+            callback=Node.save_chart_callback,
+            id=f"chart_save:{node_id}",
+            user_data=node,
+        ):
+            dpg.add_file_extension(".png", color=(0, 255, 0, 255))
+            dpg.add_file_extension(".*")
 
 
         with dpg.node(
@@ -185,8 +200,7 @@ class FactoryNode:
                 dpg.add_button(
                     tag=node.tag_node_download_button_name,
                     label="Download Chart Image",
-                    callback=Node.download_chart_callback,
-                    user_data=node,  # Pass the node instance directly
+                    callback=lambda: dpg.show_item(f"chart_save:{node_id}"),
                     width=small_window_w - 100,
                 )
 
@@ -200,14 +214,20 @@ class FactoryNode:
                         default_value='elapsed time(ms)',
                     )
 
+        # Store node instance for file dialog callback access
+        Node._node_instances[node_id] = node
+
         return node
 
 
 class Node(Chart):
     _ver = '0.0.1'
 
-    node_label = 'objchart'
-    node_tag = 'objchart'
+    node_label = 'ObjChart'
+    node_tag = 'ObjChart'
+    
+    # Class variable to store node instances for file dialog callbacks
+    _node_instances = {}
     
     def __init__(self, opencv_setting_dict=None):
         super().__init__()
@@ -261,28 +281,32 @@ class Node(Chart):
             )
     
     @staticmethod
-    def download_chart_callback(sender, app_data, user_data):
-        """Callback to download the current chart image"""
+    def save_chart_callback(sender, app_data, user_data):
+        """Callback to save the chart image using file dialog (similar to video/selectmovie pattern)"""
         node_instance = user_data
         
-        if node_instance:
-            chart_image = node_instance.current_chart_image
+        # Check if user actually selected a file (not cancelled)
+        if app_data.get("file_name") and app_data["file_name"] != ".":
+            file_path = app_data["file_path_name"]
             
-            if chart_image is not None:
-                # Generate filename with timestamp
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"objchart_{timestamp}.png"
+            # Ensure .png extension
+            if not file_path.lower().endswith('.png'):
+                file_path += '.png'
+            
+            if node_instance and hasattr(node_instance, 'current_chart_image'):
+                chart_image = node_instance.current_chart_image
                 
-                # Save the image
-                try:
-                    cv2.imwrite(filename, chart_image)
-                    print(f"✅ Chart image saved to: {filename}")
-                except Exception as e:
-                    print(f"❌ Error saving chart image: {e}")
+                if chart_image is not None:
+                    # Save the image
+                    try:
+                        cv2.imwrite(file_path, chart_image)
+                        print(f"✅ Chart image saved to: {file_path}")
+                    except Exception as e:
+                        print(f"❌ Error saving chart image: {e}")
+                else:
+                    print("⚠️ No chart image available to download")
             else:
-                print("⚠️ No chart image available to download")
-        else:
-            print("❌ Could not access node instance")
+                print("❌ Could not access node instance or chart image")
 
     def get_time_bucket(self, time_unit):
         """Get current time bucket based on aggregation unit"""
@@ -597,7 +621,11 @@ class Node(Chart):
 
 
     def close(self, node_id):
-        pass
+        # Clean up node instance from class variable
+        try:
+            del Node._node_instances[node_id]
+        except KeyError:
+            pass  # Node instance already removed or never added
 
 
     def get_setting_dict(self, node_id):
