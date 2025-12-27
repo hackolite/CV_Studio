@@ -231,6 +231,11 @@ class Node(Chart):
         
         # Store current chart image for download
         self.current_chart_image = None
+        
+        # Performance optimization: throttle chart rendering
+        self.last_render_time = 0
+        self.render_interval = 1.0  # Render chart at most once per second
+        self.cached_chart_image = None
 
     @staticmethod
     def add_class_slot_callback(sender, app_data, user_data):
@@ -485,6 +490,10 @@ class Node(Chart):
         if use_pref_counter:
             start_time = time.monotonic()
 
+        # Check if we should render a new chart or use cached version
+        current_time = time.time()
+        should_render = (current_time - self.last_render_time) >= self.render_interval
+        
         chart_image = None
         
         if node_result and isinstance(node_result, dict):
@@ -499,9 +508,14 @@ class Node(Chart):
                 # Store dB value as a special "dB" class identifier
                 self.time_counts["dB"][current_bucket] = db_value
                 
-                # Render chart with dB data
-                selected_classes = ["dB"]
-                chart_image = self.render_chart(time_unit, selected_classes, {"dB": "Decibel Intensity"}, chart_type)
+                # Render chart with dB data only if render interval has passed
+                if should_render:
+                    selected_classes = ["dB"]
+                    chart_image = self.render_chart(time_unit, selected_classes, {"dB": "Decibel Intensity"}, chart_type)
+                    self.cached_chart_image = chart_image
+                    self.last_render_time = current_time
+                else:
+                    chart_image = self.cached_chart_image
             else:
                 # Extract detection data (original behavior)
                 class_ids = node_result.get('class_ids', [])
@@ -545,12 +559,22 @@ class Node(Chart):
                 if not selected_classes:
                     selected_classes = ["All"]
                 
-                # Render chart with selected chart type
-                chart_image = self.render_chart(time_unit, selected_classes, class_names, chart_type)
+                # Render chart with selected chart type only if render interval has passed
+                if should_render:
+                    chart_image = self.render_chart(time_unit, selected_classes, class_names, chart_type)
+                    self.cached_chart_image = chart_image
+                    self.last_render_time = current_time
+                else:
+                    chart_image = self.cached_chart_image
 
         else:
-            # No detection data yet, render empty chart
-            chart_image = self.render_chart(time_unit, ["All"], {}, chart_type)
+            # No detection data yet, render empty chart only if render interval has passed
+            if should_render:
+                chart_image = self.render_chart(time_unit, ["All"], {}, chart_type)
+                self.cached_chart_image = chart_image
+                self.last_render_time = current_time
+            else:
+                chart_image = self.cached_chart_image
 
         if use_pref_counter:
             elapsed_time = time.monotonic() - start_time
