@@ -181,7 +181,7 @@ class Node(Node):
                 input_value = max([self._min_val, input_value])
                 input_value = min([self._max_val, input_value])
                 dpg_set_value(destination_tag, input_value)
-            if connection_type == self.TYPE_IMAGE:
+            elif connection_type == self.TYPE_IMAGE:
 
                 connection_info_src = connection_info[0]
                 connection_info_src = connection_info_src.split(':')[:2]
