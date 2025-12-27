@@ -160,7 +160,7 @@ class IOUTracker:
         for class_id, tracks in self.tracks.items():
             for track in tracks:
                 if track.hits >= self.min_hits or track.age < 1:
-                    track_ids.append(str(class_id) + '_' + str(track.id))
+                    track_ids.append(f"{class_id}_{track.id}")
                     track_bboxes.append(track.bbox)
                     track_scores.append(track.score)
                     track_class_ids.append(class_id)

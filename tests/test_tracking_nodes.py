@@ -68,6 +68,6 @@ for tracker_name, tracker in trackers.items():
         traceback.print_exc()
 
 print("\n" + "="*60)
-print("SUMMARY: All 4 tracking nodes are working correctly!")
-print("Available trackers: Motpy, ByteTrack, Norfair, IOU Tracker")
+print("SUMMARY: All tracking nodes are working correctly!")
+print(f"Available trackers: {', '.join(trackers.keys())}")
 print("="*60)
