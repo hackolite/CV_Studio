@@ -136,9 +136,13 @@ This node is designed to analyze object detection patterns over time by:
 - **Storage**: `defaultdict(lambda: defaultdict(int))`
 - **Keys**: Class ID (int or "All") → Time bucket (datetime) → Count (int)
 - **Retention**: 24 hours (1440 minutes) with automatic cleanup
-- **Display**: Last 30 time buckets shown in chart
+- **Display**: Dynamic bucket count based on time unit to show full 24h round-robin:
+  - **Second**: Last 1440 buckets (24 minutes of second-level data)
+  - **Minute**: Last 1440 buckets (full 24 hours)
+  - **Hour**: Last 24 buckets (full 24 hours)
 
 ### Time Bucket Calculation
+- **Second buckets**: `datetime.now().replace(microsecond=0)`
 - **Minute buckets**: `datetime.now().replace(second=0, microsecond=0)`
 - **Hour buckets**: `datetime.now().replace(minute=0, second=0, microsecond=0)`
 
@@ -152,6 +156,7 @@ This node is designed to analyze object detection patterns over time by:
 - Uses matplotlib with 'Agg' backend (no GUI required)
 - Chart size: 8x4 inches at 100 DPI (800x400 pixels)
 - Converts to BGR format for OpenCV compatibility
+- Dynamic bucket calculation ensures full 24h round-robin display
 - Support for three chart types:
   - **Bar**: `ax.bar()` with grouped bars
   - **Line**: `ax.plot()` with markers
@@ -159,10 +164,10 @@ This node is designed to analyze object detection patterns over time by:
 
 ## Limitations
 
-- Maximum of 30 time buckets displayed (configured via `max_buckets`)
 - Data retention limited to 24 hours (configured via `max_data_age_hours`)
 - Class selection limited to classes 0-9 in dropdown (can be expanded by modifying code)
 - Time buckets are based on system time (not video timestamps)
+- For practical display purposes with "second" time unit, shows last 24 minutes (1440 seconds)
 
 ## Future Enhancements
 
