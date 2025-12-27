@@ -104,7 +104,7 @@ class FactoryNode:
             modal=True,
             height=int(small_window_h * 3),
             default_filename=f"objchart_{timestamp}",
-            callback=lambda s, a, u: Node.save_chart_callback(s, a, u),
+            callback=Node.save_chart_callback,
             id=f"chart_save:{node_id}",
             user_data=node,
         ):
@@ -622,8 +622,10 @@ class Node(Chart):
 
     def close(self, node_id):
         # Clean up node instance from class variable
-        if node_id in Node._node_instances:
+        try:
             del Node._node_instances[node_id]
+        except KeyError:
+            pass  # Node instance already removed or never added
 
 
     def get_setting_dict(self, node_id):
