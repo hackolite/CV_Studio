@@ -13,8 +13,9 @@ from node.basenode import Node
 #from node_editor.util import convert_cv_to_dpg
 
 from node.TrackerNode.mot.motpy.motpy import Motpy
-# from node.preview_release_node.mot.bytetrack.mc_bytetrack import MultiClassByteTrack
-# from node.preview_release_node.mot.norfair.mc_norfair import MultiClassNorfair
+from node.TrackerNode.mot.bytetrack.mc_bytetrack import MultiClassByteTrack
+from node.TrackerNode.mot.norfair.mc_norfair import MultiClassNorfair
+from node.TrackerNode.mot.iou_tracker.iou_tracker import MultiClassIOUTracker
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -131,8 +132,9 @@ class Node(Node):
     # モデル設定
     _model_class = {
         'motpy': Motpy,
-        # 'ByteTrack': MultiClassByteTrack,
-        # 'Norfair': MultiClassNorfair,
+        'ByteTrack': MultiClassByteTrack,
+        'Norfair': MultiClassNorfair,
+        'IOU Tracker': MultiClassIOUTracker,
     }
 
     _model_instance = {}
