@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Test script to verify that all 6 tracking nodes can be instantiated and called
+Test script to verify that the new SORT and CenterTrack trackers work correctly
 """
 import sys
 import os
@@ -12,19 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 
 # Test imports
-print("Testing tracker imports...")
-
-from node.TrackerNode.mot.motpy.motpy import Motpy
-print("✓ Motpy imported successfully")
-
-from node.TrackerNode.mot.bytetrack.mc_bytetrack import MultiClassByteTrack
-print("✓ ByteTrack imported successfully")
-
-from node.TrackerNode.mot.norfair.mc_norfair import MultiClassNorfair
-print("✓ Norfair imported successfully")
-
-from node.TrackerNode.mot.iou_tracker.iou_tracker import MultiClassIOUTracker
-print("✓ IOU Tracker imported successfully")
+print("Testing new tracker imports...")
 
 from node.TrackerNode.mot.sort.mc_sort import MultiClassSORT
 print("✓ SORT imported successfully")
@@ -32,21 +20,17 @@ print("✓ SORT imported successfully")
 from node.TrackerNode.mot.centertrack.mc_centertrack import MultiClassCenterTrack
 print("✓ CenterTrack imported successfully")
 
-print("\nAll 6 trackers imported successfully!")
+print("\nBoth new trackers imported successfully!")
 
 # Test instantiation
 print("\nTesting tracker instantiation...")
 
 trackers = {
-    'Motpy': Motpy(),
-    'ByteTrack': MultiClassByteTrack(),
-    'Norfair': MultiClassNorfair(),
-    'IOU Tracker': MultiClassIOUTracker(),
     'SORT': MultiClassSORT(),
     'CenterTrack': MultiClassCenterTrack(),
 }
 
-print("✓ All 6 trackers instantiated successfully")
+print("✓ Both new trackers instantiated successfully")
 
 # Test with sample data
 print("\nTesting tracker calls with sample data...")
@@ -62,6 +46,7 @@ bboxes = [
 scores = [0.9, 0.85]
 class_ids = [0, 1]
 
+success_count = 0
 for tracker_name, tracker in trackers.items():
     print(f"\nTesting {tracker_name}...")
     try:
@@ -70,12 +55,20 @@ for tracker_name, tracker in trackers.items():
         )
         print(f"  ✓ {tracker_name} returned {len(track_ids)} tracks")
         print(f"    Track IDs: {track_ids}")
+        print(f"    Track bboxes: {track_bboxes}")
+        success_count += 1
     except Exception as e:
         print(f"  ✗ {tracker_name} failed: {e}")
         import traceback
         traceback.print_exc()
 
 print("\n" + "="*60)
-print("SUMMARY: All tracking nodes are working correctly!")
-print(f"Available trackers: {', '.join(trackers.keys())}")
-print("="*60)
+if success_count == len(trackers):
+    print("✓ SUCCESS: All new tracking methods are working correctly!")
+    print(f"Available new trackers: {', '.join(trackers.keys())}")
+    print("="*60)
+    sys.exit(0)
+else:
+    print(f"✗ FAILED: Only {success_count}/{len(trackers)} trackers passed")
+    print("="*60)
+    sys.exit(1)
