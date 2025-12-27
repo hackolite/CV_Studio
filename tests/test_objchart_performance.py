@@ -116,5 +116,37 @@ def test_objchart_multiple_fast_updates():
     assert render_count <= 1, f"Should render at most once, but rendered {render_count} times"
 
 
+def test_objchart_first_render_with_none_cache():
+    """Test that first render works correctly when cached_chart_image is None"""
+    from node.VisualNode.node_obj_chart import Node
+    import numpy as np
+    
+    node = Node(opencv_setting_dict={
+        'process_height': 400,
+        'process_width': 600
+    })
+    
+    # Verify initial state
+    assert node.cached_chart_image is None
+    assert node.last_render_time == 0
+    
+    # Simulate first update (should always render even if within interval)
+    current_time = time.time()
+    should_render = (current_time - node.last_render_time) >= node.render_interval
+    
+    # Even if should_render is False, we should render if cache is None
+    if should_render or node.cached_chart_image is None:
+        bucket = node.get_time_bucket("minute")
+        node.time_counts[0][bucket] = 10
+        chart_image = node.render_chart("minute", [0], {"0": "person"}, "bar")
+        node.cached_chart_image = chart_image
+        node.last_render_time = current_time
+    
+    # Verify chart was rendered and cached
+    assert node.cached_chart_image is not None
+    assert isinstance(node.cached_chart_image, np.ndarray)
+    assert node.last_render_time > 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
