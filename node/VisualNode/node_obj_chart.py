@@ -361,7 +361,7 @@ class Node(Chart):
         # Calculate max_buckets based on time unit to show full 24h round-robin
         # This ensures the chart displays all available data within 24 hours
         if time_unit == "second":
-            max_buckets = 1440  # 24 hours × 60 minutes (show last 24 minutes in seconds for practical display)
+            max_buckets = 1440  # 24 minutes × 60 seconds = 1440 seconds (show last 24 minutes for practical display)
         elif time_unit == "minute":
             max_buckets = 1440  # 24 hours × 60 minutes = full 24 hours
         else:  # hour
