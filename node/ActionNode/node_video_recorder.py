@@ -281,9 +281,12 @@ class VideoRecorderNode(BaseNode):
         # Check if we should trigger recording
         should_record = False
         if trigger_json and isinstance(trigger_json, dict):
-            # Look for specific trigger fields: 'record', 'trigger', or any boolean field with value True
-            # Priority order: 'record' > 'trigger' > any boolean
-            if 'record' in trigger_json and isinstance(trigger_json['record'], bool):
+            # Look for specific trigger fields with priority order:
+            # Priority order: 'BOOL' > 'record' > 'trigger' > any boolean
+            if 'BOOL' in trigger_json and isinstance(trigger_json['BOOL'], bool):
+                # Standard format from triggers and routers
+                should_record = trigger_json['BOOL']
+            elif 'record' in trigger_json and isinstance(trigger_json['record'], bool):
                 should_record = trigger_json['record']
             elif 'trigger' in trigger_json and isinstance(trigger_json['trigger'], bool):
                 should_record = trigger_json['trigger']

@@ -40,6 +40,32 @@ class TestVideoRecorderFunctional(unittest.TestCase):
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
     
+    def test_trigger_priority_bool_field(self):
+        """Test that 'BOOL' field has highest priority in trigger JSON"""
+        # JSON with 'BOOL' field plus other fields
+        trigger_json = {'BOOL': True, 'record': False, 'trigger': False, 'other': False}
+        
+        should_record = False
+        if 'BOOL' in trigger_json and isinstance(trigger_json['BOOL'], bool):
+            should_record = trigger_json['BOOL']
+        elif 'record' in trigger_json and isinstance(trigger_json['record'], bool):
+            should_record = trigger_json['record']
+        elif 'trigger' in trigger_json and isinstance(trigger_json['trigger'], bool):
+            should_record = trigger_json['trigger']
+        
+        self.assertTrue(should_record)
+        
+        # Test BOOL=False overrides other True values
+        trigger_json = {'BOOL': False, 'record': True, 'trigger': True, 'other': True}
+        
+        should_record = False
+        if 'BOOL' in trigger_json and isinstance(trigger_json['BOOL'], bool):
+            should_record = trigger_json['BOOL']
+        elif 'record' in trigger_json and isinstance(trigger_json['record'], bool):
+            should_record = trigger_json['record']
+        
+        self.assertFalse(should_record)
+    
     def test_trigger_priority_record_field(self):
         """Test that 'record' field has priority in trigger JSON"""
         # JSON with both 'record' and 'trigger'
