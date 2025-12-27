@@ -247,7 +247,6 @@ class Node(Chart):
         
         # 24-hour data retention (1440 minutes max)
         self.max_data_age_hours = 24
-        self.max_buckets = 30  # For display purposes
         
         # Store current chart image for download
         self.current_chart_image = None
@@ -359,12 +358,21 @@ class Node(Chart):
         
         fig, ax = plt.subplots(figsize=(8, 4), dpi=100)
         
+        # Calculate max_buckets based on time unit to show full 24h round-robin
+        # This ensures the chart displays all available data within 24 hours
+        if time_unit == "second":
+            max_buckets = 1440  # 24 minutes × 60 seconds = 1440 seconds (show last 24 minutes for practical display)
+        elif time_unit == "minute":
+            max_buckets = 1440  # 24 hours × 60 minutes = full 24 hours
+        else:  # hour
+            max_buckets = 24    # 24 hours = full 24 hours
+        
         # Get sorted time buckets (last N buckets)
         all_buckets = set()
         for class_data in self.time_counts.values():
             all_buckets.update(class_data.keys())
         
-        sorted_buckets = sorted(all_buckets)[-self.max_buckets:]
+        sorted_buckets = sorted(all_buckets)[-max_buckets:]
         
         if not sorted_buckets:
             # No data yet, create empty chart
