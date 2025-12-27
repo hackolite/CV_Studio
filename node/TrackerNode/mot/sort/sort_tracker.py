@@ -18,13 +18,34 @@ def linear_assignment(cost_matrix):
         return np.array(list(zip(x, y)))
     except ImportError:
         # Fallback to greedy assignment if scipy not available
+        # More efficient implementation using index tracking instead of array deletion
+        if cost_matrix.size == 0:
+            return np.empty((0, 2), dtype=int)
+        
+        rows, cols = cost_matrix.shape
         matches = []
-        while cost_matrix.size > 0:
-            min_idx = np.argmin(cost_matrix)
-            row, col = np.unravel_index(min_idx, cost_matrix.shape)
+        used_rows = set()
+        used_cols = set()
+        
+        # Create flat index array for sorting
+        flat_indices = np.argsort(cost_matrix.ravel())
+        
+        for flat_idx in flat_indices:
+            row = flat_idx // cols
+            col = flat_idx % cols
+            
+            # Skip if already used
+            if row in used_rows or col in used_cols:
+                continue
+            
             matches.append([row, col])
-            cost_matrix = np.delete(cost_matrix, row, axis=0)
-            cost_matrix = np.delete(cost_matrix, col, axis=1)
+            used_rows.add(row)
+            used_cols.add(col)
+            
+            # Early exit if all rows or columns are matched
+            if len(used_rows) == rows or len(used_cols) == cols:
+                break
+        
         return np.array(matches) if len(matches) > 0 else np.empty((0, 2), dtype=int)
 
 
@@ -58,7 +79,8 @@ def convert_bbox_to_z(bbox):
     x = bbox[0] + w / 2.
     y = bbox[1] + h / 2.
     s = w * h  # scale is just area
-    r = w / float(h)
+    # Prevent division by zero by using a small epsilon
+    r = w / float(max(h, 1e-6))
     return np.array([x, y, s, r]).reshape((4, 1))
 
 
@@ -67,8 +89,11 @@ def convert_x_to_bbox(x, score=None):
     Takes a bounding box in the centre form [x, y, s, r] and returns it in the form
     [x1, y1, x2, y2] where x1, y1 is the top left and x2, y2 is the bottom right
     """
-    w = np.sqrt(x[2] * x[3])
-    h = x[2] / w
+    # Prevent division by zero or negative values
+    s = max(x[2], 1e-6)
+    r = max(x[3], 1e-6)
+    w = np.sqrt(s * r)
+    h = s / w
     if score is None:
         return np.array([x[0] - w / 2., x[1] - h / 2., x[0] + w / 2., x[1] + h / 2.]).reshape((1, 4))
     else:

@@ -181,23 +181,21 @@ class CentroidTracker:
             unused_cols = set(range(0, D.shape[1])).difference(used_cols)
             
             # Handle disappeared objects
-            if D.shape[0] >= D.shape[1]:
-                for row in unused_rows:
-                    object_id = object_ids[row]
-                    self.disappeared[object_id] += 1
-                    
-                    if self.disappeared[object_id] > self.max_disappeared:
-                        self.deregister(object_id)
+            for row in unused_rows:
+                object_id = object_ids[row]
+                self.disappeared[object_id] += 1
+                
+                if self.disappeared[object_id] > self.max_disappeared:
+                    self.deregister(object_id)
             
             # Register new objects
-            else:
-                for col in unused_cols:
-                    self.register(
-                        input_centroids[col],
-                        bboxes[col],
-                        class_ids[col],
-                        scores[col]
-                    )
+            for col in unused_cols:
+                self.register(
+                    input_centroids[col],
+                    bboxes[col],
+                    class_ids[col],
+                    scores[col]
+                )
         
         return self._get_results()
     
