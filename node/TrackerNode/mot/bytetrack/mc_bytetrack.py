@@ -4,7 +4,7 @@ import copy
 
 import numpy as np
 
-from node.preview_release_node.mot.bytetrack.tracker.byte_tracker import BYTETracker
+from node.TrackerNode.mot.bytetrack.tracker.byte_tracker import BYTETracker
 
 
 class dict_dot_notation(dict):
@@ -60,7 +60,7 @@ class MultiClassByteTrack(object):
         t_class_ids = []
         for class_id in self.tracker_dict.keys():
             # 対象クラス抽出
-            target_index = np.in1d(class_ids, np.array(int(class_id)))
+            target_index = np.isin(class_ids, np.array(int(class_id)))
 
             if len(target_index) == 0:
                 continue

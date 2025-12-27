@@ -2,7 +2,7 @@ import numpy as np
 
 from .kalman_filter import KalmanFilter
 # from byte_tracker.tracker import matching
-from node.preview_release_node.mot.bytetrack.tracker import matching
+from node.TrackerNode.mot.bytetrack.tracker import matching
 from .basetrack import BaseTrack, TrackState
 
 
@@ -12,7 +12,7 @@ class STrack(BaseTrack):
     def __init__(self, tlwh, score):
 
         # wait activate
-        self._tlwh = np.asarray(tlwh, dtype=np.float)
+        self._tlwh = np.asarray(tlwh, dtype=np.float64)
         self.kalman_filter = None
         self.mean, self.covariance = None, None
         self.is_activated = False
