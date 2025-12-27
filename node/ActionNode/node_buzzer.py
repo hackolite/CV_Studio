@@ -215,11 +215,16 @@ class BuzzerNode(BaseNode):
         # Check if JSON contains a boolean that is True
         should_buzz = False
         if node_result and isinstance(node_result, dict):
-            # Look for any boolean field with value True
-            for key, value in node_result.items():
-                if isinstance(value, bool) and value:
-                    should_buzz = True
-                    break
+            # Priority order: 'BOOL' (standard format) > any boolean field with value True
+            if 'BOOL' in node_result and isinstance(node_result['BOOL'], bool):
+                # Standard format from triggers and routers
+                should_buzz = node_result['BOOL']
+            else:
+                # Fallback: look for any boolean field with value True for backward compatibility
+                for key, value in node_result.items():
+                    if isinstance(value, bool) and value:
+                        should_buzz = True
+                        break
         
         # Update status
         if self._is_buzzing:
