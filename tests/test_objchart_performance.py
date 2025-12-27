@@ -108,11 +108,11 @@ def test_objchart_multiple_fast_updates():
             render_count += 1
             node.last_render_time = current_time
         
-        # Small delay to simulate frame time (~33ms at 30fps)
-        time.sleep(0.001)  # 1ms delay for test speed
+        # Small delay to simulate frame time (1ms for test speed vs 33ms at 30fps)
+        time.sleep(0.001)
     
-    # With 1 second render interval, we should have rendered at most once
-    # during 30ms of updates
+    # With 1 second render interval and ~30ms of updates,
+    # we should have rendered at most once
     assert render_count <= 1, f"Should render at most once, but rendered {render_count} times"
 
 

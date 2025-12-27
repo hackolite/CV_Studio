@@ -509,7 +509,7 @@ class Node(Chart):
                 self.time_counts["dB"][current_bucket] = db_value
                 
                 # Render chart with dB data only if render interval has passed
-                if should_render:
+                if should_render or self.cached_chart_image is None:
                     selected_classes = ["dB"]
                     chart_image = self.render_chart(time_unit, selected_classes, {"dB": "Decibel Intensity"}, chart_type)
                     self.cached_chart_image = chart_image
@@ -560,7 +560,7 @@ class Node(Chart):
                     selected_classes = ["All"]
                 
                 # Render chart with selected chart type only if render interval has passed
-                if should_render:
+                if should_render or self.cached_chart_image is None:
                     chart_image = self.render_chart(time_unit, selected_classes, class_names, chart_type)
                     self.cached_chart_image = chart_image
                     self.last_render_time = current_time
@@ -569,7 +569,7 @@ class Node(Chart):
 
         else:
             # No detection data yet, render empty chart only if render interval has passed
-            if should_render:
+            if should_render or self.cached_chart_image is None:
                 chart_image = self.render_chart(time_unit, ["All"], {}, chart_type)
                 self.cached_chart_image = chart_image
                 self.last_render_time = current_time
