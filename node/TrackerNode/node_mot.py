@@ -16,6 +16,8 @@ from node.TrackerNode.mot.motpy.motpy import Motpy
 from node.TrackerNode.mot.bytetrack.mc_bytetrack import MultiClassByteTrack
 from node.TrackerNode.mot.norfair.mc_norfair import MultiClassNorfair
 from node.TrackerNode.mot.iou_tracker.iou_tracker import MultiClassIOUTracker
+from node.TrackerNode.mot.sort.mc_sort import MultiClassSORT
+from node.TrackerNode.mot.centertrack.mc_centertrack import MultiClassCenterTrack
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -135,6 +137,8 @@ class Node(Node):
         'ByteTrack': MultiClassByteTrack,
         'Norfair': MultiClassNorfair,
         'IOU Tracker': MultiClassIOUTracker,
+        'SORT': MultiClassSORT,
+        'CenterTrack': MultiClassCenterTrack,
     }
 
     _model_instance = {}

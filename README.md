@@ -1272,7 +1272,9 @@ Nodes whose specifications may change significantly in the future
             <img src="https://user-images.githubusercontent.com/37477845/172049681-67df2cc3-3db3-4766-a96e-f7c557e4a5b9.png" loading="lazy" width="300px">
         </td>
         <td width="760">
-            Node that inputs an Object Detection node and executes MOT(Multi Object Tracking)
+            Node that inputs an Object Detection node and executes MOT(Multi Object Tracking)<br>
+            Supports 6 tracking algorithms: motpy, ByteTrack, Norfair, IOU Tracker, SORT, and CenterTrack<br>
+            See <a href="node/TrackerNode/mot/README.md">TrackerNode/mot/README.md</a> for details on each algorithm
         </td>
     </tr>
     <tr>
