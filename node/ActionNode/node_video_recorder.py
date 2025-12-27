@@ -181,18 +181,21 @@ class VideoRecorderNode(BaseNode):
         self._recording_file_path = None
         self._metadata_list = []  # Store metadata for MKV
         self._frame_count = 0
-        self._output_dir = None
+        # Initialize output directory from opencv settings if available
+        self._output_dir = self._opencv_setting_dict.get('video_writer_directory', './_VideoRecorder') if hasattr(self, '_opencv_setting_dict') and self._opencv_setting_dict else './_VideoRecorder'
         
     def _start_recording(self, file_path, fourcc, fps, frame_size):
         """Initialize video writer for recording"""
         try:
             self._video_writer = cv2.VideoWriter(file_path, fourcc, fps, frame_size)
             if not self._video_writer.isOpened():
-                print(f"Failed to open video writer for {file_path}")
+                print(f"Failed to open video writer for {file_path}. Try installing required codec (e.g., ffmpeg) or use a different format (avi/mp4).")
                 return False
             return True
         except Exception as e:
+            import traceback
             print(f"Error starting recording: {e}")
+            print(traceback.format_exc())
             return False
     
     def _stop_recording(self, tag_node_name):
@@ -278,11 +281,18 @@ class VideoRecorderNode(BaseNode):
         # Check if we should trigger recording
         should_record = False
         if trigger_json and isinstance(trigger_json, dict):
-            # Look for any boolean field with value True
-            for key, value in trigger_json.items():
-                if isinstance(value, bool) and value:
-                    should_record = True
-                    break
+            # Look for specific trigger fields: 'record', 'trigger', or any boolean field with value True
+            # Priority order: 'record' > 'trigger' > any boolean
+            if 'record' in trigger_json and isinstance(trigger_json['record'], bool):
+                should_record = trigger_json['record']
+            elif 'trigger' in trigger_json and isinstance(trigger_json['trigger'], bool):
+                should_record = trigger_json['trigger']
+            else:
+                # Fallback: look for any boolean field with value True
+                for key, value in trigger_json.items():
+                    if isinstance(value, bool) and value:
+                        should_record = True
+                        break
         
         # Update image preview
         if frame is not None:
@@ -339,26 +349,31 @@ class VideoRecorderNode(BaseNode):
         
         elif should_record and frame is not None and not self._is_recording:
             # Start new recording
-            if self._output_dir is None:
-                self._output_dir = self._opencv_setting_dict.get('video_writer_directory', './_VideoRecorder')
-            
             os.makedirs(self._output_dir, exist_ok=True)
             
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"recording_{timestamp}.{format_ext}"
             self._recording_file_path = os.path.join(self._output_dir, filename)
             
-            # Get FPS from settings
+            # Get FPS from settings with validation
             fps = self._opencv_setting_dict.get('video_writer_fps', 30)
+            if not isinstance(fps, (int, float)) or fps <= 0:
+                print(f"Invalid FPS value: {fps}. Using default FPS of 30.")
+                fps = 30
             frame_size = (frame.shape[1], frame.shape[0])
             
-            # Determine fourcc codec
+            # Determine fourcc codec with fallback support
             if format_ext == 'avi':
                 fourcc = cv2.VideoWriter_fourcc(*'XVID')
             elif format_ext == 'mp4':
                 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             elif format_ext == 'mkv':
-                fourcc = cv2.VideoWriter_fourcc(*'X264')
+                # Try X264 first, fallback to XVID if not available
+                try:
+                    fourcc = cv2.VideoWriter_fourcc(*'X264')
+                except:
+                    print("X264 codec not available, using XVID for MKV")
+                    fourcc = cv2.VideoWriter_fourcc(*'XVID')
             else:
                 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             
