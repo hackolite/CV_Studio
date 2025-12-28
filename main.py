@@ -58,7 +58,8 @@ def async_main(node_editor, queue_manager):
         # Small sleep to prevent CPU hogging and keep UI responsive
         # Note: This function runs in a thread executor (not asyncio coroutine),
         # so time.sleep() is appropriate here to yield CPU to other threads
-        time.sleep(0.001)  # 1ms sleep to yield CPU and maintain ~1000 FPS max
+        # Increased to 10ms to ensure UI remains responsive during video playback
+        time.sleep(0.01)  # 10ms sleep to yield CPU and keep UI responsive
 
 
 def update_node_info(
