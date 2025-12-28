@@ -11,7 +11,7 @@ from node.basenode import Node
 
 
 class FactoryNode:
-    node_label = 'Court/KeypointDeviation'
+    node_label = 'CourtKeypointDeviation'
     node_tag = 'TriggerKeypointDeviation'
 
     def __init__(self):
@@ -126,15 +126,15 @@ class FactoryNode:
 class Node(Node):
     _ver = '0.0.1'
 
-    node_label = 'Court/KeypointDeviation'
+    node_label = 'CourtKeypointDeviation'
     node_tag = 'TriggerKeypointDeviation'
 
     _opencv_setting_dict = None
     _keypoints_history = {}  # Store history per node instance
 
     def __init__(self):
-        self._cumulative_sum = None  # Cumulative sum of keypoints
-        self._count = 0  # Count of keypoints seen
+        self._master_keypoints = None  # Master frame with widest parallelogram
+        self._master_area = 0.0  # Area of the master parallelogram
         self._last_trigger_state = False
 
     def update(
@@ -184,37 +184,48 @@ class Node(Node):
             if 'results_list' in json_data:
                 results_list = json_data['results_list']
                 
-                # Convert keypoints to flat array
+                # Convert keypoints to array if needed
                 if isinstance(results_list, np.ndarray):
-                    keypoints_flat = results_list.flatten()
+                    keypoints = results_list
                     
-                    # Initialize cumulative sum on first keypoints
-                    if self._cumulative_sum is None:
-                        self._cumulative_sum = keypoints_flat.copy()
-                        self._count = 1
-                    else:
-                        # Calculate current mean before adding new keypoints
-                        current_mean = self._cumulative_sum / self._count
+                    # Calculate the area of the parallelogram formed by keypoints
+                    # Using bounding box area as a measure of "widest parallelogram"
+                    if len(keypoints.shape) == 2 and keypoints.shape[0] >= 2:
+                        # Calculate bounding box area
+                        x_coords = keypoints[:, 0]
+                        y_coords = keypoints[:, 1]
+                        width = np.max(x_coords) - np.min(x_coords)
+                        height = np.max(y_coords) - np.min(y_coords)
+                        current_area = width * height
                         
-                        # Calculate distance between current keypoints and mean
-                        # Using Euclidean distance of the flattened keypoints
-                        distance = np.sqrt(np.sum((keypoints_flat - current_mean) ** 2))
+                        # Update master if this frame has a wider parallelogram
+                        if self._master_keypoints is None or current_area > self._master_area:
+                            self._master_keypoints = keypoints.copy()
+                            self._master_area = current_area
+                            # Reset distance when we update the master
+                            distance = 0.0
+                        else:
+                            # Calculate delta: sum of absolute differences with master
+                            if self._master_keypoints is not None:
+                                # Ensure shapes match
+                                if self._master_keypoints.shape == keypoints.shape:
+                                    # Calculate sum of deltas (Manhattan distance)
+                                    deltas = np.abs(keypoints - self._master_keypoints)
+                                    distance = np.sum(deltas)
+                                    
+                                    # Check if distance exceeds threshold
+                                    if distance > threshold_distance:
+                                        trigger_state = True
                         
-                        # Check if distance exceeds threshold
-                        if distance > threshold_distance:
-                            trigger_state = True
-                        
-                        # Update cumulative sum and count
-                        self._cumulative_sum += keypoints_flat
-                        self._count += 1
-                    
-                    # Add trigger information to output JSON
-                    output_json['trigger_info'] = {
-                        'triggered': trigger_state,
-                        'distance': float(distance),
-                        'threshold': float(threshold_distance),
-                        'count': self._count
-                    }
+                        # Add trigger information to output JSON
+                        output_json['trigger_info'] = {
+                            'triggered': trigger_state,
+                            'distance': float(distance),
+                            'threshold': float(threshold_distance),
+                            'master_area': float(self._master_area),
+                            'current_area': float(current_area),
+                            'is_master': current_area > self._master_area or self._master_keypoints is None
+                        }
 
         # Update UI outputs
         dpg_set_value(output_bool_tag, f'Trigger: {trigger_state}')
@@ -230,9 +241,9 @@ class Node(Node):
         return {"image": None, "json": output_json, "audio": None}
 
     def close(self, node_id):
-        # Clear cumulative data on close
-        self._cumulative_sum = None
-        self._count = 0
+        # Clear master data on close
+        self._master_keypoints = None
+        self._master_area = 0.0
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag

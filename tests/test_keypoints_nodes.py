@@ -24,7 +24,7 @@ def test_dataprocessing_keypoints_import():
     print(f"  FactoryNode.node_label: {factory.node_label}")
     
     assert factory.node_tag == "DataProcessingKeypoints"
-    assert factory.node_label == "Court/KeypointData"
+    assert factory.node_label == "CourtKeypointData"
     
     return True
 
@@ -42,7 +42,7 @@ def test_trigger_keypoint_deviation_import():
     print(f"  FactoryNode.node_label: {factory.node_label}")
     
     assert factory.node_tag == "TriggerKeypointDeviation"
-    assert factory.node_label == "Court/KeypointDeviation"
+    assert factory.node_label == "CourtKeypointDeviation"
     
     return True
 

@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 def test_keypoints_pipeline_integration():
     """Test the full pipeline from pose estimation to trigger"""
-    from node.ProcessNode.node_dataprocessing_keypoints import Node as DataProcessingNode
+    from node.StatsNode.node_dataprocessing_keypoints import Node as DataProcessingNode
     from node.TriggerNode.node_trigger_keypoint_deviation import Node as TriggerNode
     
     print("=" * 60)
@@ -93,7 +93,7 @@ def test_keypoints_pipeline_integration():
         if trigger_result['json'] and 'trigger_info' in trigger_result['json']:
             info = trigger_result['json']['trigger_info']
             if i < 2 or i >= 8:
-                print(f"  Frame {i+1}: Distance={info['distance']:.2f}, Triggered={info['triggered']}, Buffer={info['buffer_size']}")
+                print(f"  Frame {i+1}: Distance={info['distance']:.2f}, Triggered={info['triggered']}, MasterArea={info.get('master_area', 0):.1f}")
         
         time.sleep(0.05)  # Small delay between frames
     
