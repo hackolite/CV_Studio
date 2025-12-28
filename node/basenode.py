@@ -437,6 +437,37 @@ class Node:
 
         return debug_image
 
+    def draw_yolov8_seg_contours(self, image, segmentation_map):
+        """
+        Draw only contours for YOLOv8-seg segmentation masks
+        Args:
+            image: Input image
+            segmentation_map: Array of binary masks from YOLOv8-seg
+        Returns:
+            debug_image: Image with contours drawn
+        """
+        debug_image = copy.deepcopy(image)
+        
+        # Extract contours from each mask and draw them
+        for idx, mask in enumerate(segmentation_map):
+            # Convert mask to uint8 for contour detection
+            mask_uint8 = (mask * 255).astype(np.uint8)
+            
+            # Find contours
+            contours, _ = cv2.findContours(
+                mask_uint8,
+                cv2.RETR_EXTERNAL,
+                cv2.CHAIN_APPROX_SIMPLE
+            )
+            
+            # Generate a color for this object (cycling through colors)
+            color = self.get_color(idx)
+            
+            # Draw all contours for this mask
+            cv2.drawContours(debug_image, contours, -1, color, 2)
+        
+        return debug_image
+
     def draw_pose_estimation_info(self, model_name, image, results_list, score_th):
         debug_image = copy.deepcopy(image)
 

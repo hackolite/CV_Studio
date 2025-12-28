@@ -18,6 +18,7 @@ from node.DLNode.semantic_segmentation.mediapipe_selfie_segmentation.mediapipe_s
     MediaPipeSelfieSegmentationNormal,
     MediaPipeSelfieSegmentationLandScape,
 )
+from node.DLNode.semantic_segmentation.yolov8_seg.yolov8_seg import YOLOv8Seg
 
 
 from node.basenode import Node
@@ -60,6 +61,8 @@ class Node(Node):
         MediaPipeSelfieSegmentationNormal,
         'MediaPipe SelfieSegmentation(LandScape)':
         MediaPipeSelfieSegmentationLandScape,
+        'YOLOv8-nano-seg':
+        YOLOv8Seg,
     }
     _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/semantic_segmentation/'
     _model_path_setting = {
@@ -71,6 +74,8 @@ class Node(Node):
         'skin_clothes_hair_segmentation/model/DeepLabV3Plus(timm-mobilenetv3_small_100)_452_2.16M_0.8385/best_model_simplifier.onnx',
         'MediaPipe SelfieSegmentation(Normal)': None,
         'MediaPipe SelfieSegmentation(LandScape)': None,
+        'YOLOv8-nano-seg': _model_base_path +
+        'yolov8_seg/model/yolov8n-seg.onnx',
     }
     _model_instance = {}
 
@@ -310,12 +315,19 @@ class Node(Node):
 
         # 描画
         if frame is not None:
-            debug_frame = self.draw_semantic_segmentation_info(
-                frame,
-                score_th,
-                class_num,
-                segmentation_map,
-            )
+            # Special handling for YOLOv8-seg to draw only contours
+            if model_name == 'YOLOv8-nano-seg':
+                debug_frame = self.draw_yolov8_seg_contours(
+                    frame,
+                    segmentation_map,
+                )
+            else:
+                debug_frame = self.draw_semantic_segmentation_info(
+                    frame,
+                    score_th,
+                    class_num,
+                    segmentation_map,
+                )
             texture = self.convert_cv_to_dpg(
                 debug_frame,
                 small_window_w,
