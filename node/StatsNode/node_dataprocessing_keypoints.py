@@ -11,7 +11,7 @@ from node.basenode import Node
 
 
 class FactoryNode:
-    node_label = 'Court/KeypointData'
+    node_label = 'CourtKeypointData'
     node_tag = 'DataProcessingKeypoints'
 
     def __init__(self):
@@ -77,7 +77,7 @@ class FactoryNode:
 class Node(Node):
     _ver = '0.0.1'
 
-    node_label = 'Court/KeypointData'
+    node_label = 'CourtKeypointData'
     node_tag = 'DataProcessingKeypoints'
 
     _opencv_setting_dict = None
