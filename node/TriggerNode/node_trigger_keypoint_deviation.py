@@ -180,7 +180,8 @@ class Node(Node):
         connection_info_src = ''
         for connection_info in connection_list:
             connection_type = connection_info[0].split(':')[2]
-            if connection_type == self.TYPE_JSON:
+            # Match case-insensitively or use both Json and JSON
+            if connection_type.upper() == self.TYPE_JSON.upper():
                 connection_info_src = connection_info[0]
                 connection_info_src = connection_info_src.split(':')[:2]
                 connection_info_src = ':'.join(connection_info_src)
