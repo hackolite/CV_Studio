@@ -2,7 +2,16 @@
 # -*- coding: utf-8 -*-
 import cv2
 import numpy as np
+import threading
 import dearpygui.dearpygui as dpg
+
+# Global lock for thread-safe DearPyGUI operations
+# RLock (reentrant lock) allows the same thread to acquire the lock multiple times,
+# which is necessary when nested DearPyGUI calls occur within the same thread.
+# This protects against race conditions between:
+# - Main thread: Processing UI events via dpg.start_dearpygui()
+# - Worker thread: Updating nodes via async_main() in thread executor
+_dpg_lock = threading.RLock()
 
 
 
@@ -52,12 +61,14 @@ def check_serial_connection(is_debug=False):
     return serial_device_no_list
 
 def dpg_set_value(tag, value):
-    if dpg.does_item_exist(tag):
-        dpg.set_value(tag, value)
+    with _dpg_lock:
+        if dpg.does_item_exist(tag):
+            dpg.set_value(tag, value)
 
 
 def dpg_get_value(tag):
     value = None
-    if dpg.does_item_exist(tag):
-        value = dpg.get_value(tag)
+    with _dpg_lock:
+        if dpg.does_item_exist(tag):
+            value = dpg.get_value(tag)
     return value

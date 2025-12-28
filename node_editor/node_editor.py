@@ -14,6 +14,7 @@ import dearpygui.dearpygui as dpg
 from node.node_factory import NodeFactory
 import time
 from .style import STYLE
+from .util import _dpg_lock  # Import shared DearPyGUI lock
 from src.utils.logging import get_logger
 
 dpg.create_context()
@@ -378,69 +379,71 @@ class DpgNodeEditor(object):
         return self._terminate_flag
 
     def _callback_add_node(self, sender, data, user_data):
-        self._node_id += 1
-        logger.debug(f"Adding node with ID: {self._node_id}")
-        factorynode = self._node_factory_list[user_data]
-        last_pos = [0, 0]
+        with _dpg_lock:
+            self._node_id += 1
+            logger.debug(f"Adding node with ID: {self._node_id}")
+            factorynode = self._node_factory_list[user_data]
+            last_pos = [0, 0]
 
-        if self._last_pos is not None:
-            last_pos = [self._last_pos[0] + 30, self._last_pos[1] + 30]
+            if self._last_pos is not None:
+                last_pos = [self._last_pos[0] + 30, self._last_pos[1] + 30]
 
-        node = factorynode.add_node(
-            self._node_editor_tag,
-            self._node_id,
-            pos=last_pos,
-            opencv_setting_dict=self._opencv_setting_dict,
-        )
+            node = factorynode.add_node(
+                self._node_editor_tag,
+                self._node_id,
+                pos=last_pos,
+                opencv_setting_dict=self._opencv_setting_dict,
+            )
 
-        dpg.bind_item_theme(node.tag_node_name, factorynode.style)
-        self._node_instances_list[node.tag_node_name] = node
-        self._node_list.append(node.tag_node_name)
+            dpg.bind_item_theme(node.tag_node_name, factorynode.style)
+            self._node_instances_list[node.tag_node_name] = node
+            self._node_list.append(node.tag_node_name)
 
-        if self._use_debug_print:
-            logger.debug("_callback_add_node details:")
-            logger.debug(f"    Node ID         : {self._node_id}")
-            logger.debug(f"    sender          : {sender}")
-            logger.debug(f"    data            : {data}")
-            logger.debug(f"    user_data       : {user_data}")
-            logger.debug(f"    self._node_list : {', '.join(self._node_list)}")
+            if self._use_debug_print:
+                logger.debug("_callback_add_node details:")
+                logger.debug(f"    Node ID         : {self._node_id}")
+                logger.debug(f"    sender          : {sender}")
+                logger.debug(f"    data            : {data}")
+                logger.debug(f"    user_data       : {user_data}")
+                logger.debug(f"    self._node_list : {', '.join(self._node_list)}")
 
     def _callback_link(self, sender, data):
-        logger.debug("Link callback triggered")
-        source = dpg.get_item_alias(data[0])
-        destination = dpg.get_item_alias(data[1])
-        source_type = source.split(":")[2]
-        destination_type = destination.split(":")[2]
-        logger.debug(f"Linking {source_type} -> {destination_type}")
+        with _dpg_lock:
+            logger.debug("Link callback triggered")
+            source = dpg.get_item_alias(data[0])
+            destination = dpg.get_item_alias(data[1])
+            source_type = source.split(":")[2]
+            destination_type = destination.split(":")[2]
+            logger.debug(f"Linking {source_type} -> {destination_type}")
 
-        # ✨ Permettre AUDIO → IMAGE et IMAGE → IMAGE
-        connection_allowed = False
+            # ✨ Permettre AUDIO → IMAGE et IMAGE → IMAGE
+            connection_allowed = False
 
-        if source_type == destination_type:
-            # Connexion normale (même type)
-            connection_allowed = True
-        elif source_type == "AUDIO" and destination_type == "IMAGE":
-            # Connexion spéciale : spectrogramme AUDIO → input IMAGE
-            connection_allowed = True
-            logger.info(f"Allowing AUDIO->IMAGE connection (spectrogram)")
+            if source_type == destination_type:
+                # Connexion normale (même type)
+                connection_allowed = True
+            elif source_type == "AUDIO" and destination_type == "IMAGE":
+                # Connexion spéciale : spectrogramme AUDIO → input IMAGE
+                connection_allowed = True
+                logger.info(f"Allowing AUDIO->IMAGE connection (spectrogram)")
 
-        if connection_allowed:
-            if len(self._node_link_list) == 0:
-                dpg.add_node_link(source, destination, parent=sender)
-                self._node_link_list.append([source, destination])
-            else:
-                duplicate_flag = False
-                for node_link in self._node_link_list:
-                    if destination == node_link[1]:
-                        duplicate_flag = True
-                if not duplicate_flag:
+            if connection_allowed:
+                if len(self._node_link_list) == 0:
                     dpg.add_node_link(source, destination, parent=sender)
                     self._node_link_list.append([source, destination])
+                else:
+                    duplicate_flag = False
+                    for node_link in self._node_link_list:
+                        if destination == node_link[1]:
+                            duplicate_flag = True
+                    if not duplicate_flag:
+                        dpg.add_node_link(source, destination, parent=sender)
+                        self._node_link_list.append([source, destination])
 
-        self._node_connection_dict = self._sort_node_graph(
-            self._node_list,
-            self._node_link_list,
-        )
+            self._node_connection_dict = self._sort_node_graph(
+                self._node_list,
+                self._node_link_list,
+            )
 
     def _callback_close_window(self, sender):
         dpg.delete_item(sender)
