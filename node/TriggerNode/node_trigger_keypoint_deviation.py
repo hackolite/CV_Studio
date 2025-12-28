@@ -224,7 +224,7 @@ class Node(Node):
                             'threshold': float(threshold_distance),
                             'master_area': float(self._master_area),
                             'current_area': float(current_area),
-                            'is_master': current_area > self._master_area or self._master_keypoints is None
+                            'is_master': current_area >= self._master_area
                         }
 
         # Update UI outputs
