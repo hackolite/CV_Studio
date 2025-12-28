@@ -131,7 +131,7 @@ class KalmanBoxTracker(object):
     """
     count = 0
 
-    def __init__(self, bbox, class_id, score):
+    def __init__(self, bbox, class_id, score, confidence_decay=0.9):
         """
         Initialises a tracker using initial bounding box.
         
@@ -139,6 +139,7 @@ class KalmanBoxTracker(object):
             bbox: Initial bounding box [x1, y1, x2, y2]
             class_id: Object class ID
             score: Detection confidence score
+            confidence_decay: Decay factor for confidence during occlusion (default: 0.9)
         """
         # Define constant velocity model with higher-order motion
         self.kf = KalmanFilter(dim_x=7, dim_z=4)
@@ -177,6 +178,7 @@ class KalmanBoxTracker(object):
         self.track_high_score = score
         self.smooth_feat = None
         self.velocity_history = []
+        self.confidence_decay = confidence_decay
 
     def update(self, bbox, class_id, score):
         """
@@ -227,7 +229,7 @@ class KalmanBoxTracker(object):
         
         # Decay confidence during occlusion
         if self.time_since_update > 1:
-            self.confidence *= 0.9
+            self.confidence *= self.confidence_decay
         
         return self.history[-1]
 
@@ -245,7 +247,8 @@ class BotSort(object):
     Uses GIoU for better matching and confidence-based track management.
     """
     
-    def __init__(self, max_age=30, min_hits=3, iou_threshold=0.3, use_giou=True):
+    def __init__(self, max_age=30, min_hits=3, iou_threshold=0.3, use_giou=True, 
+                 high_score_threshold=0.6, low_iou_factor=0.8, confidence_decay=0.9):
         """
         Sets key parameters for BoT-SORT
         
@@ -254,11 +257,17 @@ class BotSort(object):
             min_hits: Minimum number of associated detections before track is confirmed
             iou_threshold: Minimum IOU for match
             use_giou: Use GIoU instead of IoU for better non-overlapping box matching
+            high_score_threshold: Threshold to separate high/low confidence detections (default: 0.6)
+            low_iou_factor: Factor to adjust IOU threshold for low-score detections (default: 0.8)
+            confidence_decay: Decay factor for confidence during occlusion (default: 0.9)
         """
         self.max_age = max_age
         self.min_hits = min_hits
         self.iou_threshold = iou_threshold
         self.use_giou = use_giou
+        self.high_score_threshold = high_score_threshold
+        self.low_iou_factor = low_iou_factor
+        self.confidence_decay = confidence_decay
         self.trackers = []
         self.frame_count = 0
 
@@ -290,7 +299,7 @@ class BotSort(object):
         
         # BoT-SORT: Two-stage association
         # First stage: High-score detections with trackers
-        high_score_mask = np.array(scores) > 0.6
+        high_score_mask = np.array(scores) > self.high_score_threshold
         if np.any(high_score_mask):
             high_dets = dets[high_score_mask]
             high_class_ids = np.array(class_ids)[high_score_mask]
@@ -314,7 +323,7 @@ class BotSort(object):
                 
                 remaining_trks = trks[unmatched_trks_h]
                 matched_l, unmatched_dets_l, unmatched_trks_l = self.associate_detections_to_trackers(
-                    low_dets, remaining_trks, low_class_ids, self.iou_threshold * 0.8
+                    low_dets, remaining_trks, low_class_ids, self.iou_threshold * self.low_iou_factor
                 )
                 
                 # Update matched trackers from second stage
@@ -341,7 +350,7 @@ class BotSort(object):
 
         # Create and initialise new trackers for unmatched detections
         for i in unmatched_dets:
-            trk = KalmanBoxTracker(dets[i], class_ids[i], scores[i])
+            trk = KalmanBoxTracker(dets[i], class_ids[i], scores[i], confidence_decay=self.confidence_decay)
             self.trackers.append(trk)
         
         i = len(self.trackers)

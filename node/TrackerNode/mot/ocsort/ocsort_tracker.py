@@ -104,7 +104,7 @@ class KalmanBoxTracker(object):
     """
     count = 0
 
-    def __init__(self, bbox, class_id, score, delta_t=3):
+    def __init__(self, bbox, class_id, score, delta_t=3, momentum_damping=0.8):
         """
         Initialises a tracker using initial bounding box.
         
@@ -113,6 +113,7 @@ class KalmanBoxTracker(object):
             class_id: Object class ID
             score: Detection confidence score
             delta_t: Time steps for observation-centric momentum
+            momentum_damping: Damping factor for momentum decay (default: 0.8)
         """
         # Define constant velocity model
         self.kf = KalmanFilter(dim_x=7, dim_z=4)
@@ -151,6 +152,7 @@ class KalmanBoxTracker(object):
         self.history_observations = []
         self.velocity = None
         self.delta_t = delta_t
+        self.momentum_damping = momentum_damping
 
     def update(self, bbox, class_id, score):
         """
@@ -198,7 +200,7 @@ class KalmanBoxTracker(object):
             # Adjust prediction with observation momentum
             predicted_box = convert_x_to_bbox(self.kf.x)[0]
             # Apply velocity with damping factor
-            damping = 0.8 ** self.time_since_update
+            damping = self.momentum_damping ** self.time_since_update
             predicted_box = predicted_box + self.velocity * damping
             # Update Kalman state with momentum-adjusted prediction
             self.kf.x[:4] = convert_bbox_to_z(predicted_box)
@@ -225,7 +227,7 @@ class OCSort(object):
     Ideal for tracking fast-moving objects like tennis balls and players.
     """
     
-    def __init__(self, max_age=30, min_hits=3, iou_threshold=0.3, delta_t=3):
+    def __init__(self, max_age=30, min_hits=3, iou_threshold=0.3, delta_t=3, momentum_damping=0.8):
         """
         Sets key parameters for OC-SORT
         
@@ -234,11 +236,13 @@ class OCSort(object):
             min_hits: Minimum number of associated detections before track is confirmed
             iou_threshold: Minimum IOU for match
             delta_t: Time steps for observation-centric momentum calculation
+            momentum_damping: Damping factor for momentum decay (default: 0.8)
         """
         self.max_age = max_age
         self.min_hits = min_hits
         self.iou_threshold = iou_threshold
         self.delta_t = delta_t
+        self.momentum_damping = momentum_damping
         self.trackers = []
         self.frame_count = 0
 
@@ -278,7 +282,7 @@ class OCSort(object):
 
         # Create and initialise new trackers for unmatched detections
         for i in unmatched_dets:
-            trk = KalmanBoxTracker(dets[i], class_ids[i], scores[i], delta_t=self.delta_t)
+            trk = KalmanBoxTracker(dets[i], class_ids[i], scores[i], delta_t=self.delta_t, momentum_damping=self.momentum_damping)
             self.trackers.append(trk)
         
         i = len(self.trackers)
