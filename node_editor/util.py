@@ -2,7 +2,11 @@
 # -*- coding: utf-8 -*-
 import cv2
 import numpy as np
+import threading
 import dearpygui.dearpygui as dpg
+
+# Global lock for thread-safe DearPyGUI operations
+_dpg_lock = threading.RLock()
 
 
 
@@ -52,12 +56,14 @@ def check_serial_connection(is_debug=False):
     return serial_device_no_list
 
 def dpg_set_value(tag, value):
-    if dpg.does_item_exist(tag):
-        dpg.set_value(tag, value)
+    with _dpg_lock:
+        if dpg.does_item_exist(tag):
+            dpg.set_value(tag, value)
 
 
 def dpg_get_value(tag):
     value = None
-    if dpg.does_item_exist(tag):
-        value = dpg.get_value(tag)
+    with _dpg_lock:
+        if dpg.does_item_exist(tag):
+            value = dpg.get_value(tag)
     return value
