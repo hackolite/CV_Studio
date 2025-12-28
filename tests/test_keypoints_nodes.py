@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 def test_dataprocessing_keypoints_import():
     """Test that DataProcessing Keypoints node can be imported"""
-    from node.ProcessNode.node_dataprocessing_keypoints import FactoryNode, Node
+    from node.StatsNode.node_dataprocessing_keypoints import FactoryNode, Node
     
     factory = FactoryNode()
     node = Node()
@@ -24,7 +24,7 @@ def test_dataprocessing_keypoints_import():
     print(f"  FactoryNode.node_label: {factory.node_label}")
     
     assert factory.node_tag == "DataProcessingKeypoints"
-    assert factory.node_label == "DataProcessing/Keypoints"
+    assert factory.node_label == "Court/KeypointData"
     
     return True
 
@@ -42,14 +42,14 @@ def test_trigger_keypoint_deviation_import():
     print(f"  FactoryNode.node_label: {factory.node_label}")
     
     assert factory.node_tag == "TriggerKeypointDeviation"
-    assert factory.node_label == "Trigger/KeypointDeviation"
+    assert factory.node_label == "Court/KeypointDeviation"
     
     return True
 
 
 def test_dataprocessing_keypoints_logic():
     """Test the logic of DataProcessing Keypoints node"""
-    from node.ProcessNode.node_dataprocessing_keypoints import Node
+    from node.StatsNode.node_dataprocessing_keypoints import Node
     
     node = Node()
     node._opencv_setting_dict = {'use_pref_counter': False}
@@ -96,10 +96,10 @@ def test_trigger_keypoint_deviation_logic():
     node = Node()
     
     print("✓ Trigger Keypoint Deviation node instantiated successfully")
-    print(f"  Node has _keypoints_buffer: {hasattr(node, '_keypoints_buffer')}")
+    print(f"  Node has _cumulative_sum: {hasattr(node, '_cumulative_sum')}")
     print(f"  Node has _last_trigger_state: {hasattr(node, '_last_trigger_state')}")
     
-    assert hasattr(node, '_keypoints_buffer')
+    assert hasattr(node, '_cumulative_sum')
     assert hasattr(node, '_last_trigger_state')
     
     return True

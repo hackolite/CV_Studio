@@ -11,7 +11,7 @@ from node.basenode import Node
 
 
 class FactoryNode:
-    node_label = 'Trigger/KeypointDeviation'
+    node_label = 'Court/KeypointDeviation'
     node_tag = 'TriggerKeypointDeviation'
 
     def __init__(self):
@@ -126,7 +126,7 @@ class FactoryNode:
 class Node(Node):
     _ver = '0.0.1'
 
-    node_label = 'Trigger/KeypointDeviation'
+    node_label = 'Court/KeypointDeviation'
     node_tag = 'TriggerKeypointDeviation'
 
     _opencv_setting_dict = None
