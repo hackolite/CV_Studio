@@ -264,7 +264,7 @@ class Node(Node):
                     # Convert to grayscale and compute histogram
                     gray_court = cv2.cvtColor(court_region, cv2.COLOR_BGR2GRAY)
                     current_histogram = cv2.calcHist([gray_court], [0], None, [256], [0, 256])
-                    current_histogram = current_histogram / (current_histogram.sum() + 1e-10)
+                    current_histogram = current_histogram / (current_histogram.sum() + self.EPSILON)
                     
                     if self._previous_histogram is not None:
                         # Calculate Manhattan distance (L1)
