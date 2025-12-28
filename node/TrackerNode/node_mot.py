@@ -18,6 +18,8 @@ from node.TrackerNode.mot.norfair.mc_norfair import MultiClassNorfair
 from node.TrackerNode.mot.iou_tracker.iou_tracker import MultiClassIOUTracker
 from node.TrackerNode.mot.sort.mc_sort import MultiClassSORT
 from node.TrackerNode.mot.centertrack.mc_centertrack import MultiClassCenterTrack
+from node.TrackerNode.mot.ocsort.mc_ocsort import MultiClassOCSORT
+from node.TrackerNode.mot.botsort.mc_botsort import MultiClassBotSORT
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -139,6 +141,8 @@ class Node(Node):
         'IOU Tracker': MultiClassIOUTracker,
         'SORT': MultiClassSORT,
         'CenterTrack': MultiClassCenterTrack,
+        'OC-SORT': MultiClassOCSORT,
+        'BoT-SORT': MultiClassBotSORT,
     }
 
     _model_instance = {}

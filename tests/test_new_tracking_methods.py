@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Test script to verify that the new SORT and CenterTrack trackers work correctly
+Test script to verify that the tracking methods work correctly
+Including new ultra-fast OC-SORT and BoT-SORT trackers
 """
 import sys
 import os
@@ -12,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 
 # Test imports
-print("Testing new tracker imports...")
+print("Testing tracker imports...")
 
 from node.TrackerNode.mot.sort.mc_sort import MultiClassSORT
 print("✓ SORT imported successfully")
@@ -20,7 +21,13 @@ print("✓ SORT imported successfully")
 from node.TrackerNode.mot.centertrack.mc_centertrack import MultiClassCenterTrack
 print("✓ CenterTrack imported successfully")
 
-print("\nBoth new trackers imported successfully!")
+from node.TrackerNode.mot.ocsort.mc_ocsort import MultiClassOCSORT
+print("✓ OC-SORT imported successfully")
+
+from node.TrackerNode.mot.botsort.mc_botsort import MultiClassBotSORT
+print("✓ BoT-SORT imported successfully")
+
+print("\nAll trackers imported successfully!")
 
 # Test instantiation
 print("\nTesting tracker instantiation...")
@@ -28,9 +35,11 @@ print("\nTesting tracker instantiation...")
 trackers = {
     'SORT': MultiClassSORT(),
     'CenterTrack': MultiClassCenterTrack(),
+    'OC-SORT': MultiClassOCSORT(),
+    'BoT-SORT': MultiClassBotSORT(),
 }
 
-print("✓ Both new trackers instantiated successfully")
+print("✓ All trackers instantiated successfully")
 
 # Test with sample data
 print("\nTesting tracker calls with sample data...")
@@ -64,8 +73,8 @@ for tracker_name, tracker in trackers.items():
 
 print("\n" + "="*60)
 if success_count == len(trackers):
-    print("✓ SUCCESS: All new tracking methods are working correctly!")
-    print(f"Available new trackers: {', '.join(trackers.keys())}")
+    print("✓ SUCCESS: All tracking methods are working correctly!")
+    print(f"Available trackers: {', '.join(trackers.keys())}")
     print("="*60)
     sys.exit(0)
 else:
