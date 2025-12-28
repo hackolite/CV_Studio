@@ -171,6 +171,14 @@ class Node(Node):
     node_tag = 'TriggerKeypointDeviation'
 
     _opencv_setting_dict = None
+    
+    # Algorithm constants
+    STABLE_FRAME_COUNT = 5  # Number of frames to wait before setting master plan
+    COURT_REGION_MARGIN = 10  # Margin in pixels around keypoints bounding box
+    COLOR_QUANTIZATION_STEP = 32  # Step size for color quantization (groups similar colors)
+    COLOR_SIMILARITY_THRESHOLD = 50  # Maximum color distance to consider colors similar
+    RETURN_THRESHOLD_FACTOR = 0.5  # Strictness factor for returning to master plan
+    EPSILON = 1e-10  # Small value to prevent division by zero
 
     def __init__(self):
         # Master plan: dominant color of the court from first stable frame
@@ -184,7 +192,6 @@ class Node(Node):
         
         # Frame counter for stability check
         self._frame_counter = 0
-        self._stable_frame_count = 5  # Number of frames to consider stable
 
     def update(
         self,
@@ -243,7 +250,7 @@ class Node(Node):
                 self._frame_counter += 1
                 
                 # 1. Define MASTER PLAN on first stable frame
-                if not self._master_plan_set and self._frame_counter >= self._stable_frame_count:
+                if not self._master_plan_set and self._frame_counter >= self.STABLE_FRAME_COUNT:
                     dominant_color, dominance_ratio = self._get_dominant_color(court_region)
                     
                     if dominance_ratio >= dominance_threshold:
@@ -279,7 +286,7 @@ class Node(Node):
                             master_distance = np.sum(np.abs(current_histogram - self._master_plan_histogram))
                             
                             # If we're close to master plan, deactivate trigger
-                            if master_distance < cut_threshold * 0.5:  # More strict for return
+                            if master_distance < cut_threshold * self.RETURN_THRESHOLD_FACTOR:
                                 self._trigger_active = False
                 
                 # Add trigger information to output JSON
@@ -317,11 +324,10 @@ class Node(Node):
             y_coords = results_list[:, 1].astype(int)
             
             # Add margin to bounding box
-            margin = 10
-            x_min = max(0, np.min(x_coords) - margin)
-            x_max = min(frame.shape[1], np.max(x_coords) + margin)
-            y_min = max(0, np.min(y_coords) - margin)
-            y_max = min(frame.shape[0], np.max(y_coords) + margin)
+            x_min = max(0, np.min(x_coords) - self.COURT_REGION_MARGIN)
+            x_max = min(frame.shape[1], np.max(x_coords) + self.COURT_REGION_MARGIN)
+            y_min = max(0, np.min(y_coords) - self.COURT_REGION_MARGIN)
+            y_max = min(frame.shape[0], np.max(y_coords) + self.COURT_REGION_MARGIN)
             
             # Extract region
             if x_max > x_min and y_max > y_min:
@@ -335,7 +341,7 @@ class Node(Node):
         pixels = image.reshape(-1, 3)
         
         # Quantize colors to reduce complexity
-        pixels = (pixels // 32) * 32  # Group similar colors
+        pixels = (pixels // self.COLOR_QUANTIZATION_STEP) * self.COLOR_QUANTIZATION_STEP
         
         # Count color frequencies
         unique_colors, counts = np.unique(pixels, axis=0, return_counts=True)
@@ -351,13 +357,15 @@ class Node(Node):
         """Compute normalized grayscale histogram"""
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         histogram = cv2.calcHist([gray], [0], None, [256], [0, 256])
-        histogram = histogram / (histogram.sum() + 1e-10)
+        histogram = histogram / (histogram.sum() + self.EPSILON)
         return histogram
 
-    def _is_color_similar(self, color1, color2, threshold=50):
+    def _is_color_similar(self, color1, color2, threshold=None):
         """Check if two colors are similar (Euclidean distance)"""
         if color1 is None or color2 is None:
             return False
+        if threshold is None:
+            threshold = self.COLOR_SIMILARITY_THRESHOLD
         distance = np.linalg.norm(color1 - color2)
         return distance < threshold
 
