@@ -18,12 +18,17 @@ class YOLOv8Seg(object):
             'CUDAExecutionProvider',
             'CPUExecutionProvider',
         ],
+        num_classes=80,  # Number of classes (80 for COCO dataset)
+        confidence_threshold=0.25,  # Confidence threshold for detection
     ):
         # Load ONNX model
         self.onnx_session = onnxruntime.InferenceSession(
             model_path,
             providers=providers,
         )
+
+        self.num_classes = num_classes
+        self.confidence_threshold = confidence_threshold
 
         self.input_detail = self.onnx_session.get_inputs()[0]
         self.input_name = self.input_detail.name
@@ -99,26 +104,25 @@ class YOLOv8Seg(object):
             segmentation_map: Array of binary masks
         """
         # Extract detection boxes and mask coefficients
-        boxes_output = outputs[0]  # Shape: [1, 116, 8400] for yolov8n-seg
+        boxes_output = outputs[0]  # Shape: [1, 4+num_classes+32, num_detections] for yolov8n-seg
         
         # For YOLOv8-seg, the output contains:
         # - First 4 values: box coordinates (x, y, w, h)
-        # - Next 80 values: class scores (for COCO dataset)
+        # - Next num_classes values: class scores
         # - Last 32 values: mask coefficients
         
         # Squeeze batch dimension and transpose
-        boxes_output = np.squeeze(boxes_output)  # [116, 8400]
-        boxes_output = np.transpose(boxes_output)  # [8400, 116]
+        boxes_output = np.squeeze(boxes_output)  # [4+num_classes+32, num_detections]
+        boxes_output = np.transpose(boxes_output)  # [num_detections, 4+num_classes+32]
         
         # Extract boxes, scores, and class IDs
-        boxes = boxes_output[:, :4]  # [8400, 4]
-        scores = boxes_output[:, 4:84]  # [8400, 80] class scores
-        max_scores = np.max(scores, axis=1)  # [8400]
-        class_ids = np.argmax(scores, axis=1)  # [8400]
+        boxes = boxes_output[:, :4]  # [num_detections, 4]
+        scores = boxes_output[:, 4:4+self.num_classes]  # [num_detections, num_classes]
+        max_scores = np.max(scores, axis=1)  # [num_detections]
+        class_ids = np.argmax(scores, axis=1)  # [num_detections]
         
         # Filter by confidence threshold
-        confidence_threshold = 0.25
-        mask = max_scores > confidence_threshold
+        mask = max_scores > self.confidence_threshold
         
         boxes = boxes[mask]
         max_scores = max_scores[mask]
@@ -127,7 +131,7 @@ class YOLOv8Seg(object):
         # If we have mask output (proto masks)
         if self.output_name_masks and len(outputs) > 1:
             proto_masks = outputs[1]  # Shape: [1, 32, 160, 160]
-            mask_coefficients = boxes_output[:, 84:]  # [8400, 32]
+            mask_coefficients = boxes_output[:, 4+self.num_classes:]  # [num_detections, 32]
             mask_coefficients = mask_coefficients[mask]  # Filter by confidence
             
             # Generate segmentation masks
@@ -181,9 +185,9 @@ class YOLOv8Seg(object):
 
     def get_class_num(self):
         """
-        Return the number of classes (80 for COCO dataset)
+        Return the number of classes
         """
-        return 80
+        return self.num_classes
 
     def extract_contours(self, segmentation_map):
         """
