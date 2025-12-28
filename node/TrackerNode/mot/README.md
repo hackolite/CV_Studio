@@ -7,3 +7,5 @@
 | IOU Tracker | Custom Implementation | MIT | Simple tracker based on Intersection over Union (IOU) matching |
 | SORT<br> (2024) | [abewley/sort](https://github.com/abewley/sort) | MIT | Simple Online and Realtime Tracking with Kalman filtering |
 | CenterTrack<br> (2024) | Custom Implementation | MIT | Centroid-based tracker using distance metrics for object association |
+| **OC-SORT**<br> (2024) | [noahcao/OC_SORT](https://github.com/noahcao/OC_SORT) | MIT | **Ultra-fast tracker with observation-centric momentum. Ideal for tennis and fast sports** |
+| **BoT-SORT**<br> (2024) | [NirAharon/BoT-SORT](https://github.com/NirAharon/BoT-SORT) | MIT | **Ultra-fast tracker with GIoU and improved association. Optimized for sports scenarios** |
