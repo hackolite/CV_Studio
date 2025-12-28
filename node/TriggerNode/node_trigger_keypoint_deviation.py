@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 import time
 import copy
-from collections import deque
 import numpy as np
 import dearpygui.dearpygui as dpg
 
@@ -40,11 +39,8 @@ class FactoryNode:
         node.tag_node_output_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Output03'
         node.tag_node_output_json_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Output03Value'
         
-        node.tag_node_input_window_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input02'
-        node.tag_node_input_window_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input02Value'
-        
-        node.tag_node_input_threshold_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input03'
-        node.tag_node_input_threshold_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input03Value'
+        node.tag_node_input_threshold_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input02'
+        node.tag_node_input_threshold_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input02Value'
         
         node.tag_node_output_time_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output04'
         node.tag_node_output_time_value_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output04Value'
@@ -67,21 +63,6 @@ class FactoryNode:
                 dpg.add_text(
                     tag=node.tag_node_input_json_value_name,
                     default_value='Keypoints JSON Input',
-                )
-
-            # Parameter: Window size (seconds)
-            with dpg.node_attribute(
-                tag=node.tag_node_input_window_name,
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_slider_float(
-                    tag=node.tag_node_input_window_value_name,
-                    label="Window (sec)",
-                    width=small_window_w - 80,
-                    default_value=2.0,
-                    min_value=0.5,
-                    max_value=10.0,
-                    callback=None,
                 )
 
             # Parameter: Threshold distance
@@ -152,7 +133,8 @@ class Node(Node):
     _keypoints_history = {}  # Store history per node instance
 
     def __init__(self):
-        self._keypoints_buffer = deque()  # Buffer with timestamps
+        self._cumulative_sum = None  # Cumulative sum of keypoints
+        self._count = 0  # Count of keypoints seen
         self._last_trigger_state = False
 
     def update(
@@ -167,13 +149,11 @@ class Node(Node):
         output_bool_tag = tag_node_name + ':' + self.TYPE_BOOLEAN + ':Output01Value'
         output_float_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Output02Value'
         output_time_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output04Value'
-        input_window_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input02Value'
-        input_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
+        input_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input02Value'
 
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
         # Get parameters
-        window_seconds = dpg_get_value(input_window_tag)
         threshold_distance = dpg_get_value(input_threshold_tag)
 
         # Find JSON connection
@@ -203,41 +183,37 @@ class Node(Node):
             # Extract keypoints from results_list
             if 'results_list' in json_data:
                 results_list = json_data['results_list']
-                current_time = time.time()
                 
                 # Convert keypoints to flat array
                 if isinstance(results_list, np.ndarray):
                     keypoints_flat = results_list.flatten()
                     
-                    # Add current keypoints to buffer with timestamp
-                    self._keypoints_buffer.append((current_time, keypoints_flat))
-                    
-                    # Remove old entries outside the window
-                    cutoff_time = current_time - window_seconds
-                    while self._keypoints_buffer and self._keypoints_buffer[0][0] < cutoff_time:
-                        self._keypoints_buffer.popleft()
-                    
-                    # Calculate average if we have enough history
-                    if len(self._keypoints_buffer) >= 2:
-                        # Calculate mean keypoints over the window
-                        keypoints_arrays = [kp for _, kp in self._keypoints_buffer]
-                        mean_keypoints = np.mean(keypoints_arrays, axis=0)
+                    # Initialize cumulative sum on first keypoints
+                    if self._cumulative_sum is None:
+                        self._cumulative_sum = keypoints_flat.copy()
+                        self._count = 1
+                    else:
+                        # Calculate current mean before adding new keypoints
+                        current_mean = self._cumulative_sum / self._count
                         
-                        # Calculate distance between current and mean
+                        # Calculate distance between current keypoints and mean
                         # Using Euclidean distance of the flattened keypoints
-                        distance = np.sqrt(np.sum((keypoints_flat - mean_keypoints) ** 2))
+                        distance = np.sqrt(np.sum((keypoints_flat - current_mean) ** 2))
                         
                         # Check if distance exceeds threshold
                         if distance > threshold_distance:
                             trigger_state = True
+                        
+                        # Update cumulative sum and count
+                        self._cumulative_sum += keypoints_flat
+                        self._count += 1
                     
                     # Add trigger information to output JSON
                     output_json['trigger_info'] = {
                         'triggered': trigger_state,
                         'distance': float(distance),
                         'threshold': float(threshold_distance),
-                        'window_seconds': float(window_seconds),
-                        'buffer_size': len(self._keypoints_buffer)
+                        'count': self._count
                     }
 
         # Update UI outputs
@@ -254,32 +230,27 @@ class Node(Node):
         return {"image": None, "json": output_json, "audio": None}
 
     def close(self, node_id):
-        # Clear buffer on close
-        self._keypoints_buffer.clear()
+        # Clear cumulative data on close
+        self._cumulative_sum = None
+        self._count = 0
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
-        input_window_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input02Value'
-        input_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
+        input_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input02Value'
         
-        window_seconds = dpg_get_value(input_window_tag)
         threshold_distance = dpg_get_value(input_threshold_tag)
         pos = dpg.get_item_pos(tag_node_name)
 
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
-        setting_dict[input_window_tag] = window_seconds
         setting_dict[input_threshold_tag] = threshold_distance
 
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = str(node_id) + ':' + self.node_tag
-        input_window_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input02Value'
-        input_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
+        input_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input02Value'
         
-        if input_window_tag in setting_dict:
-            dpg_set_value(input_window_tag, setting_dict[input_window_tag])
         if input_threshold_tag in setting_dict:
             dpg_set_value(input_threshold_tag, setting_dict[input_threshold_tag])
