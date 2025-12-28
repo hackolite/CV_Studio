@@ -6,6 +6,11 @@ import threading
 import dearpygui.dearpygui as dpg
 
 # Global lock for thread-safe DearPyGUI operations
+# RLock (reentrant lock) allows the same thread to acquire the lock multiple times,
+# which is necessary when nested DearPyGUI calls occur within the same thread.
+# This protects against race conditions between:
+# - Main thread: Processing UI events via dpg.start_dearpygui()
+# - Worker thread: Updating nodes via async_main() in thread executor
 _dpg_lock = threading.RLock()
 
 

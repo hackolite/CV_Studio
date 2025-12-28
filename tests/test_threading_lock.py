@@ -37,13 +37,12 @@ def test_dpg_set_value_uses_lock():
     # Find dpg_set_value function
     assert 'def dpg_set_value(tag, value):' in content, "dpg_set_value function should exist"
     
-    # Find the function body
+    # Check that the function uses the lock anywhere after its definition
     func_start = content.find('def dpg_set_value(tag, value):')
-    func_end = content.find('\ndef ', func_start + 1)
-    func_body = content[func_start:func_end]
+    func_section = content[func_start:func_start + 200]  # Check next 200 chars
     
     # Verify it uses the lock
-    assert 'with _dpg_lock:' in func_body, "dpg_set_value should use _dpg_lock"
+    assert 'with _dpg_lock:' in func_section, "dpg_set_value should use _dpg_lock"
     print("✓ dpg_set_value uses _dpg_lock")
 
 
@@ -60,13 +59,12 @@ def test_dpg_get_value_uses_lock():
     # Find dpg_get_value function
     assert 'def dpg_get_value(tag):' in content, "dpg_get_value function should exist"
     
-    # Find the function body
+    # Check that the function uses the lock anywhere after its definition
     func_start = content.find('def dpg_get_value(tag):')
-    func_end = content.find('\n    return value', func_start) + len('\n    return value')
-    func_body = content[func_start:func_end]
+    func_section = content[func_start:func_start + 200]  # Check next 200 chars
     
     # Verify it uses the lock
-    assert 'with _dpg_lock:' in func_body, "dpg_get_value should use _dpg_lock"
+    assert 'with _dpg_lock:' in func_section, "dpg_get_value should use _dpg_lock"
     print("✓ dpg_get_value uses _dpg_lock")
 
 
@@ -86,13 +84,12 @@ def test_callback_add_node_uses_lock():
     # Find _callback_add_node method
     assert 'def _callback_add_node(self, sender, data, user_data):' in content
     
-    # Find the method body
+    # Check that the method uses the lock anywhere after its definition
     method_start = content.find('def _callback_add_node(self, sender, data, user_data):')
-    method_end = content.find('\n    def ', method_start + 1)
-    method_body = content[method_start:method_end]
+    method_section = content[method_start:method_start + 500]  # Check next 500 chars
     
     # Verify it uses the lock
-    assert 'with _dpg_lock:' in method_body, "_callback_add_node should use _dpg_lock"
+    assert 'with _dpg_lock:' in method_section, "_callback_add_node should use _dpg_lock"
     print("✓ _callback_add_node uses _dpg_lock")
 
 
@@ -109,13 +106,12 @@ def test_callback_link_uses_lock():
     # Find _callback_link method
     assert 'def _callback_link(self, sender, data):' in content
     
-    # Find the method body
+    # Check that the method uses the lock anywhere after its definition
     method_start = content.find('def _callback_link(self, sender, data):')
-    method_end = content.find('\n    def ', method_start + 1)
-    method_body = content[method_start:method_end]
+    method_section = content[method_start:method_start + 500]  # Check next 500 chars
     
     # Verify it uses the lock
-    assert 'with _dpg_lock:' in method_body, "_callback_link should use _dpg_lock"
+    assert 'with _dpg_lock:' in method_section, "_callback_link should use _dpg_lock"
     print("✓ _callback_link uses _dpg_lock")
 
 
