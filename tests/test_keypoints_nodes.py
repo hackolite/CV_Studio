@@ -96,11 +96,17 @@ def test_trigger_keypoint_deviation_logic():
     node = Node()
     
     print("✓ Trigger Keypoint Deviation node instantiated successfully")
-    print(f"  Node has _cumulative_sum: {hasattr(node, '_cumulative_sum')}")
-    print(f"  Node has _last_trigger_state: {hasattr(node, '_last_trigger_state')}")
+    print(f"  Node has _master_plan_color: {hasattr(node, '_master_plan_color')}")
+    print(f"  Node has _master_plan_histogram: {hasattr(node, '_master_plan_histogram')}")
+    print(f"  Node has _master_plan_set: {hasattr(node, '_master_plan_set')}")
+    print(f"  Node has _trigger_active: {hasattr(node, '_trigger_active')}")
+    print(f"  Node has _previous_histogram: {hasattr(node, '_previous_histogram')}")
     
-    assert hasattr(node, '_cumulative_sum')
-    assert hasattr(node, '_last_trigger_state')
+    assert hasattr(node, '_master_plan_color')
+    assert hasattr(node, '_master_plan_histogram')
+    assert hasattr(node, '_master_plan_set')
+    assert hasattr(node, '_trigger_active')
+    assert hasattr(node, '_previous_histogram')
     
     return True
 
