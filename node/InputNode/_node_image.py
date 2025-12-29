@@ -181,19 +181,32 @@ class ImageNode(Node):
         
         # Only reload and convert texture when image path changes
         if prev_image_path != image_path:
-            self._image[str(node_id)] = cv2.imread(image_path)
-            self._prev_image_filepath[str(node_id)] = image_path
-            
-            # Convert and cache the texture only when image changes
-            frame = self._image.get(str(node_id), None)
-            if frame is not None:
-                texture = self.convert_cv_to_dpg(
-                    frame,
-                    small_window_w,
-                    small_window_h,
-                )
-                self._texture_cache[str(node_id)] = texture
-                dpg_set_value(output_value01_tag, texture)
+            if image_path is not None:
+                loaded_image = cv2.imread(image_path)
+                if loaded_image is not None:
+                    self._image[str(node_id)] = loaded_image
+                    self._prev_image_filepath[str(node_id)] = image_path
+                    
+                    # Convert and cache the texture only when image loads successfully
+                    texture = self.convert_cv_to_dpg(
+                        loaded_image,
+                        small_window_w,
+                        small_window_h,
+                    )
+                    self._texture_cache[str(node_id)] = texture
+                    dpg_set_value(output_value01_tag, texture)
+                else:
+                    # Image load failed - clear cached data
+                    self._image[str(node_id)] = None
+                    self._prev_image_filepath[str(node_id)] = image_path
+                    if str(node_id) in self._texture_cache:
+                        del self._texture_cache[str(node_id)]
+            else:
+                # No image path - clear cached data
+                self._image[str(node_id)] = None
+                self._prev_image_filepath[str(node_id)] = None
+                if str(node_id) in self._texture_cache:
+                    del self._texture_cache[str(node_id)]
 
 
         frame = self._image.get(str(node_id), None)
