@@ -96,10 +96,16 @@ def test_trigger_keypoint_deviation_logic():
     node = Node()
     
     print("✓ Trigger Keypoint Deviation node instantiated successfully")
-    print(f"  Node has _cumulative_sum: {hasattr(node, '_cumulative_sum')}")
+    print(f"  Node has _keypoints_buffer: {hasattr(node, '_keypoints_buffer')}")
+    print(f"  Node has _kmeans_model: {hasattr(node, '_kmeans_model')}")
+    print(f"  Node has _court_cluster_id: {hasattr(node, '_court_cluster_id')}")
+    print(f"  Node has _training_complete: {hasattr(node, '_training_complete')}")
     print(f"  Node has _last_trigger_state: {hasattr(node, '_last_trigger_state')}")
     
-    assert hasattr(node, '_cumulative_sum')
+    assert hasattr(node, '_keypoints_buffer')
+    assert hasattr(node, '_kmeans_model')
+    assert hasattr(node, '_court_cluster_id')
+    assert hasattr(node, '_training_complete')
     assert hasattr(node, '_last_trigger_state')
     
     return True

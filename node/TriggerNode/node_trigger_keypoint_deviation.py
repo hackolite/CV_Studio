@@ -4,6 +4,7 @@ import time
 import copy
 import numpy as np
 import dearpygui.dearpygui as dpg
+from sklearn.cluster import KMeans
 
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
@@ -42,6 +43,9 @@ class FactoryNode:
         node.tag_node_input_threshold_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input02'
         node.tag_node_input_threshold_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input02Value'
         
+        node.tag_node_input_sample_count_name = node.tag_node_name + ':SampleCount'
+        node.tag_node_input_sample_count_value_name = node.tag_node_name + ':SampleCountValue'
+        
         node.tag_node_output_time_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output04'
         node.tag_node_output_time_value_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output04Value'
 
@@ -77,6 +81,20 @@ class FactoryNode:
                     default_value=100.0,
                     min_value=10.0,
                     max_value=500.0,
+                    callback=None,
+                )
+
+            # Parameter: Sample count for K-means training
+            with dpg.node_attribute(
+                tag=node.tag_node_input_sample_count_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_input_sample_count_value_name,
+                    label="Sample Count",
+                    items=["100", "200", "300"],
+                    default_value="200",
+                    width=small_window_w - 80,
                     callback=None,
                 )
 
@@ -130,11 +148,13 @@ class Node(Node):
     node_tag = 'TriggerKeypointDeviation'
 
     _opencv_setting_dict = None
-    _keypoints_history = {}  # Store history per node instance
 
     def __init__(self):
-        self._master_keypoints = None  # Master frame with widest parallelogram
-        self._master_area = 0.0  # Area of the master parallelogram
+        # K-means clustering data
+        self._keypoints_buffer = []  # Store keypoints for K-means training
+        self._kmeans_model = None  # Trained K-means model
+        self._court_cluster_id = None  # ID of the cluster with least variation (court)
+        self._training_complete = False  # Flag to indicate if K-means training is done
         self._last_trigger_state = False
 
     def update(
@@ -150,11 +170,14 @@ class Node(Node):
         output_float_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Output02Value'
         output_time_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output04Value'
         input_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input02Value'
+        input_sample_count_tag = tag_node_name + ':SampleCountValue'
 
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
         # Get parameters
         threshold_distance = dpg_get_value(input_threshold_tag)
+        sample_count_str = dpg_get_value(input_sample_count_tag)
+        sample_count = int(sample_count_str)
 
         # Find JSON connection
         connection_info_src = ''
@@ -188,44 +211,80 @@ class Node(Node):
                 if isinstance(results_list, np.ndarray):
                     keypoints = results_list
                     
-                    # Calculate the area of the parallelogram formed by keypoints
-                    # Using bounding box area as a measure of "widest parallelogram"
+                    # Flatten keypoints to 1D array for K-means
                     if len(keypoints.shape) == 2 and keypoints.shape[0] >= 2:
-                        # Calculate bounding box area
-                        x_coords = keypoints[:, 0]
-                        y_coords = keypoints[:, 1]
-                        width = np.max(x_coords) - np.min(x_coords)
-                        height = np.max(y_coords) - np.min(y_coords)
-                        current_area = width * height
+                        keypoints_flat = keypoints.flatten()
                         
-                        # Update master if this frame has a wider parallelogram
-                        if self._master_keypoints is None or current_area > self._master_area:
-                            self._master_keypoints = keypoints.copy()
-                            self._master_area = current_area
-                            # Reset distance when we update the master
-                            distance = 0.0
+                        # Phase 1: Collect samples for K-means training
+                        if not self._training_complete:
+                            self._keypoints_buffer.append(keypoints_flat)
+                            
+                            # Check if we have enough samples
+                            if len(self._keypoints_buffer) >= sample_count:
+                                # Train K-means with 2 clusters
+                                X = np.array(self._keypoints_buffer)
+                                self._kmeans_model = KMeans(n_clusters=2, random_state=42, n_init=10)
+                                self._kmeans_model.fit(X)
+                                
+                                # Identify which cluster has least variation (court cluster)
+                                # Calculate variance for each cluster
+                                labels = self._kmeans_model.labels_
+                                cluster_0_samples = X[labels == 0]
+                                cluster_1_samples = X[labels == 1]
+                                
+                                variance_0 = np.var(cluster_0_samples) if len(cluster_0_samples) > 0 else float('inf')
+                                variance_1 = np.var(cluster_1_samples) if len(cluster_1_samples) > 0 else float('inf')
+                                
+                                # Court cluster is the one with least variation
+                                self._court_cluster_id = 0 if variance_0 < variance_1 else 1
+                                self._training_complete = True
+                                
+                                # Add training info to output
+                                output_json['kmeans_info'] = {
+                                    'training_complete': True,
+                                    'samples_collected': len(self._keypoints_buffer),
+                                    'court_cluster_id': int(self._court_cluster_id),
+                                    'variance_cluster_0': float(variance_0),
+                                    'variance_cluster_1': float(variance_1)
+                                }
+                            else:
+                                # Still collecting samples
+                                output_json['kmeans_info'] = {
+                                    'training_complete': False,
+                                    'samples_collected': len(self._keypoints_buffer),
+                                    'samples_needed': sample_count
+                                }
+                        
+                        # Phase 2: Classify new keypoints and trigger if not in court cluster
                         else:
-                            # Calculate delta: sum of absolute differences with master
-                            if self._master_keypoints is not None:
-                                # Ensure shapes match
-                                if self._master_keypoints.shape == keypoints.shape:
-                                    # Calculate sum of deltas (Manhattan distance)
-                                    deltas = np.abs(keypoints - self._master_keypoints)
-                                    distance = np.sum(deltas)
-                                    
-                                    # Check if distance exceeds threshold
-                                    if distance > threshold_distance:
-                                        trigger_state = True
-                        
-                        # Add trigger information to output JSON
-                        output_json['trigger_info'] = {
-                            'triggered': trigger_state,
-                            'distance': float(distance),
-                            'threshold': float(threshold_distance),
-                            'master_area': float(self._master_area),
-                            'current_area': float(current_area),
-                            'is_master': current_area >= self._master_area
-                        }
+                            # Predict which cluster this keypoint belongs to
+                            keypoints_reshaped = keypoints_flat.reshape(1, -1)
+                            predicted_cluster = self._kmeans_model.predict(keypoints_reshaped)[0]
+                            
+                            # Calculate distance to court cluster center
+                            court_center = self._kmeans_model.cluster_centers_[self._court_cluster_id]
+                            distance = np.linalg.norm(keypoints_flat - court_center)
+                            
+                            # Trigger if not in court cluster (i.e., in out-of-play cluster)
+                            if predicted_cluster != self._court_cluster_id:
+                                trigger_state = True
+                            
+                            # Add classification info to output
+                            output_json['kmeans_info'] = {
+                                'training_complete': True,
+                                'predicted_cluster': int(predicted_cluster),
+                                'court_cluster_id': int(self._court_cluster_id),
+                                'is_court': predicted_cluster == self._court_cluster_id,
+                                'distance_to_court': float(distance),
+                                'threshold': float(threshold_distance) if threshold_distance is not None else 100.0
+                            }
+                            
+                            # Also check threshold distance
+                            if threshold_distance is not None and distance > threshold_distance:
+                                trigger_state = True
+            
+            # Add standard BOOL field to output JSON
+            output_json['BOOL'] = trigger_state
 
         # Update UI outputs
         dpg_set_value(output_bool_tag, f'Trigger: {trigger_state}')
@@ -241,27 +300,36 @@ class Node(Node):
         return {"image": None, "json": output_json, "audio": None}
 
     def close(self, node_id):
-        # Clear master data on close
-        self._master_keypoints = None
-        self._master_area = 0.0
+        # Clear K-means data on close
+        self._keypoints_buffer = []
+        self._kmeans_model = None
+        self._court_cluster_id = None
+        self._training_complete = False
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input02Value'
+        input_sample_count_tag = tag_node_name + ':SampleCountValue'
         
         threshold_distance = dpg_get_value(input_threshold_tag)
+        sample_count = dpg_get_value(input_sample_count_tag)
         pos = dpg.get_item_pos(tag_node_name)
 
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
         setting_dict[input_threshold_tag] = threshold_distance
+        setting_dict[input_sample_count_tag] = sample_count
 
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input02Value'
+        input_sample_count_tag = tag_node_name + ':SampleCountValue'
         
         if input_threshold_tag in setting_dict:
             dpg_set_value(input_threshold_tag, setting_dict[input_threshold_tag])
+        
+        if input_sample_count_tag in setting_dict:
+            dpg_set_value(input_sample_count_tag, setting_dict[input_sample_count_tag])
