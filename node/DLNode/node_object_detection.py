@@ -330,6 +330,7 @@ class Node(Node):
                     start_time = time.monotonic()
 
                 result = {}
+                debug_frame = None
                 if frame is not None:
 
                     bboxes, scores, class_ids = self._model_instance[
@@ -372,7 +373,7 @@ class Node(Node):
                     )
                     dpg_set_value(tag_node_output_image, texture)
 
-                data["image"] = frame
+                data["image"] = debug_frame if debug_frame is not None else frame
                 data["json"] = result
                 data["audio"] = None
                 return data

@@ -297,6 +297,7 @@ class Node(Node):
             start_time = time.monotonic()
 
         result = {}
+        debug_frame = None
         if frame is not None:
             class_num = self._model_instance[
                 model_name_with_provider].get_class_num()
@@ -335,7 +336,7 @@ class Node(Node):
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return {"image": frame, "json": result, "audio": None}
+        return {"image": debug_frame if debug_frame is not None else frame, "json": result, "audio": None}
 
     def close(self, node_id):
         pass
