@@ -350,34 +350,19 @@ class Node(Node):
                           str(elapsed_time).zfill(4) + 'ms')
 
         # 描画
+        output_frame = frame
         if frame is not None:
-            # Resize frame first to node display size
-            # cv2.resize returns a new array, so no need to deepcopy
-            debug_frame = cv2.resize(frame, (small_window_w, small_window_h), interpolation=cv2.INTER_AREA)
+            # Create debug_frame with original dimensions for output
+            debug_frame = copy.deepcopy(frame)
             
-            # Draw labels on the resized frame so text size is linked to node frame size
+            # Draw labels on the original frame
             if result['use_object_detection']:
-                # Scale bounding boxes to match resized frame
-                frame_h, frame_w = frame.shape[:2]
-                scale_x = small_window_w / frame_w
-                scale_y = small_window_h / frame_h
-                scaled_od_bboxes = []
-                for bbox in result['od_bboxes']:
-                    x1, y1, x2, y2 = bbox
-                    scaled_bbox = [
-                        int(x1 * scale_x),
-                        int(y1 * scale_y),
-                        int(x2 * scale_x),
-                        int(y2 * scale_y)
-                    ]
-                    scaled_od_bboxes.append(scaled_bbox)
-                
                 debug_frame = self.draw_classification_with_od_info(
                     debug_frame,
                     result['class_ids'],
                     result['class_scores'],
                     result['class_names'],
-                    scaled_od_bboxes,
+                    result['od_bboxes'],
                     result['od_scores'],
                     result['od_class_ids'],
                     result['od_class_names'],
@@ -390,6 +375,8 @@ class Node(Node):
                     result['class_scores'],
                     result['class_names'],
                 )
+            
+            output_frame = debug_frame
 
             texture = self.convert_cv_to_dpg(
                 debug_frame,
@@ -398,7 +385,7 @@ class Node(Node):
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return {"image": frame, "json": result, "audio": None}
+        return {"image": output_frame, "json": result, "audio": None}
 
     def close(self, node_id):
         pass

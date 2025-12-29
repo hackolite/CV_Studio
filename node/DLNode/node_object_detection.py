@@ -372,7 +372,7 @@ class Node(Node):
                     )
                     dpg_set_value(tag_node_output_image, texture)
 
-                data["image"] = frame
+                data["image"] = debug_frame if frame is not None else frame
                 data["json"] = result
                 data["audio"] = None
                 return data

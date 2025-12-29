@@ -335,7 +335,7 @@ class Node(Node):
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return {"image": frame, "json": result, "audio": None}
+        return {"image": debug_frame if frame is not None else frame, "json": result, "audio": None}
 
     def close(self, node_id):
         pass

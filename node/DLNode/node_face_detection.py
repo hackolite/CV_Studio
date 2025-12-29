@@ -335,7 +335,7 @@ class Node(Node):
         except Exception as e:
             logger.error(f"Error processing face detection result: {e}")
 
-        return {"image": frame, "json": result, "audio": None}
+        return {"image": debug_frame if frame is not None else frame, "json": result, "audio": None}
 
     def close(self, node_id):
         pass
