@@ -27,16 +27,16 @@ def test_callback_is_non_blocking():
         """Simulates the _callback_file_select behavior"""
         node_id = "test_node"
         
-        # Set preprocessing status
-        preprocessing_status = {'loading'}
+        # Set preprocessing status (using dict as in real implementation)
+        preprocessing_status = {}
+        preprocessing_status[node_id] = 'loading'
         
         # Run preprocessing in background thread
         def preprocess_thread():
             nonlocal preprocessing_complete
             time.sleep(0.1)  # Simulate long-running operation
             preprocessing_complete = True
-            preprocessing_status.clear()
-            preprocessing_status.add('done')
+            preprocessing_status[node_id] = 'done'
         
         thread = threading.Thread(target=preprocess_thread, daemon=True)
         thread.start()

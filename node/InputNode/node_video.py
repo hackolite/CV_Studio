@@ -298,11 +298,8 @@ class VideoNode(Node):
     _frame_count = {}
     _last_frame_time = {}
     _loop_elapsed_time = {}  # Track cumulative time across loops for continuous timestamps
-    _preprocessing_status = {}  # Track preprocessing status: 'loading', 'done', None
+    _preprocessing_status = {}  # Track preprocessing status: 'loading', 'done', 'error', or None
     _preprocessing_threads = {}  # Track preprocessing threads for cleanup
-
-    _min_val = 1
-    _max_val = 10
 
     def __init__(self):
         super().__init__()  # Call parent constructor
