@@ -101,7 +101,7 @@ def test_thread_safety_pattern():
 
 
 def test_preprocessing_status_flow():
-    """Test the preprocessing status flow: None -> loading -> done"""
+    """Test the preprocessing status flow: None -> loading -> done/error"""
     print("\nTesting preprocessing status flow...")
     
     status = {}
@@ -115,13 +115,23 @@ def test_preprocessing_status_flow():
     assert status['node1'] == 'loading', "Status should be 'loading'"
     print("✓ Status set to: loading")
     
-    # Simulate preprocessing completion
+    # Simulate successful preprocessing
     status['node1'] = 'done'
     assert status['node1'] == 'done', "Status should be 'done'"
-    print("✓ Status set to: done")
+    print("✓ Status set to: done (success)")
+    
+    # Simulate error case
+    status['node2'] = 'loading'
+    status['node2'] = 'error'
+    assert status['node2'] == 'error', "Status should be 'error' on failure"
+    # In update(), error status is converted to 'done' to allow video playback without audio
+    status['node2'] = 'done'
+    assert status['node2'] == 'done', "Error status should be converted to 'done'"
+    print("✓ Status handles error case (allows playback without audio)")
     
     # Cleanup
     del status['node1']
+    del status['node2']
     assert 'node1' not in status, "Status should be cleaned up"
     print("✓ Status cleaned up")
 

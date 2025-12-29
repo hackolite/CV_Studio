@@ -605,12 +605,17 @@ class VideoNode(Node):
         movie_path = self._movie_filepath.get(str(node_id), None)
         prev_movie_path = self._prev_movie_filepath.get(str(node_id), None)
         
-        # Check if preprocessing is still in progress
+        # Check if preprocessing is still in progress or has failed
         preprocessing_status = self._preprocessing_status.get(str(node_id), None)
         if preprocessing_status == 'loading':
             # Still loading - don't open video capture yet, just return None
             # This prevents the video from being opened before audio preprocessing is complete
             return {"image": None, "json": None, "audio": None, "timestamp": None}
+        elif preprocessing_status == 'error':
+            # Preprocessing failed - clear error status and continue without audio
+            # Video can still be played, just without audio chunks
+            self._preprocessing_status[str(node_id)] = 'done'
+            print(f"⚠️ Video node {node_id}: Playing without audio (preprocessing failed)")
         
         if prev_movie_path != movie_path:
             video_capture = self._video_capture.get(str(node_id), None)
@@ -864,9 +869,14 @@ class VideoNode(Node):
                     with _dpg_lock:
                         if dpg.does_item_exist(tag_node_button_value_name):
                             dpg.configure_item(tag_node_button_value_name, label=self._start_label)
+                finally:
+                    # Clean up thread reference when done
+                    # Note: Thread is daemon so it will auto-terminate on app shutdown
+                    if node_id in self._preprocessing_threads:
+                        del self._preprocessing_threads[node_id]
             
             # Start preprocessing thread (daemon=True ensures it doesn't prevent app shutdown)
-            thread = threading.Thread(target=preprocess_thread, daemon=True)
+            thread = threading.Thread(target=preprocess_thread, daemon=True, name=f"VideoPreprocess-{node_id}")
             self._preprocessing_threads[node_id] = thread
             thread.start()
             print(f"📂 Video file selected: {file_path}")
