@@ -298,6 +298,9 @@ class Node(Node):
             dpg_set_value(output_value02_tag,
                           str(elapsed_time).zfill(4) + 'ms')
 
+        # Initialize output_frame for downstream nodes
+        output_frame = None
+        
         if frame is not None:
             if src_node_name == 'ObjectDetection' or src_node_name == 'Classification':
 
@@ -311,8 +314,11 @@ class Node(Node):
                     od_class_names,
                     self._track_id_dict[node_id],
                 )
+                # Return the frame with overlay for downstream nodes
+                output_frame = debug_frame
             else:
                 debug_frame = np.zeros((small_window_w, small_window_h, 3))
+                output_frame = frame  # Return original frame if no tracking data
             texture = self.convert_cv_to_dpg(
                 debug_frame,
                 small_window_w,
@@ -320,7 +326,7 @@ class Node(Node):
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return {"image": frame, "json": result, "audio": None}
+        return {"image": output_frame, "json": result, "audio": None}
 
     def close(self, node_id):
         pass

@@ -154,6 +154,7 @@ class ImageNode(Node):
     _image = {}
     _image_filepath = {}
     _prev_image_filepath = {}
+    _texture_cache = {}  # Cache converted textures to avoid repeated conversion
 
     def __init__(self):
         super().__init__()  # Call parent constructor
@@ -177,26 +178,53 @@ class ImageNode(Node):
 
         image_path = self._image_filepath.get(str(node_id), None)
         prev_image_path = self._prev_image_filepath.get(str(node_id), None)
+        
+        # Performance optimization: only reload and convert texture when image path changes
+        # to prevent UI freezing from repeated texture conversion of the same static image
         if prev_image_path != image_path:
-            self._image[str(node_id)] = cv2.imread(image_path)
-            self._prev_image_filepath[str(node_id)] = image_path
+            if image_path is not None:
+                loaded_image = cv2.imread(image_path)
+                if loaded_image is not None:
+                    self._image[str(node_id)] = loaded_image
+                    self._prev_image_filepath[str(node_id)] = image_path
+                    
+                    # Convert and cache the texture only when image loads successfully
+                    texture = self.convert_cv_to_dpg(
+                        loaded_image,
+                        small_window_w,
+                        small_window_h,
+                    )
+                    self._texture_cache[str(node_id)] = texture
+                    dpg_set_value(output_value01_tag, texture)
+                else:
+                    # Image load failed - clear cached data
+                    self._image[str(node_id)] = None
+                    self._prev_image_filepath[str(node_id)] = image_path
+                    if str(node_id) in self._texture_cache:
+                        del self._texture_cache[str(node_id)]
+            else:
+                # No image path - clear cached data
+                self._image[str(node_id)] = None
+                self._prev_image_filepath[str(node_id)] = None
+                if str(node_id) in self._texture_cache:
+                    del self._texture_cache[str(node_id)]
 
 
         frame = self._image.get(str(node_id), None)
 
-
-        if frame is not None:
-            texture = self.convert_cv_to_dpg(
-                frame,
-                small_window_w,
-                small_window_h,
-            )
-            dpg_set_value(output_value01_tag, texture)
-
         return {"image": frame, "json": None, "audio": None}
 
     def close(self, node_id):
-        pass
+        # Clean up cached data for this node to prevent memory leaks
+        node_id_str = str(node_id)
+        if node_id_str in self._image:
+            del self._image[node_id_str]
+        if node_id_str in self._image_filepath:
+            del self._image_filepath[node_id_str]
+        if node_id_str in self._prev_image_filepath:
+            del self._prev_image_filepath[node_id_str]
+        if node_id_str in self._texture_cache:
+            del self._texture_cache[node_id_str]
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
