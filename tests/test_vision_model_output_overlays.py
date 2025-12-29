@@ -22,7 +22,7 @@ def test_face_detection_returns_overlay():
         content = f.read()
     
     # Check that the return statement returns debug_frame, not raw frame
-    assert 'return {"image": debug_frame if frame is not None else frame' in content, \
+    assert 'return {"image": debug_frame if debug_frame is not None else frame' in content, \
         "Face detection should return debug_frame with overlays"
     
     # Check that debug_frame is created and used
@@ -44,7 +44,7 @@ def test_semantic_segmentation_returns_overlay():
         content = f.read()
     
     # Check that the return statement returns debug_frame, not raw frame
-    assert 'return {"image": debug_frame if frame is not None else frame' in content, \
+    assert 'return {"image": debug_frame if debug_frame is not None else frame' in content, \
         "Semantic segmentation should return debug_frame with overlays"
     
     # Check that debug_frame is created and used
@@ -65,7 +65,7 @@ def test_pose_estimation_returns_overlay():
         content = f.read()
     
     # Check that the return statement returns debug_frame, not raw frame
-    assert 'return {"image": debug_frame if frame is not None else frame' in content, \
+    assert 'return {"image": debug_frame if debug_frame is not None else frame' in content, \
         "Pose estimation should return debug_frame with overlays"
     
     # Check that debug_frame is created and used
@@ -87,7 +87,7 @@ def test_object_detection_returns_overlay():
         content = f.read()
     
     # Check that the return statement returns debug_frame, not raw frame
-    assert 'data["image"] = debug_frame if frame is not None else frame' in content, \
+    assert 'data["image"] = debug_frame if debug_frame is not None else frame' in content, \
         "Object detection should return debug_frame with overlays"
     
     # Check that debug_frame is created and used
