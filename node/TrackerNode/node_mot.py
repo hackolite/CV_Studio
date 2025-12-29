@@ -298,7 +298,7 @@ class Node(Node):
             dpg_set_value(output_value02_tag,
                           str(elapsed_time).zfill(4) + 'ms')
 
-        # Initialize output_frame to None
+        # Initialize output_frame - will be None if no frame, or processed frame if available
         output_frame = None
         
         if frame is not None:

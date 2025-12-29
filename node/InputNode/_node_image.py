@@ -201,7 +201,16 @@ class ImageNode(Node):
         return {"image": frame, "json": None, "audio": None}
 
     def close(self, node_id):
-        pass
+        # Clean up cached data for this node to prevent memory leaks
+        node_id_str = str(node_id)
+        if node_id_str in self._image:
+            del self._image[node_id_str]
+        if node_id_str in self._image_filepath:
+            del self._image_filepath[node_id_str]
+        if node_id_str in self._prev_image_filepath:
+            del self._prev_image_filepath[node_id_str]
+        if node_id_str in self._texture_cache:
+            del self._texture_cache[node_id_str]
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
