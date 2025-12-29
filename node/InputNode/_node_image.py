@@ -154,6 +154,7 @@ class ImageNode(Node):
     _image = {}
     _image_filepath = {}
     _prev_image_filepath = {}
+    _texture_cache = {}  # Cache converted textures to avoid repeated conversion
 
     def __init__(self):
         super().__init__()  # Call parent constructor
@@ -177,21 +178,25 @@ class ImageNode(Node):
 
         image_path = self._image_filepath.get(str(node_id), None)
         prev_image_path = self._prev_image_filepath.get(str(node_id), None)
+        
+        # Only reload and convert texture when image path changes
         if prev_image_path != image_path:
             self._image[str(node_id)] = cv2.imread(image_path)
             self._prev_image_filepath[str(node_id)] = image_path
+            
+            # Convert and cache the texture only when image changes
+            frame = self._image.get(str(node_id), None)
+            if frame is not None:
+                texture = self.convert_cv_to_dpg(
+                    frame,
+                    small_window_w,
+                    small_window_h,
+                )
+                self._texture_cache[str(node_id)] = texture
+                dpg_set_value(output_value01_tag, texture)
 
 
         frame = self._image.get(str(node_id), None)
-
-
-        if frame is not None:
-            texture = self.convert_cv_to_dpg(
-                frame,
-                small_window_w,
-                small_window_h,
-            )
-            dpg_set_value(output_value01_tag, texture)
 
         return {"image": frame, "json": None, "audio": None}
 
