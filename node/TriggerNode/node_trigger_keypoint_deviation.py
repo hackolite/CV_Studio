@@ -227,13 +227,14 @@ class Node(Node):
                                 self._kmeans_model.fit(X)
                                 
                                 # Identify which cluster has least variation (court cluster)
-                                # Calculate variance for each cluster
+                                # Calculate variance for each cluster (sum of variances per dimension)
                                 labels = self._kmeans_model.labels_
                                 cluster_0_samples = X[labels == 0]
                                 cluster_1_samples = X[labels == 1]
                                 
-                                variance_0 = np.var(cluster_0_samples) if len(cluster_0_samples) > 0 else float('inf')
-                                variance_1 = np.var(cluster_1_samples) if len(cluster_1_samples) > 0 else float('inf')
+                                # Calculate total variance (sum across all dimensions)
+                                variance_0 = np.sum(np.var(cluster_0_samples, axis=0)) if len(cluster_0_samples) > 0 else float('inf')
+                                variance_1 = np.sum(np.var(cluster_1_samples, axis=0)) if len(cluster_1_samples) > 0 else float('inf')
                                 
                                 # Court cluster is the one with least variation
                                 self._court_cluster_id = 0 if variance_0 < variance_1 else 1
@@ -265,8 +266,11 @@ class Node(Node):
                             court_center = self._kmeans_model.cluster_centers_[self._court_cluster_id]
                             distance = np.linalg.norm(keypoints_flat - court_center)
                             
-                            # Trigger if not in court cluster (i.e., in out-of-play cluster)
+                            # Trigger if not in court cluster (primary condition)
                             if predicted_cluster != self._court_cluster_id:
+                                trigger_state = True
+                            # Also check threshold distance as secondary condition
+                            elif threshold_distance is not None and distance > threshold_distance:
                                 trigger_state = True
                             
                             # Add classification info to output
@@ -278,10 +282,6 @@ class Node(Node):
                                 'distance_to_court': float(distance),
                                 'threshold': float(threshold_distance) if threshold_distance is not None else 100.0
                             }
-                            
-                            # Also check threshold distance
-                            if threshold_distance is not None and distance > threshold_distance:
-                                trigger_state = True
             
             # Add standard BOOL field to output JSON
             output_json['BOOL'] = trigger_state
