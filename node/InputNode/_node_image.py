@@ -179,7 +179,8 @@ class ImageNode(Node):
         image_path = self._image_filepath.get(str(node_id), None)
         prev_image_path = self._prev_image_filepath.get(str(node_id), None)
         
-        # Only reload and convert texture when image path changes
+        # Performance optimization: only reload and convert texture when image path changes
+        # to prevent UI freezing from repeated texture conversion of the same static image
         if prev_image_path != image_path:
             if image_path is not None:
                 loaded_image = cv2.imread(image_path)
