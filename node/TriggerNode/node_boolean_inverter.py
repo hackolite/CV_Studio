@@ -121,20 +121,17 @@ class Node(Node):
             start_time = time.monotonic()
 
         # Invert the boolean value
-        inverted_value = False
         output_json = {"BOOL": False}
 
         if json_data is not None and isinstance(json_data, dict):
             # Get the BOOL field from input
             input_bool = json_data.get('BOOL', False)
             
-            # Invert it
-            inverted_value = not input_bool
-            
-            # Create output JSON with inverted value
-            output_json = {"BOOL": inverted_value}
+            # Invert it and create output JSON
+            output_json = {"BOOL": not input_bool}
 
         # Update UI output
+        inverted_value = output_json['BOOL']
         dpg_set_value(output_json_tag, f'Inverted: {inverted_value}')
 
         if json_data is not None and use_pref_counter:
