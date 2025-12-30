@@ -68,6 +68,13 @@ class FactoryNode:
             node.tag_node_name + ":" + node.TYPE_FLOAT + ":Input05Value"
         )
 
+        node.tag_node_input06_name = (
+            node.tag_node_name + ":" + node.TYPE_TEXT + ":Input06"
+        )
+        node.tag_node_input06_value_name = (
+            node.tag_node_name + ":" + node.TYPE_TEXT + ":Input06Value"
+        )
+
         node.tag_node_output01_name = (
             node.tag_node_name + ":" + node.TYPE_IMAGE + ":Output01"
         )
@@ -224,6 +231,18 @@ class FactoryNode:
                     min_value=0.25,
                     max_value=4.0,
                     callback=None,
+                )
+
+            with dpg.node_attribute(
+                tag=node.tag_node_input06_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_checkbox(
+                    label="Send frames in JSON",
+                    tag=node.tag_node_input06_value_name,
+                    callback=None,
+                    user_data=node.tag_node_name,
+                    default_value=True,
                 )
 
             if use_pref_counter:
@@ -579,6 +598,9 @@ class VideoNode(Node):
         tag_node_input05_value_name = (
             tag_node_name + ":" + self.TYPE_FLOAT + ":Input05Value"
         )
+        tag_node_input06_value_name = (
+            tag_node_name + ":" + self.TYPE_TEXT + ":Input06Value"
+        )
 
         output_value01_tag = tag_node_name + ":" + self.TYPE_IMAGE + ":Output01Value"
         tag_node_output_image = tag_node_name + ":" + self.TYPE_IMAGE + ":Output01Value"
@@ -634,6 +656,9 @@ class VideoNode(Node):
         target_fps = int(target_fps_value) if target_fps_value is not None else 24
         playback_speed_value = dpg_get_value(tag_node_input05_value_name)
         playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
+        send_frames_in_json = dpg_get_value(tag_node_input06_value_name)
+        if send_frames_in_json is None:
+            send_frames_in_json = True
 
         if video_capture is not None and use_pref_counter:
             start_time = time.monotonic()
@@ -739,11 +764,20 @@ class VideoNode(Node):
             loop_offset = self._loop_elapsed_time.get(str(node_id), 0.0)
             frame_timestamp = base_timestamp + loop_offset
         
+        # Prepare JSON output - include frame data if checkbox is checked
+        json_output = None
+        if send_frames_in_json and frame is not None:
+            json_output = {
+                "frame": frame.tolist() if hasattr(frame, 'tolist') else frame,
+                "timestamp": frame_timestamp,
+                "frame_number": current_frame_num
+            }
+        
         # Return frame via IMAGE output and audio chunk data via AUDIO output
         # Include the FPS-based timestamp so it can be used for synchronization
         return {
             "image": frame, 
-            "json": None, 
+            "json": json_output, 
             "audio": audio_chunk_data,
             "timestamp": frame_timestamp
         }
@@ -778,6 +812,9 @@ class VideoNode(Node):
         tag_node_input05_value_name = (
             tag_node_name + ":" + self.TYPE_FLOAT + ":Input05Value"
         )
+        tag_node_input06_value_name = (
+            tag_node_name + ":" + self.TYPE_TEXT + ":Input06Value"
+        )
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -788,6 +825,9 @@ class VideoNode(Node):
         target_fps = int(target_fps_value) if target_fps_value is not None else 24
         playback_speed_value = dpg_get_value(tag_node_input05_value_name)
         playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
+        send_frames_in_json = dpg_get_value(tag_node_input06_value_name)
+        if send_frames_in_json is None:
+            send_frames_in_json = True
 
         setting_dict = {}
         setting_dict["ver"] = self._ver
@@ -796,6 +836,7 @@ class VideoNode(Node):
         setting_dict[tag_node_input03_value_name] = skip_rate
         setting_dict[tag_node_input04_value_name] = target_fps
         setting_dict[tag_node_input05_value_name] = playback_speed
+        setting_dict[tag_node_input06_value_name] = send_frames_in_json
 
         return setting_dict
 
@@ -813,68 +854,89 @@ class VideoNode(Node):
         tag_node_input05_value_name = (
             tag_node_name + ":" + self.TYPE_FLOAT + ":Input05Value"
         )
+        tag_node_input06_value_name = (
+            tag_node_name + ":" + self.TYPE_TEXT + ":Input06Value"
+        )
 
         loop_flag = setting_dict[tag_node_input02_value_name]
         skip_rate = int(setting_dict[tag_node_input03_value_name])
         target_fps = int(setting_dict.get(tag_node_input04_value_name, 24))
         playback_speed = float(setting_dict.get(tag_node_input05_value_name, 1.0))
+        send_frames_in_json = setting_dict.get(tag_node_input06_value_name, True)
 
         dpg_set_value(tag_node_input02_value_name, loop_flag)
         dpg_set_value(tag_node_input03_value_name, skip_rate)
         dpg_set_value(tag_node_input04_value_name, target_fps)
         dpg_set_value(tag_node_input05_value_name, playback_speed)
+        dpg_set_value(tag_node_input06_value_name, send_frames_in_json)
 
     def _callback_file_select(self, sender, data):
         """
         Callback when a video file is selected.
         Runs preprocessing in a background thread to avoid blocking the UI.
+        Only preprocesses if "Send frames in JSON" is unchecked (to extract audio).
         """
         if data["file_name"] != ".":
             node_id = sender.split(":")[1]
             file_path = data["file_path_name"]
             self._movie_filepath[node_id] = file_path
             
-            # Set preprocessing status to 'loading'
-            self._preprocessing_status[node_id] = 'loading'
-            
-            # Update button label to show "Loading..." using thread-safe dpg_set_value
+            # Check if we should preprocess (when "Send frames in JSON" is unchecked)
             tag_node_name = str(node_id) + ":" + self.node_tag
-            tag_node_button_value_name = tag_node_name + ":" + self.TYPE_TEXT + ":ButtonValue"
-            with _dpg_lock:
-                if dpg.does_item_exist(tag_node_button_value_name):
-                    dpg.configure_item(tag_node_button_value_name, label=self._loading_label)
+            tag_node_input06_value_name = tag_node_name + ":" + self.TYPE_TEXT + ":Input06Value"
             
-            # Run preprocessing in background thread to avoid blocking UI
-            def preprocess_thread():
-                try:
-                    print(f"🎬 Starting video preprocessing for node {node_id} in background thread...")
-                    self._preprocess_video(node_id, file_path)
-                    print(f"✅ Video preprocessing complete for node {node_id}")
-                    self._preprocessing_status[node_id] = 'done'
-                    
-                    # Restore button label using thread-safe dpg_set_value
-                    with _dpg_lock:
-                        if dpg.does_item_exist(tag_node_button_value_name):
-                            dpg.configure_item(tag_node_button_value_name, label=self._start_label)
-                except Exception as e:
-                    print(f"❌ Error during video preprocessing for node {node_id}: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    self._preprocessing_status[node_id] = 'error'
-                    
-                    # Restore button label even on error
-                    with _dpg_lock:
-                        if dpg.does_item_exist(tag_node_button_value_name):
-                            dpg.configure_item(tag_node_button_value_name, label=self._start_label)
-                finally:
-                    # Clean up thread reference when done
-                    # Note: Thread is daemon so it will auto-terminate on app shutdown
-                    if node_id in self._preprocessing_threads:
-                        del self._preprocessing_threads[node_id]
+            # Get the checkbox value - if checked, skip preprocessing
+            send_frames_in_json = dpg_get_value(tag_node_input06_value_name)
+            if send_frames_in_json is None:
+                send_frames_in_json = True
             
-            # Start preprocessing thread (daemon=True ensures it doesn't prevent app shutdown)
-            thread = threading.Thread(target=preprocess_thread, daemon=True, name=f"VideoPreprocess-{node_id}")
-            self._preprocessing_threads[node_id] = thread
-            thread.start()
-            print(f"📂 Video file selected: {file_path}")
-            print(f"⚙️ Preprocessing started in background thread (non-blocking)")
+            # Only preprocess if checkbox is unchecked (send_frames_in_json == False)
+            if not send_frames_in_json:
+                # Set preprocessing status to 'loading'
+                self._preprocessing_status[node_id] = 'loading'
+                
+                # Update button label to show "Loading..." using thread-safe dpg_set_value
+                tag_node_button_value_name = tag_node_name + ":" + self.TYPE_TEXT + ":ButtonValue"
+                with _dpg_lock:
+                    if dpg.does_item_exist(tag_node_button_value_name):
+                        dpg.configure_item(tag_node_button_value_name, label=self._loading_label)
+                
+                # Run preprocessing in background thread to avoid blocking UI
+                def preprocess_thread():
+                    try:
+                        print(f"🎬 Starting video preprocessing for node {node_id} in background thread...")
+                        self._preprocess_video(node_id, file_path)
+                        print(f"✅ Video preprocessing complete for node {node_id}")
+                        self._preprocessing_status[node_id] = 'done'
+                        
+                        # Restore button label using thread-safe dpg_set_value
+                        with _dpg_lock:
+                            if dpg.does_item_exist(tag_node_button_value_name):
+                                dpg.configure_item(tag_node_button_value_name, label=self._start_label)
+                    except Exception as e:
+                        print(f"❌ Error during video preprocessing for node {node_id}: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        self._preprocessing_status[node_id] = 'error'
+                        
+                        # Restore button label even on error
+                        with _dpg_lock:
+                            if dpg.does_item_exist(tag_node_button_value_name):
+                                dpg.configure_item(tag_node_button_value_name, label=self._start_label)
+                    finally:
+                        # Clean up thread reference when done
+                        # Note: Thread is daemon so it will auto-terminate on app shutdown
+                        if node_id in self._preprocessing_threads:
+                            del self._preprocessing_threads[node_id]
+                
+                # Start preprocessing thread (daemon=True ensures it doesn't prevent app shutdown)
+                thread = threading.Thread(target=preprocess_thread, daemon=True, name=f"VideoPreprocess-{node_id}")
+                self._preprocessing_threads[node_id] = thread
+                thread.start()
+                print(f"📂 Video file selected: {file_path}")
+                print(f"⚙️ Preprocessing started in background thread (non-blocking)")
+            else:
+                # Skip preprocessing when sending frames in JSON
+                self._preprocessing_status[node_id] = 'done'
+                print(f"📂 Video file selected: {file_path}")
+                print(f"⚡ Skipping preprocessing (frames will be sent in JSON on-the-fly)")
