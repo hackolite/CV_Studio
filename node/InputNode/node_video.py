@@ -765,6 +765,8 @@ class VideoNode(Node):
             frame_timestamp = base_timestamp + loop_offset
         
         # Prepare JSON output - include frame data if checkbox is checked
+        # Note: Converting frames to lists can be memory-intensive for large frames
+        # This feature is intended for on-the-fly processing where frame data is needed in JSON
         json_output = None
         if send_frames_in_json and frame is not None:
             json_output = {
