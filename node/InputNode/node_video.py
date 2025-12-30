@@ -242,7 +242,7 @@ class FactoryNode:
                     tag=node.tag_node_input06_value_name,
                     callback=None,
                     user_data=node.tag_node_name,
-                    default_value=True,
+                    default_value=False,
                 )
 
             if use_pref_counter:
@@ -658,7 +658,7 @@ class VideoNode(Node):
         playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
         send_frames_in_json = dpg_get_value(tag_node_input06_value_name)
         if send_frames_in_json is None:
-            send_frames_in_json = True
+            send_frames_in_json = False
 
         if video_capture is not None and use_pref_counter:
             start_time = time.monotonic()
@@ -829,7 +829,7 @@ class VideoNode(Node):
         playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
         send_frames_in_json = dpg_get_value(tag_node_input06_value_name)
         if send_frames_in_json is None:
-            send_frames_in_json = True
+            send_frames_in_json = False
 
         setting_dict = {}
         setting_dict["ver"] = self._ver
@@ -864,7 +864,7 @@ class VideoNode(Node):
         skip_rate = int(setting_dict[tag_node_input03_value_name])
         target_fps = int(setting_dict.get(tag_node_input04_value_name, 24))
         playback_speed = float(setting_dict.get(tag_node_input05_value_name, 1.0))
-        send_frames_in_json = setting_dict.get(tag_node_input06_value_name, True)
+        send_frames_in_json = setting_dict.get(tag_node_input06_value_name, False)
 
         dpg_set_value(tag_node_input02_value_name, loop_flag)
         dpg_set_value(tag_node_input03_value_name, skip_rate)
@@ -890,7 +890,7 @@ class VideoNode(Node):
             # Get the checkbox value - if checked, skip preprocessing
             send_frames_in_json = dpg_get_value(tag_node_input06_value_name)
             if send_frames_in_json is None:
-                send_frames_in_json = True
+                send_frames_in_json = False
             
             # Only preprocess if checkbox is unchecked (send_frames_in_json == False)
             if not send_frames_in_json:
