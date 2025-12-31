@@ -431,7 +431,8 @@ class Node(Node):
             class_names,
             thickness=3,
         ):
-            # No need for deepcopy here - caller already handles it
+            # Note: Caller must pass a copy if they need to preserve original
+            # This allows in-place drawing for performance
             debug_image = image
             logger.debug(f"Drawing object detection info on image with shape: {debug_image.shape}")
             

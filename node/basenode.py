@@ -3,6 +3,7 @@
 import copy
 import time
 import os
+import hashlib
 
 import numpy as np
 import dearpygui.dearpygui as dpg
@@ -126,8 +127,6 @@ class Node:
         Returns:
             DearPyGui texture data
         """
-        import hashlib
-        
         # Calculate simple hash of image data for change detection
         # Use a sample of pixels to avoid hashing entire image (performance optimization)
         h, w = image.shape[:2]
@@ -135,8 +134,7 @@ class Node:
         sample = image[::8, ::8].tobytes()
         image_hash = hashlib.md5(sample).hexdigest()
         
-        current_time = time.time()
-        time_elapsed = current_time - self._last_texture_update
+        time_elapsed = time.time() - self._last_texture_update
         
         # Check if we can use cached texture
         if (not force_update and 
@@ -152,7 +150,7 @@ class Node:
         # Update cache
         self._texture_cache = texture_data
         self._texture_cache_hash = image_hash
-        self._last_texture_update = current_time
+        self._last_texture_update = time.time()
         
         return texture_data
 

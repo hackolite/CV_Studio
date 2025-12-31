@@ -240,7 +240,6 @@ class TestColorCaching:
 
 def test_all_dl_nodes_have_cached_conversion():
     """Test that all DL nodes use cached conversion"""
-    import re
     
     dl_node_files = [
         'node/DLNode/node_object_detection.py',
