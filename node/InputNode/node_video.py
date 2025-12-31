@@ -238,11 +238,11 @@ class FactoryNode:
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_checkbox(
-                    label="Send frames in JSON",
+                    label="On-the-fly (fast mode)",
                     tag=node.tag_node_input06_value_name,
                     callback=None,
                     user_data=node.tag_node_name,
-                    default_value=False,
+                    default_value=True,
                 )
 
             if use_pref_counter:
@@ -656,9 +656,9 @@ class VideoNode(Node):
         target_fps = int(target_fps_value) if target_fps_value is not None else 24
         playback_speed_value = dpg_get_value(tag_node_input05_value_name)
         playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
-        send_frames_in_json = dpg_get_value(tag_node_input06_value_name)
-        if send_frames_in_json is None:
-            send_frames_in_json = False
+        on_the_fly_mode = dpg_get_value(tag_node_input06_value_name)
+        if on_the_fly_mode is None:
+            on_the_fly_mode = True
 
         if video_capture is not None and use_pref_counter:
             start_time = time.monotonic()
@@ -764,16 +764,9 @@ class VideoNode(Node):
             loop_offset = self._loop_elapsed_time.get(str(node_id), 0.0)
             frame_timestamp = base_timestamp + loop_offset
         
-        # Prepare JSON output - include frame data if checkbox is checked
-        # Note: Converting frames to lists can be memory-intensive for large frames
-        # This feature is intended for on-the-fly processing where frame data is needed in JSON
+        # Frames are ALWAYS sent via IMAGE output, never in JSON
+        # JSON output can contain metadata only (no frame data)
         json_output = None
-        if send_frames_in_json and frame is not None:
-            json_output = {
-                "frame": frame.tolist() if hasattr(frame, 'tolist') else frame,
-                "timestamp": frame_timestamp,
-                "frame_number": current_frame_num
-            }
         
         # Return frame via IMAGE output and audio chunk data via AUDIO output
         # Include the FPS-based timestamp so it can be used for synchronization
@@ -827,9 +820,9 @@ class VideoNode(Node):
         target_fps = int(target_fps_value) if target_fps_value is not None else 24
         playback_speed_value = dpg_get_value(tag_node_input05_value_name)
         playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
-        send_frames_in_json = dpg_get_value(tag_node_input06_value_name)
-        if send_frames_in_json is None:
-            send_frames_in_json = False
+        on_the_fly_mode = dpg_get_value(tag_node_input06_value_name)
+        if on_the_fly_mode is None:
+            on_the_fly_mode = True
 
         setting_dict = {}
         setting_dict["ver"] = self._ver
@@ -838,7 +831,7 @@ class VideoNode(Node):
         setting_dict[tag_node_input03_value_name] = skip_rate
         setting_dict[tag_node_input04_value_name] = target_fps
         setting_dict[tag_node_input05_value_name] = playback_speed
-        setting_dict[tag_node_input06_value_name] = send_frames_in_json
+        setting_dict[tag_node_input06_value_name] = on_the_fly_mode
 
         return setting_dict
 
@@ -864,36 +857,36 @@ class VideoNode(Node):
         skip_rate = int(setting_dict[tag_node_input03_value_name])
         target_fps = int(setting_dict.get(tag_node_input04_value_name, 24))
         playback_speed = float(setting_dict.get(tag_node_input05_value_name, 1.0))
-        send_frames_in_json = setting_dict.get(tag_node_input06_value_name, False)
+        on_the_fly_mode = setting_dict.get(tag_node_input06_value_name, True)
 
         dpg_set_value(tag_node_input02_value_name, loop_flag)
         dpg_set_value(tag_node_input03_value_name, skip_rate)
         dpg_set_value(tag_node_input04_value_name, target_fps)
         dpg_set_value(tag_node_input05_value_name, playback_speed)
-        dpg_set_value(tag_node_input06_value_name, send_frames_in_json)
+        dpg_set_value(tag_node_input06_value_name, on_the_fly_mode)
 
     def _callback_file_select(self, sender, data):
         """
         Callback when a video file is selected.
         Runs preprocessing in a background thread to avoid blocking the UI.
-        Only preprocesses if "Send frames in JSON" is unchecked (to extract audio).
+        Only preprocesses if "On-the-fly (fast mode)" is unchecked (to extract audio).
         """
         if data["file_name"] != ".":
             node_id = sender.split(":")[1]
             file_path = data["file_path_name"]
             self._movie_filepath[node_id] = file_path
             
-            # Check if we should preprocess (when "Send frames in JSON" is unchecked)
+            # Check if we should preprocess (when "On-the-fly" is unchecked)
             tag_node_name = str(node_id) + ":" + self.node_tag
             tag_node_input06_value_name = tag_node_name + ":" + self.TYPE_TEXT + ":Input06Value"
             
-            # Get the checkbox value - if checked, skip preprocessing
-            send_frames_in_json = dpg_get_value(tag_node_input06_value_name)
-            if send_frames_in_json is None:
-                send_frames_in_json = False
+            # Get the checkbox value - if checked (on-the-fly mode), skip preprocessing
+            on_the_fly_mode = dpg_get_value(tag_node_input06_value_name)
+            if on_the_fly_mode is None:
+                on_the_fly_mode = True
             
-            # Only preprocess if checkbox is unchecked (send_frames_in_json == False)
-            if not send_frames_in_json:
+            # Only preprocess if checkbox is unchecked (on_the_fly_mode == False)
+            if not on_the_fly_mode:
                 # Set preprocessing status to 'loading'
                 self._preprocessing_status[node_id] = 'loading'
                 
@@ -938,7 +931,7 @@ class VideoNode(Node):
                 print(f"📂 Video file selected: {file_path}")
                 print(f"⚙️ Preprocessing started in background thread (non-blocking)")
             else:
-                # Skip preprocessing when sending frames in JSON
+                # Skip preprocessing when in on-the-fly mode
                 self._preprocessing_status[node_id] = 'done'
                 print(f"📂 Video file selected: {file_path}")
-                print(f"⚡ Skipping preprocessing (frames will be sent in JSON on-the-fly)")
+                print(f"⚡ On-the-fly mode: Skipping preprocessing (fast mode, frames sent via IMAGE output)")
