@@ -366,7 +366,8 @@ class Node(Node):
                         class_ids,
                         class_name_dict,
                     )
-                    texture = self.convert_cv_to_dpg(
+                    # Use cached texture conversion for better performance
+                    texture = self.convert_cv_to_dpg_cached(
                         debug_frame,
                         small_window_w,
                         small_window_h,
@@ -416,6 +417,8 @@ class Node(Node):
         dpg_set_value(self.tag_node_input_float_value_name, score_th)
 
 
+    # Cache for color calculations to avoid redundant computation
+    _color_cache = {}
 
 
     def draw_object_detection_info(
@@ -428,7 +431,9 @@ class Node(Node):
             class_names,
             thickness=3,
         ):
-            debug_image = copy.deepcopy(image)
+            # Note: Caller must pass a copy if they need to preserve original
+            # This allows in-place drawing for performance
+            debug_image = image
             logger.debug(f"Drawing object detection info on image with shape: {debug_image.shape}")
             
             # Calculate adaptive font scale and thickness based on image size
@@ -442,15 +447,19 @@ class Node(Node):
             # Scale thickness: base thickness of 3 for ~640px, scale proportionally
             adaptive_thickness = max(1, int((min_dimension / 640.0) * thickness))
             
-            for bbox, score, class_id in zip(bboxes, scores, class_ids):
+            # Pre-filter detections by score to avoid unnecessary work
+            valid_detections = [(bbox, score, class_id) 
+                               for bbox, score, class_id in zip(bboxes, scores, class_ids)
+                               if score >= score_th]
+            
+            for bbox, score, class_id in valid_detections:
                 x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
 
-                if score_th > score:
-                    continue
+                # Use cached color calculation
+                color = self.get_color_cached(class_id)
 
-                color = self.get_color(class_id)
-
-                debug_image = cv2.rectangle(
+                # Draw rectangle directly (cv2 operations modify in place)
+                cv2.rectangle(
                     debug_image,
                     (x1, y1),
                     (x2, y2),
@@ -458,10 +467,10 @@ class Node(Node):
                     thickness=adaptive_thickness,
                 )
 
-
-                score = '%.2f' % score
+                # Format text
+                score_str = '%.2f' % score
                 text = '%s:%s(%s)' % (int(class_id), str(
-                    class_names[int(class_id)]), score)
+                    class_names[int(class_id)]), score_str)
                 
                 # Calculate text size to position it better
                 (text_width, text_height), baseline = cv2.getTextSize(
@@ -471,7 +480,8 @@ class Node(Node):
                 # Position text above the bounding box with some padding
                 text_y = max(y1 - 5, text_height + 5)
                 
-                debug_image = cv2.putText(
+                # Draw text directly
+                cv2.putText(
                     debug_image,
                     text,
                     (x1, text_y),
@@ -484,6 +494,12 @@ class Node(Node):
             return debug_image
 
 
+
+    def get_color_cached(self, index):
+        """Get color for class with caching to avoid redundant calculations."""
+        if index not in self._color_cache:
+            self._color_cache[index] = self.get_color(index)
+        return self._color_cache[index]
 
     def get_color(self, index):
         temp_index = abs(int(index + 35)) * 3

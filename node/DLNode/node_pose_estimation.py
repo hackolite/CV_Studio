@@ -334,7 +334,8 @@ class Node(Node):
                 score_th,
             )
 
-            texture = self.convert_cv_to_dpg(
+            # Use cached texture conversion for better performance
+            texture = self.convert_cv_to_dpg_cached(
                 debug_frame,
                 self.small_window_w,
                 self.small_window_h,
