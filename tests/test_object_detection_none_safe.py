@@ -29,11 +29,17 @@ def test_object_detection_update_none_safe():
     assert "provider = provider_value if provider_value is not None else 'CPU'" in update_method, \
         "provider should have None-safe default to 'CPU'"
     
-    # Verify None-safe conversions exist for model_name
+    # Verify None-safe conversions exist for model_name with safety checks
     assert 'model_name_value = dpg_get_value(self.tag_node_input_text_value_name)' in update_method, \
         "model_name_value should be retrieved from dpg_get_value"
-    assert 'model_name = model_name_value if model_name_value is not None else list(self._model_class.keys())[0]' in update_method, \
-        "model_name should have None-safe default to first model in list"
+    assert 'if model_name_value is not None:' in update_method, \
+        "model_name should check if value is not None"
+    assert 'elif self._model_class:' in update_method, \
+        "model_name should check if _model_class is not empty"
+    assert 'model_name = list(self._model_class.keys())[0]' in update_method, \
+        "model_name should have fallback to first model in list"
+    assert 'logger.error("No model available in _model_class")' in update_method, \
+        "model_name should log error if _model_class is empty"
 
 
 def test_object_detection_get_setting_dict_none_safe():
@@ -51,11 +57,17 @@ def test_object_detection_get_setting_dict_none_safe():
     get_setting_end = content.find('def set_setting_dict(', get_setting_start)
     get_setting_method = content[get_setting_start:get_setting_end]
     
-    # Verify None-safe conversions exist for model_name
+    # Verify None-safe conversions exist for model_name with safety checks
     assert 'model_name_value = dpg_get_value(input_value02_tag)' in get_setting_method, \
         "model_name_value should be retrieved from dpg_get_value"
-    assert 'model_name = model_name_value if model_name_value is not None else list(self._model_class.keys())[0]' in get_setting_method, \
-        "model_name should have None-safe default to first model in list"
+    assert 'if model_name_value is not None:' in get_setting_method, \
+        "model_name should check if value is not None"
+    assert 'elif self._model_class:' in get_setting_method, \
+        "model_name should check if _model_class is not empty"
+    assert 'model_name = list(self._model_class.keys())[0]' in get_setting_method, \
+        "model_name should have fallback to first model in list"
+    assert 'model_name = ""' in get_setting_method, \
+        "model_name should have fallback to empty string if _model_class is empty"
     
     # Verify None-safe conversions exist for score_th
     assert 'score_th_value = dpg_get_value(input_value03_tag)' in get_setting_method, \
@@ -68,3 +80,4 @@ if __name__ == '__main__':
     test_object_detection_update_none_safe()
     test_object_detection_get_setting_dict_none_safe()
     print("All tests passed!")
+
