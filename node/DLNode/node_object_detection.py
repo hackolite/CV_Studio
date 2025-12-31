@@ -301,11 +301,13 @@ class Node(Node):
 
                 provider = 'CPU'
                 if use_gpu:
-                    provider = dpg_get_value(self.tag_provider_select_value_name)
+                    provider_value = dpg_get_value(self.tag_provider_select_value_name)
+                    provider = provider_value if provider_value is not None else 'CPU'
 
 
 
-                model_name = dpg_get_value(self.tag_node_input_text_value_name)
+                model_name_value = dpg_get_value(self.tag_node_input_text_value_name)
+                model_name = model_name_value if model_name_value is not None else list(self._model_class.keys())[0]
                 model_path = self._model_path_setting[model_name]
                 model_class = self._model_class[model_name]
                 class_name_dict = self._model_class_name_list[model_name]
@@ -391,9 +393,11 @@ class Node(Node):
         input_value03_tag = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
 
 
-        model_name = dpg_get_value(input_value02_tag)
+        model_name_value = dpg_get_value(input_value02_tag)
+        model_name = model_name_value if model_name_value is not None else list(self._model_class.keys())[0]
 
-        score_th = round(float(dpg_get_value(input_value03_tag)), 3)
+        score_th_value = dpg_get_value(input_value03_tag)
+        score_th = round(float(score_th_value), 3) if score_th_value is not None else 0.3
 
         pos = dpg.get_item_pos(self.tag_node_name)
 
