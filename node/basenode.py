@@ -61,6 +61,12 @@ class Node:
         self._small_window_h = self._opencv_setting_dict.get("process_height", 480)
         self.use_pref_counter = self._opencv_setting_dict.get("use_pref_counter", False)
         self.use_gpu = self._opencv_setting_dict.get("use_gpu", False)
+        
+        # Performance optimization: texture conversion cache
+        self._texture_cache = None
+        self._texture_cache_hash = None
+        self._last_texture_update = 0
+        self._texture_update_interval = 0.033  # ~30 FPS max display update rate
 
     def generate_id(self):
         return str(uuid.uuid4())
@@ -89,14 +95,65 @@ class Node:
         pass
 
     def convert_cv_to_dpg(self, image, width, height):
-        resize_image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
+        """
+        Convert OpenCV image to DearPyGui texture format.
+        Optimized for performance with faster interpolation and reduced memory operations.
+        """
+        # Use INTER_LINEAR instead of INTER_AREA - much faster with minimal quality loss
+        resize_image = cv2.resize(image, (width, height), interpolation=cv2.INTER_LINEAR)
 
-        data = np.flip(resize_image, 2)
-        data = data.ravel()
-        data = np.asarray(data, dtype=np.float32)
+        # Combine flip and channel swap in one operation (BGR to RGB)
+        # More efficient than separate flip operation
+        resize_image = cv2.cvtColor(resize_image, cv2.COLOR_BGR2RGB)
+        
+        # Flatten and normalize to float in one step - more efficient
+        # Using ravel() view instead of flatten() to avoid unnecessary copy
+        texture_data = resize_image.ravel().astype(np.float32) / 255.0
 
-        texture_data = np.true_divide(data, 255.0)
+        return texture_data
 
+    def convert_cv_to_dpg_cached(self, image, width, height, force_update=False):
+        """
+        Optimized texture conversion with caching and throttling.
+        Only updates texture if image changed or update interval elapsed.
+        
+        Args:
+            image: OpenCV image to convert
+            width: Target width
+            height: Target height
+            force_update: Force update even if cache is valid
+            
+        Returns:
+            DearPyGui texture data
+        """
+        import hashlib
+        
+        # Calculate simple hash of image data for change detection
+        # Use a sample of pixels to avoid hashing entire image (performance optimization)
+        h, w = image.shape[:2]
+        # Sample every 8th pixel in a grid pattern for fast hash
+        sample = image[::8, ::8].tobytes()
+        image_hash = hashlib.md5(sample).hexdigest()
+        
+        current_time = time.time()
+        time_elapsed = current_time - self._last_texture_update
+        
+        # Check if we can use cached texture
+        if (not force_update and 
+            self._texture_cache is not None and 
+            self._texture_cache_hash == image_hash and
+            time_elapsed < self._texture_update_interval):
+            # Return cached texture - no conversion needed
+            return self._texture_cache
+        
+        # Need to update texture
+        texture_data = self.convert_cv_to_dpg(image, width, height)
+        
+        # Update cache
+        self._texture_cache = texture_data
+        self._texture_cache_hash = image_hash
+        self._last_texture_update = current_time
+        
         return texture_data
 
     def get_input_frame(self, connection_list, node_image_dict, node_audio_dict=None):
