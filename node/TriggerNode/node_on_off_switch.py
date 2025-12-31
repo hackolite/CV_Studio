@@ -41,7 +41,7 @@ class FactoryNode:
         node.small_window_w, node.small_window_h = 600, 400  # Display size
 
         # Black image for startup
-        black_image = np.zeros((nodesmall_window_w, node.small_window_h, 3), dtype=np.uint8)
+        black_image = np.zeros((node.small_window_w, node.small_window_h, 3), dtype=np.uint8)
         black_texture = node.convert_cv_to_dpg(black_image, node.small_window_w, node.small_window_h)
 
         # Create texture to display image
