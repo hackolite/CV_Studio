@@ -188,7 +188,7 @@ class Node(Node):
     _model_instance = {}
 
     def __init__(self):
-        pass
+        super().__init__()
 
 
 
