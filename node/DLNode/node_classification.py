@@ -211,7 +211,7 @@ class Node(Node):
     _class_name_dict = None
 
     def __init__(self):
-        pass
+        super().__init__()
 
     def update(
         self,
