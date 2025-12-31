@@ -66,7 +66,7 @@ class FactoryNode:
         device_no_list = opencv_setting_dict['device_no_list']
         use_pref_counter = opencv_setting_dict['use_pref_counter']
 
-        black_image = np.zeros((node.small_window_w, node.small_window_h, 3))
+        black_image = np.zeros((node.small_window_w, node.small_window_h, 3), dtype=np.uint8)
         
         
         black_texture = node.convert_cv_to_dpg(

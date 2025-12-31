@@ -116,7 +116,7 @@ class Node(Node):
         use_gpu = self._opencv_setting_dict['use_gpu']
 
         # 初期化用黒画像
-        black_image = np.zeros((small_window_w, small_window_h, 3))
+        black_image = np.zeros((small_window_w, small_window_h, 3), dtype=np.uint8)
         black_texture = self.convert_cv_to_dpg(
             black_image,
             small_window_w,

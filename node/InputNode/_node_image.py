@@ -54,7 +54,7 @@ class FactoryNode:
         node.small_window_h = node._opencv_setting_dict['input_window_height']
 
 
-        black_image = np.zeros((node.small_window_w, node.small_window_h, 3))
+        black_image = np.zeros((node.small_window_w, node.small_window_h, 3), dtype=np.uint8)
         black_texture = node.convert_cv_to_dpg(
             black_image,
             node.small_window_w,

@@ -62,7 +62,7 @@ class FactoryNode:
         small_window_h = node._opencv_setting_dict.get('process_height', 135)
 
         # Black image for preview
-        black_image = np.zeros((small_window_h, small_window_w, 3))
+        black_image = np.zeros((small_window_h, small_window_w, 3), dtype=np.uint8)
         black_texture = node.convert_cv_to_dpg(black_image, small_window_w, small_window_h)
 
         # Create texture for image preview

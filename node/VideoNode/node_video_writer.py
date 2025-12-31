@@ -67,7 +67,7 @@ class FactoryNode:
         small_window_h = node._opencv_setting_dict['process_height']
 
 
-        black_image = np.zeros((small_window_w, small_window_h, 3))
+        black_image = np.zeros((small_window_w, small_window_h, 3), dtype=np.uint8)
         black_texture = node.convert_cv_to_dpg(
             black_image,
             small_window_w,
@@ -325,7 +325,7 @@ class VideoWriterNode(Node):
 
                 self._recording_button(None, None, tag_node_name)
 
-                black_image = np.zeros((small_window_w, small_window_h, 3))
+                black_image = np.zeros((small_window_w, small_window_h, 3), dtype=np.uint8)
 
                 texture = self.convert_cv_to_dpg(
                     black_image,
