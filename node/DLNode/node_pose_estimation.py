@@ -84,7 +84,7 @@ class FactoryNode:
         use_gpu = node._opencv_setting_dict['use_gpu']
 
 
-        black_image = np.zeros((node.small_window_w, node.small_window_h, 3))
+        black_image = np.zeros((node.small_window_w, node.small_window_h, 3), dtype=np.uint8)
         black_texture = node.convert_cv_to_dpg(
             black_image,
             node.small_window_w,

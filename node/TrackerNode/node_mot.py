@@ -63,7 +63,7 @@ class FactoryNode:
         use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
 
-        black_image = np.zeros((small_window_w, small_window_h, 3))
+        black_image = np.zeros((small_window_w, small_window_h, 3), dtype=np.uint8)
         black_texture = node.convert_cv_to_dpg(
             black_image,
             small_window_w,
@@ -317,7 +317,7 @@ class Node(Node):
                 # Return the frame with overlay for downstream nodes
                 output_frame = debug_frame
             else:
-                debug_frame = np.zeros((small_window_w, small_window_h, 3))
+                debug_frame = np.zeros((small_window_w, small_window_h, 3), dtype=np.uint8)
                 output_frame = frame  # Return original frame if no tracking data
             texture = self.convert_cv_to_dpg(
                 debug_frame,
