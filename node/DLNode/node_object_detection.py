@@ -314,9 +314,29 @@ class Node(Node):
                 else:
                     logger.error("No model available in _model_class")
                     return {"image": None, "json": {}, "audio": None}
-                model_path = self._model_path_setting[model_name]
-                model_class = self._model_class[model_name]
-                class_name_dict = self._model_class_name_list[model_name]
+                
+                # Defensive check: ensure model_name is not None or empty string
+                if model_name is None or model_name == "":
+                    logger.error("model_name is invalid, attempting to use first available model")
+                    if self._model_class:
+                        model_name = list(self._model_class.keys())[0]
+                    else:
+                        logger.error("Cannot proceed without a valid model")
+                        return {"image": None, "json": {}, "audio": None}
+                
+                # Defensive check: ensure provider is not None
+                if provider is None:
+                    logger.warning("provider is None, defaulting to 'CPU'")
+                    provider = 'CPU'
+                
+                # Defensive check: ensure dictionaries and keys exist
+                try:
+                    model_path = self._model_path_setting[model_name]
+                    model_class = self._model_class[model_name]
+                    class_name_dict = self._model_class_name_list[model_name]
+                except (KeyError, TypeError) as e:
+                    logger.error(f"Failed to retrieve model configuration for '{model_name}': {e}")
+                    return {"image": None, "json": {}, "audio": None}
 
                 model_name_with_provider = model_name + '_' + provider
 
