@@ -34,12 +34,20 @@ class YOLOTENNIS:
 
     def __call__(self, image):
         temp_image = copy.deepcopy(image)
+        # Store original dimensions for coordinate scaling
+        original_height, original_width = image.shape[:2]
+        
+        # Resize to model input size (608x416)
         temp_image = cv2.resize(temp_image, (608, 416), interpolation=cv2.INTER_AREA)
         image = self._preprocess(temp_image)
         # Debug: print("preprocess", image.shape) 
         results = self.onnx_session.run(None, {self.input_name: image})
         
-        bboxes, scores, class_ids = self._postprocess(results[0], self.nms_th, self.nms_score_th)
+        # Calculate scaling ratios to convert coordinates back to original image size
+        scale_x = original_width / 608.0
+        scale_y = original_height / 416.0
+        
+        bboxes, scores, class_ids = self._postprocess(results[0], self.nms_th, self.nms_score_th, scale_x, scale_y)
         return bboxes, scores, class_ids
 
     def _preprocess(self, image):
@@ -50,12 +58,11 @@ class YOLOTENNIS:
         return image_data
     
 
-    def _postprocess(self, outputs, nms_th, nms_score_th):
+    def _postprocess(self, outputs, nms_th, nms_score_th, scale_x=1.0, scale_y=1.0):
         outputs = np.transpose(np.squeeze(outputs[0]))
         rows = outputs.shape[0]
         
         boxes, scores, class_ids = [], [], []
-        gain = 1
 
         for i in range(rows):
             # Extract the class scores from the current row
@@ -72,11 +79,11 @@ class YOLOTENNIS:
                 # Extract the bounding box coordinates from the current row
                 x, y, w, h = outputs[i][0], outputs[i][1], outputs[i][2], outputs[i][3]
 
-                # Convert (x, y, w, h) to (x1, y1, x2, y2)
-                x1 = int((x - w / 2) / gain)
-                y1 = int((y - h / 2) / gain)
-                x2 = int((x + w / 2) / gain)
-                y2 = int((y + h / 2) / gain)
+                # Convert (x, y, w, h) to (x1, y1, x2, y2) and scale to original image size
+                x1 = int((x - w / 2) * scale_x)
+                y1 = int((y - h / 2) * scale_y)
+                x2 = int((x + w / 2) * scale_x)
+                y2 = int((y + h / 2) * scale_y)
 
                 # Add the class ID, score, and box coordinates to the respective lists
                 class_ids.append(class_id)
