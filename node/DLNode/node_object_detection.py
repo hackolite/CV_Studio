@@ -316,6 +316,8 @@ class Node(Node):
                     return {"image": None, "json": {}, "audio": None}
                 
                 # Defensive check: ensure model_name is not None or empty string
+                # This is a safety net for edge cases where model_name_value might be
+                # an empty string or other unexpected value that bypasses the primary logic above
                 if not model_name:
                     logger.error("model_name is invalid, attempting to use first available model")
                     if self._model_class:
@@ -325,6 +327,8 @@ class Node(Node):
                         return {"image": None, "json": {}, "audio": None}
                 
                 # Defensive check: ensure provider is not None
+                # This guards against edge cases where dpg_get_value might return unexpected values
+                # or the provider variable is somehow unset despite the initialization logic above
                 if provider is None:
                     logger.warning("provider is None, defaulting to 'CPU'")
                     provider = 'CPU'
