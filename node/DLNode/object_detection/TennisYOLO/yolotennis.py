@@ -12,6 +12,10 @@ import math
 os.environ["ORT_CUDA_USE_CUDNN"] = "0"
 
 class YOLOTENNIS:
+    # Model input dimensions (width x height)
+    MODEL_INPUT_WIDTH = 608
+    MODEL_INPUT_HEIGHT = 416
+    
     def __init__(
         self,
         model_path='yolo11_n.onnx',
@@ -28,24 +32,25 @@ class YOLOTENNIS:
         self.input_detail = self.onnx_session.get_inputs()[0]
         self.input_name = self.input_detail.name
         self.output_name = self.onnx_session.get_outputs()[0].name
-        
-        self.input_shape = (400, 600)
-        self.input_width, self.input_height = self.input_shape
 
     def __call__(self, image):
         temp_image = copy.deepcopy(image)
         # Store original dimensions for coordinate scaling
         original_height, original_width = image.shape[:2]
         
-        # Resize to model input size (608x416)
-        temp_image = cv2.resize(temp_image, (608, 416), interpolation=cv2.INTER_AREA)
+        # Resize to model input size
+        temp_image = cv2.resize(
+            temp_image, 
+            (self.MODEL_INPUT_WIDTH, self.MODEL_INPUT_HEIGHT), 
+            interpolation=cv2.INTER_AREA
+        )
         image = self._preprocess(temp_image)
         # Debug: print("preprocess", image.shape) 
         results = self.onnx_session.run(None, {self.input_name: image})
         
         # Calculate scaling ratios to convert coordinates back to original image size
-        scale_x = original_width / 608.0
-        scale_y = original_height / 416.0
+        scale_x = original_width / float(self.MODEL_INPUT_WIDTH)
+        scale_y = original_height / float(self.MODEL_INPUT_HEIGHT)
         
         bboxes, scores, class_ids = self._postprocess(results[0], self.nms_th, self.nms_score_th, scale_x, scale_y)
         return bboxes, scores, class_ids

@@ -110,8 +110,10 @@ def test_yolotennis_file_has_scaling():
     assert 'original_width' in content, "Should store original image width"
     assert 'scale_x' in content, "Should calculate scale_x for coordinate conversion"
     assert 'scale_y' in content, "Should calculate scale_y for coordinate conversion"
-    assert '608.0' in content, "Should reference model width (608)"
-    assert '416.0' in content, "Should reference model height (416)"
+    assert 'MODEL_INPUT_WIDTH' in content, "Should have MODEL_INPUT_WIDTH constant"
+    assert 'MODEL_INPUT_HEIGHT' in content, "Should have MODEL_INPUT_HEIGHT constant"
+    assert '608' in content, "Should reference model width (608)"
+    assert '416' in content, "Should reference model height (416)"
     assert '* scale_x' in content, "Should apply scale_x to coordinates"
     assert '* scale_y' in content, "Should apply scale_y to coordinates"
     
