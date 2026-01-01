@@ -316,7 +316,7 @@ class Node(Node):
                     return {"image": None, "json": {}, "audio": None}
                 
                 # Defensive check: ensure model_name is not None or empty string
-                if model_name is None or model_name == "":
+                if not model_name:
                     logger.error("model_name is invalid, attempting to use first available model")
                     if self._model_class:
                         model_name = list(self._model_class.keys())[0]
