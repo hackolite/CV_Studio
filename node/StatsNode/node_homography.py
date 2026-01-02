@@ -297,7 +297,10 @@ class Node(Node):
         if use_pref_counter and (master_json_data is not None or points_json_data is not None):
             elapsed_time = time.monotonic() - start_time
             elapsed_time = int(elapsed_time * 1000)
-            dpg_set_value(output_value02_tag, str(elapsed_time).zfill(4) + 'ms')
+            try:
+                dpg_set_value(output_value02_tag, str(elapsed_time).zfill(4) + 'ms')
+            except:
+                pass  # DPG not initialized (e.g., in tests)
 
         return {"image": None, "json": output_data, "audio": None}
 
@@ -306,7 +309,10 @@ class Node(Node):
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
-        pos = dpg.get_item_pos(tag_node_name)
+        try:
+            pos = dpg.get_item_pos(tag_node_name)
+        except:
+            pos = [0, 0]  # Default position if DPG not initialized
 
         setting_dict = {}
         setting_dict['ver'] = self._ver
