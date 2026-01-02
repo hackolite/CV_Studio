@@ -44,7 +44,6 @@ class FactoryNode:
         node._opencv_setting_dict = opencv_setting_dict
         
         # Use dedicated visualization dimensions for tennis court display
-        # (600x800 chosen to accommodate court's physical 1:2.17 aspect ratio)
         small_window_w = Node.VISUALIZATION_WIDTH
         small_window_h = Node.VISUALIZATION_HEIGHT
         use_pref_counter = node._opencv_setting_dict['use_pref_counter']
@@ -127,8 +126,10 @@ class Node(Node):
     COURT_LENGTH_M = 23.77  # Full court length
     
     # Visualization constants
+    # Display dimensions: 600x800 (1:1.33 aspect ratio) provides adequate space
+    # for tennis court (10.97m x 23.77m, 1:2.17 physical aspect ratio) with margins
     VISUALIZATION_WIDTH = 600   # Display width in pixels
-    VISUALIZATION_HEIGHT = 800  # Display height in pixels (accommodates court's 1:2.17 physical aspect ratio)
+    VISUALIZATION_HEIGHT = 800  # Display height in pixels
     VISUALIZATION_MARGIN = 60   # Total margin in pixels (30px on each side)
 
     def __init__(self):
