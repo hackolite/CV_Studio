@@ -118,6 +118,13 @@ class Node(Node):
     node_tag = 'TennisCourt'
 
     _opencv_setting_dict = None
+    
+    # Tennis court dimensions (in meters)
+    COURT_WIDTH_M = 10.97  # Doubles court width
+    COURT_LENGTH_M = 23.77  # Full court length
+    
+    # Visualization constants
+    VISUALIZATION_MARGIN = 100  # Total margin in pixels (50px on each side)
 
     def __init__(self):
         pass
@@ -153,8 +160,8 @@ class Node(Node):
         line_thickness = 2
         
         # Draw green background (approximation of court area)
-        court_width = int(10.97 * scale)
-        court_length = int(23.77 * scale)
+        court_width = int(self.COURT_WIDTH_M * scale)
+        court_length = int(self.COURT_LENGTH_M * scale)
         cv2.rectangle(img, 
                      (offset_x, offset_y), 
                      (offset_x + court_width, offset_y + court_length),
@@ -302,14 +309,14 @@ class Node(Node):
             output_image = np.zeros((small_window_h, small_window_w, 3), dtype=np.uint8)
             
             # Calculate scale to fit court in image
-            # Tennis court is ~11m x 24m
-            scale_x = (small_window_w - 100) / 11.0  # Leave 50px margin on each side
-            scale_y = (small_window_h - 100) / 24.0
+            # Use class constants for court dimensions
+            scale_x = (small_window_w - self.VISUALIZATION_MARGIN) / self.COURT_WIDTH_M
+            scale_y = (small_window_h - self.VISUALIZATION_MARGIN) / self.COURT_LENGTH_M
             scale = min(scale_x, scale_y)  # Use smaller scale to fit both dimensions
             
             # Center the court
-            court_width_px = int(10.97 * scale)
-            court_length_px = int(23.77 * scale)
+            court_width_px = int(self.COURT_WIDTH_M * scale)
+            court_length_px = int(self.COURT_LENGTH_M * scale)
             offset_x = (small_window_w - court_width_px) // 2
             offset_y = (small_window_h - court_length_px) // 2
             
