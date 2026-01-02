@@ -240,109 +240,127 @@ class Node(Node):
         node_result_dict,
         node_audio_dict,
     ):
-        self.tag_node_name = str(node_id) + ':' + self.node_tag
-        self.input_value02_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
-        self.input_value03_tag = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
-        self.output_value01_tag = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
-        self.output_value02_tag = self.tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
+        try:
+            self.tag_node_name = str(node_id) + ':' + self.node_tag
+            self.input_value02_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
+            self.input_value03_tag = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
+            self.output_value01_tag = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
+            self.output_value02_tag = self.tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
-        tag_provider_select_value_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
+            tag_provider_select_value_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
 
-        self.small_window_w = self._opencv_setting_dict['process_width']
-        self.small_window_h = self._opencv_setting_dict['process_height']
-        use_pref_counter = self._opencv_setting_dict['use_pref_counter']
-        use_gpu = self._opencv_setting_dict['use_gpu']
-
-
-        connection_info_src = ''
-        for connection_info in connection_list:
-            connection_type = connection_info[0].split(':')[2]
-            if connection_type == self.TYPE_FLOAT:
-
-                source_tag = connection_info[0] + 'Value'
-                destination_tag = connection_info[1] + 'Value'
-
-                input_value = round(float(dpg_get_value(source_tag)), 3)
-                input_value = max([self._min_val, input_value])
-                input_value = min([self._max_val, input_value])
-                dpg_set_value(destination_tag, input_value)
-            if connection_type == self.TYPE_IMAGE:
-
-                connection_info_src = connection_info[0]
-                connection_info_src = connection_info_src.split(':')[:2]
-                connection_info_src = ':'.join(connection_info_src)
+            self.small_window_w = self._opencv_setting_dict['process_width']
+            self.small_window_h = self._opencv_setting_dict['process_height']
+            use_pref_counter = self._opencv_setting_dict['use_pref_counter']
+            use_gpu = self._opencv_setting_dict['use_gpu']
 
 
-        frame = node_image_dict.get(connection_info_src, None)
+            connection_info_src = ''
+            for connection_info in connection_list:
+                connection_type = connection_info[0].split(':')[2]
+                if connection_type == self.TYPE_FLOAT:
+
+                    source_tag = connection_info[0] + 'Value'
+                    destination_tag = connection_info[1] + 'Value'
+
+                    input_value = round(float(dpg_get_value(source_tag)), 3)
+                    input_value = max([self._min_val, input_value])
+                    input_value = min([self._max_val, input_value])
+                    dpg_set_value(destination_tag, input_value)
+                if connection_type == self.TYPE_IMAGE:
+
+                    connection_info_src = connection_info[0]
+                    connection_info_src = connection_info_src.split(':')[:2]
+                    connection_info_src = ':'.join(connection_info_src)
 
 
-        score_th = round(float(dpg_get_value(self.input_value03_tag)), 3)
+            frame = node_image_dict.get(connection_info_src, None)
 
 
-        provider = 'CPU'
-        if use_gpu:
-        	provider = dpg_get_value(tag_provider_select_value_name)
+            score_th = round(float(dpg_get_value(self.input_value03_tag)), 3)
 
 
-        model_name = dpg_get_value(self.input_value02_tag)
-        model_path = self._model_path_setting[model_name]
-        model_class = self._model_class[model_name]
-
-        model_name_with_provider = model_name + '_' + provider
+            provider = 'CPU'
+            if use_gpu:
+            	provider = dpg_get_value(tag_provider_select_value_name)
 
 
-        if frame is not None:
-            if model_name_with_provider not in self._model_instance:
-                if provider == 'CPU':
-                    providers = ['CPUExecutionProvider']
-                    self._model_instance[
-                        model_name_with_provider] = model_class(
-                            model_path,
-                            providers=providers,
-                        )
-                else:
-                    self._model_instance[
-                        model_name_with_provider] = model_class(model_path)
+            model_name = dpg_get_value(self.input_value02_tag)
+            model_path = self._model_path_setting[model_name]
+            model_class = self._model_class[model_name]
+
+            model_name_with_provider = model_name + '_' + provider
 
 
-        if frame is not None and use_pref_counter:
-            start_time = time.monotonic()
-
-        result = {}
-        debug_frame = None
-        if frame is not None:
-            results_list = self._model_instance[model_name_with_provider](
-                frame)
-            result['model_name'] = model_name
-            result['score_th'] = score_th
-            result['results_list'] = results_list
-
-
-        if frame is not None and use_pref_counter:
-            elapsed_time = time.monotonic() - start_time
-            elapsed_time = int(elapsed_time * 1000)
-            dpg_set_value(self.output_value02_tag,
-                          str(elapsed_time).zfill(4) + 'ms')
+            if frame is not None:
+                if model_name_with_provider not in self._model_instance:
+                    if provider == 'CPU':
+                        providers = ['CPUExecutionProvider']
+                        self._model_instance[
+                            model_name_with_provider] = model_class(
+                                model_path,
+                                providers=providers,
+                            )
+                    else:
+                        self._model_instance[
+                            model_name_with_provider] = model_class(model_path)
 
 
-        if frame is not None:
-            debug_frame = copy.deepcopy(frame)
-            debug_frame = self.draw_pose_estimation_info(
-                model_name,
-                debug_frame,
-                results_list,
-                score_th,
-            )
+            if frame is not None and use_pref_counter:
+                start_time = time.monotonic()
 
-            # Use cached texture conversion for better performance
-            texture = self.convert_cv_to_dpg_cached(
-                debug_frame,
-                self.small_window_w,
-                self.small_window_h,
-            )
-            dpg_set_value(self.output_value01_tag, texture)
+            result = {}
+            debug_frame = None
+            if frame is not None:
+                results_list = self._model_instance[model_name_with_provider](
+                    frame)
+                result['model_name'] = model_name
+                result['score_th'] = score_th
+                result['results_list'] = results_list
 
-        return {"image": debug_frame if debug_frame is not None else frame, "json": result, "audio": None}
+
+            if frame is not None and use_pref_counter:
+                elapsed_time = time.monotonic() - start_time
+                elapsed_time = int(elapsed_time * 1000)
+                dpg_set_value(self.output_value02_tag,
+                              str(elapsed_time).zfill(4) + 'ms')
+
+
+            if frame is not None:
+                debug_frame = copy.deepcopy(frame)
+                debug_frame = self.draw_pose_estimation_info(
+                    model_name,
+                    debug_frame,
+                    results_list,
+                    score_th,
+                )
+
+                # Use cached texture conversion for better performance
+                texture = self.convert_cv_to_dpg_cached(
+                    debug_frame,
+                    self.small_window_w,
+                    self.small_window_h,
+                )
+                dpg_set_value(self.output_value01_tag, texture)
+
+            return {"image": debug_frame if debug_frame is not None else frame, "json": result, "audio": None}
+        except Exception as e:
+            logger.error(f"Error in pose estimation: {e}", exc_info=True)
+            # Get frame if possible
+            frame = None
+            try:
+                connection_info_src = ''
+                for connection_info in connection_list:
+                    connection_type = connection_info[0].split(':')[2]
+                    if connection_type == self.TYPE_IMAGE:
+                        connection_info_src = connection_info[0]
+                        connection_info_src = connection_info_src.split(':')[:2]
+                        connection_info_src = ':'.join(connection_info_src)
+                        break
+                frame = node_image_dict.get(connection_info_src, None)
+            except:
+                pass
+            return {"image": frame if frame is not None else None, "json": {}, "audio": None}
 
     def close(self, node_id):
         pass
