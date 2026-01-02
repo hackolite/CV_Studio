@@ -23,7 +23,7 @@ A complete visual node that:
 - ✅ Complete court markings (doubles, singles, service boxes, center line)
 - ✅ **Blue net line at center of court** (inspired by Tennis-Tracker)
 - ✅ **Red keypoint circles** at all 14 court positions (inspired by Tennis-Tracker)
-- ✅ **Green player/object markers** matching court theme (inspired by Tennis-Tracker)
+- ✅ **White player/object markers** for high contrast visibility
 - ✅ Visual point plotting with labels and colored markers
 - ✅ Green court background, white lines
 - ✅ Maintains aspect ratio of real tennis court
@@ -113,7 +113,7 @@ Player Detection → Homography Node (Input 2: Points to Transform)
    - Center line and center T
    - **Blue net line at center** (inspired by Tennis-Tracker)
    - **Red keypoint circles at all 14 positions** (inspired by Tennis-Tracker)
-5. **Plot Points**: Green circles with white labels for player/object positions
+5. **Plot Points**: White circles with white labels for player/object positions (high contrast)
 6. **Output**: Image + JSON with visualization metadata
 
 ## Testing Results
