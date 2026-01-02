@@ -358,7 +358,7 @@ class Node(Node):
                         connection_info_src = ':'.join(connection_info_src)
                         break
                 frame = node_image_dict.get(connection_info_src, None)
-            except:
+            except Exception:
                 pass
             return {"image": frame if frame is not None else None, "json": {}, "audio": None}
 
