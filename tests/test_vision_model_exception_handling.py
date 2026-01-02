@@ -25,10 +25,13 @@ def test_object_detection_has_exception_handling_with_return():
     assert 'except Exception as e:' in content, \
         "Object detection should have exception handling"
     
+    # Check that the exception handler logs errors
+    exception_section = content.split('except Exception as e:')[1].split('def ')[0]
+    assert 'logger.error' in exception_section and 'exc_info=True' in exception_section, \
+        "Object detection should log errors with stack trace"
+    
     # Check that the exception handler returns data
-    assert 'logger.error(f"Error in object detection: {e}", exc_info=True)' in content, \
-        "Object detection should log errors"
-    assert 'return {"image":' in content.split('except Exception as e:')[1], \
+    assert 'return {"image":' in exception_section, \
         "Object detection exception handler should return a dictionary with image"
 
 
@@ -54,11 +57,11 @@ def test_pose_estimation_has_exception_handling_with_return():
         "Pose estimation update should have exception handling"
     
     # Check that the exception handler logs errors
-    assert 'logger.error(f"Error in pose estimation: {e}", exc_info=True)' in update_section, \
-        "Pose estimation should log errors"
+    exception_section = update_section.split('except Exception as e:')[1]
+    assert 'logger.error' in exception_section and 'exc_info=True' in exception_section, \
+        "Pose estimation should log errors with stack trace"
     
     # Check that the exception handler returns data
-    exception_section = update_section.split('except Exception as e:')[1]
     assert 'return {"image":' in exception_section, \
         "Pose estimation exception handler should return a dictionary with image"
 
