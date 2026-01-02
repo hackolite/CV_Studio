@@ -43,11 +43,10 @@ class FactoryNode:
 
         node._opencv_setting_dict = opencv_setting_dict
         
-        # Override process dimensions for tennis court visualization
+        # Use dedicated visualization dimensions for tennis court display
         # Tennis court needs larger display area due to 1:2.17 aspect ratio
-        # Use 600x800 for proper court visualization (similar to tests)
-        small_window_w = 600
-        small_window_h = 800
+        small_window_w = Node.VISUALIZATION_WIDTH
+        small_window_h = Node.VISUALIZATION_HEIGHT
         use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
         # Create black image for initialization
@@ -128,7 +127,9 @@ class Node(Node):
     COURT_LENGTH_M = 23.77  # Full court length
     
     # Visualization constants
-    VISUALIZATION_MARGIN = 60  # Total margin in pixels (30px on each side) - reduced for larger display
+    VISUALIZATION_WIDTH = 600   # Display width in pixels
+    VISUALIZATION_HEIGHT = 800  # Display height in pixels (matches court 1:2.17 aspect ratio)
+    VISUALIZATION_MARGIN = 60   # Total margin in pixels (30px on each side)
 
     def __init__(self):
         pass
@@ -302,10 +303,9 @@ class Node(Node):
         output_image_value_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_time_value_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output03Value'
 
-        # Use larger dimensions for tennis court visualization
-        # Tennis court needs larger display area due to 1:2.17 aspect ratio
-        small_window_w = 600
-        small_window_h = 800
+        # Use dedicated visualization dimensions for tennis court display
+        small_window_w = self.VISUALIZATION_WIDTH
+        small_window_h = self.VISUALIZATION_HEIGHT
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
         # Find JSON input connection
