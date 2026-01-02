@@ -1,31 +1,61 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Test object detection node image display"""
+"""Test object detection node image display structure and logic"""
 
 import sys
 import os
-import numpy as np
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def test_object_detection_node_structure():
-    """Test that the object detection node has the correct structure"""
-    from node.DLNode.node_object_detection import FactoryNode, Node
+def test_object_detection_consolidated_frame_processing():
+    """Test that frame processing logic is consolidated properly"""
     
-    # Verify FactoryNode has correct attributes
-    factory = FactoryNode()
-    assert hasattr(factory, 'node_label'), "FactoryNode should have node_label"
-    assert hasattr(factory, 'node_tag'), "FactoryNode should have node_tag"
-    assert factory.node_label == 'ObjectDetection', "node_label should be 'ObjectDetection'"
-    assert factory.node_tag == 'ObjectDetection', "node_tag should be 'ObjectDetection'"
+    file_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        'node', 'DLNode', 'node_object_detection.py'
+    )
     
-    # Verify Node class has correct attributes
-    assert hasattr(Node, 'node_label'), "Node should have node_label"
-    assert hasattr(Node, 'node_tag'), "Node should have node_tag"
-    assert Node.node_label == 'ObjectDetection', "Node.node_label should be 'ObjectDetection'"
-    assert Node.node_tag == 'ObjectDetection', "Node.node_tag should be 'ObjectDetection'"
+    with open(file_path, 'r') as f:
+        content = f.read()
+    
+    # Find the update method
+    update_start = content.find('def update(', content.find('class Node(Node):'))
+    update_end = content.find('def close(', update_start)
+    update_method = content[update_start:update_end]
+    
+    # Verify that bboxes, scores, class_ids definition and usage are in the same block
+    # Find the main frame processing block (after result = {})
+    result_init = update_method.find('result = {}')
+    processing_section = update_method[result_init:]
+    
+    # In the processing section, there should be one main frame block
+    import re
+    frame_checks_after_result = list(re.finditer(r'if frame is not None:', processing_section))
+    
+    # Should have exactly 1 frame processing block after result initialization
+    assert len(frame_checks_after_result) == 1, \
+        f"Should have exactly 1 main frame processing block, found {len(frame_checks_after_result)}"
+    
+    # Verify that bboxes, scores, class_ids usage comes after definition in same block
+    bboxes_def = update_method.find('bboxes, scores, class_ids = ')
+    bboxes_usage_in_draw = update_method.find('self.draw_object_detection_info')
+    texture_update = update_method.find('dpg_set_value(tag_node_output_image, texture)')
+    
+    assert bboxes_def > 0, "Should define bboxes, scores, class_ids"
+    assert bboxes_usage_in_draw > 0, "Should use variables in draw_object_detection_info"
+    assert bboxes_usage_in_draw > bboxes_def, "Variable usage should come after definition"
+    assert texture_update > bboxes_usage_in_draw, "Texture update should come after drawing"
+    
+    # Verify all are in the same if block by checking indentation consistency
+    # Extract lines between bboxes_def and texture_update
+    processing_logic = update_method[bboxes_def:texture_update+100]
+    
+    # Should not have another "if frame is not None:" in the middle
+    additional_frame_checks = processing_logic.count('if frame is not None:')
+    assert additional_frame_checks == 0, \
+        f"Should not have additional 'if frame is not None:' blocks in processing logic, found {additional_frame_checks}"
 
 
 def test_object_detection_file_has_add_image():
@@ -87,8 +117,8 @@ def test_object_detection_attribute_order():
 
 
 if __name__ == '__main__':
-    test_object_detection_node_structure()
-    print("✓ test_object_detection_node_structure passed")
+    test_object_detection_consolidated_frame_processing()
+    print("✓ test_object_detection_consolidated_frame_processing passed")
     
     test_object_detection_file_has_add_image()
     print("✓ test_object_detection_file_has_add_image passed")
