@@ -158,8 +158,8 @@ class Node(Node):
         # Color definitions
         line_color = (255, 255, 255)  # White
         court_color = (0, 150, 0)     # Green background
-        net_color = (255, 0, 0)       # Blue for net (like Tennis-Tracker)
-        keypoint_color = (0, 0, 255)  # Red for keypoints
+        net_color = (255, 0, 0)       # Blue for net (like Tennis-Tracker) - BGR format
+        keypoint_color = (0, 0, 255)  # Red for keypoints - BGR format
         line_thickness = 2
         
         # Draw green background (approximation of court area)
@@ -276,7 +276,7 @@ class Node(Node):
                 py = int(y_meters * scale + offset_y)
                 
                 # Draw point as colored circle (similar to Tennis-Tracker style)
-                # Larger circle with good visibility
+                # Using 5px radius for clean, visible markers
                 cv2.circle(img, (px, py), 5, player_color, -1)
                 
                 # Optional: Draw point index for tracking
