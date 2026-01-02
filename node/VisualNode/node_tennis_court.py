@@ -270,9 +270,9 @@ class Node(Node):
         
         img = image.copy()
         
-        # Color scheme inspired by Tennis-Tracker
-        # Green for players/objects (matches court theme)
-        player_color = (0, 255, 0)  # Green
+        # Color scheme for high visibility
+        # White for players/objects (high contrast against green court)
+        player_color = (255, 255, 255)  # White
         
         # Draw each transformed point
         for i, point in enumerate(transformed_points):

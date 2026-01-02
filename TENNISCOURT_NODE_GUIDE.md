@@ -7,7 +7,7 @@ The **TennisCourt Visual Node** is a visualization node that draws a tennis cour
 **Improvements inspired by Tennis-Tracker** (https://github.com/abhroroy365/Tennis-Tracker):
 - ✅ Red keypoint circles at court corners for better visual reference
 - ✅ Blue net line at center of court (horizontal divider)
-- ✅ Green player/object markers matching court theme
+- ✅ White player/object markers for high contrast visibility
 - ✅ Enhanced visualization style similar to professional tennis tracking systems
 
 ## Location
@@ -67,7 +67,7 @@ The TennisCourt node:
   - White court lines (doubles, singles, service boxes, center line)
   - **Blue net line at center of court** (inspired by Tennis-Tracker)
   - **Red keypoint circles** at all 14 court corner positions (inspired by Tennis-Tracker)
-  - **Green circles** marking transformed player/object positions
+  - **White circles** marking transformed player/object positions
   - Point indices labeled next to each transformed point
 
 ### Output 2: Enhanced JSON
@@ -120,10 +120,10 @@ The court is drawn with standard tennis court dimensions:
 ### Point Visualization
 
 Transformed points are drawn as:
-- **Green filled circles** (5px radius) matching court theme (inspired by Tennis-Tracker)
+- **White filled circles** (5px radius) for high contrast visibility
 - **Numerical labels** showing point index in white
 - Points positioned according to their real-world coordinates (in meters)
-- Designed to be clearly visible against the green court background
+- Excellent visibility against the green court background
 
 ## Usage Pipeline
 
