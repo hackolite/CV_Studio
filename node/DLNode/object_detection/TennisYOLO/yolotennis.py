@@ -29,7 +29,7 @@ class YOLOTENNIS:
         self.input_name = self.input_detail.name
         self.output_name = self.onnx_session.get_outputs()[0].name
         
-        self.input_shape = (400, 600)
+        self.input_shape = (608, 608)
         self.input_width, self.input_height = self.input_shape
 
     def __call__(self, image):
@@ -107,3 +107,12 @@ class YOLOTENNIS:
             text = f'{coco_classes[int(class_id)]}: {score:.2f}'
             debug_image = cv2.putText(debug_image, text, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, thickness)
         return debug_image
+
+    def _get_color(self, index):
+        temp_index = abs(int(index + 5)) * 3
+        color = (
+            (29 * temp_index) % 255,
+            (17 * temp_index) % 255,
+            (37 * temp_index) % 255,
+        )
+        return color
