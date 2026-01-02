@@ -334,12 +334,12 @@ class Node(Node):
                                 model_name_with_provider] = model_class(model_path)
 
 
-                if frame is not None and use_pref_counter:
-                    start_time = time.monotonic()
-
                 result = {}
                 debug_frame = None
+                
                 if frame is not None:
+                    if use_pref_counter:
+                        start_time = time.monotonic()
 
                     bboxes, scores, class_ids = self._model_instance[
                         model_name_with_provider](frame)
@@ -356,15 +356,12 @@ class Node(Node):
                         result['class_names'] = class_name_dict
                         result['score_th'] = score_th
 
+                    if use_pref_counter:
+                        elapsed_time = time.monotonic() - start_time
+                        elapsed_time = int(elapsed_time * 1000)
+                        dpg_set_value(self.tag_node_output_result,
+                                      str(elapsed_time).zfill(4) + 'ms')
 
-                if frame is not None and use_pref_counter:
-                    elapsed_time = time.monotonic() - start_time
-                    elapsed_time = int(elapsed_time * 1000)
-                    dpg_set_value(self.tag_node_output_result,
-                                  str(elapsed_time).zfill(4) + 'ms')
-
-
-                if frame is not None:
                     debug_frame = copy.deepcopy(frame)
                     debug_frame = self.draw_object_detection_info(
                         debug_frame,
