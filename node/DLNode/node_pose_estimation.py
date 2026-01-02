@@ -172,14 +172,25 @@ class FactoryNode:
                         default_value='Elapsed time(ms)',
                     )
 
+            # Create yellow theme for JSON button
+            with dpg.theme() as yellow_button_theme:
+                with dpg.theme_component(dpg.mvButton):
+                    dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))
+                    dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 153, 255))
+                    dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 153, 255))
+
+            # JSON output button
             with dpg.node_attribute(
                         tag=node.tag_node_output_json_name,
                         attribute_type=dpg.mvNode_Attr_Output,
                 ):
-                    dpg.add_text(
+                    btn = dpg.add_button(
+                        label="JSON",
                         tag=node.tag_node_output_json_value_name,
-                        default_value='Pose Results',
+                        width=node.small_window_w,
+                        enabled=False,
                     )
+                    dpg.bind_item_theme(btn, yellow_button_theme)
 
         return node
 
@@ -240,6 +251,7 @@ class Node(Node):
         node_result_dict,
         node_audio_dict,
     ):
+        frame = None
         try:
             self.tag_node_name = str(node_id) + ':' + self.node_tag
             self.input_value02_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
@@ -255,7 +267,6 @@ class Node(Node):
             use_gpu = self._opencv_setting_dict['use_gpu']
 
 
-            connection_info_src = ''
             for connection_info in connection_list:
                 connection_type = connection_info[0].split(':')[2]
                 if connection_type == self.TYPE_FLOAT:
@@ -267,14 +278,9 @@ class Node(Node):
                     input_value = max([self._min_val, input_value])
                     input_value = min([self._max_val, input_value])
                     dpg_set_value(destination_tag, input_value)
-                if connection_type == self.TYPE_IMAGE:
 
-                    connection_info_src = connection_info[0]
-                    connection_info_src = connection_info_src.split(':')[:2]
-                    connection_info_src = ':'.join(connection_info_src)
-
-
-            frame = node_image_dict.get(connection_info_src, None)
+            # Get input frame using the standard method from basenode
+            frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
 
 
             score_th = round(float(dpg_get_value(self.input_value03_tag)), 3)
@@ -346,18 +352,10 @@ class Node(Node):
             return {"image": debug_frame if debug_frame is not None else frame, "json": result, "audio": None}
         except Exception as e:
             logger.error(f"Error in pose estimation: {e}", exc_info=True)
-            # Get frame if possible
+            # Try to get frame if possible
             frame = None
             try:
-                connection_info_src = ''
-                for connection_info in connection_list:
-                    connection_type = connection_info[0].split(':')[2]
-                    if connection_type == self.TYPE_IMAGE:
-                        connection_info_src = connection_info[0]
-                        connection_info_src = connection_info_src.split(':')[:2]
-                        connection_info_src = ':'.join(connection_info_src)
-                        break
-                frame = node_image_dict.get(connection_info_src, None)
+                frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
             except Exception:
                 pass
             return {"image": frame if frame is not None else None, "json": {}, "audio": None}
