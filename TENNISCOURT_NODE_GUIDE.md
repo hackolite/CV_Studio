@@ -4,6 +4,12 @@
 
 The **TennisCourt Visual Node** is a visualization node that draws a tennis court diagram with transformed points from homography calculations. It accepts homography data (including the tennis court template and transformed points) and creates a visual representation of the court with the points plotted on it.
 
+**Improvements inspired by Tennis-Tracker** (https://github.com/abhroroy365/Tennis-Tracker):
+- ✅ Red keypoint circles at court corners for better visual reference
+- ✅ Blue net line at center of court (horizontal divider)
+- ✅ Green player/object markers matching court theme
+- ✅ Enhanced visualization style similar to professional tennis tracking systems
+
 ## Location
 
 **Menu:** `Visual` → `TennisCourt`
@@ -59,8 +65,10 @@ The TennisCourt node:
 - **Description:** Shows:
   - Green court background
   - White court lines (doubles, singles, service boxes, center line)
-  - Red circles marking transformed point positions
-  - Point indices labeled next to each point
+  - **Blue net line at center of court** (inspired by Tennis-Tracker)
+  - **Red keypoint circles** at all 14 court corner positions (inspired by Tennis-Tracker)
+  - **Green circles** marking transformed player/object positions
+  - Point indices labeled next to each transformed point
 
 ### Output 2: Enhanced JSON
 - **Purpose:** Passes through the input JSON data with added visualization metadata
@@ -99,20 +107,23 @@ The court is drawn with standard tennis court dimensions:
 - **Singles court:** 8.23m × 23.77m
 - **Service boxes:** From baseline to 5.485m
 - **Center line:** Divides service boxes
+- **Net line:** Blue horizontal line at center (11.88m from each baseline)
 
 **Visual elements:**
 - Green background for court surface
 - White lines for court boundaries and markings
+- **Blue net line** at center of court (inspired by Tennis-Tracker)
+- **Red keypoint circles** (5px radius) at all 14 court positions (inspired by Tennis-Tracker)
 - Automatic scaling to fit the visualization window
 - Centered court positioning with margins
 
 ### Point Visualization
 
 Transformed points are drawn as:
-- **Red filled circles** (8px radius) for visibility
-- **White outline** (2px) for contrast
-- **Numerical labels** showing point index
+- **Green filled circles** (5px radius) matching court theme (inspired by Tennis-Tracker)
+- **Numerical labels** showing point index in white
 - Points positioned according to their real-world coordinates (in meters)
+- Designed to be clearly visible against the green court background
 
 ## Usage Pipeline
 

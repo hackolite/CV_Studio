@@ -4,6 +4,8 @@
 
 This implementation adds a new **TennisCourt** visual node to CV Studio that visualizes tennis court diagrams with transformed player/object positions from homography calculations.
 
+**Latest Update:** Enhanced with features inspired by Tennis-Tracker repository (https://github.com/abhroroy365/Tennis-Tracker)
+
 ## What Was Implemented
 
 ### 1. TennisCourt Visual Node (`node/VisualNode/node_tennis_court.py`)
@@ -19,8 +21,11 @@ A complete visual node that:
 - ✅ Automatic court scaling and centering to fit visualization window
 - ✅ Standard tennis court dimensions (10.97m × 23.77m)
 - ✅ Complete court markings (doubles, singles, service boxes, center line)
+- ✅ **Blue net line at center of court** (inspired by Tennis-Tracker)
+- ✅ **Red keypoint circles** at all 14 court positions (inspired by Tennis-Tracker)
+- ✅ **Green player/object markers** matching court theme (inspired by Tennis-Tracker)
 - ✅ Visual point plotting with labels and colored markers
-- ✅ Green court background, white lines, red point markers
+- ✅ Green court background, white lines
 - ✅ Maintains aspect ratio of real tennis court
 
 ### 2. Comprehensive Test Suite
@@ -106,7 +111,9 @@ Player Detection → Homography Node (Input 2: Points to Transform)
    - White boundary lines (doubles, singles)
    - Service line markings
    - Center line and center T
-5. **Plot Points**: Red circles with white borders and numeric labels
+   - **Blue net line at center** (inspired by Tennis-Tracker)
+   - **Red keypoint circles at all 14 positions** (inspired by Tennis-Tracker)
+5. **Plot Points**: Green circles with white labels for player/object positions
 6. **Output**: Image + JSON with visualization metadata
 
 ## Testing Results
@@ -227,6 +234,9 @@ Possible improvements:
 6. Zone highlighting
 7. Animation support
 8. Heat map overlay integration
+9. ✅ **Net line visualization** (COMPLETED - inspired by Tennis-Tracker)
+10. ✅ **Keypoint circles for visual reference** (COMPLETED - inspired by Tennis-Tracker)
+11. ✅ **Improved point color scheme** (COMPLETED - inspired by Tennis-Tracker)
 
 ## Validation Checklist
 
