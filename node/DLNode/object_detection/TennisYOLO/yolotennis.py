@@ -34,7 +34,7 @@ class YOLOTENNIS:
 
     def __call__(self, image):
         temp_image = copy.deepcopy(image)
-        temp_image = cv2.resize(temp_image, (608, 416), interpolation=cv2.INTER_AREA)
+        temp_image = cv2.resize(temp_image, (608, 608), interpolation=cv2.INTER_AREA)
         image = self._preprocess(temp_image)
         # Debug: print("preprocess", image.shape) 
         results = self.onnx_session.run(None, {self.input_name: image})
