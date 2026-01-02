@@ -265,9 +265,9 @@ class Node(Node):
 
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict,):
-            frame = None
             data = {}
             try:
+                frame = None
                 
                 self.tag_node_name = str(node_id) + ':' + self.node_tag
                 tag_node_output_image = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
