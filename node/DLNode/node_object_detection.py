@@ -384,7 +384,8 @@ class Node(Node):
                 data["audio"] = None
                 return data
             except Exception as e:
-                    logger.error(f"Error in object detection: {e}", exc_info=True)
+                logger.error(f"Error in object detection: {e}", exc_info=True)
+                return {"image": frame if frame is not None else None, "json": {}, "audio": None}
 
 
     def close(self, node_id):
