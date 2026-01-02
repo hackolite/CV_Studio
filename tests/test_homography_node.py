@@ -123,6 +123,7 @@ def test_homography_node_update():
     node._opencv_setting_dict = {'use_pref_counter': False}
     
     # Create mock pose estimation output (master keypoints)
+    # Note: 'results_list' is the standard output format from PoseEstimation nodes
     detected_keypoints = np.array([
         [100, 500], [700, 500], [700, 50], [100, 50],
         [200, 500], [600, 500], [600, 50], [200, 50],

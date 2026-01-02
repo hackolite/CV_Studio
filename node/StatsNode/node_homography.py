@@ -220,7 +220,7 @@ class Node(Node):
             connection_target = connection_info[1]
             
             # Match case-insensitively or use both Json and JSON
-            if connection_type.upper() == self.TYPE_JSON.upper():
+            if connection_type == self.TYPE_JSON or connection_type.upper() == 'JSON':
                 # Check which input this connects to
                 if ':Input01' in connection_target:
                     # Master keypoints input
@@ -299,7 +299,7 @@ class Node(Node):
             elapsed_time = int(elapsed_time * 1000)
             try:
                 dpg_set_value(output_value02_tag, str(elapsed_time).zfill(4) + 'ms')
-            except:
+            except Exception:
                 pass  # DPG not initialized (e.g., in tests)
 
         return {"image": None, "json": output_data, "audio": None}
@@ -311,7 +311,7 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         try:
             pos = dpg.get_item_pos(tag_node_name)
-        except:
+        except Exception:
             pos = [0, 0]  # Default position if DPG not initialized
 
         setting_dict = {}
