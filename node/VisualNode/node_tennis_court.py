@@ -132,6 +132,7 @@ class Node(Node):
     def _draw_tennis_court(self, image, template, scale=40, offset_x=50, offset_y=50):
         """
         Draw tennis court based on template coordinates.
+        Inspired by Tennis-Tracker repository (github.com/abhroroy365/Tennis-Tracker)
         
         Args:
             image: numpy array to draw on
@@ -157,6 +158,8 @@ class Node(Node):
         # Color definitions
         line_color = (255, 255, 255)  # White
         court_color = (0, 150, 0)     # Green background
+        net_color = (255, 0, 0)       # Blue for net (like Tennis-Tracker) - BGR format
+        keypoint_color = (0, 0, 255)  # Red for keypoints - BGR format
         line_thickness = 2
         
         # Draw green background (approximation of court area)
@@ -226,11 +229,26 @@ class Node(Node):
             pt4 = template_to_image(kp_dict['singles_tr'][0], kp_dict['center_t_top'][1])
             cv2.line(img, pt3, pt4, line_color, line_thickness)
         
+        # Draw NET LINE at center of court (inspired by Tennis-Tracker)
+        # Net is at half court length (11.88m from each baseline)
+        if 'doubles_bl' in kp_dict and 'doubles_br' in kp_dict:
+            net_y = self.COURT_LENGTH_M / 2.0  # Center of court
+            net_start = template_to_image(0, net_y)
+            net_end = template_to_image(self.COURT_WIDTH_M, net_y)
+            cv2.line(img, net_start, net_end, net_color, line_thickness)
+        
+        # Draw keypoint circles (inspired by Tennis-Tracker mini_court.py)
+        # Draw circles at major court corners for visual reference
+        for kp in keypoints:
+            pt = template_to_image(kp['x'], kp['y'])
+            cv2.circle(img, pt, 5, keypoint_color, -1)
+        
         return img
 
     def _draw_transformed_points(self, image, transformed_points, scale=40, offset_x=50, offset_y=50):
         """
         Draw transformed points on the court visualization.
+        Inspired by Tennis-Tracker repository for better point visualization.
         
         Args:
             image: numpy array to draw on
@@ -246,6 +264,10 @@ class Node(Node):
         
         img = image.copy()
         
+        # Color scheme inspired by Tennis-Tracker
+        # Green for players/objects (matches court theme)
+        player_color = (0, 255, 0)  # Green
+        
         # Draw each transformed point
         for i, point in enumerate(transformed_points):
             if len(point) >= 2:
@@ -253,14 +275,14 @@ class Node(Node):
                 px = int(x_meters * scale + offset_x)
                 py = int(y_meters * scale + offset_y)
                 
-                # Draw point as colored circle
-                color = (0, 0, 255)  # Red for visibility
-                cv2.circle(img, (px, py), 8, color, -1)
-                cv2.circle(img, (px, py), 9, (255, 255, 255), 2)  # White border
+                # Draw point as colored circle (similar to Tennis-Tracker style)
+                # Using 5px radius for clean, visible markers
+                cv2.circle(img, (px, py), 5, player_color, -1)
                 
-                # Draw point index
-                cv2.putText(img, str(i), (px + 12, py + 5),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                # Optional: Draw point index for tracking
+                # Smaller, less intrusive label
+                cv2.putText(img, str(i), (px + 8, py + 3),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
         
         return img
 
