@@ -33,7 +33,7 @@ def test_tennis_court_size_reduction():
     print(f"  Court dimensions: {COURT_WIDTH_M}m x {COURT_LENGTH_M}m")
     print(f"  Margin: {VISUALIZATION_MARGIN}px")
     
-    # Calculate expected scale (from node_tennis_court.py lines 533-538)
+    # Calculate expected scale (using same logic as tennis court node update method)
     scale_x = (VISUALIZATION_WIDTH - VISUALIZATION_MARGIN) / COURT_WIDTH_M
     scale_y = (VISUALIZATION_HEIGHT - VISUALIZATION_MARGIN) / COURT_LENGTH_M
     base_scale = min(scale_x, scale_y)
