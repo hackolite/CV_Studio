@@ -234,6 +234,50 @@ def test_coordinate_display():
     return True
 
 
+def test_invalid_bbox_handling():
+    """Test that invalid bboxes are properly handled"""
+    print("\nTesting invalid bbox handling")
+    
+    from node.StatsNode.node_homography import Node as HomographyNode
+    
+    homography_node = HomographyNode()
+    
+    # Test with various invalid bboxes
+    invalid_bboxes = [
+        [],  # Empty bbox
+        [100],  # Too few coordinates
+        [100, 200],  # Too few coordinates
+        [100, 200, 300],  # Too few coordinates
+        [300, 200, 100, 400],  # x2 < x1 (invalid)
+        [100, 400, 300, 200],  # y2 < y1 (invalid)
+    ]
+    
+    # Also include some valid bboxes
+    mixed_bboxes = [
+        [100, 100, 200, 300],  # Valid
+        [300, 200, 100, 400],  # Invalid: x2 < x1
+        [400, 100, 500, 300],  # Valid
+    ]
+    
+    print("   Testing extraction with invalid bboxes...")
+    result = homography_node._extract_bottom_center_from_bboxes(invalid_bboxes)
+    # Should return None or empty when all bboxes are invalid
+    print(f"   Result from all invalid bboxes: {result}")
+    
+    print("   Testing extraction with mixed valid/invalid bboxes...")
+    result = homography_node._extract_bottom_center_from_bboxes(mixed_bboxes)
+    # Should extract only valid bboxes
+    if result is not None:
+        print(f"   Extracted {len(result)} valid points from {len(mixed_bboxes)} bboxes")
+        assert len(result) == 2, "Should extract only the 2 valid bboxes"
+        print("   ✓ Invalid bboxes correctly filtered out")
+    else:
+        print("   ✗ Expected to extract valid bboxes")
+        return False
+    
+    return True
+
+
 if __name__ == '__main__':
     print("=" * 80)
     print("Object Detection → Homography Integration Tests")
@@ -247,6 +291,9 @@ if __name__ == '__main__':
         print("\n" + "=" * 80)
         
         test_coordinate_display()
+        print("\n" + "=" * 80)
+        
+        test_invalid_bbox_handling()
         print("\n" + "=" * 80)
         
         print("\n" + "=" * 80)

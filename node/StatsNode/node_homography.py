@@ -188,15 +188,29 @@ class Node(Node):
         """
         if not bboxes or len(bboxes) == 0:
             return None
-            
+        
         points = []
-        for bbox in bboxes:
+        for i, bbox in enumerate(bboxes):
+            # Validate bbox format
+            if not isinstance(bbox, (list, tuple, np.ndarray)) or len(bbox) < 4:
+                print(f"Warning: Invalid bbox format at index {i}, skipping: {bbox}")
+                continue
+                
             x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
+            
+            # Validate bbox coordinates
+            if x2 <= x1 or y2 <= y1:
+                print(f"Warning: Invalid bbox coordinates at index {i} (x2 <= x1 or y2 <= y1), skipping: {bbox}")
+                continue
+            
             # Bottom center: x is center of bbox, y is bottom of bbox
             center_x = (x1 + x2) / 2.0
             bottom_y = y2
             points.append([center_x, bottom_y])
         
+        if len(points) == 0:
+            return None
+            
         return np.array(points, dtype=np.float32)
 
     def _transform_points(self, points, homography_matrix):
@@ -342,15 +356,16 @@ class Node(Node):
                     output_data['bboxes'] = bboxes_list
                 
                 # Display coordinate transformation in console
-                print("\n" + "="*70)
+                CONSOLE_WIDTH = 70  # Character width for console output
+                print("\n" + "="*CONSOLE_WIDTH)
                 print("[Homography] Coordinate Transformation:")
-                print("="*70)
+                print("="*CONSOLE_WIDTH)
                 if transformed is not None:
                     for i, (orig, trans) in enumerate(zip(points_to_transform, transformed)):
                         print(f"  Player {i+1}:")
                         print(f"    Image coordinates (pixels): ({orig[0]:.1f}, {orig[1]:.1f})")
                         print(f"    Court coordinates (meters): ({trans[0]:.2f}, {trans[1]:.2f})")
-                print("="*70 + "\n")
+                print("="*CONSOLE_WIDTH + "\n")
 
         if use_pref_counter and (master_json_data is not None or points_json_data is not None):
             elapsed_time = time.monotonic() - start_time
