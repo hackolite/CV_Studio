@@ -133,7 +133,58 @@ class Node(Node):
     VISUALIZATION_MARGIN = 60   # Total margin in pixels (30px on each side)
 
     def __init__(self):
-        pass
+        """
+        Initialize the TennisCourt visualization node.
+        
+        Sets up state tracking for persistent visualization:
+        - _last_positions_by_label: Stores the most recent position for each label
+          to enable persistent display even when no new data is received
+        - _player_positions_history: Maintains history of all positions for each label
+          to enable averaging calculations over time
+        """
+        # Position tracking for persistent visualization
+        self._last_positions_by_label = {}  # Maps label to (x, y) tuple of last position
+        self._player_positions_history = {}  # Maps label to list of (x, y) positions for averaging
+
+    def _update_player_positions(self, transformed_points, labels):
+        """
+        Update position history and last positions for each label.
+        
+        Args:
+            transformed_points: list of [x, y] coordinates in meters
+            labels: list of label strings for each point
+        """
+        if transformed_points is None or labels is None:
+            # No data to update - this is normal when no detections are present
+            return
+        
+        for i, point in enumerate(transformed_points):
+            if i < len(labels):
+                label = labels[i]
+                x, y = point[0], point[1]
+                
+                # Update last position for this label
+                self._last_positions_by_label[label] = (x, y)
+                
+                # Add to position history for averaging
+                if label not in self._player_positions_history:
+                    self._player_positions_history[label] = []
+                self._player_positions_history[label].append((x, y))
+    
+    def _get_average_positions_by_label(self):
+        """
+        Get average positions for each label based on history.
+        
+        Returns:
+            dict mapping label to average [x, y] coordinates
+        """
+        averages = {}
+        for label, positions in self._player_positions_history.items():
+            if positions:
+                x_avg = sum(p[0] for p in positions) / len(positions)
+                y_avg = sum(p[1] for p in positions) / len(positions)
+                averages[label] = [x_avg, y_avg]
+        return averages
 
     def _draw_tennis_court(self, image, template, scale=40, offset_x=50, offset_y=50):
         """
@@ -460,6 +511,15 @@ class Node(Node):
         output_image = None
         output_json = None
         
+        # Determine what to draw
+        template = None
+        transformed_points = None
+        labels = None
+        input_points = None
+        scale = None
+        offset_x = None
+        offset_y = None
+        
         if json_data is not None:
             # Extract template and transformed points
             template = json_data.get('template', None)
@@ -467,7 +527,6 @@ class Node(Node):
             input_points = json_data.get('input_points', None)  # Original image coordinates
             
             # Extract labels from bboxes and class_ids (from object detection)
-            labels = None
             if 'bboxes' in json_data and 'class_ids' in json_data and 'class_names' in json_data:
                 class_ids = json_data.get('class_ids', [])
                 class_names = json_data.get('class_names', {})
@@ -482,6 +541,19 @@ class Node(Node):
                         label = f"Object {class_id}"
                     labels.append(label)
             
+            # Update position history if we have new data
+            if transformed_points is not None and labels is not None:
+                self._update_player_positions(transformed_points, labels)
+            
+            # Store template for future use
+            if template is not None:
+                self._last_template = template
+        else:
+            # No new data received - use last known template
+            template = getattr(self, '_last_template', None)
+        
+        # Always draw (even if no new data) to maintain persistent visualization
+        if template is not None:
             # Create blank image
             output_image = np.zeros((small_window_h, small_window_w, 3), dtype=np.uint8)
             
@@ -503,21 +575,23 @@ class Node(Node):
             # Draw tennis court (at half scale)
             output_image = self._draw_tennis_court(output_image, template, scale, offset_x, offset_y)
             
-            # Draw transformed points if available (with labels showing average and last positions)
-            if transformed_points is not None:
-                if labels:
-                    # Use new drawing method with labels for averaging
-                    output_image = self._draw_player_positions_with_labels(
-                        output_image, transformed_points, labels, input_points, scale, offset_x, offset_y
-                    )
-                else:
-                    # Fallback to original method if no labels
-                    output_image = self._draw_transformed_points(
-                        output_image, transformed_points, input_points, scale, offset_x, offset_y
-                    )
+            # Draw last known positions (persistent display)
+            if self._last_positions_by_label:
+                # Convert last positions dict to lists for drawing
+                last_labels = list(self._last_positions_by_label.keys())
+                last_points = [list(self._last_positions_by_label[label]) for label in last_labels]
+                
+                # Draw using last known positions
+                output_image = self._draw_player_positions_with_labels(
+                    output_image, last_points, last_labels, None, scale, offset_x, offset_y
+                )
             
             # Prepare output JSON (pass through with visualization metadata)
-            output_json = copy.deepcopy(json_data)
+            if json_data is not None:
+                output_json = copy.deepcopy(json_data)
+            else:
+                output_json = {}
+            
             output_json['visualization'] = {
                 'scale': scale,
                 'offset_x': offset_x,

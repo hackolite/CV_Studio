@@ -248,6 +248,50 @@ class Node(Node):
             print(f"Error transforming points: {e}")
             return None
 
+    def _calculate_averages_by_label(self, transformed_points, class_ids, class_names):
+        """
+        Calculate average x and y coordinates for each unique label.
+        
+        Args:
+            transformed_points: numpy array of transformed coordinates
+            class_ids: list of class IDs for each point
+            class_names: dict or list of class names
+            
+        Returns:
+            dict mapping label to average coordinates [x, y]
+        """
+        if transformed_points is None or len(transformed_points) == 0:
+            # No points to average - this is expected when no detections are present
+            return {}
+        
+        # Group points by label
+        label_points = {}
+        for i, point in enumerate(transformed_points):
+            if i < len(class_ids):
+                class_id = class_ids[i]
+                # Get label from class_names
+                if isinstance(class_names, dict):
+                    label = class_names.get(class_id, f'Object {class_id}')
+                elif isinstance(class_names, list) and class_id < len(class_names):
+                    label = class_names[class_id]
+                else:
+                    label = f'Object {class_id}'
+                
+                # Add point to this label's list
+                if label not in label_points:
+                    label_points[label] = []
+                label_points[label].append(point)
+        
+        # Calculate average for each label
+        averages = {}
+        for label, points in label_points.items():
+            points_array = np.array(points)
+            avg_x = np.mean(points_array[:, 0])
+            avg_y = np.mean(points_array[:, 1])
+            averages[label] = [float(avg_x), float(avg_y)]
+        
+        return averages
+
     def update(
         self,
         node_id,
@@ -363,6 +407,16 @@ class Node(Node):
                 if 'scores' in points_json_data:
                     output_data['scores'] = points_json_data['scores']
                 
+                # Calculate averages by label
+                averages_by_label = {}
+                if transformed is not None and 'class_ids' in points_json_data and 'class_names' in points_json_data:
+                    averages_by_label = self._calculate_averages_by_label(
+                        transformed,
+                        points_json_data['class_ids'],
+                        points_json_data['class_names']
+                    )
+                    output_data['averages_by_label'] = averages_by_label
+                
                 # Display coordinate transformation in console
                 CONSOLE_WIDTH = 70  # Character width for console output
                 print("\n" + "="*CONSOLE_WIDTH)
@@ -385,6 +439,16 @@ class Node(Node):
                         print(f"  Player {i+1}{label}:")
                         print(f"    Image coordinates (pixels): ({orig[0]:.1f}, {orig[1]:.1f})")
                         print(f"    Court coordinates (meters): ({trans[0]:.2f}, {trans[1]:.2f})")
+                    
+                    # Display averages by label
+                    if averages_by_label:
+                        print("\n" + "-"*CONSOLE_WIDTH)
+                        print("[Homography] Average Positions by Label:")
+                        print("-"*CONSOLE_WIDTH)
+                        for label, avg_coords in averages_by_label.items():
+                            print(f"  {label}:")
+                            print(f"    Average court coordinates (meters): ({avg_coords[0]:.2f}, {avg_coords[1]:.2f})")
+                
                 print("="*CONSOLE_WIDTH + "\n")
 
         if use_pref_counter and (master_json_data is not None or points_json_data is not None):
