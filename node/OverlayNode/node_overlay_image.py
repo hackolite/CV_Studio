@@ -193,16 +193,16 @@ class OverlayImageNode(Node):
         Overlay an image onto a master image with position, size, and transparency controls.
         
         Args:
-            master_image: Base image (numpy array)
-            overlay_image: Image to overlay (numpy array)
-            x_pos: X position on master image (can be negative)
-            y_pos: Y position on master image (can be negative)
-            width: Width of overlay (0 means use original size)
-            height: Height of overlay (0 means use original size)
-            alpha: Transparency level (0.0 = fully transparent, 1.0 = fully opaque)
+            master_image (np.ndarray): Base image (numpy array)
+            overlay_image (np.ndarray): Image to overlay (numpy array)
+            x_pos (int): X position on master image (can be negative)
+            y_pos (int): Y position on master image (can be negative)
+            width (int): Width of overlay (0 means use original size)
+            height (int): Height of overlay (0 means use original size)
+            alpha (float): Transparency level (0.0 = fully transparent, 1.0 = fully opaque)
             
         Returns:
-            Combined image
+            np.ndarray: Combined image
         """
         if master_image is None or overlay_image is None:
             return master_image if master_image is not None else overlay_image
@@ -302,8 +302,6 @@ class OverlayImageNode(Node):
         master_image = None
         overlay_image = None
         
-        # Track which input is which based on connection order
-        input_count = 0
         for connection_info in connection_list:
             connection_type = connection_info[0].split(':')[2]
             
