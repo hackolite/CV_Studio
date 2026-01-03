@@ -86,7 +86,7 @@ class Node:
         self.node_tag = "WebRTC"
         self.node_label = "WebRTC"
         
-    def convert_cv_to_dpg(self, cv_img, w, h):
+    def convert_cv_to_dpg(self, cv_img, w, h, node_id=None):
         return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
     
     def _button(self, sender, app_data, user_data):
@@ -140,6 +140,7 @@ class FactoryNode:
             black_image,
             node.small_window_w,
             node.small_window_h,
+            node_id=node_id,
         )
 
         with dpg.texture_registry(show=False):
@@ -332,6 +333,7 @@ class Node(Node):
                 frame,
                 small_window_w,
                 small_window_h,
+                node_id=node_id,
             )
             dpg_set_value(output_value01_tag, texture)
 

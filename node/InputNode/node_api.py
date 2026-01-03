@@ -72,6 +72,7 @@ class FactoryNode:
             black_image,
             node._small_window_w,
             node._small_window_h,
+            node_id=node_id,
         )
 
         
@@ -215,7 +216,7 @@ class ApiNode(Node):
         self.node_tag = "Api"
         self.node_label = "Api"
         
-    def convert_cv_to_dpg(self, cv_img, w, h):
+    def convert_cv_to_dpg(self, cv_img, w, h, node_id=None):
         return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
     
     def _button(self, sender, app_data, user_data):

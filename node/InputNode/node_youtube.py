@@ -96,6 +96,7 @@ class FactoryNode:
             black_image,
             node.small_window_w,
             node.small_window_h,
+            node_id=node_id,
         )
 
         with dpg.texture_registry(show=False):
@@ -221,11 +222,15 @@ class YoutubeNode(Node):
         self.small_window_w = 240
         self.small_window_h = 135
         
-    def convert_cv_to_dpg(self, cv_img, w, h):
+    def convert_cv_to_dpg(self, cv_img, w, h, node_id=None):
         """Converts OpenCV image to DearPyGui format"""
         if cv_img is None:
             # Return black image if no image available
             return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
+        
+        # Add node_id overlay if provided
+        if node_id is not None:
+            cv_img = self.add_node_id_to_image(cv_img, node_id)
         
         # Resize image to desired size
         resized = cv2.resize(cv_img, (w, h))
@@ -302,7 +307,7 @@ class YoutubeNode(Node):
 
         if ret and frame is not None:
             # Convert and update texture
-            texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
+            texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h, node_id=node_id)
             dpg_set_value(output_value01_tag, texture)
             print("Texture updated")
         else:
@@ -338,7 +343,7 @@ class YoutubeNode(Node):
             # Only update if frame is different (avoid jitter on frozen stream)
             if not hasattr(self, "_last_frame") or not np.array_equal(self._last_frame, frame):
                 self._last_frame = frame
-                texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
+                texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h, node_id=node_id)
                 dpg_set_value(output_value01_tag, texture)
                 self._last_frame_time = self.current_time
         else:
