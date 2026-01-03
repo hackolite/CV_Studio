@@ -120,6 +120,7 @@ class FactoryNode:
             black_image,
             small_window_w,
             small_window_h,
+            node_id=node_id,
         )
 
         with dpg.texture_registry(show=False):
@@ -740,6 +741,7 @@ class VideoNode(Node):
                 frame,
                 small_window_w,
                 small_window_h,
+                node_id=node_id,
             )
             dpg_set_value(tag_node_output_image, texture)
 

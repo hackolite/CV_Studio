@@ -59,6 +59,7 @@ class FactoryNode:
             black_image,
             node.small_window_w,
             node.small_window_h,
+            node_id=node_id,
         )
 
 
@@ -193,6 +194,7 @@ class ImageNode(Node):
                         loaded_image,
                         small_window_w,
                         small_window_h,
+                        node_id=node_id,
                     )
                     self._texture_cache[str(node_id)] = texture
                     dpg_set_value(output_value01_tag, texture)

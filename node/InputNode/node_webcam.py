@@ -73,6 +73,7 @@ class FactoryNode:
             black_image,
             node.small_window_w,
             node.small_window_h,
+            node_id=node_id,
         )
 
 
@@ -233,6 +234,7 @@ class WebcamNode(Node):
                 frame,
                 small_window_w,
                 small_window_h,
+                node_id=node_id,
             )
             dpg_set_value(output_value01_tag, texture)
 

@@ -88,7 +88,69 @@ class Node:
     def close(self, node_id):
         pass
 
-    def convert_cv_to_dpg(self, image, width, height):
+    def add_node_id_to_image(self, image, node_id):
+        """
+        Add node_id text overlay to image.
+        
+        Args:
+            image: OpenCV image (numpy array)
+            node_id: Node identifier to display
+            
+        Returns:
+            Image with node_id text overlay
+        """
+        if image is None:
+            return image
+            
+        # Create a copy to avoid modifying the original
+        display_image = image.copy()
+        
+        # Prepare text
+        text = f"ID:{node_id}"
+        
+        # Text properties
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.5
+        thickness = 1
+        
+        # Get text size to create background
+        (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+        
+        # Position text at top-left corner with some padding
+        padding = 5
+        x = padding
+        y = text_height + padding
+        
+        # Draw semi-transparent background for better visibility
+        overlay = display_image.copy()
+        cv2.rectangle(overlay, 
+                     (x - padding, y - text_height - padding),
+                     (x + text_width + padding, y + baseline + padding),
+                     (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.5, display_image, 0.5, 0, display_image)
+        
+        # Draw text in white
+        cv2.putText(display_image, text, (x, y), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+        
+        return display_image
+
+    def convert_cv_to_dpg(self, image, width, height, node_id=None):
+        """
+        Convert OpenCV image to DearPyGUI texture format.
+        
+        Args:
+            image: OpenCV image (numpy array)
+            width: Target width for texture
+            height: Target height for texture
+            node_id: Optional node identifier to display on image
+            
+        Returns:
+            Texture data for DearPyGUI
+        """
+        # Add node_id overlay if provided
+        if node_id is not None:
+            image = self.add_node_id_to_image(image, node_id)
+            
         resize_image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
 
         data = np.flip(resize_image, 2)
