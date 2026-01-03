@@ -545,13 +545,17 @@ class Node:
             rect_y1 = max(0, y - text_size[1] - text_padding)
             rect_x2 = min(image.shape[1], x + text_padding + text_size[0] + text_offset * 2)
             rect_y2 = min(image.shape[0], y)
-            # Draw white background rectangle for text
-            cv2.rectangle(image, (rect_x1, rect_y1), (rect_x2, rect_y2), (255, 255, 255), -1)
-            # Calculate text position within the rectangle
-            text_x = max(0, min(rect_x1 + text_offset, image.shape[1] - text_size[0]))
-            text_y = max(text_size[1] + text_padding, y - text_padding)
-            # Draw text in red color
-            cv2.putText(image, text, (text_x, text_y), font, font_scale, (0, 0, 255), thickness, cv2.LINE_AA)
+            # Only draw if rectangle has valid dimensions
+            if rect_x2 > rect_x1 and rect_y2 > rect_y1:
+                # Draw white background rectangle for text
+                cv2.rectangle(image, (rect_x1, rect_y1), (rect_x2, rect_y2), (255, 255, 255), -1)
+                # Calculate text position within the rectangle bounds
+                text_x = min(rect_x1 + text_offset, rect_x2 - text_size[0])
+                text_x = max(rect_x1, text_x)  # Ensure text stays within rectangle
+                text_y = min(y - text_padding, rect_y2 - 2)
+                text_y = max(rect_y1 + text_size[1], text_y)  # Ensure text baseline is within rectangle
+                # Draw text in red color
+                cv2.putText(image, text, (text_x, text_y), font, font_scale, (0, 0, 255), thickness, cv2.LINE_AA)
 
         return image
 
