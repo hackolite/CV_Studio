@@ -620,10 +620,13 @@ class Node(Node):
         # Ensure image is uint8 for cv2.cvtColor compatibility
         if image.dtype != np.uint8:
             # Convert float images (0-1 range) to uint8 (0-255 range)
-            if image.dtype in [np.float32, np.float64] and image.max() <= 1.0:
+            if image.dtype in [np.float32, np.float64]:
+                # Clip values to valid range and scale to 0-255
+                image = np.clip(image, 0.0, 1.0)
                 image = (image * 255).astype(np.uint8)
             else:
-                image = image.astype(np.uint8)
+                # For other dtypes, clip to valid uint8 range
+                image = np.clip(image, 0, 255).astype(np.uint8)
         
         resize_image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
         

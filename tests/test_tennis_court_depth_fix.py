@@ -88,6 +88,33 @@ def test_convert_cv_to_dpg_with_float32():
     return True
 
 
+def test_convert_cv_to_dpg_with_out_of_range_values():
+    """Test convert_cv_to_dpg handles out-of-range float values gracefully"""
+    from node.VisualNode.node_tennis_court import Node
+    
+    node = Node()
+    
+    # Create float32 image with values outside 0-1 range
+    image = np.ones((100, 100, 4), dtype=np.float32) * 2.0  # Values > 1.0
+    image[0:50, :, :] = -0.5  # Negative values
+    
+    # Convert to DPG format - should clip values
+    texture = node.convert_cv_to_dpg(image, 50, 50)
+    
+    print("✓ convert_cv_to_dpg handles out-of-range float values")
+    print(f"  Input dtype: {image.dtype}")
+    print(f"  Input range: [{image.min()}, {image.max()}]")
+    print(f"  Output shape: {texture.shape}")
+    print(f"  Output dtype: {texture.dtype}")
+    print(f"  Output range: [{texture.min()}, {texture.max()}]")
+    
+    assert texture.dtype == np.float32
+    assert texture.min() >= 0.0
+    assert texture.max() <= 1.0
+    
+    return True
+
+
 def test_convert_cv_to_dpg_with_bgr():
     """Test convert_cv_to_dpg with 3-channel BGR image"""
     from node.VisualNode.node_tennis_court import Node
@@ -162,6 +189,9 @@ if __name__ == '__main__':
         print()
         
         test_convert_cv_to_dpg_with_float32()
+        print()
+        
+        test_convert_cv_to_dpg_with_out_of_range_values()
         print()
         
         test_convert_cv_to_dpg_with_bgr()
