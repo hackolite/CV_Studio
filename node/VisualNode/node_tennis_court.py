@@ -410,9 +410,8 @@ class Node(Node):
         
         img = image.copy()
         
-        # Color scheme for high visibility
-        position_color = (255, 255, 255)  # White for positions
-        text_bg_color = (0, 0, 0)  # Black background for text
+        # Color scheme: Yellow for players (BGR format: Blue=0, Green=255, Red=255)
+        player_color = (0, 255, 255)  # Yellow in BGR
         
         # Track which labels have been drawn in this frame to avoid duplicates
         drawn_labels = set()
@@ -437,40 +436,12 @@ class Node(Node):
                 px = int(x_meters * scale + offset_x)
                 py = int(y_meters * scale + offset_y)
                 
-                # Draw position as white circle
-                cv2.circle(img, (px, py), 5, position_color, -1)
+                # Draw position as larger yellow circle (increased from 5 to 8 pixels)
+                cv2.circle(img, (px, py), 8, player_color, -1)
                 
-                # Draw label
-                cv2.putText(img, label, (px + 8, py + 3),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, position_color, 1)
-                
-                # Display court coordinates only (no image coordinates)
-                coord_text = f"{label}: ({x_meters:.2f}, {y_meters:.2f})m"
-                
-                # Calculate text size for background
-                (text_width, text_height), baseline = cv2.getTextSize(
-                    coord_text, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1
-                )
-                
-                # Position text near the point (below and to the right)
-                text_x = px + 10
-                text_y = py + 20
-                
-                # Ensure text stays within image bounds
-                if text_x + text_width > img.shape[1]:
-                    text_x = px - text_width - 10
-                if text_y + text_height > img.shape[0]:
-                    text_y = py - 10
-                
-                # Draw black background rectangle for text
-                cv2.rectangle(img, 
-                            (text_x - 2, text_y - text_height - 2),
-                            (text_x + text_width + 2, text_y + baseline),
-                            text_bg_color, -1)
-                
-                # Draw coordinate text
-                cv2.putText(img, coord_text, (text_x, text_y),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.35, position_color, 1)
+                # Draw label in yellow (no coordinate info)
+                cv2.putText(img, label, (px + 10, py + 5),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, player_color, 2)
         
         return img
 
