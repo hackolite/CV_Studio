@@ -99,27 +99,39 @@ class Node(Node):
 
     # Tennis court template in meters (real-world coordinates)
     # Origin at bottom-left corner of doubles court
+    # NOTE: Keypoints are ordered to match TennisKeyPoints model output (indices 0-13)
     TENNIS_COURT_TEMPLATE = {
         "units": "meters",
         "origin": "bottom_left_corner_outside_doubles",
         "keypoints": [
-            {"id": 1,  "name": "doubles_bl", "x": 0.00,  "y": 0.00},
-            {"id": 2,  "name": "doubles_br", "x": 10.97, "y": 0.00},
-            {"id": 3,  "name": "doubles_tr", "x": 10.97, "y": 23.77},
-            {"id": 4,  "name": "doubles_tl", "x": 0.00,  "y": 23.77},
-
-            {"id": 5,  "name": "singles_bl", "x": 1.37, "y": 0.00},
-            {"id": 6,  "name": "singles_br", "x": 9.60, "y": 0.00},
-            {"id": 7,  "name": "singles_tr", "x": 9.60, "y": 23.77},
-            {"id": 8,  "name": "singles_tl", "x": 1.37, "y": 23.77},
-
-            {"id": 9,  "name": "service_bl", "x": 1.37, "y": 5.485},
-            {"id": 10, "name": "service_br", "x": 9.60, "y": 5.485},
-            {"id": 11, "name": "service_tl", "x": 1.37, "y": 18.285},
-            {"id": 12, "name": "service_tr", "x": 9.60, "y": 18.285},
-
-            {"id": 13, "name": "center_t_bottom", "x": 5.485, "y": 5.485},
-            {"id": 14, "name": "center_t_top",    "x": 5.485, "y": 18.285}
+            # Index 0: Far baseline left singles corner (top-left singles)
+            {"id": 0,  "name": "far_baseline_left_single_corner", "x": 1.37, "y": 23.77},
+            # Index 1: Far baseline right singles corner (top-right singles)
+            {"id": 1,  "name": "far_baseline_right_single_corner", "x": 9.60, "y": 23.77},
+            # Index 2: Near baseline left doubles corner (bottom-left doubles)
+            {"id": 2,  "name": "near_baseline_left_double_corner", "x": 0.00, "y": 0.00},
+            # Index 3: Near baseline right doubles corner (bottom-right doubles)
+            {"id": 3,  "name": "near_baseline_right_double_corner", "x": 10.97, "y": 0.00},
+            # Index 4: Far baseline left service projection (top-left service line)
+            {"id": 4,  "name": "far_baseline_left_service_projection", "x": 1.37, "y": 18.285},
+            # Index 5: Near baseline left singles corner (bottom-left singles)
+            {"id": 5,  "name": "near_baseline_left_single_corner", "x": 1.37, "y": 0.00},
+            # Index 6: Far baseline right service projection (top-right service line)
+            {"id": 6,  "name": "far_baseline_right_service_projection", "x": 9.60, "y": 18.285},
+            # Index 7: Near baseline right singles corner (bottom-right singles)
+            {"id": 7,  "name": "near_baseline_right_single_corner", "x": 9.60, "y": 0.00},
+            # Index 8: Service box left top corner (near-left service line)
+            {"id": 8,  "name": "service_box_left_top_corner", "x": 1.37, "y": 5.485},
+            # Index 9: Service box right top corner (near-right service line)
+            {"id": 9,  "name": "service_box_right_top_corner", "x": 9.60, "y": 5.485},
+            # Index 10: Left singles sideline midpoint (left mid-court)
+            {"id": 10, "name": "left_singles_sideline_midpoint", "x": 1.37, "y": 11.885},
+            # Index 11: Right singles sideline midpoint (right mid-court)
+            {"id": 11, "name": "right_singles_sideline_midpoint", "x": 9.60, "y": 11.885},
+            # Index 12: Center service line top T (far center T)
+            {"id": 12, "name": "center_service_line_top_T", "x": 5.485, "y": 18.285},
+            # Index 13: Center service line bottom T (near center T)
+            {"id": 13, "name": "center_service_line_bottom_T", "x": 5.485, "y": 5.485}
         ]
     }
 

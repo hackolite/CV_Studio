@@ -201,15 +201,24 @@ def test_tennis_court_template():
     assert template['units'] == 'meters'
     assert len(template['keypoints']) == 14
     
-    # Check a few key points
-    doubles_bl = template['keypoints'][0]
-    assert doubles_bl['name'] == 'doubles_bl'
-    assert doubles_bl['x'] == 0.00
-    assert doubles_bl['y'] == 0.00
+    # Check a few key points (using new naming convention)
+    # Index 2: near_baseline_left_double_corner (bottom-left doubles corner)
+    near_bl_doubles = template['keypoints'][2]
+    assert near_bl_doubles['name'] == 'near_baseline_left_double_corner'
+    assert near_bl_doubles['x'] == 0.00
+    assert near_bl_doubles['y'] == 0.00
     
-    print("  Sample keypoint (doubles_bl):", doubles_bl)
+    # Index 0: far_baseline_left_single_corner (top-left singles corner)
+    far_bl_singles = template['keypoints'][0]
+    assert far_bl_singles['name'] == 'far_baseline_left_single_corner'
+    assert far_bl_singles['x'] == 1.37
+    assert far_bl_singles['y'] == 23.77
+    
+    print("  Sample keypoint [2] (near_baseline_left_double_corner):", near_bl_doubles)
+    print("  Sample keypoint [0] (far_baseline_left_single_corner):", far_bl_singles)
     
     return True
+
 
 
 if __name__ == '__main__':
