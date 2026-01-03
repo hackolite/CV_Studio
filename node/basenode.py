@@ -527,6 +527,36 @@ class Node:
         # Filet au centre
         cv2.line(image, points[12], points[13], (0, 255, 0), 2)
 
+        # Draw keypoint numbers on the image
+        for i, point in enumerate(points):
+            x, y = point
+            # Draw a small circle at each keypoint
+            cv2.circle(image, (x, y), 4, (0, 0, 255), -1)
+            # Draw the keypoint number with a background for better visibility
+            text = str(i)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.6
+            thickness = 2
+            text_padding = 5
+            text_offset = 2  # Additional offset for text within the rectangle
+            text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+            # Calculate rectangle position with boundary checks
+            rect_x1 = max(0, x + text_padding)
+            rect_y1 = max(0, y - text_size[1] - text_padding)
+            rect_x2 = min(image.shape[1], x + text_padding + text_size[0] + text_offset * 2)
+            rect_y2 = min(image.shape[0], y)
+            # Only draw if rectangle has valid dimensions
+            if rect_x2 > rect_x1 and rect_y2 > rect_y1:
+                # Draw white background rectangle for text
+                cv2.rectangle(image, (rect_x1, rect_y1), (rect_x2, rect_y2), (255, 255, 255), -1)
+                # Calculate text position within the rectangle bounds
+                text_x = min(rect_x1 + text_offset, rect_x2 - text_size[0])
+                text_x = max(rect_x1, text_x)  # Ensure text stays within rectangle
+                text_y = min(y - text_padding, rect_y2 - 2)
+                text_y = max(rect_y1 + text_size[1], text_y)  # Ensure text baseline is within rectangle
+                # Draw text in red color
+                cv2.putText(image, text, (text_x, text_y), font, font_scale, (0, 0, 255), thickness, cv2.LINE_AA)
+
         return image
 
     def draw_mediapipe_hands_info(self, image, results_list):
