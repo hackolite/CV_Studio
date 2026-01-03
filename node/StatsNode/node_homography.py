@@ -355,6 +355,14 @@ class Node(Node):
                 if bboxes_list is not None:
                     output_data['bboxes'] = bboxes_list
                 
+                # Pass through class information for label-based averaging
+                if 'class_ids' in points_json_data:
+                    output_data['class_ids'] = points_json_data['class_ids']
+                if 'class_names' in points_json_data:
+                    output_data['class_names'] = points_json_data['class_names']
+                if 'scores' in points_json_data:
+                    output_data['scores'] = points_json_data['scores']
+                
                 # Display coordinate transformation in console
                 CONSOLE_WIDTH = 70  # Character width for console output
                 print("\n" + "="*CONSOLE_WIDTH)
@@ -362,7 +370,19 @@ class Node(Node):
                 print("="*CONSOLE_WIDTH)
                 if transformed is not None:
                     for i, (orig, trans) in enumerate(zip(points_to_transform, transformed)):
-                        print(f"  Player {i+1}:")
+                        # Display label if available
+                        label = ""
+                        if 'class_ids' in points_json_data and 'class_names' in points_json_data:
+                            class_ids = points_json_data['class_ids']
+                            class_names = points_json_data['class_names']
+                            if i < len(class_ids):
+                                class_id = class_ids[i]
+                                if isinstance(class_names, dict):
+                                    label = f" ({class_names.get(class_id, f'Object {class_id}')})"
+                                elif isinstance(class_names, list) and class_id < len(class_names):
+                                    label = f" ({class_names[class_id]})"
+                        
+                        print(f"  Player {i+1}{label}:")
                         print(f"    Image coordinates (pixels): ({orig[0]:.1f}, {orig[1]:.1f})")
                         print(f"    Court coordinates (meters): ({trans[0]:.2f}, {trans[1]:.2f})")
                 print("="*CONSOLE_WIDTH + "\n")

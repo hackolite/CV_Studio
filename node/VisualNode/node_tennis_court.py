@@ -133,7 +133,9 @@ class Node(Node):
     VISUALIZATION_MARGIN = 60   # Total margin in pixels (30px on each side)
 
     def __init__(self):
-        pass
+        # Track player positions by label for averaging
+        self._player_positions_history = {}  # {label: [list of positions]}
+        self._last_positions_by_label = {}   # {label: last position}
 
     def _draw_tennis_court(self, image, template, scale=40, offset_x=50, offset_y=50):
         """
@@ -344,6 +346,166 @@ class Node(Node):
         
         return img
 
+    def _update_player_positions(self, transformed_points, labels):
+        """
+        Update player position history and last positions by label.
+        
+        Args:
+            transformed_points: list of [x, y] coordinates in meters
+            labels: list of label strings corresponding to each point
+        """
+        if transformed_points is None or labels is None:
+            return
+        
+        for i, (point, label) in enumerate(zip(transformed_points, labels)):
+            if len(point) >= 2:
+                position = (point[0], point[1])
+                
+                # Update history
+                if label not in self._player_positions_history:
+                    self._player_positions_history[label] = []
+                self._player_positions_history[label].append(position)
+                
+                # Update last position
+                self._last_positions_by_label[label] = position
+    
+    def _get_average_positions_by_label(self):
+        """
+        Calculate average positions for each label.
+        
+        Returns:
+            dict: {label: (avg_x, avg_y)}
+        """
+        averages = {}
+        for label, positions in self._player_positions_history.items():
+            if len(positions) > 0:
+                avg_x = sum(p[0] for p in positions) / len(positions)
+                avg_y = sum(p[1] for p in positions) / len(positions)
+                averages[label] = (avg_x, avg_y)
+        return averages
+    
+    def _draw_player_positions_with_labels(self, image, transformed_points, labels=None, input_points=None, scale=40, offset_x=50, offset_y=50):
+        """
+        Draw player positions on the court with labels, showing both last position and average.
+        
+        Args:
+            image: numpy array to draw on
+            transformed_points: list of [x, y] coordinates in meters
+            labels: list of label strings for each point
+            input_points: optional list of original [x, y] coordinates in pixels (for display)
+            scale: pixels per meter (same as court drawing)
+            offset_x, offset_y: offset from top-left corner (same as court drawing)
+            
+        Returns:
+            image with points and averages drawn
+        """
+        if transformed_points is None or len(transformed_points) == 0:
+            return image
+        
+        img = image.copy()
+        
+        # Color scheme for high visibility
+        last_position_color = (255, 255, 255)  # White for last position
+        average_position_color = (0, 255, 255)  # Yellow for average (BGR)
+        text_bg_color = (0, 0, 0)  # Black background for text
+        
+        # Update player positions history
+        if labels is not None:
+            self._update_player_positions(transformed_points, labels)
+        
+        # Get average positions
+        average_positions = self._get_average_positions_by_label()
+        
+        # Draw last positions
+        for i, point in enumerate(transformed_points):
+            if len(point) >= 2:
+                x_meters, y_meters = point[0], point[1]
+                px = int(x_meters * scale + offset_x)
+                py = int(y_meters * scale + offset_y)
+                
+                # Get label for this point
+                label = labels[i] if labels and i < len(labels) else f"Player {i+1}"
+                
+                # Draw last position as white circle
+                cv2.circle(img, (px, py), 5, last_position_color, -1)
+                
+                # Draw label
+                cv2.putText(img, label, (px + 8, py + 3),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, last_position_color, 1)
+                
+                # Display last position coordinates
+                coord_text = f"{label} Last: ({x_meters:.2f}, {y_meters:.2f})m"
+                
+                # Add original image coordinates if available
+                if input_points is not None and i < len(input_points):
+                    orig_pt = input_points[i]
+                    coord_text = f"{label} Img:({orig_pt[0]:.0f},{orig_pt[1]:.0f}) Court:({x_meters:.2f},{y_meters:.2f})m"
+                
+                # Calculate text size for background
+                (text_width, text_height), baseline = cv2.getTextSize(
+                    coord_text, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1
+                )
+                
+                # Position text near the point (below and to the right)
+                text_x = px + 10
+                text_y = py + 20
+                
+                # Ensure text stays within image bounds
+                if text_x + text_width > img.shape[1]:
+                    text_x = px - text_width - 10
+                if text_y + text_height > img.shape[0]:
+                    text_y = py - 10
+                
+                # Draw black background rectangle for text
+                cv2.rectangle(img, 
+                            (text_x - 2, text_y - text_height - 2),
+                            (text_x + text_width + 2, text_y + baseline),
+                            text_bg_color, -1)
+                
+                # Draw coordinate text
+                cv2.putText(img, coord_text, (text_x, text_y),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.35, last_position_color, 1)
+        
+        # Draw average positions for each label
+        for label, (avg_x, avg_y) in average_positions.items():
+            px = int(avg_x * scale + offset_x)
+            py = int(avg_y * scale + offset_y)
+            
+            # Draw average position as yellow circle with cross marker
+            cv2.circle(img, (px, py), 7, average_position_color, 2)  # Hollow circle
+            cv2.line(img, (px - 5, py), (px + 5, py), average_position_color, 2)  # Horizontal line
+            cv2.line(img, (px, py - 5), (px, py + 5), average_position_color, 2)  # Vertical line
+            
+            # Display average position text
+            avg_text = f"{label} Avg: ({avg_x:.2f}, {avg_y:.2f})m (n={len(self._player_positions_history[label])})"
+            
+            # Calculate text size for background
+            (text_width, text_height), baseline = cv2.getTextSize(
+                avg_text, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1
+            )
+            
+            # Position text below average marker
+            text_x = px + 10
+            text_y = py + 35
+            
+            # Ensure text stays within image bounds
+            if text_x + text_width > img.shape[1]:
+                text_x = px - text_width - 10
+            if text_y + text_height > img.shape[0]:
+                text_y = py - 25
+            
+            # Draw black background rectangle for text
+            cv2.rectangle(img, 
+                        (text_x - 2, text_y - text_height - 2),
+                        (text_x + text_width + 2, text_y + baseline),
+                        text_bg_color, -1)
+            
+            # Draw average text
+            cv2.putText(img, avg_text, (text_x, text_y),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.35, average_position_color, 1)
+        
+        return img
+
     def update(
         self,
         node_id,
@@ -387,6 +549,22 @@ class Node(Node):
             transformed_points = json_data.get('transformed_points', None)
             input_points = json_data.get('input_points', None)  # Original image coordinates
             
+            # Extract labels from bboxes and class_ids (from object detection)
+            labels = None
+            if 'bboxes' in json_data and 'class_ids' in json_data and 'class_names' in json_data:
+                class_ids = json_data.get('class_ids', [])
+                class_names = json_data.get('class_names', {})
+                # Create labels for each detected object
+                labels = []
+                for class_id in class_ids:
+                    if isinstance(class_names, dict):
+                        label = class_names.get(class_id, f"Object {class_id}")
+                    elif isinstance(class_names, list) and class_id < len(class_names):
+                        label = class_names[class_id]
+                    else:
+                        label = f"Object {class_id}"
+                    labels.append(label)
+            
             # Create blank image
             output_image = np.zeros((small_window_h, small_window_w, 3), dtype=np.uint8)
             
@@ -394,20 +572,32 @@ class Node(Node):
             # Use class constants for court dimensions
             scale_x = (small_window_w - self.VISUALIZATION_MARGIN) / self.COURT_WIDTH_M
             scale_y = (small_window_h - self.VISUALIZATION_MARGIN) / self.COURT_LENGTH_M
-            scale = min(scale_x, scale_y)  # Use smaller scale to fit both dimensions
+            base_scale = min(scale_x, scale_y)  # Use smaller scale to fit both dimensions
             
-            # Center the court
+            # REDUCE COURT SIZE BY HALF as per requirement
+            scale = base_scale / 2.0
+            
+            # Center the court (now smaller)
             court_width_px = int(self.COURT_WIDTH_M * scale)
             court_length_px = int(self.COURT_LENGTH_M * scale)
             offset_x = (small_window_w - court_width_px) // 2
             offset_y = (small_window_h - court_length_px) // 2
             
-            # Draw tennis court
+            # Draw tennis court (at half scale)
             output_image = self._draw_tennis_court(output_image, template, scale, offset_x, offset_y)
             
-            # Draw transformed points if available (with original image coordinates)
+            # Draw transformed points if available (with labels showing average and last positions)
             if transformed_points is not None:
-                output_image = self._draw_transformed_points(output_image, transformed_points, input_points, scale, offset_x, offset_y)
+                if labels:
+                    # Use new drawing method with labels for averaging
+                    output_image = self._draw_player_positions_with_labels(
+                        output_image, transformed_points, labels, input_points, scale, offset_x, offset_y
+                    )
+                else:
+                    # Fallback to original method if no labels
+                    output_image = self._draw_transformed_points(
+                        output_image, transformed_points, input_points, scale, offset_x, offset_y
+                    )
             
             # Prepare output JSON (pass through with visualization metadata)
             output_json = copy.deepcopy(json_data)
