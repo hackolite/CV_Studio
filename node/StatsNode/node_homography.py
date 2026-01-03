@@ -175,6 +175,44 @@ class Node(Node):
             print(f"Error calculating homography: {e}")
             return None
 
+    def _extract_bottom_center_from_bboxes(self, bboxes):
+        """
+        Extract bottom-center points from bounding boxes.
+        For player detection, the bottom-center of the bbox represents the player's position on the ground.
+        
+        Args:
+            bboxes: list of bounding boxes in format [x1, y1, x2, y2]
+            
+        Returns:
+            points: numpy array of shape (N, 2) with bottom-center coordinates
+        """
+        if not bboxes or len(bboxes) == 0:
+            return None
+        
+        points = []
+        for i, bbox in enumerate(bboxes):
+            # Validate bbox format
+            if not isinstance(bbox, (list, tuple, np.ndarray)) or len(bbox) < 4:
+                print(f"Warning: Invalid bbox format at index {i}, skipping: {bbox}")
+                continue
+                
+            x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
+            
+            # Validate bbox coordinates
+            if x2 <= x1 or y2 <= y1:
+                print(f"Warning: Invalid bbox coordinates at index {i} (x2 <= x1 or y2 <= y1), skipping: {bbox}")
+                continue
+            
+            # Bottom center: x is center of bbox, y is bottom of bbox
+            center_x = (x1 + x2) / 2.0
+            bottom_y = y2
+            points.append([center_x, bottom_y])
+        
+        if len(points) == 0:
+            return None
+            
+        return np.array(points, dtype=np.float32)
+
     def _transform_points(self, points, homography_matrix):
         """
         Transform points using homography matrix.
@@ -277,10 +315,17 @@ class Node(Node):
         if points_json_data is not None and self._homography_matrix is not None:
             # Extract points from input
             points_to_transform = None
+            bboxes_list = None  # Store original bboxes for reference
             
             if isinstance(points_json_data, dict):
+                # Check for 'bboxes' field (from ObjectDetection node)
+                if 'bboxes' in points_json_data:
+                    bboxes_list = points_json_data['bboxes']
+                    # Extract bottom-center points from bounding boxes
+                    points_to_transform = self._extract_bottom_center_from_bboxes(bboxes_list)
+                    print(f"[Homography] Extracted {len(points_to_transform) if points_to_transform is not None else 0} player positions from bboxes")
                 # Check for 'keypoints' field (structured input)
-                if 'keypoints' in points_json_data:
+                elif 'keypoints' in points_json_data:
                     keypoints = points_json_data['keypoints']
                     points_to_transform = []
                     for kp in keypoints:
@@ -305,6 +350,22 @@ class Node(Node):
                 
                 output_data['input_points'] = points_to_transform.tolist()
                 output_data['transformed_points'] = transformed.tolist() if transformed is not None else None
+                
+                # Store original bboxes if available
+                if bboxes_list is not None:
+                    output_data['bboxes'] = bboxes_list
+                
+                # Display coordinate transformation in console
+                CONSOLE_WIDTH = 70  # Character width for console output
+                print("\n" + "="*CONSOLE_WIDTH)
+                print("[Homography] Coordinate Transformation:")
+                print("="*CONSOLE_WIDTH)
+                if transformed is not None:
+                    for i, (orig, trans) in enumerate(zip(points_to_transform, transformed)):
+                        print(f"  Player {i+1}:")
+                        print(f"    Image coordinates (pixels): ({orig[0]:.1f}, {orig[1]:.1f})")
+                        print(f"    Court coordinates (meters): ({trans[0]:.2f}, {trans[1]:.2f})")
+                print("="*CONSOLE_WIDTH + "\n")
 
         if use_pref_counter and (master_json_data is not None or points_json_data is not None):
             elapsed_time = time.monotonic() - start_time
