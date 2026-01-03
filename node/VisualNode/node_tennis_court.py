@@ -133,9 +133,7 @@ class Node(Node):
     VISUALIZATION_MARGIN = 60   # Total margin in pixels (30px on each side)
 
     def __init__(self):
-        # Track player positions by label for averaging
-        self._player_positions_history = {}  # {label: [list of positions]}
-        self._last_positions_by_label = {}   # {label: last position}
+        pass
 
     def _draw_tennis_court(self, image, template, scale=40, offset_x=50, offset_y=50):
         """
@@ -341,44 +339,6 @@ class Node(Node):
         
         return img
 
-    def _update_player_positions(self, transformed_points, labels):
-        """
-        Update player position history and last positions by label.
-        
-        Args:
-            transformed_points: list of [x, y] coordinates in meters
-            labels: list of label strings corresponding to each point
-        """
-        if transformed_points is None or labels is None:
-            return
-        
-        for i, (point, label) in enumerate(zip(transformed_points, labels)):
-            if len(point) >= 2:
-                position = (point[0], point[1])
-                
-                # Update history
-                if label not in self._player_positions_history:
-                    self._player_positions_history[label] = []
-                self._player_positions_history[label].append(position)
-                
-                # Update last position
-                self._last_positions_by_label[label] = position
-    
-    def _get_average_positions_by_label(self):
-        """
-        Calculate average positions for each label.
-        
-        Returns:
-            dict: {label: (avg_x, avg_y)}
-        """
-        averages = {}
-        for label, positions in self._player_positions_history.items():
-            if len(positions) > 0:
-                avg_x = sum(p[0] for p in positions) / len(positions)
-                avg_y = sum(p[1] for p in positions) / len(positions)
-                averages[label] = (avg_x, avg_y)
-        return averages
-    
     def _draw_player_positions_with_labels(self, image, transformed_points, labels=None, input_points=None, scale=40, offset_x=50, offset_y=50):
         """
         Draw player positions on the court with labels.
