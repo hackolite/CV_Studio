@@ -125,7 +125,7 @@ def test_position_clipping():
     
     # Verify
     assert np.all(master[50:150, 0:50] == 255), "Visible part should be white"
-    assert np.all(master[50:150, 50:199] == 0), "Other parts should be black"
+    assert np.all(master[50:150, 50:200] == 0), "Other parts should be black"
     
     return master
 
