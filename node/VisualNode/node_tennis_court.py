@@ -179,66 +179,84 @@ class Node(Node):
         # Extract key points by name
         kp_dict = {kp['name']: (kp['x'], kp['y']) for kp in keypoints}
         
-        # Draw doubles boundary
-        if all(k in kp_dict for k in ['doubles_bl', 'doubles_br', 'doubles_tr', 'doubles_tl']):
-            pts_doubles = np.array([
-                template_to_image(*kp_dict['doubles_bl']),
-                template_to_image(*kp_dict['doubles_br']),
-                template_to_image(*kp_dict['doubles_tr']),
-                template_to_image(*kp_dict['doubles_tl']),
-            ], np.int32)
+        # Draw doubles boundary using the new keypoint names
+        # Doubles court corners: near_baseline_left/right_double_corner and far_baseline_left/right_single_corner
+        doubles_corners = [
+            'near_baseline_left_double_corner',   # Bottom-left (0, 0)
+            'near_baseline_right_double_corner',  # Bottom-right (10.97, 0)
+        ]
+        
+        # For top corners, we need to use the far baseline points
+        # but extend them to doubles width since we only have singles corners at far end
+        if all(k in kp_dict for k in ['near_baseline_left_double_corner', 'near_baseline_right_double_corner']):
+            # Draw doubles rectangle using known coordinates
+            bl = template_to_image(0.00, 0.00)      # Bottom-left doubles
+            br = template_to_image(10.97, 0.00)     # Bottom-right doubles
+            tr = template_to_image(10.97, 23.77)    # Top-right doubles
+            tl = template_to_image(0.00, 23.77)     # Top-left doubles
+            
+            pts_doubles = np.array([bl, br, tr, tl], np.int32)
             cv2.polylines(img, [pts_doubles], True, line_color, line_thickness)
         
-        # Draw singles boundary
-        if all(k in kp_dict for k in ['singles_bl', 'singles_br', 'singles_tr', 'singles_tl']):
+        # Draw singles boundary using the new keypoint names
+        singles_corners = [
+            'near_baseline_left_single_corner',   # Bottom-left singles
+            'near_baseline_right_single_corner',  # Bottom-right singles
+            'far_baseline_right_single_corner',   # Top-right singles
+            'far_baseline_left_single_corner',    # Top-left singles
+        ]
+        
+        if all(k in kp_dict for k in singles_corners):
             pts_singles = np.array([
-                template_to_image(*kp_dict['singles_bl']),
-                template_to_image(*kp_dict['singles_br']),
-                template_to_image(*kp_dict['singles_tr']),
-                template_to_image(*kp_dict['singles_tl']),
+                template_to_image(*kp_dict['near_baseline_left_single_corner']),
+                template_to_image(*kp_dict['near_baseline_right_single_corner']),
+                template_to_image(*kp_dict['far_baseline_right_single_corner']),
+                template_to_image(*kp_dict['far_baseline_left_single_corner']),
             ], np.int32)
             cv2.polylines(img, [pts_singles], True, line_color, line_thickness)
         
-        # Draw service boxes
-        if all(k in kp_dict for k in ['service_bl', 'service_br']):
-            pt1 = template_to_image(*kp_dict['service_bl'])
-            pt2 = template_to_image(*kp_dict['service_br'])
+        # Draw near service line (bottom service boxes)
+        if all(k in kp_dict for k in ['service_box_left_top_corner', 'service_box_right_top_corner']):
+            pt1 = template_to_image(*kp_dict['service_box_left_top_corner'])
+            pt2 = template_to_image(*kp_dict['service_box_right_top_corner'])
             cv2.line(img, pt1, pt2, line_color, line_thickness)
         
-        if all(k in kp_dict for k in ['service_tl', 'service_tr']):
-            pt1 = template_to_image(*kp_dict['service_tl'])
-            pt2 = template_to_image(*kp_dict['service_tr'])
+        # Draw far service line (top service boxes)
+        if all(k in kp_dict for k in ['far_baseline_left_service_projection', 'far_baseline_right_service_projection']):
+            pt1 = template_to_image(*kp_dict['far_baseline_left_service_projection'])
+            pt2 = template_to_image(*kp_dict['far_baseline_right_service_projection'])
             cv2.line(img, pt1, pt2, line_color, line_thickness)
         
-        # Draw center line
-        if all(k in kp_dict for k in ['center_t_bottom', 'center_t_top']):
-            pt1 = template_to_image(*kp_dict['center_t_bottom'])
-            pt2 = template_to_image(*kp_dict['center_t_top'])
+        # Draw center service line (between center T's)
+        if all(k in kp_dict for k in ['center_service_line_bottom_T', 'center_service_line_top_T']):
+            pt1 = template_to_image(*kp_dict['center_service_line_bottom_T'])
+            pt2 = template_to_image(*kp_dict['center_service_line_top_T'])
             cv2.line(img, pt1, pt2, line_color, line_thickness)
         
-        # Draw center T's (service line to singles sideline)
-        if 'center_t_bottom' in kp_dict and 'singles_bl' in kp_dict:
-            pt1 = template_to_image(*kp_dict['center_t_bottom'])
-            pt2 = template_to_image(kp_dict['singles_bl'][0], kp_dict['center_t_bottom'][1])
+        # Draw center T's (horizontal lines at service lines connecting to center line)
+        # Near center T (bottom)
+        if all(k in kp_dict for k in ['center_service_line_bottom_T', 'service_box_left_top_corner', 'service_box_right_top_corner']):
+            center_y = kp_dict['center_service_line_bottom_T'][1]
+            left_x = kp_dict['service_box_left_top_corner'][0]
+            right_x = kp_dict['service_box_right_top_corner'][0]
+            pt1 = template_to_image(left_x, center_y)
+            pt2 = template_to_image(right_x, center_y)
             cv2.line(img, pt1, pt2, line_color, line_thickness)
-            
-            pt3 = template_to_image(*kp_dict['center_t_bottom'])
-            pt4 = template_to_image(kp_dict['singles_br'][0], kp_dict['center_t_bottom'][1])
-            cv2.line(img, pt3, pt4, line_color, line_thickness)
         
-        if 'center_t_top' in kp_dict and 'singles_tl' in kp_dict:
-            pt1 = template_to_image(*kp_dict['center_t_top'])
-            pt2 = template_to_image(kp_dict['singles_tl'][0], kp_dict['center_t_top'][1])
+        # Far center T (top)
+        if all(k in kp_dict for k in ['center_service_line_top_T', 'far_baseline_left_service_projection', 'far_baseline_right_service_projection']):
+            center_y = kp_dict['center_service_line_top_T'][1]
+            left_x = kp_dict['far_baseline_left_service_projection'][0]
+            right_x = kp_dict['far_baseline_right_service_projection'][0]
+            pt1 = template_to_image(left_x, center_y)
+            pt2 = template_to_image(right_x, center_y)
             cv2.line(img, pt1, pt2, line_color, line_thickness)
-            
-            pt3 = template_to_image(*kp_dict['center_t_top'])
-            pt4 = template_to_image(kp_dict['singles_tr'][0], kp_dict['center_t_top'][1])
-            cv2.line(img, pt3, pt4, line_color, line_thickness)
         
         # Draw NET LINE at center of court (inspired by Tennis-Tracker)
-        # Net is at half court length (11.88m from each baseline)
-        if 'doubles_bl' in kp_dict and 'doubles_br' in kp_dict:
-            net_y = self.COURT_LENGTH_M / 2.0  # Center of court
+        # Net is at half court length (11.885m from each baseline)
+        # Use the midpoint keypoints to draw the net
+        if all(k in kp_dict for k in ['left_singles_sideline_midpoint', 'right_singles_sideline_midpoint']):
+            net_y = kp_dict['left_singles_sideline_midpoint'][1]
             net_start = template_to_image(0, net_y)
             net_end = template_to_image(self.COURT_WIDTH_M, net_y)
             cv2.line(img, net_start, net_end, net_color, line_thickness)
