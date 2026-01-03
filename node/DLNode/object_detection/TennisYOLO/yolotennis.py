@@ -14,7 +14,7 @@ os.environ["ORT_CUDA_USE_CUDNN"] = "0"
 class YOLOTENNIS:
     def __init__(
         self,
-        model_path='yolo11_n.onnx',
+        model_path='tennis.onnx',
         class_score_th=0.0,
         nms_th=0.45,
         nms_score_th=0.1,
