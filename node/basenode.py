@@ -537,11 +537,18 @@ class Node:
             font = cv2.FONT_HERSHEY_SIMPLEX
             font_scale = 0.6
             thickness = 2
-            text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+            text_size = cv2.getTextSize(text, font, font_scale, 1)[0]
+            # Calculate text position with boundary checks
+            text_x = max(0, min(x + 7, image.shape[1] - text_size[0]))
+            text_y = max(text_size[1] + 5, y - 5)
             # Draw white background rectangle for text
-            cv2.rectangle(image, (x + 5, y - text_size[1] - 5), (x + text_size[0] + 10, y), (255, 255, 255), -1)
+            rect_x1 = max(0, x + 5)
+            rect_y1 = max(0, y - text_size[1] - 5)
+            rect_x2 = min(image.shape[1], x + text_size[0] + 10)
+            rect_y2 = min(image.shape[0], y)
+            cv2.rectangle(image, (rect_x1, rect_y1), (rect_x2, rect_y2), (255, 255, 255), -1)
             # Draw text in red color
-            cv2.putText(image, text, (x + 7, y - 5), font, font_scale, (0, 0, 255), thickness, cv2.LINE_AA)
+            cv2.putText(image, text, (text_x, text_y), font, font_scale, (0, 0, 255), thickness, cv2.LINE_AA)
 
         return image
 
