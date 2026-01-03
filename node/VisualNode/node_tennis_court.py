@@ -133,6 +133,15 @@ class Node(Node):
     VISUALIZATION_MARGIN = 60   # Total margin in pixels (30px on each side)
 
     def __init__(self):
+        """
+        Initialize the TennisCourt visualization node.
+        
+        Sets up state tracking for persistent visualization:
+        - _last_positions_by_label: Stores the most recent position for each label
+          to enable persistent display even when no new data is received
+        - _player_positions_history: Maintains history of all positions for each label
+          to enable averaging calculations over time
+        """
         # Position tracking for persistent visualization
         self._last_positions_by_label = {}  # Maps label to (x, y) tuple of last position
         self._player_positions_history = {}  # Maps label to list of (x, y) positions for averaging
@@ -146,6 +155,7 @@ class Node(Node):
             labels: list of label strings for each point
         """
         if transformed_points is None or labels is None:
+            # No data to update - this is normal when no detections are present
             return
         
         for i, point in enumerate(transformed_points):

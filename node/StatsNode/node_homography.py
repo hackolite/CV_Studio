@@ -261,6 +261,7 @@ class Node(Node):
             dict mapping label to average coordinates [x, y]
         """
         if transformed_points is None or len(transformed_points) == 0:
+            # No points to average - this is expected when no detections are present
             return {}
         
         # Group points by label
