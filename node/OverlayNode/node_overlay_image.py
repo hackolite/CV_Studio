@@ -282,12 +282,11 @@ class OverlayImageNode(Node):
             overlay_alpha = overlay_region[:, :, 3:4] / 255.0 * alpha  # Apply global alpha
             overlay_bgr = overlay_region[:, :, :3]
             
-            # Ensure master region has same number of channels
+            # Get BGR channels from master (master may be BGR or BGRA)
             if not has_master_alpha:
-                # Master is BGR, convert to BGRA if needed
-                master_bgr = master_region
+                master_bgr = master_region  # Master is BGR
             else:
-                master_bgr = master_region[:, :, :3]
+                master_bgr = master_region[:, :, :3]  # Extract BGR from BGRA
             
             # Alpha blending: result = overlay * alpha + master * (1 - alpha)
             blended_bgr = (overlay_bgr * overlay_alpha + master_bgr * (1 - overlay_alpha)).astype(np.uint8)

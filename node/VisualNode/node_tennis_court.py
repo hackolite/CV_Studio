@@ -607,6 +607,7 @@ class Node(Node):
     def convert_cv_to_dpg(self, image, width, height):
         """
         Convert OpenCV image to DPG texture format, supporting both BGR and BGRA.
+        Overrides parent class to add BGRA support for transparency.
         
         Args:
             image: numpy array in BGR or BGRA format
