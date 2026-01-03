@@ -527,6 +527,22 @@ class Node:
         # Filet au centre
         cv2.line(image, points[12], points[13], (0, 255, 0), 2)
 
+        # Draw keypoint numbers on the image
+        for i, point in enumerate(points):
+            x, y = point
+            # Draw a small circle at each keypoint
+            cv2.circle(image, (x, y), 4, (0, 0, 255), -1)
+            # Draw the keypoint number with a background for better visibility
+            text = str(i)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.6
+            thickness = 2
+            text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+            # Draw white background rectangle for text
+            cv2.rectangle(image, (x + 5, y - text_size[1] - 5), (x + text_size[0] + 10, y), (255, 255, 255), -1)
+            # Draw text in red color
+            cv2.putText(image, text, (x + 7, y - 5), font, font_scale, (0, 0, 255), thickness, cv2.LINE_AA)
+
         return image
 
     def draw_mediapipe_hands_info(self, image, results_list):
