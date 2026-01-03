@@ -141,7 +141,7 @@ class FactoryNode:
                     label='Width',
                     default_value=0,  # 0 means use original size
                     min_value=0,
-                    max_value=small_window_w,
+                    max_value=small_window_w * 2,  # Allow larger overlay images
                     width=small_window_w - 80,
                 )
             
@@ -154,7 +154,7 @@ class FactoryNode:
                     label='Height',
                     default_value=0,  # 0 means use original size
                     min_value=0,
-                    max_value=small_window_h,
+                    max_value=small_window_h * 2,  # Allow larger overlay images
                     width=small_window_w - 80,
                 )
             
@@ -191,10 +191,11 @@ class OverlayImageNode(Node):
     def _overlay_image(self, master_image, overlay_image, x_pos, y_pos, width, height, alpha):
         """
         Overlay an image onto a master image with position, size, and transparency controls.
+        Supports BGRA images with alpha channel for true transparency.
         
         Args:
-            master_image (np.ndarray): Base image (numpy array)
-            overlay_image (np.ndarray): Image to overlay (numpy array)
+            master_image (np.ndarray): Base image (numpy array, BGR or BGRA)
+            overlay_image (np.ndarray): Image to overlay (numpy array, BGR or BGRA)
             x_pos (int): X position on master image (can be negative)
             y_pos (int): Y position on master image (can be negative)
             width (int): Width of overlay (0 means use original size)
@@ -271,8 +272,33 @@ class OverlayImageNode(Node):
         if overlay_region.shape[:2] != master_region.shape[:2]:
             return output_image  # Shape mismatch, return original
         
-        # Blend using alpha
-        blended = cv2.addWeighted(overlay_region, alpha, master_region, 1 - alpha, 0)
+        # Check if overlay has alpha channel (BGRA)
+        has_overlay_alpha = len(overlay_region.shape) == 3 and overlay_region.shape[2] == 4
+        has_master_alpha = len(master_region.shape) == 3 and master_region.shape[2] == 4
+        
+        if has_overlay_alpha:
+            # Proper alpha blending with BGRA overlay
+            # Extract alpha channel from overlay
+            overlay_alpha = overlay_region[:, :, 3:4] / 255.0 * alpha  # Apply global alpha
+            overlay_bgr = overlay_region[:, :, :3]
+            
+            # Get BGR channels from master (master may be BGR or BGRA)
+            if not has_master_alpha:
+                master_bgr = master_region  # Master is BGR
+            else:
+                master_bgr = master_region[:, :, :3]  # Extract BGR from BGRA
+            
+            # Alpha blending: result = overlay * alpha + master * (1 - alpha)
+            blended_bgr = (overlay_bgr * overlay_alpha + master_bgr * (1 - overlay_alpha)).astype(np.uint8)
+            
+            if has_master_alpha:
+                # Combine with master alpha channel
+                blended = np.dstack([blended_bgr, master_region[:, :, 3]])
+            else:
+                blended = blended_bgr
+        else:
+            # No alpha channel, use simple weighted blending
+            blended = cv2.addWeighted(overlay_region, alpha, master_region, 1 - alpha, 0)
         
         # Place the blended region back into the output image
         output_image[master_y1:master_y2, master_x1:master_x2] = blended

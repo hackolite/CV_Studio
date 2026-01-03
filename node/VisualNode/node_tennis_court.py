@@ -48,22 +48,22 @@ class FactoryNode:
         small_window_h = Node.VISUALIZATION_HEIGHT
         use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
-        # Create black image for initialization
-        black_image = np.zeros((small_window_h, small_window_w, 3))
+        # Create black image for initialization with alpha channel
+        black_image = np.zeros((small_window_h, small_window_w, 4))
         black_texture = node.convert_cv_to_dpg(
             black_image,
             small_window_w,
             small_window_h,
         )
 
-        # Create texture for output image
+        # Create texture for output image with RGBA support
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(
                 small_window_w,
                 small_window_h,
                 black_texture,
                 tag=node.tag_node_output_image_value_name,
-                format=dpg.mvFormat_Float_rgb,
+                format=dpg.mvFormat_Float_rgba,
             )
 
         with dpg.node(
@@ -192,7 +192,7 @@ class Node(Node):
         Inspired by Tennis-Tracker repository (github.com/abhroroy365/Tennis-Tracker)
         
         Args:
-            image: numpy array to draw on
+            image: numpy array to draw on (supports both BGR and BGRA)
             template: tennis court template with keypoints in meters
             scale: pixels per meter
             offset_x, offset_y: offset from top-left corner
@@ -205,6 +205,7 @@ class Node(Node):
         
         img = image.copy()
         keypoints = template['keypoints']
+        has_alpha = (img.shape[2] == 4) if len(img.shape) == 3 else False
         
         # Convert template coordinates to image coordinates
         def template_to_image(x, y):
@@ -212,11 +213,17 @@ class Node(Node):
             py = int(y * scale + offset_y)
             return (px, py)
         
-        # Color definitions
-        line_color = (255, 255, 255)  # White
-        court_color = (0, 150, 0)     # Green background
-        net_color = (255, 0, 0)       # Blue for net (like Tennis-Tracker) - BGR format
-        keypoint_color = (0, 0, 255)  # Red for keypoints - BGR format
+        # Color definitions (BGRA format if alpha channel present, otherwise BGR)
+        if has_alpha:
+            line_color = (255, 255, 255, 255)  # White with full opacity
+            court_color = (0, 150, 0, 255)     # Green background with full opacity
+            net_color = (255, 0, 0, 255)       # Blue for net with full opacity
+            keypoint_color = (0, 0, 255, 255)  # Red for keypoints with full opacity
+        else:
+            line_color = (255, 255, 255)  # White
+            court_color = (0, 150, 0)     # Green background
+            net_color = (255, 0, 0)       # Blue for net (like Tennis-Tracker) - BGR format
+            keypoint_color = (0, 0, 255)  # Red for keypoints - BGR format
         line_thickness = 2
         
         # Draw green background (approximation of court area)
@@ -395,7 +402,7 @@ class Node(Node):
         Draw player positions on the court with labels.
         
         Args:
-            image: numpy array to draw on
+            image: numpy array to draw on (supports both BGR and BGRA)
             transformed_points: list of [x, y] coordinates in meters
             labels: list of label strings for each point
             input_points: optional list of original [x, y] coordinates in pixels (for display)
@@ -409,9 +416,13 @@ class Node(Node):
             return image
         
         img = image.copy()
+        has_alpha = (img.shape[2] == 4) if len(img.shape) == 3 else False
         
-        # Color scheme: Yellow for players (BGR format: Blue=0, Green=255, Red=255)
-        player_color = (0, 255, 255)  # Yellow in BGR
+        # Color scheme: Yellow for players (BGRA if alpha channel, else BGR)
+        if has_alpha:
+            player_color = (0, 255, 255, 255)  # Yellow in BGRA
+        else:
+            player_color = (0, 255, 255)  # Yellow in BGR
         
         # Track which labels have been drawn in this frame to avoid duplicates
         drawn_labels = set()
@@ -525,8 +536,8 @@ class Node(Node):
         
         # Always draw (even if no new data) to maintain persistent visualization
         if template is not None:
-            # Create blank image
-            output_image = np.zeros((small_window_h, small_window_w, 3), dtype=np.uint8)
+            # Create blank image with alpha channel (BGRA) for transparency
+            output_image = np.zeros((small_window_h, small_window_w, 4), dtype=np.uint8)
             
             # Calculate scale to fit court in image
             # Use class constants for court dimensions
@@ -592,6 +603,35 @@ class Node(Node):
                 pass  # DPG not initialized (e.g., in tests)
 
         return {"image": output_image, "json": output_json, "audio": None}
+    
+    def convert_cv_to_dpg(self, image, width, height):
+        """
+        Convert OpenCV image to DPG texture format, supporting both BGR and BGRA.
+        Overrides parent class to add BGRA support for transparency.
+        
+        Args:
+            image: numpy array in BGR or BGRA format
+            width: target width
+            height: target height
+            
+        Returns:
+            texture data as float array
+        """
+        resize_image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
+        
+        # Check if image has alpha channel
+        if len(resize_image.shape) == 3 and resize_image.shape[2] == 4:
+            # BGRA -> RGBA conversion for DPG
+            data = cv2.cvtColor(resize_image, cv2.COLOR_BGRA2RGBA)
+        else:
+            # BGR -> RGB conversion for DPG
+            data = np.flip(resize_image, 2)
+        
+        data = data.ravel()
+        data = np.asarray(data, dtype=np.float32)
+        texture_data = np.true_divide(data, 255.0)
+        
+        return texture_data
 
     def close(self, node_id):
         pass
