@@ -80,8 +80,9 @@ def test_player_position_averaging():
     assert 'person' in averages, "Person label not found in averages"
     
     # Verify we tracked all positions (6 total: 3 frames × 2 players with same label)
-    assert len(node._player_positions_history['person']) == 6, \
-        f"Expected 6 positions for 'person', got {len(node._player_positions_history['person'])}"
+    person_history = node._player_positions_history.get('person', [])
+    assert len(person_history) == 6, \
+        f"Expected 6 positions for 'person', got {len(person_history)}"
     
     # Calculate expected average manually
     all_positions = positions_frame1 + positions_frame2 + positions_frame3

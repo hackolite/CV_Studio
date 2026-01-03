@@ -102,8 +102,10 @@ def test_complete_integration():
     # Draw tennis court
     output_image = tennis_court_node._draw_tennis_court(output_image, template, scale, offset_x, offset_y)
     
-    # Draw transformed points (with input_points=None)
-    output_image = tennis_court_node._draw_transformed_points(output_image, transformed_points, None, scale, offset_x, offset_y)
+    # Draw transformed points (using named parameter for clarity)
+    output_image = tennis_court_node._draw_transformed_points(
+        output_image, transformed_points, input_points=None, scale=scale, offset_x=offset_x, offset_y=offset_y
+    )
     
     print("✓ Step 2: TennisCourt visualization created (without DPG)")
     print(f"  Visualization image shape: {output_image.shape}")

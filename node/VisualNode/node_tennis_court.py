@@ -588,7 +588,7 @@ class Node(Node):
             
             # Draw transformed points if available (with labels showing average and last positions)
             if transformed_points is not None:
-                if labels is not None and len(labels) > 0:
+                if labels:
                     # Use new drawing method with labels for averaging
                     output_image = self._draw_player_positions_with_labels(
                         output_image, transformed_points, labels, input_points, scale, offset_x, offset_y
