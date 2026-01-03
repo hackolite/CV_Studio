@@ -269,7 +269,7 @@ class Node(Node):
         
         return img
 
-    def _draw_transformed_points(self, image, transformed_points, scale=40, offset_x=50, offset_y=50):
+    def _draw_transformed_points(self, image, transformed_points, input_points=None, scale=40, offset_x=50, offset_y=50):
         """
         Draw transformed points on the court visualization.
         Inspired by Tennis-Tracker repository for better point visualization.
@@ -277,6 +277,7 @@ class Node(Node):
         Args:
             image: numpy array to draw on
             transformed_points: list of [x, y] coordinates in meters
+            input_points: optional list of original [x, y] coordinates in pixels (for display)
             scale: pixels per meter (same as court drawing)
             offset_x, offset_y: offset from top-left corner (same as court drawing)
             
@@ -291,6 +292,7 @@ class Node(Node):
         # Color scheme for high visibility
         # White for players/objects (high contrast against green court)
         player_color = (255, 255, 255)  # White
+        text_bg_color = (0, 0, 0)  # Black background for text
         
         # Draw each transformed point
         for i, point in enumerate(transformed_points):
@@ -303,10 +305,42 @@ class Node(Node):
                 # Using 5px radius for clean, visible markers
                 cv2.circle(img, (px, py), 5, player_color, -1)
                 
-                # Optional: Draw point index for tracking
-                # Smaller, less intrusive label
-                cv2.putText(img, str(i), (px + 8, py + 3),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+                # Draw player number
+                cv2.putText(img, str(i+1), (px + 8, py + 3),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, player_color, 1)
+                
+                # Display coordinates (court coordinates)
+                coord_text = f"({x_meters:.2f}, {y_meters:.2f})m"
+                
+                # Add original image coordinates if available
+                if input_points is not None and i < len(input_points):
+                    orig_pt = input_points[i]
+                    coord_text = f"Img:({orig_pt[0]:.0f},{orig_pt[1]:.0f}) Court:({x_meters:.2f},{y_meters:.2f})m"
+                
+                # Calculate text size for background
+                (text_width, text_height), baseline = cv2.getTextSize(
+                    coord_text, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1
+                )
+                
+                # Position text near the point (below and to the right)
+                text_x = px + 10
+                text_y = py + 20
+                
+                # Ensure text stays within image bounds
+                if text_x + text_width > img.shape[1]:
+                    text_x = px - text_width - 10
+                if text_y + text_height > img.shape[0]:
+                    text_y = py - 10
+                
+                # Draw black background rectangle for text
+                cv2.rectangle(img, 
+                            (text_x - 2, text_y - text_height - 2),
+                            (text_x + text_width + 2, text_y + baseline),
+                            text_bg_color, -1)
+                
+                # Draw coordinate text
+                cv2.putText(img, coord_text, (text_x, text_y),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.35, player_color, 1)
         
         return img
 
@@ -351,6 +385,7 @@ class Node(Node):
             # Extract template and transformed points
             template = json_data.get('template', None)
             transformed_points = json_data.get('transformed_points', None)
+            input_points = json_data.get('input_points', None)  # Original image coordinates
             
             # Create blank image
             output_image = np.zeros((small_window_h, small_window_w, 3), dtype=np.uint8)
@@ -370,9 +405,9 @@ class Node(Node):
             # Draw tennis court
             output_image = self._draw_tennis_court(output_image, template, scale, offset_x, offset_y)
             
-            # Draw transformed points if available
+            # Draw transformed points if available (with original image coordinates)
             if transformed_points is not None:
-                output_image = self._draw_transformed_points(output_image, transformed_points, scale, offset_x, offset_y)
+                output_image = self._draw_transformed_points(output_image, transformed_points, input_points, scale, offset_x, offset_y)
             
             # Prepare output JSON (pass through with visualization metadata)
             output_json = copy.deepcopy(json_data)
