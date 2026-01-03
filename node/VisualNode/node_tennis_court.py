@@ -49,7 +49,7 @@ class FactoryNode:
         use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
         # Create black image for initialization with alpha channel
-        black_image = np.zeros((small_window_h, small_window_w, 4))
+        black_image = np.zeros((small_window_h, small_window_w, 4), dtype=np.uint8)
         black_texture = node.convert_cv_to_dpg(
             black_image,
             small_window_w,
@@ -617,6 +617,17 @@ class Node(Node):
         Returns:
             texture data as float array
         """
+        # Ensure image is uint8 for cv2.cvtColor compatibility
+        if image.dtype != np.uint8:
+            # Convert float images (0-1 range) to uint8 (0-255 range)
+            if image.dtype in [np.float32, np.float64]:
+                # Clip values to valid range and scale to 0-255
+                image = np.clip(image, 0.0, 1.0)
+                image = (image * 255).astype(np.uint8)
+            else:
+                # For other dtypes, clip to valid uint8 range
+                image = np.clip(image, 0, 255).astype(np.uint8)
+        
         resize_image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
         
         # Check if image has alpha channel
