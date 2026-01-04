@@ -682,23 +682,8 @@ class MyNode(EnhancedNode):
 
 ### Documentation
 
-- **[Architecture Details](ARCHITECTURE.md)** - Complete architecture overview
-- **[Migration Guide](MIGRATION_GUIDE.md)** - How to use new features
 - **[src/README.md](src/README.md)** - Technical architecture documentation
-- **[Restructuring Summary](RESTRUCTURING_SUMMARY.md)** - Changes and improvements
-- **[Timestamped Queue System](TIMESTAMPED_QUEUE_SYSTEM.md)** - FIFO queue documentation (NEW) 🆕
-
-#### Video-Audio Synchronization Documentation
-
-Comprehensive guides explaining how the Video Node synchronizes audio spectrograms with video playback:
-
-- **[📑 Documentation Index](VIDEO_AUDIO_SYNC_INDEX.md)** - Complete index of all documentation (START HERE!) 🌟
-- **[📖 Documentation Guide](VIDEO_AUDIO_SYNC_DOCUMENTATION_GUIDE.md)** - Navigate all documentation 🎯
-- **[📄 Simple Summary](VIDEO_AUDIO_SYNC_SIMPLE_SUMMARY.md)** - One-page visual overview 🎨
-- **[Quick Reference](VIDEO_AUDIO_SYNC_QUICK_REFERENCE.md)** - Quick overview and key formulas ⚡
-- **[Video-Audio Synchronization Explained](VIDEO_AUDIO_SYNCHRONIZATION_EXPLAINED.md)** - Complete technical explanation in English
-- **[Synchronisation Vidéo-Audio Expliquée](SYNCHRONISATION_VIDEO_AUDIO_EXPLIQUEE.md)** - Explication complète en français
-- **[Visual Sync Diagrams](VISUAL_SYNC_DIAGRAMS.md)** - Visual diagrams and flowcharts
+- **[Timestamped Queue System](TIMESTAMPED_QUEUE_SYSTEM.md)** - FIFO queue documentation 🆕
 
 ## 🧪 Testing
 
