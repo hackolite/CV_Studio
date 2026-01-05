@@ -21,6 +21,7 @@ The ReId (Re-Identification) node is a tracking enhancement node that assigns co
 - **Training Phase**: Collects visual features from the first 100 frames
 - **Feature Extraction**: Uses color histograms (16 bins per RGB channel = 48-dimensional feature vector)
 - **Automatic Clustering**: Trains K-means with K = number of slots after 100 frames
+- **Reset KMeans**: Button to reset the K-means training and start over from frame 0
 - **Robust**: Handles edge cases like invalid bounding boxes and out-of-bounds detections
 
 ### 3. Re-Identification
@@ -89,6 +90,7 @@ Video/Camera → Object Detection → ReId → Multi-Object Tracking → Display
 4. **Training Phase**: Let the video run for 100 frames to train K-means
 5. **Connect to MOT**: Connect ReId JSON output to MOT node input
 6. **Production Phase**: After training, ReId assigns consistent identities, and MOT tracks them
+7. **Reset if Needed**: Use the "Reset KMeans" button to restart training if identities are incorrectly learned
 
 ## Algorithm Details
 

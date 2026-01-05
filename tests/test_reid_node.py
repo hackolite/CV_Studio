@@ -221,6 +221,41 @@ class TestReIdNode:
         assert 'class_ids' in od_json
         assert 'class_names' in od_json
         assert 'track_ids' not in od_json  # ObjectDetection doesn't have track_ids
+    
+    def test_reset_kmeans(self):
+        """Test KMeans reset functionality"""
+        node = ReIdNode()
+        node._opencv_setting_dict = {'process_width': 640, 'process_height': 480, 'use_pref_counter': False}
+        
+        # Setup node structures and train KMeans
+        node_id = 1
+        tag_node_name = f"{node_id}:ReId"
+        node._slot_id[tag_node_name] = 2
+        node._slot_names[tag_node_name] = {1: "player1", 2: "player2"}
+        
+        # Initialize structures
+        node._frame_counter[tag_node_name] = 50
+        node._feature_buffer[tag_node_name] = []
+        for _ in range(20):
+            node._feature_buffer[tag_node_name].append(np.random.rand(48))
+        
+        # Train K-means
+        node._train_kmeans(node_id)
+        
+        # Verify training succeeded
+        assert node._frame_counter[tag_node_name] == 50
+        assert len(node._feature_buffer[tag_node_name]) == 20
+        assert tag_node_name in node._centroids
+        assert node._kmeans_trained[tag_node_name] is True
+        
+        # Reset KMeans
+        node._reset_kmeans(None, None, tag_node_name)
+        
+        # Verify reset cleared everything
+        assert node._frame_counter[tag_node_name] == 0
+        assert len(node._feature_buffer[tag_node_name]) == 0
+        assert tag_node_name not in node._centroids
+        assert node._kmeans_trained[tag_node_name] is False
 
 
 if __name__ == '__main__':

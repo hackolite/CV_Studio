@@ -124,6 +124,18 @@ class FactoryNode:
                     callback=node._remove_slot,
                     user_data=node.tag_node_name,
                 )
+            
+            # KMeans reset section
+            with dpg.node_attribute(
+                    tag=node.tag_node_name + ':KMeansReset',
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_button(
+                    label='Reset KMeans',
+                    width=small_window_w,
+                    callback=node._reset_kmeans,
+                    user_data=node.tag_node_name,
+                )
 
             if use_pref_counter:
                 with dpg.node_attribute(
@@ -231,6 +243,28 @@ class Node(Node):
         new_name = app_data
         self._slot_names[tag_node_name][slot_number] = new_name
         logger.info(f"Slot {slot_number} renamed to: {new_name}")
+
+    def _reset_kmeans(self, sender, data, user_data):
+        """Reset KMeans training - clears frame counter, features, centroids, and training state"""
+        tag_node_name = user_data
+        
+        # Reset frame counter
+        if tag_node_name in self._frame_counter:
+            self._frame_counter[tag_node_name] = 0
+        
+        # Clear feature buffer
+        if tag_node_name in self._feature_buffer:
+            self._feature_buffer[tag_node_name] = []
+        
+        # Clear centroids
+        if tag_node_name in self._centroids:
+            del self._centroids[tag_node_name]
+        
+        # Reset training state
+        if tag_node_name in self._kmeans_trained:
+            self._kmeans_trained[tag_node_name] = False
+        
+        logger.info(f"KMeans reset for node {tag_node_name}")
 
     def _extract_features(self, frame, bbox):
         """Extract simple color histogram features from a bounding box"""
