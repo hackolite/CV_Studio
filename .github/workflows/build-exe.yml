@@ -12,6 +12,10 @@ jobs:
   build-windows-exe:
     runs-on: windows-latest
     
+    permissions:
+      contents: write  # Required for uploading release assets
+      actions: read    # Required for downloading artifacts
+    
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
