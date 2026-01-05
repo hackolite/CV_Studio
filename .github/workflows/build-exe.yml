@@ -60,6 +60,7 @@ jobs:
       if: github.event_name == 'release'
       uses: actions/upload-release-asset@v1
       env:
+        PYTHONUTF8: "1" # Force Python à utiliser l'UTF-8 sur Windows
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ github.event.release.upload_url }}
