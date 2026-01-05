@@ -49,7 +49,7 @@ class FactoryNode:
         small_window_h = node._opencv_setting_dict['process_height']
         use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
-        black_image = np.zeros((small_window_w, small_window_h, 3))
+        black_image = np.zeros((small_window_h, small_window_w, 3))
         black_texture = node.convert_cv_to_dpg(
             black_image,
             small_window_w,
@@ -287,7 +287,7 @@ class Node(Node):
         # Train K-means
         try:
             features_array = np.array(features)
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init='auto')
             kmeans.fit(features_array)
             
             # Store centroids
@@ -462,7 +462,7 @@ class Node(Node):
             cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
             
             # Draw ReId label
-            score_str = '%.2f' % score
+            score_str = f'{score:.2f}'
             text = f'{name} ({score_str})'
             
             font_scale = 0.6
