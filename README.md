@@ -104,6 +104,21 @@ See [Image-Processing-Node-Editor/docker/nvidia-gpu](https://github.com/Kazuhito
 
 For Windows users who want a standalone .exe file that doesn't require Python installation:
 
+#### 🎯 Option A: Automatic Build via GitHub Actions (EASIEST - NO LOCAL BUILD NEEDED)
+
+**No Python or build tools installation required!** Simply trigger a build on GitHub:
+
+1. **Go to the [Actions tab](../../actions)** in this repository
+2. **Click on "Build Windows Executable"** in the left sidebar
+3. **Click "Run workflow"** → Select branch → Click green "Run workflow" button
+4. **Wait 10-15 minutes** for the build to complete
+5. **Download** the `CV_Studio-Windows-Executable.zip` from the Artifacts section
+6. **Extract and run** `CV_Studio.exe` - Done! 🎉
+
+📖 **Detailed instructions:** See [COMMENT_OBTENIR_EXE.md](COMMENT_OBTENIR_EXE.md) (Français) or [HOW_TO_GET_EXE.md](HOW_TO_GET_EXE.md) (English)
+
+#### 🔧 Option B: Build Locally on Your Windows Machine
+
 #### 📋 Prérequis / Prerequisites
 
 Before building the executable, ensure you have:
