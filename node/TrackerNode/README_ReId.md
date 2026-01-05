@@ -12,12 +12,15 @@ The ReId (Re-Identification) node is a tracking enhancement node that assigns co
 ## Features
 
 ### 1. Slot Management
-- **Add Slot**: Create new identity slots with default names (player1, player2, etc.)
+- **Default Slots**: Initializes with 3 slots by default (player1, player2, player3)
+- **Add Slot**: Create new identity slots with default names (player4, player5, etc.)
 - **Remove Slot**: Remove the most recent slot
 - **Custom Naming**: Users can rename slots to any desired name (e.g., "Team A Captain", "Player #10")
 - **Maximum Slots**: Supports up to 20 different identities
 
 ### 2. K-means Clustering
+- **Default Clusters**: 3 clusters by default (matching the 3 default slots)
+- **Number of Clusters**: Determined by the number of slots configured
 - **Training Phase**: Collects visual features from the first 100 frames
 - **Feature Extraction**: Uses color histograms (16 bins per RGB channel = 48-dimensional feature vector)
 - **Automatic Clustering**: Trains K-means with K = number of slots after 100 frames
@@ -49,6 +52,7 @@ The ReId (Re-Identification) node is a tracking enhancement node that assigns co
   - `scores`: List of detection confidence scores
   - `class_ids`: List of class IDs (will be replaced with ReId labels)
   - `class_names`: List of class names (will be replaced with slot names)
+- **Note**: ObjectDetection node now applies per-class NMS to ensure only 1 bounding box per class, which works well with ReId for multi-player tracking
 
 ## Outputs
 
@@ -84,11 +88,12 @@ Video/Camera → Object Detection → ReId → Multi-Object Tracking → Display
 2. **Connect Inputs**:
    - Connect video source to IMAGE input
    - Connect ObjectDetection node JSON output to JSON input
-3. **Configure Slots**:
-   - Add slots for the expected number of identities
+3. **Configure Slots** (Optional):
+   - By default, 3 slots are created (player1, player2, player3)
+   - Add more slots if needed for additional identities
    - Rename slots to meaningful names (optional)
-4. **Training Phase**: Let the video run for 100 frames to train K-means
-5. **Connect to MOT**: Connect ReId JSON output to MOT node input
+4. **Training Phase**: Let the video run for 100 frames to train K-means (3 clusters by default)
+5. **Connect to MOT**: Connect ReId JSON output to MOT node input (MOT now supports ReId as a source)
 6. **Production Phase**: After training, ReId assigns consistent identities, and MOT tracks them
 7. **Reset if Needed**: Use the "Reset KMeans" button to restart training if identities are incorrectly learned
 
@@ -162,6 +167,11 @@ Potential improvements:
 
 ## Version History
 
+- **v0.0.2** (2026-01-05): Enhanced default configuration
+  - Initialize with 3 slots by default (player1, player2, player3)
+  - Number of slots now determines number of K-means clusters (3 by default)
+  - MOT node now supports ReId as a source (fixes black screen issue)
+  - ObjectDetection node applies per-class NMS (1 bbox per class)
 - **v0.0.1** (2026-01-05): Initial implementation
   - Basic K-means clustering
   - Slot management
