@@ -283,7 +283,6 @@ class Node(Node):
                 od_class_ids = node_result.get('class_ids', [])
                 od_class_names = node_result.get('class_names', [])
 
-                track_ids, t_bboxes, t_scores, t_class_ids = [], [], [], []
                 track_ids, t_bboxes, t_scores, t_class_ids = self._model_instance[
                     model_name_with_provider](
                         frame,

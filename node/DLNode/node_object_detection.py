@@ -262,14 +262,13 @@ class Node(Node):
     def __init__(self):
         pass
 
-    def _per_class_nms(self, bboxes, scores, class_ids, iou_threshold=0.5):
+    def _per_class_nms(self, bboxes, scores, class_ids):
         """Apply NMS per class to keep only the best detection per class.
         
         Args:
             bboxes: List or numpy array of bounding boxes [x1, y1, x2, y2]
             scores: List or numpy array of confidence scores
             class_ids: List or numpy array of class IDs
-            iou_threshold: IoU threshold for NMS (default: 0.5)
             
         Returns:
             Filtered bboxes, scores, class_ids (as numpy arrays)
