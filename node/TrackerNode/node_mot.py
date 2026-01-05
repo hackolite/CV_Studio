@@ -275,6 +275,37 @@ class Node(Node):
                 result['class_names'] = od_class_names
                 result['track_id_dict'] = self._track_id_dict[node_id]
 
+            elif src_node_name == 'ReId':
+                # ReId node outputs the same format as ObjectDetection
+                node_result = node_result_dict.get(connection_info_src, [])
+                od_bboxes = node_result.get('bboxes', [])
+                od_scores = node_result.get('scores', [])
+                od_class_ids = node_result.get('class_ids', [])
+                od_class_names = node_result.get('class_names', [])
+
+                track_ids, t_bboxes, t_scores, t_class_ids = self._model_instance[
+                    model_name_with_provider](
+                        frame,
+                        od_bboxes,
+                        od_scores,
+                        od_class_ids,
+                    )
+
+                if node_id not in self._track_id_dict:
+                    self._track_id_dict[node_id] = {}
+
+                for track_id in track_ids:
+                    if track_id not in self._track_id_dict[node_id]:
+                        new_id = len(self._track_id_dict[node_id])
+                        self._track_id_dict[node_id][track_id] = new_id
+
+                result['track_ids'] = track_ids
+                result['bboxes'] = t_bboxes
+                result['scores'] = t_scores
+                result['class_ids'] = t_class_ids
+                result['class_names'] = od_class_names
+                result['track_id_dict'] = self._track_id_dict[node_id]
+
             elif src_node_name == 'Classification':
                 node_result = node_result_dict.get(connection_info_src, [])
                 use_object_detection = node_result.get(
@@ -323,7 +354,7 @@ class Node(Node):
         output_frame = None
         
         if frame is not None:
-            if src_node_name == 'ObjectDetection' or src_node_name == 'Classification':
+            if src_node_name == 'ObjectDetection' or src_node_name == 'Classification' or src_node_name == 'ReId':
 
                 debug_frame = copy.deepcopy(frame)
                 debug_frame = self.draw_multi_object_tracking_info(
