@@ -98,7 +98,7 @@ class FactoryNode:
             ):
                 dpg.add_text(
                     tag=node.tag_node_input02_value_name,
-                    default_value='Input JSON (Tracking)',
+                    default_value='Input JSON (ObjectDetection)',
                 )
 
             with dpg.node_attribute(
@@ -362,8 +362,7 @@ class Node(Node):
             self._frame_counter[tag_node_name] += 1
             frame_count = self._frame_counter[tag_node_name]
 
-            # Extract tracking data
-            track_ids = json_data.get('track_ids', [])
+            # Extract object detection data (from ObjectDetection node)
             bboxes = json_data.get('bboxes', [])
             scores = json_data.get('scores', [])
             class_ids = json_data.get('class_ids', [])
@@ -383,10 +382,10 @@ class Node(Node):
                 result = json_data.copy()
                 output_frame = copy.deepcopy(frame)
             
-            # Phase 2: Assign labels using trained K-means
+            # Phase 2: Assign ReId labels using trained K-means
             elif self._kmeans_trained.get(tag_node_name, False):
-                reid_labels = []
-                reid_names = []
+                reid_class_ids = []  # Replace class_ids with ReId labels
+                reid_class_names = []  # Replace class_names with slot names
                 
                 for bbox in bboxes:
                     feature = self._extract_features(frame, bbox)
@@ -395,23 +394,27 @@ class Node(Node):
                     if slot_idx is not None:
                         # Get the custom name for this slot
                         slot_name = self._slot_names[tag_node_name].get(slot_idx, f"player{slot_idx}")
-                        reid_labels.append(slot_idx)
-                        reid_names.append(slot_name)
+                        reid_class_ids.append(slot_idx - 1)  # 0-indexed for MOT compatibility
+                        reid_class_names.append(slot_name)
                     else:
-                        reid_labels.append(0)
-                        reid_names.append("unknown")
+                        reid_class_ids.append(0)
+                        reid_class_names.append("unknown")
                 
-                # Create output JSON with ReId labels
-                result = json_data.copy()
-                result['reid_labels'] = reid_labels
-                result['reid_names'] = reid_names
+                # Create output JSON with modified class_ids (ReId labels)
+                # This format is compatible with MOT node input
+                result = {
+                    'bboxes': bboxes,
+                    'scores': scores,
+                    'class_ids': reid_class_ids,  # ReId labels replace original class_ids
+                    'class_names': reid_class_names,  # Slot names replace original class_names
+                }
                 
                 # Draw info on frame
                 debug_frame = copy.deepcopy(frame)
                 debug_frame = self._draw_reid_info(
                     debug_frame,
                     bboxes,
-                    reid_names,
+                    reid_class_names,
                     scores,
                 )
                 output_frame = debug_frame

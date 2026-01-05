@@ -40,15 +40,14 @@ The ReId (Re-Identification) node is a tracking enhancement node that assigns co
 - **Description**: Input video frame (typically from a camera or video source)
 - **Format**: BGR color image (NumPy array)
 
-### Input 2: JSON (Tracking Data)
+### Input 2: JSON (Object Detection Data)
 - **Type**: JSON
-- **Description**: Tracking data from a MOT (Multi-Object Tracking) node
+- **Description**: Object detection data from an ObjectDetection node
 - **Required Fields**:
-  - `track_ids`: List of track IDs
   - `bboxes`: List of bounding boxes [x1, y1, x2, y2]
   - `scores`: List of detection confidence scores
-  - `class_ids`: List of class IDs
-  - `class_names`: List of class names
+  - `class_ids`: List of class IDs (will be replaced with ReId labels)
+  - `class_names`: List of class names (will be replaced with slot names)
 
 ## Outputs
 
@@ -64,29 +63,32 @@ The ReId (Re-Identification) node is a tracking enhancement node that assigns co
 
 ### Output 3: JSON
 - **Type**: JSON
-- **Description**: Extended tracking data with ReId labels
-- **Additional Fields**:
-  - `reid_labels`: List of numeric identity labels (1, 2, 3, ...)
-  - `reid_names`: List of custom identity names ("player1", "player2", ...)
-- **Inherited Fields**: All fields from input JSON are passed through
+- **Description**: Modified detection data with ReId labels (compatible with MOT node input)
+- **Fields**:
+  - `bboxes`: List of bounding boxes (unchanged)
+  - `scores`: List of detection scores (unchanged)
+  - `class_ids`: List of ReId labels (0, 1, 2, ... corresponding to slots)
+  - `class_names`: List of slot names ("player1", "player2", ... or custom names)
+- **Note**: This output replaces the original class_ids with ReId labels, allowing MOT to track each identity separately
 
 ## Usage Example
 
 ### Basic Pipeline
 ```
-Video/Camera → Object Detection → Multi-Object Tracking → ReId → Display/Record
+Video/Camera → Object Detection → ReId → Multi-Object Tracking → Display/Record
 ```
 
 ### Configuration Steps
 1. **Add ReId Node**: Drag and drop the ReId node from the Tracking category
 2. **Connect Inputs**:
    - Connect video source to IMAGE input
-   - Connect MOT node JSON output to JSON input
+   - Connect ObjectDetection node JSON output to JSON input
 3. **Configure Slots**:
    - Add slots for the expected number of identities
    - Rename slots to meaningful names (optional)
 4. **Training Phase**: Let the video run for 100 frames to train K-means
-5. **Production Phase**: After training, the node will assign consistent identities
+5. **Connect to MOT**: Connect ReId JSON output to MOT node input
+6. **Production Phase**: After training, ReId assigns consistent identities, and MOT tracks them
 
 ## Algorithm Details
 
