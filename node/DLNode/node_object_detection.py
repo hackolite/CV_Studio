@@ -382,11 +382,11 @@ class Node(Node):
 
                     bboxes, scores, class_ids = self._model_instance[
                         model_name_with_provider](frame)
-                    
+
                     # Apply per-class NMS to ensure only 1 bounding box per class
                     if len(bboxes) > 0:
                         bboxes, scores, class_ids = self._per_class_nms(bboxes, scores, class_ids)
-                    
+
                     if len(bboxes) > 0:
                         result['bboxes'] = bboxes.tolist()
                         result['scores'] = scores.tolist()

@@ -112,7 +112,7 @@ class FactoryNode:
                 tag_node_slotXX_name = node.tag_node_name + ':Slot' + str(slot_num).zfill(2)
                 tag_node_slotXX_value_name = tag_node_slotXX_name + 'Value'
                 default_name = f"player{slot_num}"
-                
+
                 with dpg.node_attribute(
                         tag=tag_node_slotXX_name,
                         attribute_type=dpg.mvNode_Attr_Static,
