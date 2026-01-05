@@ -262,6 +262,54 @@ class Node(Node):
     def __init__(self):
         pass
 
+    def _per_class_nms(self, bboxes, scores, class_ids, iou_threshold=0.5):
+        """Apply NMS per class to keep only the best detection per class.
+        
+        Args:
+            bboxes: List or numpy array of bounding boxes [x1, y1, x2, y2]
+            scores: List or numpy array of confidence scores
+            class_ids: List or numpy array of class IDs
+            iou_threshold: IoU threshold for NMS (default: 0.5)
+            
+        Returns:
+            Filtered bboxes, scores, class_ids (as numpy arrays)
+        """
+        if len(bboxes) == 0:
+            return np.array([]), np.array([]), np.array([])
+        
+        # Convert to numpy arrays
+        bboxes = np.array(bboxes)
+        scores = np.array(scores)
+        class_ids = np.array(class_ids)
+        
+        # Get unique classes
+        unique_classes = np.unique(class_ids)
+        
+        keep_indices = []
+        
+        for class_id in unique_classes:
+            # Get indices for this class
+            class_mask = class_ids == class_id
+            class_bboxes = bboxes[class_mask]
+            class_scores = scores[class_mask]
+            class_indices = np.where(class_mask)[0]
+            
+            # If only one detection for this class, keep it
+            if len(class_bboxes) == 1:
+                keep_indices.append(class_indices[0])
+                continue
+            
+            # Sort by score (descending)
+            sorted_indices = np.argsort(-class_scores)
+            
+            # Keep the highest scoring detection for this class
+            # This ensures only 1 bounding box per class
+            keep_indices.append(class_indices[sorted_indices[0]])
+        
+        keep_indices = np.array(keep_indices)
+        
+        return bboxes[keep_indices], scores[keep_indices], class_ids[keep_indices]
+
 
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict,):
@@ -335,6 +383,11 @@ class Node(Node):
 
                     bboxes, scores, class_ids = self._model_instance[
                         model_name_with_provider](frame)
+                    
+                    # Apply per-class NMS to ensure only 1 bounding box per class
+                    if len(bboxes) > 0:
+                        bboxes, scores, class_ids = self._per_class_nms(bboxes, scores, class_ids)
+                    
                     if len(bboxes) > 0:
                         result['bboxes'] = bboxes.tolist()
                         result['scores'] = scores.tolist()
