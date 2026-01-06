@@ -86,7 +86,7 @@ def test_tennis_court_no_cropping():
     print(f"\n  ✓ Verification: Court has adequate margins (top/bottom: {actual_margin_ratio:.1%} of height)")
     
     # Save the image for visual inspection
-    with tempfile.NamedTemporaryFile(mode='wb', suffix='.png', delete=False, dir='/tmp') as f:
+    with tempfile.NamedTemporaryFile(mode='wb', suffix='.png', delete=False) as f:
         output_path = f.name
     # Convert BGRA to BGR for saving
     bgr_image = cv2.cvtColor(output_image, cv2.COLOR_BGRA2BGR)
@@ -164,7 +164,7 @@ def test_tennis_court_update_without_cropping():
     print(f"  ✓ No cropping applied - full visualization with margins shown")
     
     # Save the result image
-    with tempfile.NamedTemporaryFile(mode='wb', suffix='.png', delete=False, dir='/tmp') as f:
+    with tempfile.NamedTemporaryFile(mode='wb', suffix='.png', delete=False) as f:
         output_path = f.name
     bgr_image = cv2.cvtColor(result['image'], cv2.COLOR_BGRA2BGR)
     cv2.imwrite(output_path, bgr_image)
