@@ -518,7 +518,7 @@ class Node(Node):
         # Set rejected classes if the tag exists in settings
         if rejected_classes_tag in setting_dict:
             try:
-                dpg_set_value(self.tag_node_name + ':RejectedClassesValue', rejected_classes)
+                dpg_set_value(rejected_classes_tag, rejected_classes)
             except:
                 pass  # Ignore if the UI element doesn't exist yet
 

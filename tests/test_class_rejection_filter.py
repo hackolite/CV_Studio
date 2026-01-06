@@ -137,7 +137,7 @@ def test_filter_reject_all_classes():
 
 def test_filter_empty_detections():
     """Test filter with empty detections"""
-    bboxes = np.array([])
+    bboxes = np.array([]).reshape(0, 4)  # Empty array with shape (0, 4)
     scores = np.array([])
     class_ids = np.array([])
     
