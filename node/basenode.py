@@ -947,7 +947,16 @@ class Node:
                 thickness=thickness,
             )
 
-            text = "CID:%s(%s)" % (str(int(class_id)), class_names[int(class_id)])
+            # Handle class_names as dict or list, with fallback for missing keys/indices
+            class_id_int = int(class_id)
+            if isinstance(class_names, dict):
+                class_name = class_names.get(class_id_int, f"class_{class_id_int}")
+            elif isinstance(class_names, list) and 0 <= class_id_int < len(class_names):
+                class_name = class_names[class_id_int]
+            else:
+                class_name = f"class_{class_id_int}"
+            
+            text = "CID:%s(%s)" % (str(class_id_int), class_name)
             image = cv2.putText(
                 image,
                 text,
