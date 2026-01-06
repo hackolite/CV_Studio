@@ -403,7 +403,7 @@ class Node(Node):
         output_frame = None
         
         if frame is not None:
-            if (src_node_name == 'ObjectDetection' or src_node_name == 'Classification' or src_node_name == 'ReId') and tracking_enabled and result:
+            if src_node_name in ('ObjectDetection', 'Classification', 'ReId') and tracking_enabled and result:
 
                 debug_frame = copy.deepcopy(frame)
                 track_ids = result.get('track_ids', [])

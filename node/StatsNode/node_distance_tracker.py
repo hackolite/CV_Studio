@@ -6,8 +6,10 @@ import numpy as np
 import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
-from node.node_abc import DpgNodeABC
 from node.basenode import Node
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class FactoryNode:
@@ -260,16 +262,16 @@ class Node(Node):
             # Pass through homography data for downstream nodes
             output_json.update(json_data)
             
-            # Display distances in console
-            print("\n" + "="*70)
-            print("[DistanceTracker] Player Distances:")
-            print("="*70)
+            # Display distances using logger
+            logger.info("="*70)
+            logger.info("[DistanceTracker] Player Distances:")
+            logger.info("="*70)
             for label, data in distances_by_label.items():
-                print(f"  {label}:")
-                print(f"    Position: ({data['position'][0]:.2f}m, {data['position'][1]:.2f}m)")
-                print(f"    Frame distance: {data['frame_distance']:.3f}m")
-                print(f"    Total distance: {data['cumulative_distance']:.2f}m")
-            print("="*70)
+                logger.info(f"  {label}:")
+                logger.info(f"    Position: ({data['position'][0]:.2f}m, {data['position'][1]:.2f}m)")
+                logger.info(f"    Frame distance: {data['frame_distance']:.3f}m")
+                logger.info(f"    Total distance: {data['cumulative_distance']:.2f}m")
+            logger.info("="*70)
         
         elif json_data is not None and not tracking_enabled:
             # Tracking disabled, pass through data without calculating distances
