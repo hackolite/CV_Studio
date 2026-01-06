@@ -56,6 +56,9 @@ class FactoryNode:
         node.tag_node_input_float_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input03'
         node.tag_node_input_float_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input03Value'
         
+        # Tag for rejected classes input field
+        node.tag_node_rejected_classes_name = node.tag_node_name + ':RejectedClasses'
+        node.tag_node_rejected_classes_value_name = node.tag_node_name + ':RejectedClassesValue'
 
         node.tag_node_output_image_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
         node.tag_node_output_image = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
@@ -161,6 +164,19 @@ class FactoryNode:
                     min_value=node._min_val,
                     max_value=node._max_val,
                     callback=None,
+                )
+
+            # Rejected classes input field
+            with dpg.node_attribute(
+                    tag=node.tag_node_rejected_classes_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_input_text(
+                    tag=node.tag_node_rejected_classes_value_name,
+                    label="Reject",
+                    hint="e.g. 0,1,2",
+                    width=small_window_w - 80,
+                    default_value="",
                 )
 
             if use_pref_counter:
@@ -318,6 +334,7 @@ class Node(Node):
                 self.tag_node_name = str(node_id) + ':' + self.node_tag
                 tag_node_output_image = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
                 self.tag_provider_select_value_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
+                self.tag_node_rejected_classes_value_name = self.tag_node_name + ':RejectedClassesValue'
 
                 small_window_w = self._opencv_setting_dict['process_width']
                 small_window_h = self._opencv_setting_dict['process_height']
@@ -386,6 +403,31 @@ class Node(Node):
                     # Apply per-class NMS to ensure only 1 bounding box per class
                     if len(bboxes) > 0:
                         bboxes, scores, class_ids = self._per_class_nms(bboxes, scores, class_ids)
+                    
+                    # Apply class rejection filter
+                    if len(bboxes) > 0:
+                        try:
+                            rejected_classes_str = dpg_get_value(self.tag_node_rejected_classes_value_name)
+                            if rejected_classes_str and rejected_classes_str.strip():
+                                # Parse the rejected class IDs
+                                rejected_classes = set()
+                                for class_str in rejected_classes_str.split(','):
+                                    class_str = class_str.strip()
+                                    if class_str:
+                                        try:
+                                            rejected_classes.add(int(class_str))
+                                        except ValueError:
+                                            # Skip invalid class IDs
+                                            pass
+                                
+                                # Filter out rejected classes
+                                if rejected_classes:
+                                    keep_mask = np.array([class_id not in rejected_classes for class_id in class_ids])
+                                    bboxes = bboxes[keep_mask]
+                                    scores = scores[keep_mask]
+                                    class_ids = class_ids[keep_mask]
+                        except Exception as e:
+                            logger.warning(f"Error applying class rejection filter: {e}")
 
                     if len(bboxes) > 0:
                         result['bboxes'] = bboxes.tolist()
@@ -440,11 +482,14 @@ class Node(Node):
         self.tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         input_value03_tag = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
+        rejected_classes_tag = self.tag_node_name + ':RejectedClassesValue'
 
 
         model_name = dpg_get_value(input_value02_tag)
 
         score_th = round(float(dpg_get_value(input_value03_tag)), 3)
+        
+        rejected_classes = dpg_get_value(rejected_classes_tag) if dpg_get_value(rejected_classes_tag) else ""
 
         pos = dpg.get_item_pos(self.tag_node_name)
 
@@ -453,6 +498,7 @@ class Node(Node):
         setting_dict['pos'] = pos
         setting_dict[input_value02_tag] = model_name
         setting_dict[input_value03_tag] = score_th
+        setting_dict[rejected_classes_tag] = rejected_classes
 
         return setting_dict
 
@@ -460,12 +506,21 @@ class Node(Node):
         self.tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         input_value03_tag = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
+        rejected_classes_tag = self.tag_node_name + ':RejectedClassesValue'
 
         model_name = setting_dict[input_value02_tag]
         score_th = setting_dict[input_value03_tag]
+        rejected_classes = setting_dict.get(rejected_classes_tag, "")
 
         dpg_set_value(self.tag_node_input_text_value_name, model_name)
         dpg_set_value(self.tag_node_input_float_value_name, score_th)
+        
+        # Set rejected classes if the tag exists in settings
+        if rejected_classes_tag in setting_dict:
+            try:
+                dpg_set_value(self.tag_node_name + ':RejectedClassesValue', rejected_classes)
+            except:
+                pass  # Ignore if the UI element doesn't exist yet
 
 
 
