@@ -51,6 +51,8 @@ class FactoryNode:
         node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Input01Value'
         node.tag_node_input02_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input02'
         node.tag_node_input02_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input02Value'
+        node.tag_node_input03_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input03'
+        node.tag_node_input03_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input03Value'
         node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
         node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
         node.tag_node_output02_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
@@ -101,13 +103,24 @@ class FactoryNode:
             ):
                 dpg.add_text(
                     tag=node.tag_node_input01_value_name,
-                    default_value='Input Detection Node',
+                    default_value='Image',
+                )
+
+            # JSON input for enable/disable tracking (boolean)
+            with dpg.node_attribute(
+                    tag=node.tag_node_input03_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_input03_value_name,
+                    default_value='JSON (boolean)',
                 )
 
             with dpg.node_attribute(
                     tag=node.tag_node_output01_name,
                     attribute_type=dpg.mvNode_Attr_Output,
             ):
+                dpg.add_text(default_value='Image')
                 dpg.add_image(node.tag_node_output01_value_name)
 
             with dpg.node_attribute(
@@ -136,8 +149,9 @@ class FactoryNode:
                     tag=node.tag_node_output03_name,
                     attribute_type=dpg.mvNode_Attr_Output,
             ):
+                dpg.add_text(default_value='JSON')
                 btn = dpg.add_button(
-                    label="JSON",
+                    label="Tracking Data",
                     tag=node.tag_node_output03_value_name,
                     width=small_window_w,
                     enabled=False,
@@ -195,6 +209,7 @@ class Node(Node):
 
         src_node_name = ''
         connection_info_src = ''
+        json_connection_info_src = ''
         for connection_info in connection_list:
             connection_type = connection_info[0].split(':')[2]
             if connection_type == self.TYPE_INT:
@@ -212,6 +227,11 @@ class Node(Node):
                 connection_info_src = connection_info_src.split(':')[:2]
                 src_node_name = connection_info_src[1]
                 connection_info_src = ':'.join(connection_info_src)
+            elif connection_type == self.TYPE_JSON or connection_type.upper() == 'JSON':
+                # JSON input for enable/disable tracking
+                json_connection_info_src = connection_info[0]
+                json_connection_info_src = json_connection_info_src.split(':')[:2]
+                json_connection_info_src = ':'.join(json_connection_info_src)
 
             else:
                 logger.warning(f'Unknown connection type: {connection_type}')
@@ -221,6 +241,17 @@ class Node(Node):
 
 
         frame = node_image_dict.get(connection_info_src, None)
+        
+        # Get JSON input for enable/disable tracking (default: True)
+        tracking_enabled = True
+        if json_connection_info_src:
+            json_data = node_result_dict.get(json_connection_info_src, None)
+            if json_data is not None:
+                # Extract boolean value from JSON
+                if isinstance(json_data, dict):
+                    tracking_enabled = json_data.get('enabled', True)
+                elif isinstance(json_data, bool):
+                    tracking_enabled = json_data
 
 
         model_name = dpg_get_value(input_value02_tag)
@@ -240,7 +271,7 @@ class Node(Node):
 
 
         result = {}
-        if frame is not None:
+        if frame is not None and tracking_enabled:
             logger.debug(f"Processing tracking for node: {src_node_name}")
             if src_node_name == 'ObjectDetection':
 
@@ -343,6 +374,24 @@ class Node(Node):
                     result['class_names'] = od_class_names
                     result['track_id_dict'] = self._track_id_dict[node_id]
 
+        elif frame is not None and not tracking_enabled:
+            # Tracking is disabled, pass through original detection results without tracking IDs
+            logger.debug(f"Tracking disabled, passing through detection results for node: {src_node_name}")
+            if src_node_name == 'ObjectDetection':
+                node_result = node_result_dict.get(connection_info_src, {})
+                result['bboxes'] = node_result.get('bboxes', [])
+                result['scores'] = node_result.get('scores', [])
+                result['class_ids'] = node_result.get('class_ids', [])
+                result['class_names'] = node_result.get('class_names', [])
+                result['track_ids'] = []  # No tracking IDs when disabled
+            elif src_node_name == 'ReId':
+                node_result = node_result_dict.get(connection_info_src, {})
+                result['bboxes'] = node_result.get('bboxes', [])
+                result['scores'] = node_result.get('scores', [])
+                result['class_ids'] = node_result.get('class_ids', [])
+                result['class_names'] = node_result.get('class_names', [])
+                result['track_ids'] = []  # No tracking IDs when disabled
+
 
         if frame is not None and use_pref_counter:
             elapsed_time = time.monotonic() - start_time
@@ -354,9 +403,16 @@ class Node(Node):
         output_frame = None
         
         if frame is not None:
-            if src_node_name == 'ObjectDetection' or src_node_name == 'Classification' or src_node_name == 'ReId':
+            if src_node_name in ('ObjectDetection', 'Classification', 'ReId') and tracking_enabled and result:
 
                 debug_frame = copy.deepcopy(frame)
+                track_ids = result.get('track_ids', [])
+                t_bboxes = result.get('bboxes', [])
+                t_scores = result.get('scores', [])
+                t_class_ids = result.get('class_ids', [])
+                od_class_names = result.get('class_names', [])
+                track_id_dict = result.get('track_id_dict', {})
+                
                 debug_frame = self.draw_multi_object_tracking_info(
                     debug_frame,
                     track_ids,
@@ -364,13 +420,13 @@ class Node(Node):
                     t_scores,
                     t_class_ids,
                     od_class_names,
-                    self._track_id_dict[node_id],
+                    track_id_dict,
                 )
                 # Return the frame with overlay for downstream nodes
                 output_frame = debug_frame
             else:
-                debug_frame = np.zeros((small_window_w, small_window_h, 3))
-                output_frame = frame  # Return original frame if no tracking data
+                debug_frame = frame if not tracking_enabled else np.zeros((small_window_w, small_window_h, 3))
+                output_frame = frame  # Return original frame if no tracking data or tracking disabled
             texture = self.convert_cv_to_dpg(
                 debug_frame,
                 small_window_w,

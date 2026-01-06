@@ -177,6 +177,7 @@ class FactoryNode:
                 tag=node.tag_node_output01_name,
                 attribute_type=dpg.mvNode_Attr_Output,
             ):
+                dpg.add_text(default_value="Image")
                 dpg.add_image(node.tag_node_output01_value_name)
 
             with dpg.node_attribute(
@@ -319,6 +320,7 @@ class VideoNode(Node):
     _loop_elapsed_time = {}  # Track cumulative time across loops for continuous timestamps
     _preprocessing_status = {}  # Track preprocessing status: 'loading', 'done', 'error', or None
     _preprocessing_threads = {}  # Track preprocessing threads for cleanup
+    _is_playing = {}  # Track whether video is playing or paused
 
     def __init__(self):
         super().__init__()  # Call parent constructor
@@ -575,7 +577,22 @@ class VideoNode(Node):
 
 
     def _button(self, sender, app_data, user_data):
-        print(f"Button clicked for {user_data}")
+        """Toggle play/pause state and update button label"""
+        tag_node_name = user_data
+        node_id = tag_node_name.split(':')[0]
+        tag_node_button_value_name = tag_node_name + ":" + self.TYPE_TEXT + ":ButtonValue"
+        
+        # Toggle playing state
+        current_state = self._is_playing.get(node_id, False)
+        self._is_playing[node_id] = not current_state
+        
+        # Update button label
+        with _dpg_lock:
+            if dpg.does_item_exist(tag_node_button_value_name):
+                new_label = self._stop_label if self._is_playing[node_id] else self._start_label
+                dpg.configure_item(tag_node_button_value_name, label=new_label)
+        
+        print(f"Button clicked for {user_data}, playing: {self._is_playing[node_id]}")
 
     def update(
         self,
@@ -664,7 +681,10 @@ class VideoNode(Node):
             start_time = time.monotonic()
 
         frame = None
-        if video_capture is not None:
+        # Only read frames if video is playing
+        is_playing = self._is_playing.get(str(node_id), False)
+        
+        if video_capture is not None and is_playing:
             # Check frame timing for playback speed control
             current_time = time.time()
             last_time = self._last_frame_time.get(str(node_id), None)

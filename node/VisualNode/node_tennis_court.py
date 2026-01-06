@@ -79,7 +79,7 @@ class FactoryNode:
             ):
                 dpg.add_text(
                     tag=node.tag_node_input_json_value_name,
-                    default_value='Homography JSON',
+                    default_value='JSON',
                 )
 
             # Image Output
@@ -87,6 +87,7 @@ class FactoryNode:
                 tag=node.tag_node_output_image_name,
                 attribute_type=dpg.mvNode_Attr_Output,
             ):
+                dpg.add_text(default_value='Image')
                 dpg.add_image(node.tag_node_output_image_value_name)
 
             # JSON Output
@@ -96,7 +97,7 @@ class FactoryNode:
             ):
                 dpg.add_text(
                     tag=node.tag_node_output_json_value_name,
-                    default_value='Transformed Points JSON',
+                    default_value='JSON',
                 )
 
             # Time Output
@@ -598,8 +599,17 @@ class Node(Node):
         # Update texture if we have an output image
         if output_image is not None:
             try:
+                # Crop the image by 1/6 from each side (top, bottom, left, right)
+                # This keeps only the central 2/3 of width and height
+                h, w = output_image.shape[:2]
+                crop_x = w // 6  # 1/6 from left and right
+                crop_y = h // 6  # 1/6 from top and bottom
+                
+                # Crop the image to central 2/3
+                cropped_image = output_image[crop_y:h-crop_y, crop_x:w-crop_x]
+                
                 texture = self.convert_cv_to_dpg(
-                    output_image,
+                    cropped_image,
                     small_window_w,
                     small_window_h,
                 )
