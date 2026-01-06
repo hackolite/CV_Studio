@@ -560,7 +560,7 @@ class Node(Node):
             offset_x = (small_window_w - court_width_px) // 2
             offset_y = (small_window_h - court_length_px) // 2
             
-            # Draw tennis court (at half scale)
+            # Draw tennis court (with reduced scale: divided by 1.5)
             output_image = self._draw_tennis_court(output_image, template, scale, offset_x, offset_y)
             
             # Draw last known positions (persistent display)

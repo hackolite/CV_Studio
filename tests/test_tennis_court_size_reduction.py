@@ -138,7 +138,7 @@ def test_tennis_court_visualization_with_reduced_size():
     labels = ['person', 'person']
     
     output_with_players = tennis_node._draw_player_positions_with_labels(
-        output_image, test_points, labels, scale=scale, offset_x=offset_x, offset_y=offset_y
+        output_image, test_points, labels, input_points=None, scale=scale, offset_x=offset_x, offset_y=offset_y
     )
     
     assert output_with_players is not None, "Should return image with players"
