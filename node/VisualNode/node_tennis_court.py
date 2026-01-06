@@ -208,9 +208,12 @@ class Node(Node):
         has_alpha = (img.shape[2] == 4) if len(img.shape) == 3 else False
         
         # Convert template coordinates to image coordinates
+        # Flip Y axis: template y=0 (near baseline) should be at bottom of image
+        # template y=23.77 (far baseline) should be at top of image
         def template_to_image(x, y):
             px = int(x * scale + offset_x)
-            py = int(y * scale + offset_y)
+            # Flip Y: invert the Y coordinate relative to court length
+            py = int((self.COURT_LENGTH_M - y) * scale + offset_y)
             return (px, py)
         
         # Color definitions (BGRA format if alpha channel present, otherwise BGR)
@@ -357,7 +360,8 @@ class Node(Node):
             if len(point) >= 2:
                 x_meters, y_meters = point[0], point[1]
                 px = int(x_meters * scale + offset_x)
-                py = int(y_meters * scale + offset_y)
+                # Flip Y axis to match court flip
+                py = int((self.COURT_LENGTH_M - y_meters) * scale + offset_y)
                 
                 # Draw point as colored circle (similar to Tennis-Tracker style)
                 # Using 5px radius for clean, visible markers
@@ -445,7 +449,8 @@ class Node(Node):
                 
                 x_meters, y_meters = point[0], point[1]
                 px = int(x_meters * scale + offset_x)
-                py = int(y_meters * scale + offset_y)
+                # Flip Y axis to match court flip
+                py = int((self.COURT_LENGTH_M - y_meters) * scale + offset_y)
                 
                 # Draw position as larger yellow circle (increased from 5 to 8 pixels)
                 cv2.circle(img, (px, py), 8, player_color, -1)
