@@ -260,6 +260,25 @@ class Node:
 
         return debug_image
 
+    def get_class_name(self, class_id, class_names):
+        """
+        Safely get class name from class_names, handling both dict and list formats.
+        
+        Args:
+            class_id: The class ID (will be converted to int)
+            class_names: Dictionary or list of class names
+            
+        Returns:
+            Class name string, or fallback 'class_N' if not found
+        """
+        class_id_int = int(class_id)
+        if isinstance(class_names, dict):
+            return class_names.get(class_id_int, f"class_{class_id_int}")
+        elif isinstance(class_names, list) and 0 <= class_id_int < len(class_names):
+            return class_names[class_id_int]
+        else:
+            return f"class_{class_id_int}"
+
     def draw_classification_info(
         self,
         image,
@@ -270,7 +289,8 @@ class Node:
         debug_image = copy.deepcopy(image)
         for index, (class_score, class_id) in enumerate(zip(class_scores, class_ids)):
             score = "%.2f" % class_score
-            text = "%s:%s(%s)" % (str(class_id), str(class_names[int(class_id)]), score)
+            class_name = self.get_class_name(class_id, class_names)
+            text = "%s:%s(%s)" % (str(class_id), class_name, score)
             debug_image = cv2.putText(
                 debug_image,
                 text,
@@ -321,7 +341,8 @@ class Node:
             )
 
             score = "%.2f" % score
-            text = "%s:%s(%s)" % (int(class_id), str(class_names[int(class_id)]), score)
+            class_name = self.get_class_name(class_id, class_names)
+            text = "%s:%s(%s)" % (int(class_id), class_name, score)
             debug_image = cv2.putText(
                 debug_image,
                 text,
@@ -374,9 +395,10 @@ class Node:
 
             # Object Detection
             score_text = "%.2f" % od_score
+            od_class_name = self.get_class_name(od_class_id, od_class_names)
             text = "%s:%s(%s)" % (
                 int(od_class_id),
-                str(od_class_names[int(od_class_id)]),
+                od_class_name,
                 score_text,
             )
             debug_image = cv2.putText(
@@ -947,7 +969,8 @@ class Node:
                 thickness=thickness,
             )
 
-            text = "CID:%s(%s)" % (str(int(class_id)), class_names[int(class_id)])
+            class_name = self.get_class_name(class_id, class_names)
+            text = "CID:%s(%s)" % (str(int(class_id)), class_name)
             image = cv2.putText(
                 image,
                 text,

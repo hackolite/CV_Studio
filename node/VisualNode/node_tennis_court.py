@@ -599,17 +599,10 @@ class Node(Node):
         # Update texture if we have an output image
         if output_image is not None:
             try:
-                # Crop the image by 1/6 from each side (top, bottom, left, right)
-                # This keeps only the central 2/3 of width and height
-                h, w = output_image.shape[:2]
-                crop_x = w // 6  # 1/6 from left and right
-                crop_y = h // 6  # 1/6 from top and bottom
-                
-                # Crop the image to central 2/3
-                cropped_image = output_image[crop_y:h-crop_y, crop_x:w-crop_x]
-                
+                # Display full image with margins (no cropping)
+                # This shows the court with 1/6 extra space on top and bottom
                 texture = self.convert_cv_to_dpg(
-                    cropped_image,
+                    output_image,
                     small_window_w,
                     small_window_h,
                 )
