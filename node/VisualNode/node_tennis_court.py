@@ -127,11 +127,11 @@ class Node(Node):
     COURT_LENGTH_M = 23.77  # Full court length
     
     # Visualization constants
-    # Display dimensions: 600x800 (1:1.33 aspect ratio) provides adequate space
+    # Display dimensions: 300x400 (divided by 2 from original 600x800)
     # for tennis court (10.97m x 23.77m, 1:2.17 physical aspect ratio) with margins
-    VISUALIZATION_WIDTH = 600   # Display width in pixels
-    VISUALIZATION_HEIGHT = 800  # Display height in pixels
-    VISUALIZATION_MARGIN = 60   # Total margin in pixels (30px on each side)
+    VISUALIZATION_WIDTH = 300   # Display width in pixels (divided by 2)
+    VISUALIZATION_HEIGHT = 400  # Display height in pixels (divided by 2)
+    VISUALIZATION_MARGIN = 30   # Total margin in pixels (divided by 2)
 
     def __init__(self):
         """
@@ -551,8 +551,8 @@ class Node(Node):
             scale_y = (small_window_h - self.VISUALIZATION_MARGIN) / self.COURT_LENGTH_M
             base_scale = min(scale_x, scale_y)  # Use smaller scale to fit both dimensions
             
-            # REDUCE COURT SIZE BY HALF as per requirement
-            scale = base_scale / 2.0
+            # REDUCE COURT CONTENT BY 1.5 as per requirement (content divided by 1.5)
+            scale = base_scale / 1.5
             
             # Center the court (now smaller)
             court_width_px = int(self.COURT_WIDTH_M * scale)
