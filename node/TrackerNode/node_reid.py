@@ -72,10 +72,10 @@ class FactoryNode:
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 153, 255))
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 153, 255))
 
-        # Initialize slot tracking for this node with 3 default slots
+        # Initialize slot tracking for this node with 2 default slots
         if node.tag_node_name not in node._slot_id:
-            node._slot_id[node.tag_node_name] = 3
-            node._slot_names[node.tag_node_name] = {1: "player1", 2: "player2", 3: "player3"}
+            node._slot_id[node.tag_node_name] = 2
+            node._slot_names[node.tag_node_name] = {1: "player1", 2: "player2"}
 
         with dpg.node(
                 tag=node.tag_node_name,
@@ -107,8 +107,8 @@ class FactoryNode:
             ):
                 dpg.add_image(node.tag_node_output01_value_name)
 
-            # Create 3 default slots
-            for slot_num in range(1, 4):
+            # Create 2 default slots
+            for slot_num in range(1, 3):
                 tag_node_slotXX_name = node.tag_node_name + ':Slot' + str(slot_num).zfill(2)
                 tag_node_slotXX_value_name = tag_node_slotXX_name + 'Value'
                 default_name = f"player{slot_num}"
