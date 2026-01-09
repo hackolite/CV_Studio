@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Test script to verify that all 6 tracking nodes can be instantiated and called
+Test script to verify that all tracking nodes can be instantiated and called
 """
 import sys
 import os
@@ -32,7 +32,10 @@ print("✓ SORT imported successfully")
 from node.TrackerNode.mot.centertrack.mc_centertrack import MultiClassCenterTrack
 print("✓ CenterTrack imported successfully")
 
-print("\nAll 6 trackers imported successfully!")
+from node.TrackerNode.mot.kalman.mc_kalman import MultiClassKalmanFilter
+print("✓ Kalman Filter imported successfully")
+
+print("\nAll trackers imported successfully!")
 
 # Test instantiation
 print("\nTesting tracker instantiation...")
@@ -44,9 +47,10 @@ trackers = {
     'IOU Tracker': MultiClassIOUTracker(),
     'SORT': MultiClassSORT(),
     'CenterTrack': MultiClassCenterTrack(),
+    'Kalman Filter': MultiClassKalmanFilter(),
 }
 
-print("✓ All 6 trackers instantiated successfully")
+print("✓ All trackers instantiated successfully")
 
 # Test with sample data
 print("\nTesting tracker calls with sample data...")
