@@ -42,6 +42,13 @@ class KalmanTrack:
     """
     _next_id = 0
     
+    # Kalman filter tuning parameters
+    MEASUREMENT_NOISE = 10.0  # Measurement noise covariance multiplier
+    PROCESS_NOISE_VELOCITY = 0.01  # Process noise for velocity components
+    PROCESS_NOISE_POSITION = 0.1  # Process noise for position components
+    INITIAL_VELOCITY_UNCERTAINTY = 1000.0  # High uncertainty in initial velocities
+    INITIAL_STATE_UNCERTAINTY = 10.0  # Overall initial state uncertainty
+    
     def __init__(self, bbox, score, class_id):
         """
         Initialize Kalman filter tracker
@@ -83,15 +90,15 @@ class KalmanTrack:
         ])
         
         # Measurement noise covariance
-        self.kf.R *= 10.0
+        self.kf.R *= self.MEASUREMENT_NOISE
         
         # Process noise covariance
-        self.kf.Q[-4:, -4:] *= 0.01  # Velocity uncertainty
-        self.kf.Q[:4, :4] *= 0.1     # Position uncertainty
+        self.kf.Q[-4:, -4:] *= self.PROCESS_NOISE_VELOCITY  # Velocity uncertainty
+        self.kf.Q[:4, :4] *= self.PROCESS_NOISE_POSITION     # Position uncertainty
         
         # Initial state covariance
-        self.kf.P[4:, 4:] *= 1000.0  # High uncertainty in velocities
-        self.kf.P *= 10.0
+        self.kf.P[4:, 4:] *= self.INITIAL_VELOCITY_UNCERTAINTY  # High uncertainty in velocities
+        self.kf.P *= self.INITIAL_STATE_UNCERTAINTY
         
         # Initialize state from bbox
         x1, y1, x2, y2 = bbox
@@ -150,6 +157,9 @@ class KalmanFilterTracker:
     """
     Multi-object Kalman filter tracker
     """
+    # Constant for marking matched entries in IOU matrix
+    MATCHED_MASK = -1.0
+    
     def __init__(
         self,
         iou_threshold=0.3,
@@ -296,7 +306,7 @@ class KalmanFilterTracker:
                 unmatched_trks.remove(max_iou_idx[0])
             
             # Remove matched row and column from IOU matrix
-            iou_matrix[max_iou_idx[0], :] = -1
-            iou_matrix[:, max_iou_idx[1]] = -1
+            iou_matrix[max_iou_idx[0], :] = self.MATCHED_MASK
+            iou_matrix[:, max_iou_idx[1]] = self.MATCHED_MASK
         
         return matched, unmatched_dets, unmatched_trks
