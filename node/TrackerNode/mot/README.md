@@ -9,3 +9,4 @@
 | CenterTrack<br> (2024) | Custom Implementation | MIT | Centroid-based tracker using distance metrics for object association |
 | **OC-SORT**<br> (2024) | [noahcao/OC_SORT](https://github.com/noahcao/OC_SORT) | MIT | **Ultra-fast tracker with observation-centric momentum. Ideal for tennis and fast sports** |
 | **BoT-SORT**<br> (2024) | [NirAharon/BoT-SORT](https://github.com/NirAharon/BoT-SORT) | MIT | **Ultra-fast tracker with GIoU and improved association. Optimized for sports scenarios** |
+| **Kalman Filter**<br> (2026) | Custom Implementation | MIT | **Simple Kalman filter-based tracker with constant velocity model. Uses filterpy for robust state estimation** |
