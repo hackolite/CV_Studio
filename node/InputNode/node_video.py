@@ -890,6 +890,7 @@ class VideoNode(Node):
         Callback when a video file is selected.
         Runs preprocessing in a background thread to avoid blocking the UI.
         Only preprocesses if "On-the-fly (fast mode)" is unchecked (to extract audio).
+        Displays the first frame as a preview immediately after selection.
         """
         if data["file_name"] != ".":
             node_id = sender.split(":")[1]
@@ -899,6 +900,29 @@ class VideoNode(Node):
             # Check if we should preprocess (when "On-the-fly" is unchecked)
             tag_node_name = str(node_id) + ":" + self.node_tag
             tag_node_input06_value_name = tag_node_name + ":" + self.TYPE_TEXT + ":Input06Value"
+            tag_node_output_image = tag_node_name + ":" + self.TYPE_IMAGE + ":Output01Value"
+            
+            # Load and display first frame as preview
+            try:
+                preview_cap = cv2.VideoCapture(file_path)
+                ret, first_frame = preview_cap.read()
+                preview_cap.release()
+                
+                if ret and first_frame is not None:
+                    # Convert first frame to texture and display it
+                    texture = self.convert_cv_to_dpg(
+                        first_frame,
+                        self._small_window_w,
+                        self._small_window_h,
+                    )
+                    with _dpg_lock:
+                        if dpg.does_item_exist(tag_node_output_image):
+                            dpg_set_value(tag_node_output_image, texture)
+                    print(f"🖼️ Preview: First frame displayed for {os.path.basename(file_path)}")
+                else:
+                    print(f"⚠️ Could not read first frame from video: {file_path}")
+            except Exception as e:
+                print(f"⚠️ Error loading preview frame: {e}")
             
             # Get the checkbox value - if checked (on-the-fly mode), skip preprocessing
             on_the_fly_mode = dpg_get_value(tag_node_input06_value_name)
