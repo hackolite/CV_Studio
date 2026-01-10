@@ -76,6 +76,18 @@ class FactoryNode:
         node.tag_node_rejected_classes_name = node.tag_node_name + ':RejectedClasses'
         node.tag_node_rejected_classes_value_name = node.tag_node_name + ':RejectedClassesValue'
 
+        # Callback to update rejected classes dropdown when model changes
+        def on_model_change(sender, app_data, user_data):
+            """Update the rejected classes dropdown when model selection changes"""
+            selected_model = app_data
+            if selected_model in node._model_class_name_list:
+                class_names = node._model_class_name_list[selected_model]
+                class_items = get_class_rejection_dropdown_items(class_names)
+                # Update the dropdown items
+                dpg.configure_item(node.tag_node_rejected_classes_value_name, items=class_items)
+                # Clear the rejected classes selection to avoid invalid class IDs
+                dpg_set_value(node.tag_node_rejected_classes_value_name, "")
+
         node.tag_node_output_image_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
         node.tag_node_output_image = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
         
@@ -154,6 +166,7 @@ class FactoryNode:
                     default_value=list(node._model_class.keys())[0],
                     width=small_window_w,
                     tag=node.tag_node_input_text_value_name,
+                    callback=on_model_change,
                 )
             if use_gpu:
 

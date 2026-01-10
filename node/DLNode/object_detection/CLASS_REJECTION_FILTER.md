@@ -11,7 +11,10 @@ The Object Detection node now includes a **Class Rejection Filter** feature that
 1. In the Object Detection node, locate the **"Reject"** dropdown field
 2. Select the class you want to reject from the dropdown list (e.g., "0: person")
 3. The dropdown shows all available classes in the format "ID: name"
-4. The specified classes will be filtered out from the detection results
+4. **The dropdown automatically updates** when you change the model selection to show only the classes available for the selected model
+5. The specified classes will be filtered out from the detection results
+
+**Note:** When you switch models (e.g., from YOLOX to YOLOTENNIS), the rejected classes selection is automatically cleared to prevent invalid class IDs. You'll need to reselect any classes you want to reject for the new model.
 
 ### Examples
 
@@ -42,9 +45,9 @@ The filter still supports the legacy text format:
 
 ## Class IDs
 
-The class IDs correspond to the classes defined in the COCO dataset or the specific model being used:
+The class IDs correspond to the classes defined in the COCO dataset or the specific model being used. The dropdown automatically displays the correct classes for the selected model.
 
-**COCO Classes (common):**
+**COCO Classes (YOLOX, YOLO11, FreeYOLO):**
 - 0: person
 - 1: bicycle
 - 2: car
@@ -52,6 +55,14 @@ The class IDs correspond to the classes defined in the COCO dataset or the speci
 - 5: bus
 - 7: truck
 - ... (see coco_class_names.py for full list)
+
+**Light-Weight Person Detector:**
+- 0: person
+
+**Tennis Model (YOLOTENNIS):**
+- 0: player1
+- 1: player2
+- 2: ball
 
 ## Behavior
 
