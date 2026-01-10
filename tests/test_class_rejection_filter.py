@@ -8,14 +8,23 @@ import numpy as np
 
 
 def parse_rejected_classes(rejected_classes_str):
-    """Parse the rejected classes string into a set of integers"""
+    """Parse the rejected classes string into a set of integers.
+    
+    Supports both legacy format ("0,1,2") and new dropdown format ("0: person, 1: bicycle")
+    """
     rejected_classes = set()
     if rejected_classes_str and rejected_classes_str.strip():
         for class_str in rejected_classes_str.split(','):
             class_str = class_str.strip()
             if class_str:
                 try:
-                    rejected_classes.add(int(class_str))
+                    # If format is "ID: name", extract just the ID part
+                    if ':' in class_str:
+                        class_id_str = class_str.split(':')[0].strip()
+                        rejected_classes.add(int(class_id_str))
+                    else:
+                        # Legacy format: just the number
+                        rejected_classes.add(int(class_str))
                 except ValueError:
                     # Skip invalid class IDs
                     pass
@@ -211,6 +220,24 @@ def test_end_to_end_scenario():
     assert 1 in filtered_class_ids
 
 
+def test_parse_dropdown_format_single():
+    """Test parsing single class in dropdown format"""
+    result = parse_rejected_classes("0: person")
+    assert result == {0}
+
+
+def test_parse_dropdown_format_multiple():
+    """Test parsing multiple classes in dropdown format"""
+    result = parse_rejected_classes("0: person, 1: bicycle, 2: car")
+    assert result == {0, 1, 2}
+
+
+def test_parse_mixed_format():
+    """Test parsing mixed format (dropdown and legacy)"""
+    result = parse_rejected_classes("0: person, 2")
+    assert result == {0, 2}
+
+
 if __name__ == '__main__':
     # Run all tests
     test_parse_rejected_classes_single()
@@ -254,5 +281,15 @@ if __name__ == '__main__':
     
     test_end_to_end_scenario()
     print("✓ test_end_to_end_scenario passed")
+    
+    # New tests for dropdown format
+    test_parse_dropdown_format_single()
+    print("✓ test_parse_dropdown_format_single passed")
+    
+    test_parse_dropdown_format_multiple()
+    print("✓ test_parse_dropdown_format_multiple passed")
+    
+    test_parse_mixed_format()
+    print("✓ test_parse_mixed_format passed")
     
     print("\n✅ All tests passed!")
