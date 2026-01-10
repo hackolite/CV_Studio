@@ -8,23 +8,32 @@ The Object Detection node now includes a **Class Rejection Filter** feature that
 
 ### Rejecting Classes
 
-1. In the Object Detection node, locate the **"Reject"** text input field
-2. Enter the class IDs you want to reject, separated by commas
-3. The specified classes will be filtered out from the detection results
+1. In the Object Detection node, locate the **"Reject"** dropdown field
+2. Select the class you want to reject from the dropdown list (e.g., "0: person")
+3. The dropdown shows all available classes in the format "ID: name"
+4. The specified classes will be filtered out from the detection results
 
 ### Examples
 
 **Reject persons (class 0):**
+Select "0: person" from the dropdown, or manually enter:
 ```
 0
 ```
 
 **Reject multiple classes (persons, bicycles, cars):**
+You can manually enter comma-separated values in the dropdown:
 ```
 0, 1, 2
 ```
 
-**Reject with various spacing formats (all valid):**
+Or use the dropdown format:
+```
+0: person, 1: bicycle, 2: car
+```
+
+**Backward compatibility:**
+The filter still supports the legacy text format:
 ```
 0,1,2
 0, 1, 2

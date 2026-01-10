@@ -24,6 +24,22 @@ from src.utils.gpu_utils import get_execution_providers
 logger = get_logger(__name__)
 
 
+def get_class_rejection_dropdown_items(class_name_dict):
+    """Generate dropdown items for class rejection with class IDs and names.
+    
+    Args:
+        class_name_dict: Dictionary mapping class IDs to class names
+        
+    Returns:
+        List of formatted strings for dropdown (e.g., ["0: person", "1: bicycle", ...])
+    """
+    items = []
+    for class_id in sorted(class_name_dict.keys()):
+        class_name = class_name_dict[class_id]
+        items.append(f"{class_id}: {class_name}")
+    return items
+
+
 
 class FactoryNode:
     node_label = 'ObjectDetection'
@@ -166,15 +182,20 @@ class FactoryNode:
                     callback=None,
                 )
 
-            # Rejected classes input field
+            # Rejected classes dropdown
             with dpg.node_attribute(
                     tag=node.tag_node_rejected_classes_name,
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
-                dpg.add_input_text(
+                # Get class names for the default model to populate dropdown
+                default_model = list(node._model_class.keys())[0]
+                default_class_names = node._model_class_name_list[default_model]
+                class_items = get_class_rejection_dropdown_items(default_class_names)
+                
+                dpg.add_combo(
                     tag=node.tag_node_rejected_classes_value_name,
                     label="Reject",
-                    hint="e.g. 0,1,2",
+                    items=class_items,
                     width=small_window_w - 80,
                     default_value="",
                 )
@@ -411,11 +432,20 @@ class Node(Node):
                             if rejected_classes_str and rejected_classes_str.strip():
                                 # Parse the rejected class IDs
                                 rejected_classes = set()
+                                
+                                # Handle dropdown format "0: person" or legacy format "0,1,2"
+                                # Split by comma first
                                 for class_str in rejected_classes_str.split(','):
                                     class_str = class_str.strip()
                                     if class_str:
                                         try:
-                                            rejected_classes.add(int(class_str))
+                                            # If format is "ID: name", extract just the ID part
+                                            if ':' in class_str:
+                                                class_id_str = class_str.split(':')[0].strip()
+                                                rejected_classes.add(int(class_id_str))
+                                            else:
+                                                # Legacy format: just the number
+                                                rejected_classes.add(int(class_str))
                                         except ValueError:
                                             # Skip invalid class IDs
                                             pass
