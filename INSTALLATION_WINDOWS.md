@@ -27,7 +27,8 @@ This guide explains how to install and run CV Studio on Windows for development 
 
 ### Required Software
 
-1. **Python 3.7 or later** (3.10 or 3.11 recommended)
+1. **Python 3.8 or later** (3.10 or 3.11 recommended)
+   - Note: While Python 3.7 is theoretically supported, Python 3.8+ is recommended for better compatibility with DearPyGUI
 2. **Git for Windows** (optional but recommended)
 3. **Microsoft Visual C++ Redistributable** (usually already installed)
 
@@ -37,7 +38,7 @@ This guide explains how to install and run CV Studio on Windows for development 
 
 1. **Download Python** from the official website:
    - Go to [https://www.python.org/downloads/](https://www.python.org/downloads/)
-   - Download the latest Python 3.11 or 3.10 version for Windows
+   - Download the latest Python 3.11 or 3.10 version for Windows (or minimum 3.8)
 
 2. **Run the installer**:
    - ⚠️ **IMPORTANT**: Check "Add Python to PATH" at the bottom of the window
@@ -340,8 +341,17 @@ See [BUILD_EXE_GUIDE.md](BUILD_EXE_GUIDE.md) to create your own .exe file.
    - Create a `launchCV_Studio.bat` file with the content:
      ```batch
      @echo off
+     REM Navigate to script directory
      cd /d "%~dp0"
+     REM Activate virtual environment
      call venv\Scripts\activate.bat
+     if %errorlevel% neq 0 (
+         echo Error: Unable to activate virtual environment
+         echo Make sure the venv folder exists
+         pause
+         exit /b 1
+     )
+     REM Start CV Studio
      python main.py
      pause
      ```

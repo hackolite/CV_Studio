@@ -27,7 +27,8 @@ Ce guide explique comment installer et exécuter CV Studio sous Windows pour le 
 
 ### Logiciels requis
 
-1. **Python 3.7 ou supérieur** (3.10 ou 3.11 recommandé)
+1. **Python 3.8 ou supérieur** (3.10 ou 3.11 recommandé)
+   - Note : Bien que Python 3.7 soit théoriquement supporté, Python 3.8+ est recommandé pour une meilleure compatibilité avec DearPyGUI
 2. **Git pour Windows** (optionnel mais recommandé)
 3. **Microsoft Visual C++ Redistributable** (généralement déjà installé)
 
@@ -37,7 +38,7 @@ Ce guide explique comment installer et exécuter CV Studio sous Windows pour le 
 
 1. **Téléchargez Python** depuis le site officiel :
    - Allez sur [https://www.python.org/downloads/](https://www.python.org/downloads/)
-   - Téléchargez la dernière version de Python 3.11 ou 3.10 pour Windows
+   - Téléchargez la dernière version de Python 3.11 ou 3.10 pour Windows (ou minimum 3.8)
 
 2. **Lancez l'installateur** :
    - ⚠️ **IMPORTANT** : Cochez "Add Python to PATH" en bas de la fenêtre
@@ -344,6 +345,12 @@ Consultez [BUILD_EXE_GUIDE_FR.md](BUILD_EXE_GUIDE_FR.md) pour créer votre propr
      cd /d "%~dp0"
      REM Activer l'environnement virtuel
      call venv\Scripts\activate.bat
+     if %errorlevel% neq 0 (
+         echo Erreur: Impossible d'activer l'environnement virtuel
+         echo Assurez-vous que le dossier venv existe
+         pause
+         exit /b 1
+     )
      REM Démarrer CV Studio
      python main.py
      pause
