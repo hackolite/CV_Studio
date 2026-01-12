@@ -340,8 +340,11 @@ Consultez [BUILD_EXE_GUIDE_FR.md](BUILD_EXE_GUIDE_FR.md) pour créer votre propr
    - Créez un fichier `lancerCV_Studio.bat` avec le contenu :
      ```batch
      @echo off
+     REM Se déplacer dans le dossier du script
      cd /d "%~dp0"
+     REM Activer l'environnement virtuel
      call venv\Scripts\activate.bat
+     REM Démarrer CV Studio
      python main.py
      pause
      ```
