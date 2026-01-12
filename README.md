@@ -42,6 +42,10 @@ filterpy        1.4.5 or later   ※ Required for MOT (Multi-Object Tracking) no
 
 ## 🚀 Installation
 
+> 🇫🇷 **Pour les utilisateurs francophones** : [Guide d'Installation Windows en Français](INSTALLATION_WINDOWS_FR.md)
+> 
+> 🇫🇷 **For French speakers** : [Windows Installation Guide in French](INSTALLATION_WINDOWS_FR.md)
+
 ### Method 1: Direct Installation (Recommended)
 
 1. **Clone the repository**
@@ -1454,6 +1458,7 @@ Sample images are sourced from:
 - **Issues:** [GitHub Issues](https://github.com/hackolite/CV_Studio/issues)
 - **Discussions:** [GitHub Discussions](https://github.com/hackolite/CV_Studio/discussions)
 - **Documentation:** See the docs in this repository
+- **🇫🇷 Installation Windows (Français):** [INSTALLATION_WINDOWS_FR.md](INSTALLATION_WINDOWS_FR.md)
 
 ---
 
