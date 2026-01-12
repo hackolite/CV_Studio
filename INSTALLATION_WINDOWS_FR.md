@@ -28,7 +28,8 @@ Ce guide explique comment installer et exécuter CV Studio sous Windows pour le 
 ### Logiciels requis
 
 1. **Python 3.7 ou supérieur** (3.10 ou 3.11 recommandé)
-   - Python 3.7 est supporté, mais Python 3.8+ est recommandé pour une expérience optimale et une meilleure compatibilité avec les versions récentes de DearPyGUI
+   - Python 3.7 à 3.12 sont officiellement supportés par CV Studio
+   - Python 3.8+ est recommandé pour une expérience optimale avec toutes les dépendances
 2. **Git pour Windows** (optionnel mais recommandé)
 3. **Microsoft Visual C++ Redistributable** (généralement déjà installé)
 
@@ -237,7 +238,8 @@ pip install opencv-python
 
 **Erreur avec dearpygui** :
 - Assurez-vous d'utiliser Python 64 bits
-- Essayez : `pip install dearpygui==1.11.0`
+- Essayez de réinstaller : `pip install --upgrade dearpygui`
+- Ou utilisez la version spécifiée dans requirements.txt : `pip install -r requirements.txt --force-reinstall`
 
 **Erreur "Microsoft Visual C++ 14.0 is required"** :
 1. Téléchargez et installez [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)

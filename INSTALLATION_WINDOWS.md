@@ -28,7 +28,8 @@ This guide explains how to install and run CV Studio on Windows for development 
 ### Required Software
 
 1. **Python 3.7 or later** (3.10 or 3.11 recommended)
-   - Python 3.7 is supported, but Python 3.8+ is recommended for optimal experience and better compatibility with recent DearPyGUI versions
+   - Python 3.7 to 3.12 are officially supported by CV Studio
+   - Python 3.8+ is recommended for optimal experience with all dependencies
 2. **Git for Windows** (optional but recommended)
 3. **Microsoft Visual C++ Redistributable** (usually already installed)
 
@@ -237,7 +238,8 @@ pip install opencv-python
 
 **Error with dearpygui**:
 - Make sure you're using 64-bit Python
-- Try: `pip install dearpygui==1.11.0`
+- Try reinstalling: `pip install --upgrade dearpygui`
+- Or use the version specified in requirements.txt: `pip install -r requirements.txt --force-reinstall`
 
 **Error "Microsoft Visual C++ 14.0 is required"**:
 1. Download and install [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)
