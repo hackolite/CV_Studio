@@ -42,6 +42,10 @@ filterpy        1.4.5 or later   ※ Required for MOT (Multi-Object Tracking) no
 
 ## 🚀 Installation
 
+> **📘 Windows Users**: For detailed Windows-specific installation instructions with troubleshooting, see:
+> - 🇬🇧 [INSTALLATION_WINDOWS.md](INSTALLATION_WINDOWS.md) (English)
+> - 🇫🇷 [INSTALLATION_WINDOWS_FR.md](INSTALLATION_WINDOWS_FR.md) (Français)
+
 ### Method 1: Direct Installation (Recommended)
 
 1. **Clone the repository**
