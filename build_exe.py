@@ -111,8 +111,21 @@ def check_requirements():
     if missing_packages:
         print(f"\nWARNING: Missing packages: {', '.join(missing_packages)}")
         print("Install them with: pip install -r requirements.txt")
-        response = input("Continue anyway? (y/N): ")
-        if response.lower() != 'y':
+        
+        # Check if running in non-interactive environment (CI/CD)
+        if not sys.stdin.isatty():
+            print("Running in non-interactive mode (CI/CD detected)")
+            print("ERROR: Cannot continue with missing packages in non-interactive mode")
+            return False
+        
+        # Interactive mode: ask user
+        try:
+            response = input("Continue anyway? (y/N): ")
+            if response.lower() != 'y':
+                return False
+        except EOFError:
+            # Handle EOF error gracefully
+            print("\nERROR: Cannot read input (non-interactive environment)")
             return False
     
     print()
