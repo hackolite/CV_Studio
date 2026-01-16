@@ -36,6 +36,8 @@ hiddenimports += collect_submodules('matplotlib')
 hiddenimports += collect_submodules('pafy')
 hiddenimports += collect_submodules('youtube_dl')
 hiddenimports += collect_submodules('yt_dlp')
+hiddenimports += collect_submodules('filterpy')
+hiddenimports += collect_submodules('pymongo')
 
 # Add explicit hidden imports for node modules
 hiddenimports += [
@@ -69,6 +71,10 @@ hiddenimports += [
     'pafy',
     'youtube_dl',
     'yt_dlp',
+    'filterpy',
+    'filterpy.kalman',
+    'filterpy.common',
+    'pymongo',
 ]
 
 # Collect data files
