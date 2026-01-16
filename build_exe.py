@@ -95,6 +95,8 @@ def check_requirements():
         'norfair': 'norfair',
         'filterpy': 'filterpy',
         'ffmpeg-python': 'ffmpeg',
+        'rich': 'rich',
+        'scikit-learn': 'sklearn',
     }
     
     missing_packages = []

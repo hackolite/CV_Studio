@@ -22,3 +22,4 @@ lap>=0.4.0
 cython-bbox>=0.1.3
 motpy>=0.0.10
 norfair>=2.2.0
+rich>=10.0.0
