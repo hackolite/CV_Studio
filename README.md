@@ -706,7 +706,7 @@ class MyNode(EnhancedNode):
 
 ## 🧪 Testing
 
-CV Studio includes comprehensive test coverage (52+ tests).
+CV Studio includes comprehensive test coverage with 150+ test files and pytest configuration.
 
 ### Run Tests
 
@@ -718,7 +718,7 @@ python -m pytest tests/ -v
 python -m pytest tests/test_utils/ -v
 python -m pytest tests/test_core/ -v
 
-# Run queue system tests (NEW)
+# Run queue system tests
 python -m pytest tests/test_timestamped_queue.py tests/test_queue_adapter.py tests/test_queue_integration.py -v
 
 # Run with coverage report
@@ -727,15 +727,31 @@ python -m pytest tests/ --cov=src --cov=node --cov-report=html
 
 ### Test Coverage
 
+**Core Architecture Tests:**
+- ✅ Base node class (14 tests) 🆕
+- ✅ Enhanced node class (22 tests) 🆕
+- ✅ DPG node ABC (16 tests) 🆕
+- ✅ Node factory (7 tests)
+- ✅ Settings management (10 tests)
+
+**Utilities Tests:**
 - ✅ Exception hierarchy (7 tests)
 - ✅ Logging utilities (6 tests)
 - ✅ Resource management (8 tests)
-- ✅ Node factory (7 tests)
-- ✅ Settings management (10 tests)
-- ✅ **Timestamped queue system (35 tests)** ← NEW
+- ✅ GPU utilities (7 tests)
+
+**Queue System Tests:**
+- ✅ **Timestamped queue system (35 tests)**
   - Core queue functionality (17 tests)
   - Backward compatibility adapter (12 tests)
   - Integration with node system (6 tests)
+
+**Node Integration Tests:**
+- ✅ 150+ integration tests for various node implementations
+- ✅ Video processing nodes
+- ✅ Audio processing nodes
+- ✅ Object detection and tracking nodes
+- ✅ And many more...
 
 ## 📚 Available Nodes
 
