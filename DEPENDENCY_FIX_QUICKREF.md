@@ -87,9 +87,9 @@ ActionNode → MongoDB → Configure connection
 
 ## ⚠️ Note Importante / Important Note
 
-**unittest** reste exclu (correct) - il n'est utilisé que pour les tests de développement et ne doit pas être inclus dans l'exécutable de production.
+**unittest** est maintenant inclus (support ajouté) - il est nécessaire pour certaines fonctionnalités avancées et pour la compatibilité avec des bibliothèques qui en dépendent.
 
-**unittest** remains excluded (correct) - it's only used for development tests and should not be included in the production executable.
+**unittest** is now included (support added) - it's needed for certain advanced features and compatibility with libraries that depend on it.
 
 ---
 

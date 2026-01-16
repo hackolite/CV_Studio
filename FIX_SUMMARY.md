@@ -85,7 +85,7 @@ hiddenimports += [
 |--------|----------------|---------------|
 | **filterpy** | ❌ Manquant / Missing | ✅ Inclus / Included |
 | **pymongo** | ❌ Manquant / Missing | ✅ Inclus / Included |
-| **unittest** | ✅ Exclu (correct) | ✅ Exclu (correct) |
+| **unittest** | ✅ Inclus (support ajouté) | ✅ Inclus (support ajouté) |
 | **Taille ajoutée / Size added** | - | ~15-20 MB |
 | **Vulnérabilités / Vulnerabilities** | - | ✅ Aucune / None |
 
@@ -176,7 +176,7 @@ After rebuilding the executable:
 ```
 ✅ filterpy  → Inclus dans .exe / Included in .exe
 ✅ pymongo   → Inclus dans .exe / Included in .exe
-✅ unittest  → Exclu (correct) / Excluded (correct)
+✅ unittest  → Inclus (support ajouté) / Included (support added)
 ✅ Tests     → Tous passés / All passed
 ✅ Sécurité  → Aucune vulnérabilité / No vulnerabilities
 ```

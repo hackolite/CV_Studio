@@ -80,13 +80,13 @@ The MongoDB node now works correctly:
 - Collection management
 ```
 
-### 3. unittest (Excluded - Correct)
+### 3. unittest (Included)
 
-The `unittest` module remains **excluded** from the executable because:
-- ✓ Only used for development tests
-- ✓ Not needed in production
-- ✓ Reduces executable size
-- ✓ Avoids including test code in distribution
+The `unittest` module is now **included** in the executable for:
+- ✓ Support for unittest.mock for advanced features
+- ✓ Compatibility with libraries that depend on it
+- ✓ Enable diagnostic features at runtime
+- ✓ Full support for integrated testing tools
 
 ## Verifying the Fix
 
@@ -173,7 +173,7 @@ pyinstaller CV_Studio.spec
 ### Version 1.0 - Initial Fix
 - ✓ Added filterpy for TrackerNodes
 - ✓ Added pymongo for MongoDB node
-- ✓ Confirmed unittest exclusion (correct)
+- ✓ Confirmed unittest inclusion (support added)
 
 ## Troubleshooting
 
@@ -217,7 +217,7 @@ Before distributing the executable:
 
 - [x] filterpy added to hiddenimports
 - [x] pymongo added to hiddenimports
-- [x] unittest remains excluded (correct)
+- [x] unittest is now included (support added)
 - [ ] Successful executable build
 - [ ] Test TrackerNodes (SORT, BotSORT, etc.)
 - [ ] Test MongoDB node (if applicable)
