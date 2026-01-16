@@ -129,7 +129,6 @@ a = Analysis(
         'notebook',
         'sphinx',
         'pytest',
-        'unittest',
         'test',
         'tests',
     ],

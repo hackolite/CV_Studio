@@ -80,13 +80,13 @@ Le nœud MongoDB fonctionne maintenant correctement:
 - Gestion des collections
 ```
 
-### 3. unittest (Exclu - Correct)
+### 3. unittest (Inclus)
 
-Le module `unittest` reste **exclu** de l'exécutable car:
-- ✓ Utilisé uniquement pour les tests de développement
-- ✓ N'est pas nécessaire en production
-- ✓ Réduit la taille de l'exécutable
-- ✓ Évite d'inclure du code de test dans la distribution
+Le module `unittest` est maintenant **inclus** dans l'exécutable pour:
+- ✓ Support de unittest.mock pour les fonctionnalités avancées
+- ✓ Compatibilité avec certaines bibliothèques qui en dépendent
+- ✓ Permettre les fonctionnalités de diagnostic au runtime
+- ✓ Support complet des outils de test intégrés
 
 ## Vérification de la Correction
 
@@ -217,7 +217,7 @@ Avant de distribuer l'exécutable:
 
 - [x] filterpy ajouté à hiddenimports
 - [x] pymongo ajouté à hiddenimports
-- [x] unittest reste exclu (correct)
+- [x] unittest est maintenant inclus (support ajouté)
 - [ ] Build de l'exécutable réussi
 - [ ] Test des TrackerNodes (SORT, BotSORT, etc.)
 - [ ] Test du nœud MongoDB (si applicable)
