@@ -9,6 +9,7 @@ ffmpeg-python
 serial
 pytest 
 youtube-dl
+yt-dlp
 pymongo
 librosa
 matplotlib
