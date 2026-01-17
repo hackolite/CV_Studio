@@ -11,6 +11,7 @@ pytest
 youtube-dl
 yt-dlp
 pymongo
+pytz
 librosa
 matplotlib
 soundfile
