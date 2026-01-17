@@ -1,3 +1,6 @@
+# NOTE: numpy must be listed first because some packages below (like lap)
+# require numpy to be available during their build process.
+# Keep numpy at the top of this file to ensure proper installation order.
 numpy>=1.21.0
 opencv-contrib-python>=4.5.5.64
 onnxruntime-gpu

@@ -36,24 +36,28 @@ jobs:
       run: |
         python -m pip install --upgrade pip setuptools wheel
 
-    # 4️⃣ Installer toutes les dépendances
+    # 4️⃣ Installer les dépendances de build d'abord
+    - name: Install build dependencies first
+      run: |
+        pip install numpy>=1.21.0 Cython>=0.29.36
+    
+    # 5️⃣ Installer toutes les dépendances
     - name: Install dependencies
       run: |
-        pip install numpy>=1.21.0
-        pip install -r requirements.txt
+        pip install --no-build-isolation -r requirements.txt
         pip install pyinstaller
 
-    # 5️⃣ Nettoyer d'anciens builds pour éviter les conflits
+    # 6️⃣ Nettoyer d'anciens builds pour éviter les conflits
     - name: Clean previous builds
       run: |
         Remove-Item -Recurse -Force build, dist, CV_Studio.spec -ErrorAction SilentlyContinue
 
-    # 6️⃣ Build l’exécutable avec PyInstaller
+    # 7️⃣ Build l’exécutable avec PyInstaller
     - name: Build executable with PyInstaller
       run: |
         python build_exe.py --clean
 
-    # 7️⃣ Vérifier le build et afficher les tailles
+    # 8️⃣ Vérifier le build et afficher les tailles
     - name: Verify build
       run: |
         if (Test-Path "dist/CV_Studio/CV_Studio.exe") {
@@ -68,12 +72,12 @@ jobs:
           exit 1
         }
 
-    # 8️⃣ Créer l’archive zip
+    # 9️⃣ Créer l’archive zip
     - name: Create archive
       run: |
         Compress-Archive -Path dist/CV_Studio -DestinationPath CV_Studio-Windows.zip
 
-    # 9️⃣ Upload de l’artefact pour le workflow
+    # 🔟 Upload de l’artefact pour le workflow
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
@@ -81,7 +85,7 @@ jobs:
         path: CV_Studio-Windows.zip
         retention-days: 30
 
-    # 🔟 Upload sur la release si trigger par release
+    # 1️⃣1️⃣ Upload sur la release si trigger par release
     - name: Upload to release (if triggered by release)
       if: github.event_name == 'release'
       uses: softprops/action-gh-release@v1

@@ -156,6 +156,13 @@ This command will install all necessary libraries:
 
 ⏱️ **Installation may take 5-10 minutes** depending on your Internet connection.
 
+> **Note**: If you encounter an error about the `lap` package requiring numpy during installation, you can install it manually first:
+> ```cmd
+> pip install numpy>=1.21.0
+> pip install -r requirements.txt
+> ```
+> This ensures numpy is available before packages that need it at build time.
+
 ## Running the Application
 
 Once installation is complete, you can launch CV Studio:
