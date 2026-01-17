@@ -48,14 +48,41 @@ jobs:
         pip install pyinstaller
 
     # 6️⃣ Nettoyer d'anciens builds pour éviter les conflits
-    - name: Clean previous builds
+    - name: Verify required files exist
       run: |
-        Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
+        Write-Host "Current directory: $(Get-Location)"
+        Write-Host "`nChecking for required files..."
+        if (Test-Path "CV_Studio.spec") {
+          Write-Host "✓ CV_Studio.spec found"
+          Write-Host "File size: $((Get-Item CV_Studio.spec).Length) bytes"
+        } else {
+          Write-Error "✗ CV_Studio.spec NOT found!"
+          Write-Host "`nFiles in directory:"
+          Get-ChildItem -Name | Select-Object -First 20
+          exit 1
+        }
+        if (Test-Path "main.py") {
+          Write-Host "✓ main.py found"
+        } else {
+          Write-Error "✗ main.py NOT found!"
+          exit 1
+        }
 
     # 7️⃣ Build l’exécutable avec PyInstaller
     - name: Build executable with PyInstaller
       run: |
-        python build_exe.py --clean
+        # Nettoyer les anciens builds
+        Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
+        Write-Host "✓ Cleaned previous builds"
+        
+        # Lancer PyInstaller directement
+        Write-Host "`nBuilding executable with PyInstaller..."
+        python -m PyInstaller CV_Studio.spec --clean
+        
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "PyInstaller build failed"
+          exit 1
+        }
 
     # 8️⃣ Vérifier le build et afficher les tailles
     - name: Verify build
