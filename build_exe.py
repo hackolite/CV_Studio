@@ -41,11 +41,6 @@ import shutil
 import subprocess
 import argparse
 
-# Change to the script's directory to ensure correct relative paths
-# This allows the script to be run from any directory
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-os.chdir(SCRIPT_DIR)
-
 # Ensure UTF-8 encoding for Windows console output
 if sys.platform == 'win32':
     import io
@@ -60,8 +55,6 @@ def print_banner():
     print("=" * 70)
     print("  CV_Studio - Executable Build Script")
     print("  Building standalone .exe with PyInstaller")
-    print("=" * 70)
-    print(f"  Working directory: {os.getcwd()}")
     print("=" * 70)
     print()
 
@@ -372,6 +365,11 @@ def print_summary():
 
 def main():
     """Main build script"""
+    # Change to the script's directory to ensure correct relative paths
+    # This allows the script to be run from any directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(script_dir)
+    
     parser = argparse.ArgumentParser(
         description='Build CV_Studio standalone executable',
         formatter_class=argparse.RawDescriptionHelpFormatter,
