@@ -66,11 +66,13 @@ def test_matplotlib_version_is_modern():
     for line in requirements.split('\n'):
         line = line.strip()
         if line.startswith('matplotlib'):
-            # Extract version constraint
-            match = re.search(r'>=(\d+)\.(\d+)\.(\d+)', line)
+            # Extract version constraint (patch version is optional)
+            match = re.search(r'>=(\d+)\.(\d+)(?:\.(\d+))?', line)
             if match:
                 major = int(match.group(1))
                 minor = int(match.group(2))
+                # Patch version is optional, default to 0 if not specified
+                patch = int(match.group(3)) if match.group(3) else 0
                 
                 # Verify version is at least 3.5.0
                 assert major >= 3, \
