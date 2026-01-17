@@ -16,7 +16,7 @@ youtube-dl
 yt-dlp
 pymongo
 librosa
-matplotlib
+matplotlib>=3.5.0
 soundfile
 sounddevice
 requests
