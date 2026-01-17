@@ -44,8 +44,7 @@ jobs:
     # 5️⃣ Installer toutes les dépendances
     - name: Install dependencies
       run: |
-        pip install --no-build-isolation lap>=0.5.0
-        pip install -r requirements.txt
+        pip install --no-build-isolation -r requirements.txt
         pip install pyinstaller
 
     # 6️⃣ Nettoyer d'anciens builds pour éviter les conflits
@@ -53,7 +52,7 @@ jobs:
       run: |
         Remove-Item -Recurse -Force build, dist, CV_Studio.spec -ErrorAction SilentlyContinue
 
-    # 6️⃣ Build l’exécutable avec PyInstaller
+    # 7️⃣ Build l’exécutable avec PyInstaller
     - name: Build executable with PyInstaller
       run: |
         python build_exe.py --clean
@@ -73,12 +72,12 @@ jobs:
           exit 1
         }
 
-    # 8️⃣ Créer l’archive zip
+    # 9️⃣ Créer l’archive zip
     - name: Create archive
       run: |
         Compress-Archive -Path dist/CV_Studio -DestinationPath CV_Studio-Windows.zip
 
-    # 9️⃣ Upload de l’artefact pour le workflow
+    # 🔟 Upload de l’artefact pour le workflow
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
