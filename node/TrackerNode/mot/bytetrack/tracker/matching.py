@@ -3,7 +3,8 @@ import scipy
 import lap
 from scipy.spatial.distance import cdist
 
-from cython_bbox import bbox_overlaps as bbox_ious
+# Use pure NumPy implementation instead of cython_bbox to avoid compilation issues
+from node.TrackerNode.mot.bytetrack.tracker.bbox_utils import bbox_overlaps as bbox_ious
 # from byte_tracker.tracker import kalman_filter
 from node.TrackerNode.mot.bytetrack.tracker import kalman_filter
 

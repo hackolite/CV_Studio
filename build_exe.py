@@ -90,7 +90,6 @@ def check_requirements():
         'mediapipe': 'mediapipe',
         'scipy': 'scipy',
         'lap': 'lap',
-        'cython-bbox': 'cython_bbox',
         'motpy': 'motpy',
         'norfair': 'norfair',
         'filterpy': 'filterpy',
