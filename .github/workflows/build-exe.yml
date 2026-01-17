@@ -50,7 +50,7 @@ jobs:
     # 6️⃣ Nettoyer d'anciens builds pour éviter les conflits
     - name: Clean previous builds
       run: |
-        Remove-Item -Recurse -Force build, dist, CV_Studio.spec -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
 
     # 7️⃣ Build l’exécutable avec PyInstaller
     - name: Build executable with PyInstaller
