@@ -51,13 +51,15 @@ jobs:
     - name: Verify required files exist
       run: |
         Write-Host "Current directory: $(Get-Location)"
-        Write-Host "`nChecking for required files..."
+        Write-Host ""
+        Write-Host "Checking for required files..."
         if (Test-Path "CV_Studio.spec") {
           Write-Host "✓ CV_Studio.spec found"
           Write-Host "File size: $((Get-Item CV_Studio.spec).Length) bytes"
         } else {
           Write-Error "✗ CV_Studio.spec NOT found!"
-          Write-Host "`nFiles in directory:"
+          Write-Host ""
+          Write-Host "Files in directory:"
           Get-ChildItem -Name | Select-Object -First 20
           exit 1
         }
@@ -76,7 +78,8 @@ jobs:
         Write-Host "✓ Cleaned previous builds"
         
         # Lancer PyInstaller directement
-        Write-Host "`nBuilding executable with PyInstaller..."
+        Write-Host ""
+        Write-Host "Building executable with PyInstaller..."
         python -m PyInstaller CV_Studio.spec --clean
         
         if ($LASTEXITCODE -ne 0) {
