@@ -1,9 +1,9 @@
 name: Build Windows Executable
 on:
- workflow_dispatch:  # Allows manual triggering from GitHub Actions tab
+ workflow_dispatch:
  push:
    tags:
-     - 'v*'  # Triggers on version tags like v1.0.0
+     - 'v*'
  release:
    types: [created]
 jobs:
@@ -15,8 +15,8 @@ jobs:
      PYTHONIOENCODING: 'utf-8'
   
    permissions:
-     contents: write  # Required for uploading release assets
-     actions: read    # Required for downloading artifacts
+     contents: write
+     actions: read
   
    steps:
    - name: Checkout repository
@@ -34,6 +34,7 @@ jobs:
       
    - name: Install dependencies
      run: |
+       pip install --no-build-isolation cython-bbox
        pip install -r requirements.txt
        pip install pyinstaller
       
@@ -72,3 +73,4 @@ jobs:
        asset_path: ./CV_Studio-Windows.zip
        asset_name: CV_Studio-Windows.zip
        asset_content_type: application/zip
+
