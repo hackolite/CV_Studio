@@ -39,6 +39,7 @@ jobs:
     # 4️⃣ Installer toutes les dépendances
     - name: Install dependencies
       run: |
+        pip install numpy>=1.21.0
         pip install -r requirements.txt
         pip install pyinstaller
 
