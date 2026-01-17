@@ -1,3 +1,4 @@
+numpy>=1.21.0
 opencv-contrib-python>=4.5.5.64
 onnxruntime-gpu
 dearpygui>=1.11.0
@@ -18,7 +19,7 @@ sounddevice
 requests
 scikit-learn
 scipy>=1.7.0
-lap>=0.4.0
+lap>=0.5.0
 motpy>=0.0.10
 norfair>=2.2.0
 rich>=10.0.0
