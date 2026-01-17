@@ -43,8 +43,14 @@ def bbox_overlaps(boxes1, boxes2):
     
     # Compute areas of all boxes
     # boxes format: [x1, y1, x2, y2]
-    area1 = (boxes1[:, 2] - boxes1[:, 0]) * (boxes1[:, 3] - boxes1[:, 1])  # Shape: (N,)
-    area2 = (boxes2[:, 2] - boxes2[:, 0]) * (boxes2[:, 3] - boxes2[:, 1])  # Shape: (M,)
+    # Ensure non-negative width and height (clamp to 0 if x2 < x1 or y2 < y1)
+    width1 = np.maximum(0.0, boxes1[:, 2] - boxes1[:, 0])
+    height1 = np.maximum(0.0, boxes1[:, 3] - boxes1[:, 1])
+    area1 = width1 * height1  # Shape: (N,)
+    
+    width2 = np.maximum(0.0, boxes2[:, 2] - boxes2[:, 0])
+    height2 = np.maximum(0.0, boxes2[:, 3] - boxes2[:, 1])
+    area2 = width2 * height2  # Shape: (M,)
     
     # Expand dimensions for broadcasting
     # boxes1: (N, 4) -> (N, 1, 4)

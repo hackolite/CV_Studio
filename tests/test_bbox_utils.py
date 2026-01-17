@@ -121,9 +121,30 @@ def test_contiguous_array():
     print(f"  ✓ Successfully handled array conversion")
 
 
+def test_invalid_boxes():
+    """Test handling of invalid boxes where x2 < x1 or y2 < y1"""
+    print("\nTest 7: Invalid boxes (x2 < x1 or y2 < y1)")
+    # Invalid box: x2 < x1
+    boxes1 = np.array([[50.0, 10.0, 10.0, 50.0]], dtype=np.float64)  # x2 < x1
+    boxes2 = np.array([[0.0, 0.0, 10.0, 10.0]], dtype=np.float64)
+    
+    ious = bbox_overlaps(boxes1, boxes2)
+    
+    assert ious.shape == (1, 1), f"Expected shape (1, 1), got {ious.shape}"
+    assert ious[0, 0] == 0.0, f"Expected IoU 0.0 for invalid box, got {ious[0, 0]}"
+    print(f"  ✓ Invalid box handled correctly, IoU = {ious[0, 0]:.4f}")
+    
+    # Invalid box: y2 < y1
+    boxes3 = np.array([[10.0, 50.0, 50.0, 10.0]], dtype=np.float64)  # y2 < y1
+    ious2 = bbox_overlaps(boxes3, boxes2)
+    
+    assert ious2[0, 0] == 0.0, f"Expected IoU 0.0 for invalid box, got {ious2[0, 0]}"
+    print(f"  ✓ Invalid box (y2 < y1) handled correctly, IoU = {ious2[0, 0]:.4f}")
+
+
 def test_integration_with_tracking():
     """Test integration with tracking code (matching.py usage)"""
-    print("\nTest 7: Integration test simulating tracking usage")
+    print("\nTest 8: Integration test simulating tracking usage")
     
     # Simulate detection boxes from object detector
     detections = np.array([
@@ -173,6 +194,7 @@ def main():
         test_empty_arrays,
         test_multiple_boxes,
         test_contiguous_array,
+        test_invalid_boxes,
         test_integration_with_tracking,
     ]
     
