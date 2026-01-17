@@ -84,7 +84,7 @@ def check_requirements():
     # Map of package names to their import names
     required_packages = {
         'dearpygui': 'dearpygui',
-        'opencv-python': 'cv2',
+        'opencv-contrib-python': 'cv2',
         'onnxruntime-gpu': 'onnxruntime',
         'numpy': 'numpy',
         'mediapipe': 'mediapipe',
