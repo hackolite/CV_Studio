@@ -46,7 +46,15 @@ jobs:
      run: |
        if (Test-Path "dist/CV_Studio/CV_Studio.exe") {
          Write-Host "✓ CV_Studio.exe created successfully"
-         Get-ChildItem dist/CV_Studio -Recurse | Measure-Object -Property Length -Sum | Select-Object @{Name="Size(MB)";Expression={[math]::Round($_.Sum / 1MB, 2)}}
+         
+         # Display executable size
+         $exeSize = (Get-Item "dist/CV_Studio/CV_Studio.exe").Length
+         Write-Host ("Executable size: {0:N2} MB" -f ($exeSize / 1MB))
+         
+         # Display total folder size
+         $totalSize = (Get-ChildItem dist/CV_Studio -Recurse | Measure-Object -Property Length -Sum).Sum
+         Write-Host ("Total folder size: {0:N2} MB" -f ($totalSize / 1MB))
+         Write-Host ("Total files: {0}" -f (Get-ChildItem dist/CV_Studio -Recurse -File).Count)
        } else {
          Write-Error "Build failed - CV_Studio.exe not found"
          exit 1
@@ -65,12 +73,9 @@ jobs:
       
    - name: Upload to release (if triggered by release)
      if: github.event_name == 'release'
-     uses: actions/upload-release-asset@v1
+     uses: softprops/action-gh-release@v1
+     with:
+       files: CV_Studio-Windows.zip
      env:
        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-     with:
-       upload_url: ${{ github.event.release.upload_url }}
-       asset_path: ./CV_Studio-Windows.zip
-       asset_name: CV_Studio-Windows.zip
-       asset_content_type: application/zip
 
