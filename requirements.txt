@@ -20,8 +20,8 @@ matplotlib==3.5.3
 soundfile
 sounddevice
 requests
+scipy==1.10.1
 scikit-learn
-scipy>=1.7.0
 lap>=0.5.0
 motpy>=0.0.10
 norfair>=2.2.0
