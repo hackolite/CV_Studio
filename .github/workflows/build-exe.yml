@@ -1,81 +1,82 @@
 name: Build Windows Executable
-on:
- workflow_dispatch:
- push:
-   tags:
-     - 'v*'
- release:
-   types: [created]
-jobs:
- build-windows-exe:
-   runs-on: windows-latest
-  
-   env:
-     PYTHONUTF8: '1'
-     PYTHONIOENCODING: 'utf-8'
-  
-   permissions:
-     contents: write
-     actions: read
-  
-   steps:
-   - name: Checkout repository
-     uses: actions/checkout@v4
-    
-   - name: Set up Python
-     uses: actions/setup-python@v5
-     with:
-       python-version: '3.10'
-      
-   - name: Install build tools
-     run: |
-       python -m pip install --upgrade pip setuptools wheel
-       pip install Cython numpy
-      
-   - name: Install dependencies
-     run: |
-       pip install --no-build-isolation cython-bbox
-       pip install -r requirements.txt
-       pip install pyinstaller
-      
-   - name: Build executable with PyInstaller
-     run: |
-       python build_exe.py --clean
-      
-   - name: Verify build
-     run: |
-       if (Test-Path "dist/CV_Studio/CV_Studio.exe") {
-         Write-Host "✓ CV_Studio.exe created successfully"
-         
-         # Display executable size
-         $exeSize = (Get-Item "dist/CV_Studio/CV_Studio.exe").Length
-         Write-Host ("Executable size: {0:N2} MB" -f ($exeSize / 1MB))
-         
-         # Display total folder size
-         $totalSize = (Get-ChildItem dist/CV_Studio -Recurse | Measure-Object -Property Length -Sum).Sum
-         Write-Host ("Total folder size: {0:N2} MB" -f ($totalSize / 1MB))
-         Write-Host ("Total files: {0}" -f (Get-ChildItem dist/CV_Studio -Recurse -File).Count)
-       } else {
-         Write-Error "Build failed - CV_Studio.exe not found"
-         exit 1
-       }
-      
-   - name: Create archive
-     run: |
-       Compress-Archive -Path dist/CV_Studio -DestinationPath CV_Studio-Windows.zip
-      
-   - name: Upload artifact
-     uses: actions/upload-artifact@v4
-     with:
-       name: CV_Studio-Windows-Executable
-       path: CV_Studio-Windows.zip
-       retention-days: 30
-      
-   - name: Upload to release (if triggered by release)
-     if: github.event_name == 'release'
-     uses: softprops/action-gh-release@v1
-     with:
-       files: CV_Studio-Windows.zip
-     env:
-       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+'on':
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [created]
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+   
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: 'utf-8'
+   
+    permissions:
+      contents: write
+      actions: read
+   
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+     
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+       
+    - name: Install build tools
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install Cython numpy
+       
+    - name: Install dependencies
+      run: |
+        pip install --no-build-isolation cython-bbox
+        pip install -r requirements.txt
+        pip install pyinstaller
+       
+    - name: Build executable with PyInstaller
+      run: |
+        python build_exe.py --clean
+       
+    - name: Verify build
+      run: |
+        if (Test-Path "dist/CV_Studio/CV_Studio.exe") {
+          Write-Host "✓ CV_Studio.exe created successfully"
+          
+          # Display executable size
+          $exeSize = (Get-Item "dist/CV_Studio/CV_Studio.exe").Length
+          Write-Host ("Executable size: {0:N2} MB" -f ($exeSize / 1MB))
+          
+          # Display total folder size
+          $totalSize = (Get-ChildItem dist/CV_Studio -Recurse | Measure-Object -Property Length -Sum).Sum
+          Write-Host ("Total folder size: {0:N2} MB" -f ($totalSize / 1MB))
+          Write-Host ("Total files: {0}" -f (Get-ChildItem dist/CV_Studio -Recurse -File).Count)
+        } else {
+          Write-Error "Build failed - CV_Studio.exe not found"
+          exit 1
+        }
+       
+    - name: Create archive
+      run: |
+        Compress-Archive -Path dist/CV_Studio -DestinationPath CV_Studio-Windows.zip
+       
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: CV_Studio-Windows-Executable
+        path: CV_Studio-Windows.zip
+        retention-days: 30
+       
+    - name: Upload to release (if triggered by release)
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: CV_Studio-Windows.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
