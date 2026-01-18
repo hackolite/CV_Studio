@@ -47,47 +47,12 @@ jobs:
         pip install --no-build-isolation -r requirements.txt
         pip install pyinstaller
 
-    # 6️⃣ Nettoyer d'anciens builds pour éviter les conflits
-    - name: Verify required files exist
+    # 6️⃣ Construire l'exécutable avec build_exe.py (nettoie et construit)
+    - name: Build executable with build_exe.py
       run: |
-        Write-Host "Current directory: $(Get-Location)"
-        Write-Host ""
-        Write-Host "Checking for required files..."
-        if (Test-Path "CV_Studio.spec") {
-          Write-Host "✓ CV_Studio.spec found"
-          Write-Host "File size: $((Get-Item CV_Studio.spec).Length) bytes"
-        } else {
-          Write-Error "✗ CV_Studio.spec NOT found!"
-          Write-Host ""
-          Write-Host "Files in directory:"
-          Get-ChildItem -Name | Select-Object -First 20
-          exit 1
-        }
-        if (Test-Path "main.py") {
-          Write-Host "✓ main.py found"
-        } else {
-          Write-Error "✗ main.py NOT found!"
-          exit 1
-        }
+        python build_exe.py --clean
 
-    # 7️⃣ Build l’exécutable avec PyInstaller
-    - name: Build executable with PyInstaller
-      run: |
-        # Nettoyer les anciens builds
-        Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
-        Write-Host "✓ Cleaned previous builds"
-        
-        # Lancer PyInstaller directement
-        Write-Host ""
-        Write-Host "Building executable with PyInstaller..."
-        python -m PyInstaller CV_Studio.spec --clean
-        
-        if ($LASTEXITCODE -ne 0) {
-          Write-Error "PyInstaller build failed"
-          exit 1
-        }
-
-    # 8️⃣ Vérifier le build et afficher les tailles
+    # 7️⃣ Vérifier le build et afficher les tailles
     - name: Verify build
       run: |
         if (Test-Path "dist/CV_Studio/CV_Studio.exe") {
@@ -102,12 +67,12 @@ jobs:
           exit 1
         }
 
-    # 9️⃣ Créer l’archive zip
+    # 8️⃣ Créer l’archive zip
     - name: Create archive
       run: |
         Compress-Archive -Path dist/CV_Studio -DestinationPath CV_Studio-Windows.zip
 
-    # 🔟 Upload de l’artefact pour le workflow
+    # 9️⃣ Upload de l’artefact pour le workflow
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
@@ -115,7 +80,7 @@ jobs:
         path: CV_Studio-Windows.zip
         retention-days: 30
 
-    # 1️⃣1️⃣ Upload sur la release si trigger par release
+    # 🔟 Upload sur la release si déclenché par une release
     - name: Upload to release (if triggered by release)
       if: github.event_name == 'release'
       uses: softprops/action-gh-release@v1
