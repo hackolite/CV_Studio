@@ -47,7 +47,7 @@ jobs:
         pip install --no-build-isolation -r requirements.txt
         pip install pyinstaller
 
-    # 6️⃣ Nettoyer d'anciens builds pour éviter les conflits
+    # 6️⃣ Construire l'exécutable avec build_exe.py (nettoie et construit)
     - name: Build executable with build_exe.py
       run: |
         python build_exe.py --clean
@@ -80,7 +80,7 @@ jobs:
         path: CV_Studio-Windows.zip
         retention-days: 30
 
-    # 🔟 Upload sur la release si trigger par release
+    # 🔟 Upload sur la release si déclenché par une release
     - name: Upload to release (if triggered by release)
       if: github.event_name == 'release'
       uses: softprops/action-gh-release@v1
