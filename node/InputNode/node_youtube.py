@@ -5,7 +5,6 @@ import threading
 from threading import Lock
 
 import cv2
-import pafy
 import numpy as np
 import dearpygui.dearpygui as dpg
 import yt_dlp

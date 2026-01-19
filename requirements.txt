@@ -8,7 +8,6 @@ dearpygui>=1.11.0
 mediapipe
 protobuf>=3.20.0
 filterpy>=1.4.5
-pafy
 ffmpeg-python
 serial
 pytest 

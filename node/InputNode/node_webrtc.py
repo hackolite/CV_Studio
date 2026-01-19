@@ -3,9 +3,9 @@
 import time
 
 import cv2
-import pafy
 import numpy as np
 import dearpygui.dearpygui as dpg
+import yt_dlp
 
 from node_editor.util import dpg_get_value, dpg_set_value
 
@@ -384,10 +384,23 @@ class Node(Node):
                     dpg.set_item_label(tag_node_button_value_name,
                                        self._loading_label)
 
-                    pafy_video = pafy.new(youtube_url)
-                    pafy_best_video = pafy_video.getbest(preftype="mp4")
-                    youtube_capture = YoutubeCapture(pafy_best_video.url)
-                    self._youtube_capture[youtube_url] = youtube_capture
+                    # Use yt-dlp to get the best video URL
+                    ydl_opts = {
+                        'quiet': True,
+                        'format': 'best[ext=mp4]',  # Prefer MP4 format
+                    }
+                    try:
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            info = ydl.extract_info(youtube_url, download=False)
+                            video_url = info.get('url', None)
+                            if not video_url:
+                                raise ValueError("No video URL found")
+                            youtube_capture = YoutubeCapture(video_url)
+                            self._youtube_capture[youtube_url] = youtube_capture
+                    except Exception as e:
+                        print(f"Error extracting video URL: {e}")
+                        dpg.set_item_label(tag_node_button_value_name, self._start_label)
+                        return
 
                     dpg.set_item_label(tag_node_button_value_name,
                                        self._stop_label)

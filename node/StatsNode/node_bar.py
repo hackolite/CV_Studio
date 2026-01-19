@@ -3,7 +3,6 @@
 import time
 
 import cv2
-import pafy
 import numpy as np
 import dearpygui.dearpygui as dpg
 

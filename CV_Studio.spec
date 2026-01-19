@@ -33,7 +33,6 @@ hiddenimports += collect_submodules('numpy')
 hiddenimports += collect_submodules('librosa')
 hiddenimports += collect_submodules('soundfile')
 hiddenimports += collect_submodules('matplotlib')
-hiddenimports += collect_submodules('pafy')
 hiddenimports += collect_submodules('youtube_dl')
 hiddenimports += collect_submodules('yt_dlp')
 hiddenimports += collect_submodules('filterpy')
@@ -68,7 +67,6 @@ hiddenimports += [
     'src.utils.logging',
     'src.utils.gpu_utils',
     'src.core',
-    'pafy',
     'youtube_dl',
     'yt_dlp',
     'filterpy',
