@@ -387,7 +387,7 @@ class Node(Node):
                     # Use yt-dlp to get the best video URL
                     ydl_opts = {
                         'quiet': True,
-                        'format': 'best[ext=mp4]',  # Prefer MP4 format
+                        'format': 'best[ext=mp4]/best',  # Prefer MP4, fallback to best available
                     }
                     try:
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -397,8 +397,12 @@ class Node(Node):
                                 raise ValueError("No video URL found")
                             youtube_capture = YoutubeCapture(video_url)
                             self._youtube_capture[youtube_url] = youtube_capture
+                    except yt_dlp.utils.DownloadError as e:
+                        print(f"Error downloading video info: {e}")
+                        dpg.set_item_label(tag_node_button_value_name, self._start_label)
+                        return
                     except Exception as e:
-                        print(f"Error extracting video URL: {e}")
+                        print(f"Unexpected error extracting video URL: {e}")
                         dpg.set_item_label(tag_node_button_value_name, self._start_label)
                         return
 
