@@ -108,7 +108,10 @@ def extract_imports_from_codebase(exclude_dirs=None):
                                 module = node.module.split('.')[0]
                                 imports[module].add(filepath)
                 except (SyntaxError, UnicodeDecodeError, OSError):
-                    # Skip files with syntax errors, encoding issues, or OS errors
+                    # Skip files with:
+                    # - SyntaxError: invalid Python syntax
+                    # - UnicodeDecodeError: encoding issues
+                    # - OSError: file permission errors, file not found
                     pass
     
     return imports
@@ -156,12 +159,12 @@ def verify_build_exe_config():
                                     packages.add(key.value)
                             return True, packages
         
-        return False, "Could not find required_packages dictionary in build_exe.py"
+        return False, "Could not locate required_packages dictionary assignment in build_exe.py using AST parsing"
     except SyntaxError:
         # Fallback to regex if AST parsing fails
         match = re.search(r'required_packages = \{([^}]+)\}', content, re.DOTALL)
         if not match:
-            return False, "Could not find required_packages in build_exe.py"
+            return False, "Could not find required_packages dictionary using regex fallback in build_exe.py"
         
         # Extract package names from the dictionary (works with both single and double quotes)
         packages = re.findall(r"['\"]([^'\"]+)['\"]:\s*['\"][^'\"]+['\"],?", match.group(1))
