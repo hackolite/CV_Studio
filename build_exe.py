@@ -113,6 +113,17 @@ def check_requirements(skip_package_check=False):
         'ffmpeg-python': 'ffmpeg',
         'rich': 'rich',
         'scikit-learn': 'sklearn',
+        'pyserial': 'serial',
+        'pymongo': 'pymongo',
+        'Pillow': 'PIL',
+        'librosa': 'librosa',
+        'soundfile': 'soundfile',
+        'sounddevice': 'sounddevice',
+        'matplotlib': 'matplotlib',
+        'requests': 'requests',
+        'pafy': 'pafy',
+        'yt-dlp': 'yt_dlp',
+        'pytz': 'pytz',
     }
     
     missing_packages = []
@@ -222,6 +233,9 @@ hiddenimports += collect_submodules('youtube_dl')
 hiddenimports += collect_submodules('yt_dlp')
 hiddenimports += collect_submodules('filterpy')
 hiddenimports += collect_submodules('pymongo')
+hiddenimports += collect_submodules('bson')
+hiddenimports += collect_submodules('pytz')
+hiddenimports += collect_submodules('PIL')
 hiddenimports += collect_submodules('requests')
 hiddenimports += collect_submodules('serial')
 hiddenimports += collect_submodules('rich')
@@ -267,6 +281,13 @@ hiddenimports += [
     'filterpy.kalman',
     'filterpy.common',
     'pymongo',
+    'bson',
+    'bson.objectid',
+    'pytz',
+    'dnspython',
+    'PIL',
+    'PIL.Image',
+    'PIL.ImageGrab',
     'serial',
     'serial.tools',
     'serial.tools.list_ports',
