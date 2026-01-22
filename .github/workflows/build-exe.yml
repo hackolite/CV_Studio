@@ -39,13 +39,13 @@ jobs:
     # 4️⃣ Installer les dépendances de build d'abord
     - name: Install build dependencies first
       run: |
-        pip install numpy>=1.21.0 Cython>=0.29.36
+        pip install numpy>=1.21.0
     
     # 5️⃣ Installer toutes les dépendances
     - name: Install dependencies
       run: |
         pip install --no-build-isolation -r requirements.txt
-        pip install pyinstaller
+        pip install -r requirements-build.txt
 
     # 6️⃣ Construire l'exécutable avec build_exe.py (nettoie et construit)
     - name: Build executable with build_exe.py
