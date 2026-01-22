@@ -34,7 +34,7 @@ Examples:
 
     # With custom icon
     python build_exe.py --icon CV_Studio.ico
-    
+
     # CI/CD build (skip package check, assumes packages are already installed)
     python build_exe.py --clean --skip-package-check
 """
@@ -68,6 +68,9 @@ def check_requirements(skip_package_check=False):
     
     Args:
         skip_package_check: If True, skip checking for required packages (useful in CI/CD)
+        
+    Returns:
+        bool: True if all requirements are satisfied or skipped, False if checks fail
     """
     print("[1/5] Checking requirements...")
     
