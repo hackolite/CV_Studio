@@ -17,6 +17,10 @@ import sys
 from collections import defaultdict
 
 
+# Project-local modules that should not be considered unmapped
+PROJECT_MODULES = {'node', 'node_editor', 'src', 'main', 'build_exe', 'sound'}
+
+
 # Mapping of Python import names to pip package names
 IMPORT_TO_PACKAGE = {
     # Core dependencies
@@ -103,7 +107,8 @@ def extract_imports_from_codebase(exclude_dirs=None):
                             if node.module:
                                 module = node.module.split('.')[0]
                                 imports[module].add(filepath)
-                except:
+                except (SyntaxError, UnicodeDecodeError, OSError):
+                    # Skip files with syntax errors, encoding issues, or OS errors
                     pass
     
     return imports
@@ -134,15 +139,34 @@ def verify_build_exe_config():
     with open('build_exe.py', 'r') as f:
         content = f.read()
     
-    # Extract required_packages dictionary
-    match = re.search(r'required_packages = \{([^}]+)\}', content, re.DOTALL)
-    if not match:
-        return False, "Could not find required_packages in build_exe.py"
-    
-    # Extract package names from the dictionary
-    packages = re.findall(r"'([^']+)':\s*'[^']+',?", match.group(1))
-    
-    return True, set(packages)
+    # Use ast to parse the file and extract the required_packages dictionary
+    try:
+        tree = ast.parse(content)
+        
+        # Find the required_packages assignment
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == 'required_packages':
+                        if isinstance(node.value, ast.Dict):
+                            # Extract keys (package names) from the dictionary
+                            packages = set()
+                            for key in node.value.keys:
+                                if isinstance(key, ast.Constant):
+                                    packages.add(key.value)
+                            return True, packages
+        
+        return False, "Could not find required_packages dictionary in build_exe.py"
+    except SyntaxError:
+        # Fallback to regex if AST parsing fails
+        match = re.search(r'required_packages = \{([^}]+)\}', content, re.DOTALL)
+        if not match:
+            return False, "Could not find required_packages in build_exe.py"
+        
+        # Extract package names from the dictionary (works with both single and double quotes)
+        packages = re.findall(r"['\"]([^'\"]+)['\"]:\s*['\"][^'\"]+['\"],?", match.group(1))
+        
+        return True, set(packages)
 
 
 def main():
@@ -169,7 +193,7 @@ def main():
                 third_party.append((module, package))
         else:
             # Check if it's a project module
-            if module not in ['node', 'node_editor', 'src', 'main', 'build_exe', 'sound']:
+            if module not in PROJECT_MODULES:
                 unmapped.append(module)
     
     print(f"  Found {len(imports)} unique import modules")
