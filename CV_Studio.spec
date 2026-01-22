@@ -32,12 +32,22 @@ hiddenimports += collect_submodules('mediapipe')
 hiddenimports += collect_submodules('numpy')
 hiddenimports += collect_submodules('librosa')
 hiddenimports += collect_submodules('soundfile')
+hiddenimports += collect_submodules('sounddevice')
 hiddenimports += collect_submodules('matplotlib')
+hiddenimports += collect_submodules('scipy')
+hiddenimports += collect_submodules('sklearn')
 hiddenimports += collect_submodules('pafy')
 hiddenimports += collect_submodules('youtube_dl')
 hiddenimports += collect_submodules('yt_dlp')
 hiddenimports += collect_submodules('filterpy')
 hiddenimports += collect_submodules('pymongo')
+hiddenimports += collect_submodules('requests')
+hiddenimports += collect_submodules('serial')
+hiddenimports += collect_submodules('rich')
+hiddenimports += collect_submodules('lap')
+hiddenimports += collect_submodules('motpy')
+hiddenimports += collect_submodules('norfair')
+hiddenimports += collect_submodules('ffmpeg')
 
 # Add explicit hidden imports for node modules
 hiddenimports += [
@@ -68,6 +78,7 @@ hiddenimports += [
     'src.utils.logging',
     'src.utils.gpu_utils',
     'src.core',
+    # Third-party packages
     'pafy',
     'youtube_dl',
     'yt_dlp',
@@ -75,6 +86,26 @@ hiddenimports += [
     'filterpy.kalman',
     'filterpy.common',
     'pymongo',
+    'serial',
+    'serial.tools',
+    'serial.tools.list_ports',
+    'requests',
+    'requests.adapters',
+    'requests.auth',
+    'scipy',
+    'scipy.spatial',
+    'scipy.linalg',
+    'sklearn',
+    'sklearn.metrics',
+    'sklearn.preprocessing',
+    'rich',
+    'rich.console',
+    'rich.progress',
+    'lap',
+    'motpy',
+    'norfair',
+    'ffmpeg',
+    'sounddevice',
 ]
 
 # Collect data files
@@ -105,6 +136,8 @@ datas.append(('node_editor/setting', 'node_editor/setting'))
 datas += collect_data_files('dearpygui')
 datas += collect_data_files('mediapipe')
 datas += collect_data_files('onnxruntime')
+datas += collect_data_files('librosa')
+datas += collect_data_files('sklearn')
 
 # Binary excludes - exclude unnecessary binaries
 binaries = []
