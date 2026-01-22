@@ -11,12 +11,13 @@ Usage:
     python build_exe.py [options]
 
 Options:
-    --clean         Clean build directories before building
-    --onefile       Create a single executable file (slower startup)
-    --windowed      Hide console window (GUI only mode)
-    --debug         Build with debug information
-    --icon ICON     Path to icon file (.ico)
-    --help          Show this help message
+    --clean              Clean build directories before building
+    --onefile            Create a single executable file (slower startup)
+    --windowed           Hide console window (GUI only mode)
+    --debug              Build with debug information
+    --icon ICON          Path to icon file (.ico)
+    --skip-package-check Skip package availability check (useful in CI/CD)
+    --help               Show this help message
 
 Examples:
     # Standard build (creates CV_Studio folder with exe and dependencies)
@@ -33,6 +34,9 @@ Examples:
 
     # With custom icon
     python build_exe.py --icon CV_Studio.ico
+    
+    # CI/CD build (skip package check, assumes packages are already installed)
+    python build_exe.py --clean --skip-package-check
 """
 
 import os
@@ -59,8 +63,12 @@ def print_banner():
     print()
 
 
-def check_requirements():
-    """Check if required tools are installed"""
+def check_requirements(skip_package_check=False):
+    """Check if required tools are installed
+    
+    Args:
+        skip_package_check: If True, skip checking for required packages (useful in CI/CD)
+    """
     print("[1/5] Checking requirements...")
     
     # Check Python version
@@ -79,6 +87,12 @@ def check_requirements():
         print("\nInstalling PyInstaller...")
         subprocess.run([sys.executable, "-m", "pip", "install", "pyinstaller"], check=True)
         print("  ✓ PyInstaller installed")
+    
+    # Skip package check if requested (e.g., in CI/CD where packages are pre-installed)
+    if skip_package_check:
+        print("  ℹ Skipping package check (--skip-package-check enabled)")
+        print()
+        return True
     
     # Check required packages
     # Map of package names to their import names
@@ -601,13 +615,15 @@ def main():
                        help='Build with debug information')
     parser.add_argument('--icon', type=str, default=None,
                        help='Path to icon file (.ico)')
+    parser.add_argument('--skip-package-check', action='store_true',
+                       help='Skip package availability check (useful in CI/CD)')
     
     args = parser.parse_args()
     
     print_banner()
     
     # Check requirements
-    if not check_requirements():
+    if not check_requirements(skip_package_check=args.skip_package_check):
         sys.exit(1)
     
     # Clean if requested
