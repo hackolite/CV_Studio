@@ -10,8 +10,10 @@ protobuf>=3.20.2,<4.0.0
 filterpy>=1.4.5
 pafy>=0.5.5
 ffmpeg-python>=0.2.0
-pyserial>=3.5
+pyserial>=3.5.1
 pytest>=7.0.0
+# Note: youtube-dl is kept for pafy backward compatibility
+# but yt-dlp is preferred and actively maintained
 youtube-dl>=2021.12.17
 yt-dlp>=2023.3.4
 pymongo>=4.0.0
