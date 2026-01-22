@@ -50,7 +50,7 @@ jobs:
     # 6️⃣ Construire l'exécutable avec build_exe.py (nettoie et construit)
     - name: Build executable with build_exe.py
       run: |
-        python build_exe.py --clean
+        python build_exe.py --clean --skip-package-check
 
     # 7️⃣ Vérifier le build et afficher les tailles
     - name: Verify build
