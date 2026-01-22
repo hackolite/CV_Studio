@@ -41,6 +41,9 @@ hiddenimports += collect_submodules('youtube_dl')
 hiddenimports += collect_submodules('yt_dlp')
 hiddenimports += collect_submodules('filterpy')
 hiddenimports += collect_submodules('pymongo')
+hiddenimports += collect_submodules('bson')
+hiddenimports += collect_submodules('pytz')
+hiddenimports += collect_submodules('PIL')
 hiddenimports += collect_submodules('requests')
 hiddenimports += collect_submodules('serial')
 hiddenimports += collect_submodules('rich')
@@ -86,6 +89,13 @@ hiddenimports += [
     'filterpy.kalman',
     'filterpy.common',
     'pymongo',
+    'bson',
+    'bson.objectid',
+    'pytz',
+    'dnspython',
+    'PIL',
+    'PIL.Image',
+    'PIL.ImageGrab',
     'serial',
     'serial.tools',
     'serial.tools.list_ports',
