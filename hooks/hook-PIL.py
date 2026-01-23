@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 PyInstaller hook for PIL/Pillow package
@@ -11,10 +11,6 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 # Collect all PIL submodules, including ImageGrab
 hiddenimports = collect_submodules('PIL')
-
-# Ensure ImageGrab is explicitly included
-if 'PIL.ImageGrab' not in hiddenimports:
-    hiddenimports.append('PIL.ImageGrab')
 
 # Collect PIL data files
 datas = collect_data_files('PIL')
