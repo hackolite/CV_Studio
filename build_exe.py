@@ -209,7 +209,7 @@ The .exe will be created in the 'dist/CV_Studio' directory.
 
 import os
 import sys
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_dynamic_libs
 
 # Get the base directory
 block_cipher = None
@@ -346,7 +346,6 @@ datas += collect_data_files('pytz')
 datas += collect_data_files('PIL')
 
 # Collect binaries for packages with compiled extensions
-from PyInstaller.utils.hooks import collect_dynamic_libs
 binaries = []
 # Add lap compiled C extensions (CRITICAL for lap to work in .exe)
 binaries += collect_dynamic_libs('lap')
