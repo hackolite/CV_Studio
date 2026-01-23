@@ -340,9 +340,16 @@ datas += collect_data_files('mediapipe')
 datas += collect_data_files('onnxruntime')
 datas += collect_data_files('librosa')
 datas += collect_data_files('sklearn')
+# Add pytz timezone data files (CRITICAL for pytz to work in .exe)
+datas += collect_data_files('pytz')
+# Add PIL/Pillow data files
+datas += collect_data_files('PIL')
 
-# Binary excludes - exclude unnecessary binaries
+# Collect binaries for packages with compiled extensions
+from PyInstaller.utils.hooks import collect_dynamic_libs
 binaries = []
+# Add lap compiled C extensions (CRITICAL for lap to work in .exe)
+binaries += collect_dynamic_libs('lap')
 
 a = Analysis(
     ['main.py'],
@@ -350,7 +357,7 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
-    hookspath=[],
+    hookspath=['hooks'],  # Use custom hooks directory for pytz, lap, PIL fixes
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
