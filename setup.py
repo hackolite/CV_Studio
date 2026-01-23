@@ -46,7 +46,7 @@ setup(
     install_requires=[
         "numpy>=1.21.6", "Cython==0.29.36", "opencv-python>=4.5.5.64",
         "onnxruntime-gpu>=1.12.0", "dearpygui>=1.6.2", "mediapipe>=0.8.10",
-        "protobuf>=3.20.0,<4", "filterpy>=1.4.5"
+        "protobuf>=3.20.0,<4", "filterpy>=1.4.5", "pyserial>=3.5"
     ],
     classifiers=[
         "License :: OSI Approved :: Apache Software License",
