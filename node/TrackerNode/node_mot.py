@@ -54,6 +54,8 @@ class FactoryNode:
         node.tag_node_input02_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input02Value'
         node.tag_node_input03_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input03'
         node.tag_node_input03_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input03Value'
+        node.tag_node_input04_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input04'
+        node.tag_node_input04_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input04Value'
         node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
         node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
         node.tag_node_output02_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
@@ -114,7 +116,17 @@ class FactoryNode:
             ):
                 dpg.add_text(
                     tag=node.tag_node_input03_value_name,
-                    default_value='JSON (boolean)',
+                    default_value='JSON Start/Stop (boolean)',
+                )
+
+            # JSON input for detection data (from ReId or ObjectDetection)
+            with dpg.node_attribute(
+                    tag=node.tag_node_input04_name,
+                    attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_input04_value_name,
+                    default_value='JSON Detections',
                 )
 
             with dpg.node_attribute(
@@ -212,6 +224,7 @@ class Node(Node):
         src_node_name = ''
         connection_info_src = ''
         json_connection_info_src = ''
+        json_detection_connection_src = ''
         for connection_info in connection_list:
             connection_type = connection_info[0].split(':')[2]
             if connection_type == self.TYPE_INT:
@@ -230,10 +243,18 @@ class Node(Node):
                 src_node_name = connection_info_src[1]
                 connection_info_src = ':'.join(connection_info_src)
             elif connection_type == self.TYPE_JSON or connection_type.upper() == 'JSON':
-                # JSON input for enable/disable tracking
-                json_connection_info_src = connection_info[0]
-                json_connection_info_src = json_connection_info_src.split(':')[:2]
-                json_connection_info_src = ':'.join(json_connection_info_src)
+                # Determine if this is Input03 (boolean) or Input04 (detections)
+                destination_tag = connection_info[1]
+                if 'Input03' in destination_tag:
+                    # JSON input for enable/disable tracking
+                    json_connection_info_src = connection_info[0]
+                    json_connection_info_src = json_connection_info_src.split(':')[:2]
+                    json_connection_info_src = ':'.join(json_connection_info_src)
+                elif 'Input04' in destination_tag:
+                    # JSON input for detection data
+                    json_detection_connection_src = connection_info[0]
+                    json_detection_connection_src = json_detection_connection_src.split(':')[:2]
+                    json_detection_connection_src = ':'.join(json_detection_connection_src)
 
             else:
                 logger.warning(f'Unknown connection type: {connection_type}')
@@ -275,9 +296,20 @@ class Node(Node):
         result = {}
         if frame is not None and tracking_enabled:
             logger.debug(f"Processing tracking for node: {src_node_name}")
-            if src_node_name == 'ObjectDetection':
-
-                node_result = node_result_dict.get(connection_info_src, [])
+            
+            # Get detection data from JSON input (Input04) if connected, otherwise fall back to node_result_dict
+            node_result = {}
+            if json_detection_connection_src:
+                # Use JSON input from Input04
+                node_result = node_result_dict.get(json_detection_connection_src, {})
+                logger.debug(f"Using detection data from JSON input: {json_detection_connection_src}")
+            elif connection_info_src and src_node_name in ('ObjectDetection', 'ReId', 'Classification'):
+                # Fall back to getting data from the image source node
+                node_result = node_result_dict.get(connection_info_src, {})
+                logger.debug(f"Using detection data from image source node: {src_node_name}")
+            
+            # Process detections if we have any
+            if node_result:
                 od_bboxes = node_result.get('bboxes', [])
                 od_scores = node_result.get('scores', [])
                 od_class_ids = node_result.get('class_ids', [])
@@ -295,7 +327,6 @@ class Node(Node):
                 if node_id not in self._track_id_dict:
                     self._track_id_dict[node_id] = {}
 
-
                 for track_id in track_ids:
                     if track_id not in self._track_id_dict[node_id]:
                         new_id = len(self._track_id_dict[node_id])
@@ -307,87 +338,19 @@ class Node(Node):
                 result['class_ids'] = t_class_ids
                 result['class_names'] = od_class_names
                 result['track_id_dict'] = self._track_id_dict[node_id]
-
-            elif src_node_name == 'ReId':
-                # ReId node outputs the same format as ObjectDetection
-                node_result = node_result_dict.get(connection_info_src, [])
-                od_bboxes = node_result.get('bboxes', [])
-                od_scores = node_result.get('scores', [])
-                od_class_ids = node_result.get('class_ids', [])
-                od_class_names = node_result.get('class_names', [])
-
-                track_ids, t_bboxes, t_scores, t_class_ids = self._model_instance[
-                    model_name_with_provider](
-                        frame,
-                        od_bboxes,
-                        od_scores,
-                        od_class_ids,
-                    )
-
-                if node_id not in self._track_id_dict:
-                    self._track_id_dict[node_id] = {}
-
-                for track_id in track_ids:
-                    if track_id not in self._track_id_dict[node_id]:
-                        new_id = len(self._track_id_dict[node_id])
-                        self._track_id_dict[node_id][track_id] = new_id
-
-                result['track_ids'] = track_ids
-                result['bboxes'] = t_bboxes
-                result['scores'] = t_scores
-                result['class_ids'] = t_class_ids
-                result['class_names'] = od_class_names
-                result['track_id_dict'] = self._track_id_dict[node_id]
-
-            elif src_node_name == 'Classification':
-                node_result = node_result_dict.get(connection_info_src, [])
-                use_object_detection = node_result.get(
-                    'use_object_detection',
-                    False,
-                )
-                if use_object_detection:
-
-                    od_bboxes = node_result.get('od_bboxes', [])
-                    od_scores = node_result.get('class_scores', [])
-                    od_class_ids = node_result.get('class_ids', [])
-                    od_class_names = node_result.get('class_names', [])
-
-                    track_ids, t_bboxes, t_scores, t_class_ids = self._model_instance[
-                        model_name_with_provider](
-                            frame,
-                            od_bboxes,
-                            od_scores,
-                            od_class_ids,
-                        )
-
-                    if node_id not in self._track_id_dict:
-                        self._track_id_dict[node_id] = {}
-
-
-                    for track_id in track_ids:
-                        if track_id not in self._track_id_dict[node_id]:
-                            new_id = len(self._track_id_dict[node_id])
-                            self._track_id_dict[node_id][track_id] = new_id
-
-                    result['track_ids'] = track_ids
-                    result['bboxes'] = t_bboxes
-                    result['scores'] = t_scores
-                    result['class_ids'] = t_class_ids
-                    result['class_names'] = od_class_names
-                    result['track_id_dict'] = self._track_id_dict[node_id]
 
         elif frame is not None and not tracking_enabled:
             # Tracking is disabled, pass through original detection results without tracking IDs
-            logger.debug(f"Tracking disabled, passing through detection results for node: {src_node_name}")
-            if src_node_name == 'ObjectDetection':
+            logger.debug(f"Tracking disabled, passing through detection results")
+            
+            # Get detection data from JSON input (Input04) if connected, otherwise fall back to node_result_dict
+            node_result = {}
+            if json_detection_connection_src:
+                node_result = node_result_dict.get(json_detection_connection_src, {})
+            elif connection_info_src and src_node_name in ('ObjectDetection', 'ReId', 'Classification'):
                 node_result = node_result_dict.get(connection_info_src, {})
-                result['bboxes'] = node_result.get('bboxes', [])
-                result['scores'] = node_result.get('scores', [])
-                result['class_ids'] = node_result.get('class_ids', [])
-                result['class_names'] = node_result.get('class_names', [])
-                result['track_ids'] = []  # No tracking IDs when disabled
-            elif src_node_name == 'ReId':
-                node_result = node_result_dict.get(connection_info_src, {})
+            
+            if node_result:
                 result['bboxes'] = node_result.get('bboxes', [])
                 result['scores'] = node_result.get('scores', [])
                 result['class_ids'] = node_result.get('class_ids', [])
@@ -405,7 +368,7 @@ class Node(Node):
         output_frame = None
         
         if frame is not None:
-            if src_node_name in ('ObjectDetection', 'Classification', 'ReId') and tracking_enabled and result:
+            if tracking_enabled and result:
 
                 debug_frame = copy.deepcopy(frame)
                 track_ids = result.get('track_ids', [])
