@@ -466,9 +466,19 @@ class Node(Node):
                                             # Skip invalid class IDs
                                             pass
                                 
+                                # Validate rejected classes against model's class dictionary
+                                valid_class_ids = set(class_name_dict.keys())
+                                invalid_classes = rejected_classes - valid_class_ids
+                                
+                                if invalid_classes:
+                                    logger.warning(f"Invalid class IDs for model '{model_name}': {invalid_classes}. "
+                                                 f"Valid class IDs for this model: {sorted(valid_class_ids)}")
+                                    # Filter out invalid class IDs
+                                    rejected_classes = rejected_classes & valid_class_ids
+                                
                                 # Log before filtering
                                 logger.debug(f"Before class rejection: {len(bboxes)} detections, class_ids={class_ids.tolist()}")
-                                logger.debug(f"Rejected classes: {rejected_classes}")
+                                logger.debug(f"Rejected classes (validated): {rejected_classes}")
                                 
                                 # Filter out rejected classes
                                 if rejected_classes:
