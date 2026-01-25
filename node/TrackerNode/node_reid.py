@@ -331,8 +331,19 @@ class Node(Node):
             return False
         
         # Number of clusters = number of slots
-        n_clusters = self._slot_id.get(tag_node_name, 1)
-        n_clusters = min(n_clusters, len(features))  # Can't have more clusters than samples
+        n_clusters_requested = self._slot_id.get(tag_node_name, 1)
+        
+        # CRITICAL FIX: K-means will fail if n_clusters > n_samples
+        # We must cap the clusters at the number of available samples
+        # However, we still maintain separate cluster IDs for unmatched slots
+        n_clusters = min(n_clusters_requested, len(features))
+        
+        if len(features) < n_clusters_requested:
+            logger.warning(
+                f"Only {len(features)} samples collected but {n_clusters_requested} slots requested. "
+                f"Training K-means with {n_clusters} clusters. "
+                f"Additional slots will share centroids initially."
+            )
         
         if n_clusters < 1:
             return False
@@ -340,7 +351,9 @@ class Node(Node):
         # Train K-means
         try:
             features_array = np.array(features)
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init='auto')
+            # Use n_init=20 for more robust initialization
+            # random_state=42 for reproducibility in testing/debugging
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=20)
             kmeans.fit(features_array)
             
             # Store centroids
@@ -354,7 +367,7 @@ class Node(Node):
             return False
 
     def _assign_to_centroid(self, feature, tag_node_name):
-        """Assign a feature to the nearest centroid"""
+        """Assign a feature to the nearest centroid with tie-breaking"""
         if tag_node_name not in self._centroids:
             return None
         
@@ -363,8 +376,24 @@ class Node(Node):
         # Calculate distances to all centroids
         distances = np.linalg.norm(centroids - feature, axis=1)
         
-        # Return the index of the nearest centroid
-        nearest_idx = np.argmin(distances)
+        # Find the minimum distance
+        min_distance = np.min(distances)
+        
+        # CRITICAL FIX: Handle ties when multiple centroids are equidistant
+        # This prevents both players from always being assigned to the same centroid
+        # Using rtol=1e-3 for more reasonable tolerance with normalized histogram features
+        tied_indices = np.where(np.isclose(distances, min_distance, rtol=1e-3))[0]
+        
+        if len(tied_indices) > 1:
+            # Tie-breaking: Use deterministic selection based on feature characteristics
+            # Sum of feature values provides a stable, reproducible selection mechanism
+            # that distributes different features across tied indices
+            feature_characteristic = int(np.sum(feature) * 1e6)  # Scale up for integer precision
+            nearest_idx = tied_indices[feature_characteristic % len(tied_indices)]
+            logger.debug(f"Tie-breaking: {len(tied_indices)} centroids equidistant, selected index {nearest_idx}")
+        else:
+            nearest_idx = tied_indices[0]
+        
         return nearest_idx + 1  # 1-indexed for player numbers
 
     def update(
