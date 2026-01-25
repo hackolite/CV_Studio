@@ -201,6 +201,37 @@ class Node(Node):
     def __init__(self):
         pass
 
+    def _is_valid_detection_format(self, data):
+        """
+        Validate that the data contains the required detection format.
+        
+        Args:
+            data: Dictionary to validate
+            
+        Returns:
+            bool: True if data contains valid detection format
+        """
+        if not isinstance(data, dict):
+            return False
+        
+        # Check for required keys
+        required_keys = ['bboxes', 'scores', 'class_ids', 'class_names']
+        if not all(key in data for key in required_keys):
+            return False
+        
+        # Check that values are lists (or compatible types)
+        for key in required_keys:
+            if not isinstance(data[key], (list, tuple)):
+                return False
+        
+        # Check that all lists have the same length (consistency check)
+        lengths = [len(data[key]) for key in required_keys]
+        if len(set(lengths)) > 1:
+            logger.warning(f"Detection format validation: inconsistent lengths {dict(zip(required_keys, lengths))}")
+            return False
+        
+        return True
+
 
 
     def update(
@@ -303,13 +334,14 @@ class Node(Node):
                 # Use JSON input from Input04
                 node_result = node_result_dict.get(json_detection_connection_src, {})
                 logger.debug(f"Using detection data from JSON input: {json_detection_connection_src}")
-            elif connection_info_src and src_node_name in ('ObjectDetection', 'ReId', 'Classification'):
+            elif connection_info_src:
                 # Fall back to getting data from the image source node
+                # This provides backward compatibility with existing pipelines
                 node_result = node_result_dict.get(connection_info_src, {})
                 logger.debug(f"Using detection data from image source node: {src_node_name}")
             
-            # Process detections if we have any
-            if node_result:
+            # Validate that we have the required detection format
+            if node_result and self._is_valid_detection_format(node_result):
                 od_bboxes = node_result.get('bboxes', [])
                 od_scores = node_result.get('scores', [])
                 od_class_ids = node_result.get('class_ids', [])
@@ -338,6 +370,9 @@ class Node(Node):
                 result['class_ids'] = t_class_ids
                 result['class_names'] = od_class_names
                 result['track_id_dict'] = self._track_id_dict[node_id]
+            elif node_result:
+                # node_result exists but doesn't have valid detection format
+                logger.warning(f"Node result does not contain valid detection format. Expected keys: bboxes, scores, class_ids, class_names")
 
         elif frame is not None and not tracking_enabled:
             # Tracking is disabled, pass through original detection results without tracking IDs
@@ -347,10 +382,11 @@ class Node(Node):
             node_result = {}
             if json_detection_connection_src:
                 node_result = node_result_dict.get(json_detection_connection_src, {})
-            elif connection_info_src and src_node_name in ('ObjectDetection', 'ReId', 'Classification'):
+            elif connection_info_src:
                 node_result = node_result_dict.get(connection_info_src, {})
             
-            if node_result:
+            # Validate and pass through if we have valid detection data
+            if node_result and self._is_valid_detection_format(node_result):
                 result['bboxes'] = node_result.get('bboxes', [])
                 result['scores'] = node_result.get('scores', [])
                 result['class_ids'] = node_result.get('class_ids', [])

@@ -38,6 +38,76 @@ class TestMOTJSONInput:
         assert 'Input04' in input04_tag
         assert 'MultiObjectTracking' in tag_node_name
     
+    def test_detection_format_validation(self):
+        """Test validation of detection format"""
+        # Import here to avoid dearpygui issues
+        import sys
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        
+        # Mock the MOT node class to test validation
+        class MockMOTNode:
+            def _is_valid_detection_format(self, data):
+                """Copy of validation method from MOT node"""
+                if not isinstance(data, dict):
+                    return False
+                
+                required_keys = ['bboxes', 'scores', 'class_ids', 'class_names']
+                if not all(key in data for key in required_keys):
+                    return False
+                
+                for key in required_keys:
+                    if not isinstance(data[key], (list, tuple)):
+                        return False
+                
+                lengths = [len(data[key]) for key in required_keys]
+                if len(set(lengths)) > 1:
+                    return False
+                
+                return True
+        
+        node = MockMOTNode()
+        
+        # Test valid format
+        valid_data = {
+            'bboxes': [[100, 100, 200, 200]],
+            'scores': [0.95],
+            'class_ids': [0],
+            'class_names': ['player1']
+        }
+        assert node._is_valid_detection_format(valid_data) is True
+        
+        # Test invalid format - missing key
+        invalid_data_missing_key = {
+            'bboxes': [[100, 100, 200, 200]],
+            'scores': [0.95],
+            'class_ids': [0]
+            # missing 'class_names'
+        }
+        assert node._is_valid_detection_format(invalid_data_missing_key) is False
+        
+        # Test invalid format - wrong type
+        invalid_data_wrong_type = {
+            'bboxes': "not a list",
+            'scores': [0.95],
+            'class_ids': [0],
+            'class_names': ['player1']
+        }
+        assert node._is_valid_detection_format(invalid_data_wrong_type) is False
+        
+        # Test invalid format - inconsistent lengths
+        invalid_data_inconsistent = {
+            'bboxes': [[100, 100, 200, 200], [200, 200, 300, 300]],
+            'scores': [0.95],  # Only 1 score for 2 bboxes
+            'class_ids': [0],
+            'class_names': ['player1']
+        }
+        assert node._is_valid_detection_format(invalid_data_inconsistent) is False
+        
+        # Test non-dict input
+        assert node._is_valid_detection_format("not a dict") is False
+        assert node._is_valid_detection_format(None) is False
+    
     def test_mot_processes_reid_detection_json(self):
         """Test that MOT can process detection JSON from ReId"""
         # Simulate ReId output format
