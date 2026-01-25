@@ -619,6 +619,9 @@ class Node(Node):
             transformed_points = json_data.get('transformed_points', None)
             input_points = json_data.get('input_points', None)  # Original image coordinates
             
+            # Initialize labels as None by default
+            labels = None
+            
             # Extract labels from bboxes and class_ids (from object detection)
             if 'bboxes' in json_data and 'class_ids' in json_data and 'class_names' in json_data:
                 class_ids = json_data.get('class_ids', [])
