@@ -381,14 +381,15 @@ class Node(Node):
         
         # CRITICAL FIX: Handle ties when multiple centroids are equidistant
         # This prevents both players from always being assigned to the same centroid
-        tied_indices = np.where(np.isclose(distances, min_distance, rtol=1e-5))[0]
+        # Using rtol=1e-3 for more reasonable tolerance with normalized histogram features
+        tied_indices = np.where(np.isclose(distances, min_distance, rtol=1e-3))[0]
         
         if len(tied_indices) > 1:
-            # Tie-breaking: Use Python's built-in hash on feature tuple for stable selection
-            # This provides a deterministic but distinct assignment based on feature values
-            # The hash distributes features evenly across tied indices
-            feature_hash = hash(tuple(feature))
-            nearest_idx = tied_indices[feature_hash % len(tied_indices)]
+            # Tie-breaking: Use deterministic selection based on feature characteristics
+            # Sum of feature values provides a stable, reproducible selection mechanism
+            # that distributes different features across tied indices
+            feature_characteristic = int(np.sum(feature) * 1e6)  # Scale up for integer precision
+            nearest_idx = tied_indices[feature_characteristic % len(tied_indices)]
             logger.debug(f"Tie-breaking: {len(tied_indices)} centroids equidistant, selected index {nearest_idx}")
         else:
             nearest_idx = tied_indices[0]

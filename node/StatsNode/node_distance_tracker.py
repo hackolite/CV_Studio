@@ -204,8 +204,8 @@ class Node(Node):
         
         # Check if tracking state changed from disabled to enabled (stop->start transition)
         node_id_str = str(node_id)
-        previous_state = self._previous_tracking_state.get(node_id_str, True)
-        if not previous_state and tracking_enabled:
+        previous_state = self._previous_tracking_state.get(node_id_str, None)
+        if previous_state is False and tracking_enabled:
             # Transition from stop to start: reset distance tracking state
             logger.info(f"Distance tracking re-enabled for node {node_id}, resetting state")
             if node_id_str in self._previous_positions:
