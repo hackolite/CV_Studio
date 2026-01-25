@@ -581,6 +581,15 @@ class Node(Node):
         dpg_set_value(self.tag_node_input_text_value_name, model_name)
         dpg_set_value(self.tag_node_input_float_value_name, score_th)
         
+        # Update the dropdown items to match the loaded model's classes
+        if model_name in self._model_class_name_list:
+            class_names = self._model_class_name_list[model_name]
+            class_items = get_class_rejection_dropdown_items(class_names)
+            try:
+                dpg.configure_item(rejected_classes_tag, items=class_items)
+            except:
+                pass  # Ignore if the UI element doesn't exist yet
+        
         # Set rejected classes if the tag exists in settings
         if rejected_classes_tag in setting_dict:
             try:
