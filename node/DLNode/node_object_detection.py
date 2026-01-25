@@ -443,6 +443,9 @@ class Node(Node):
                         try:
                             rejected_classes_str = dpg_get_value(self.tag_node_rejected_classes_value_name)
                             if rejected_classes_str and rejected_classes_str.strip():
+                                # Log the raw rejection string
+                                logger.debug(f"Class rejection filter input: '{rejected_classes_str}'")
+                                
                                 # Parse the rejected class IDs
                                 rejected_classes = set()
                                 
@@ -463,12 +466,20 @@ class Node(Node):
                                             # Skip invalid class IDs
                                             pass
                                 
+                                # Log before filtering
+                                logger.debug(f"Before class rejection: {len(bboxes)} detections, class_ids={class_ids.tolist()}")
+                                logger.debug(f"Rejected classes: {rejected_classes}")
+                                
                                 # Filter out rejected classes
                                 if rejected_classes:
                                     keep_mask = np.array([class_id not in rejected_classes for class_id in class_ids])
                                     bboxes = bboxes[keep_mask]
                                     scores = scores[keep_mask]
                                     class_ids = class_ids[keep_mask]
+                                    
+                                    # Log after filtering
+                                    logger.debug(f"After class rejection: {len(bboxes)} detections, class_ids={class_ids.tolist()}")
+                                    logger.info(f"Class rejection filter: Excluded {rejected_classes}, kept {len(bboxes)} detections")
                         except Exception as e:
                             logger.warning(f"Error applying class rejection filter: {e}")
 
@@ -478,12 +489,14 @@ class Node(Node):
                         result['class_ids'] = class_ids.tolist()
                         result['class_names'] = class_name_dict
                         result['score_th'] = score_th
+                        logger.debug(f"JSON output: {len(bboxes)} detections, class_ids={class_ids.tolist()}")
                     else:
                         result['bboxes'] = []
                         result['scores'] = []
                         result['class_ids'] = []
                         result['class_names'] = class_name_dict
                         result['score_th'] = score_th
+                        logger.debug(f"JSON output: 0 detections (all filtered out or no detections)")
 
 
                 if frame is not None and use_pref_counter:

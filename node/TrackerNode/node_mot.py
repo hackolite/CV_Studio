@@ -364,6 +364,8 @@ class Node(Node):
                 od_scores = node_result.get('scores', [])
                 od_class_ids = node_result.get('class_ids', [])
                 od_class_names = node_result.get('class_names', [])
+                
+                logger.debug(f"MOT received detections: {len(od_bboxes)} objects, class_ids={od_class_ids}")
 
                 track_ids, t_bboxes, t_scores, t_class_ids = [], [], [], []
                 track_ids, t_bboxes, t_scores, t_class_ids = self._model_instance[
