@@ -1,0 +1,55 @@
+┌─────────────────────────────────────────────────┐
+│          Multi-Object Tracking (MOT) Node      │
+├─────────────────────────────────────────────────┤
+│                                                 │
+│  ◀ Image        [Input Image Connection]       │
+│                                                 │
+│  ◀ JSON Start/Stop (boolean)                   │
+│                                                 │
+│  ◀ JSON Detections                             │
+│                                                 │
+├─────────────────────────────────────────────────┤
+│                                                 │
+│  [Preview Image]                                │
+│                                                 │
+├─────────────────────────────────────────────────┤
+│                                                 │
+│  Tracker Model:  [▼ ByteTrack        ]         │
+│                                                 │
+│  **NEW** Confidence: [━━━━━━━━━━━○] 0.0        │
+│          ^                         ^            │
+│        Min: 0.0               Max: 1.0          │
+│                                                 │
+│  elapsed time(ms)  ▶                            │
+│                                                 │
+│  JSON  [Tracking Data]  ▶                       │
+│                                                 │
+└─────────────────────────────────────────────────┘
+
+Feature Description:
+═══════════════════
+
+The new confidence slider allows users to filter detections
+based on their confidence score before passing them to the
+tracker. This is useful for:
+
+1. Reducing false positives in tracking
+2. Improving tracker performance by ignoring low-confidence detections
+3. Fine-tuning the tracking quality
+
+Usage:
+- Set to 0.0 (default): All detections pass through (no filtering)
+- Set to 0.5: Only detections with score >= 0.5 are tracked
+- Set to 0.8: Only high-confidence detections (>= 0.8) are tracked
+- Set to 1.0: Only perfect detections (= 1.0) are tracked
+
+Example:
+If object detection outputs:
+- Detection 1: score 0.95 → TRACKED (if threshold <= 0.95)
+- Detection 2: score 0.65 → TRACKED (if threshold <= 0.65)  
+- Detection 3: score 0.35 → FILTERED OUT (if threshold > 0.35)
+- Detection 4: score 0.15 → FILTERED OUT (if threshold > 0.15)
+
+With threshold = 0.5:
+- Detections 1 and 2 are tracked
+- Detections 3 and 4 are filtered out

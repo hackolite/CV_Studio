@@ -62,6 +62,10 @@ class FactoryNode:
         node.tag_node_output02_value_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02Value'
         node.tag_node_output03_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Output03'
         node.tag_node_output03_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Output03Value'
+        
+        # Tag for confidence threshold slider
+        node.tag_node_confidence_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':ConfThresh'
+        node.tag_node_confidence_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':ConfThreshValue'
 
 
         node._opencv_setting_dict = opencv_setting_dict
@@ -145,6 +149,21 @@ class FactoryNode:
                     default_value=list(node._model_class.keys())[0],
                     width=small_window_w,
                     tag=node.tag_node_input02_value_name,
+                )
+
+            # Confidence threshold slider
+            with dpg.node_attribute(
+                    tag=node.tag_node_confidence_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_confidence_value_name,
+                    label="confidence",
+                    width=small_window_w - 80,
+                    default_value=0.0,
+                    min_value=0.0,
+                    max_value=1.0,
+                    callback=None,
                 )
 
             if use_pref_counter:
@@ -250,6 +269,7 @@ class Node(Node):
     ):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
+        confidence_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':ConfThreshValue'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
@@ -366,6 +386,21 @@ class Node(Node):
                 od_class_names = node_result.get('class_names', [])
                 
                 logger.debug(f"MOT received detections: {len(od_bboxes)} objects, class_ids={od_class_ids}")
+                
+                # Get confidence threshold from slider
+                confidence_threshold = dpg_get_value(confidence_threshold_tag)
+                
+                # Filter detections based on confidence threshold
+                if confidence_threshold > 0.0 and len(od_bboxes) > 0:
+                    # Use numpy for efficient filtering
+                    scores_array = np.array(od_scores)
+                    mask = scores_array >= confidence_threshold
+                    
+                    od_bboxes = [bbox for bbox, keep in zip(od_bboxes, mask) if keep]
+                    od_scores = scores_array[mask].tolist()
+                    od_class_ids = [cid for cid, keep in zip(od_class_ids, mask) if keep]
+                    
+                    logger.debug(f"After confidence filtering ({confidence_threshold}): {len(od_bboxes)} objects remain")
 
                 track_ids, t_bboxes, t_scores, t_class_ids = [], [], [], []
                 track_ids, t_bboxes, t_scores, t_class_ids = self._model_instance[
@@ -464,9 +499,13 @@ class Node(Node):
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
+        confidence_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':ConfThreshValue'
 
         # 選択モデル
         model_name = dpg_get_value(input_value02_tag)
+        
+        # Get confidence threshold value
+        confidence_threshold = dpg_get_value(confidence_threshold_tag)
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -474,13 +513,19 @@ class Node(Node):
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
         setting_dict[input_value02_tag] = model_name
+        setting_dict[confidence_threshold_tag] = confidence_threshold
 
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
+        confidence_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':ConfThreshValue'
 
         model_name = setting_dict[input_value02_tag]
 
         dpg_set_value(input_value02_tag, model_name)
+        
+        # Set confidence threshold with default value for backward compatibility
+        confidence_value = setting_dict.get(confidence_threshold_tag, 0.0)
+        dpg_set_value(confidence_threshold_tag, confidence_value)
