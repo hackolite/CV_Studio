@@ -206,7 +206,6 @@ def test_class_exclusion_multiple_frames():
         # Apply class exclusion filter
         keep_mask = np.array([class_id not in rejected_classes for class_id in frame_data['class_ids']])
         filtered_class_ids = frame_data['class_ids'][keep_mask]
-        filtered_bboxes = frame_data['bboxes'][keep_mask]
         
         print(f"  Filtered class IDs: {filtered_class_ids.tolist()}")
         print(f"  Classes: {[frame_data['class_names'][cid] for cid in filtered_class_ids]}")
