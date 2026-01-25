@@ -441,7 +441,7 @@ class Node(Node):
                 # Return the frame with overlay for downstream nodes
                 output_frame = debug_frame
             else:
-                debug_frame = frame if not tracking_enabled else np.zeros((small_window_w, small_window_h, 3))
+                debug_frame = frame
                 output_frame = frame  # Return original frame if no tracking data or tracking disabled
             texture = self.convert_cv_to_dpg(
                 debug_frame,
