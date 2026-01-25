@@ -536,7 +536,7 @@ class Node(Node):
             # Update position history if we have new data
             if transformed_points is not None and labels is not None:
                 self._update_player_positions(transformed_points, labels)
-            elif transformed_points is None and json_data is not None:
+            elif transformed_points is None:
                 # If we received JSON data but no transformed_points, it means
                 # MOT is stopped or no detections - clear the display
                 self._last_positions_by_label = {}
