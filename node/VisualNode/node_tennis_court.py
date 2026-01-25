@@ -216,8 +216,8 @@ class Node(Node):
         x2 = bboxes[:, 2]
         y2 = bboxes[:, 3]
         
-        # Calculate areas of all boxes
-        areas = (x2 - x1 + 1) * (y2 - y1 + 1)
+        # Calculate areas of all boxes (using modern continuous coordinates without +1)
+        areas = (x2 - x1) * (y2 - y1)
         
         # Sort by scores in descending order
         order = np.argsort(scores)[::-1]
@@ -234,8 +234,9 @@ class Node(Node):
             xx2 = np.minimum(x2[i], x2[order[1:]])
             yy2 = np.minimum(y2[i], y2[order[1:]])
             
-            w = np.maximum(0.0, xx2 - xx1 + 1)
-            h = np.maximum(0.0, yy2 - yy1 + 1)
+            # Calculate intersection (using continuous coordinates)
+            w = np.maximum(0.0, xx2 - xx1)
+            h = np.maximum(0.0, yy2 - yy1)
             inter = w * h
             
             # Calculate IoU
@@ -257,7 +258,7 @@ class Node(Node):
             bboxes: list of bounding boxes [x1, y1, x2, y2]
             scores: list of confidence scores
             class_ids: list of class IDs
-            labels: list of label strings
+            labels: list of label strings (can be None)
             
         Returns:
             tuple of (filtered_transformed_points, filtered_labels, filtered_class_ids)
@@ -266,8 +267,13 @@ class Node(Node):
         if not bboxes or len(bboxes) == 0:
             return transformed_points, labels, class_ids
         
-        # If lengths don't match, something is wrong - return as-is
-        if not (len(bboxes) == len(transformed_points) == len(class_ids)):
+        # Validate array lengths match (including labels if not None)
+        expected_length = len(bboxes)
+        if len(transformed_points) != expected_length or len(class_ids) != expected_length:
+            return transformed_points, labels, class_ids
+        
+        # Also validate labels length if it's not None
+        if labels is not None and len(labels) != expected_length:
             return transformed_points, labels, class_ids
         
         # Use scores if available, otherwise use uniform scores (all equal priority)
