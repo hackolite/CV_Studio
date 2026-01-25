@@ -123,6 +123,9 @@ class Node(Node):
     
     # Store cumulative distances for each player/object (by label)
     _cumulative_distances = {}
+    
+    # Track previous tracking_enabled state per node
+    _previous_tracking_state = {}
 
     def __init__(self):
         pass
@@ -199,6 +202,20 @@ class Node(Node):
         # Create output JSON
         output_json = None
         
+        # Check if tracking state changed from disabled to enabled (stop->start transition)
+        node_id_str = str(node_id)
+        previous_state = self._previous_tracking_state.get(node_id_str, True)
+        if not previous_state and tracking_enabled:
+            # Transition from stop to start: reset distance tracking state
+            logger.info(f"Distance tracking re-enabled for node {node_id}, resetting state")
+            if node_id_str in self._previous_positions:
+                self._previous_positions[node_id_str] = {}
+            if node_id_str in self._cumulative_distances:
+                self._cumulative_distances[node_id_str] = {}
+        
+        # Update tracking state for next iteration
+        self._previous_tracking_state[node_id_str] = tracking_enabled
+        
         # Only calculate distances if enabled
         if json_data is not None and tracking_enabled:
             # Extract transformed points and labels
@@ -207,7 +224,6 @@ class Node(Node):
             class_names = json_data.get('class_names', [])
             
             # Initialize node-specific storage if not exists
-            node_id_str = str(node_id)
             if node_id_str not in self._previous_positions:
                 self._previous_positions[node_id_str] = {}
             if node_id_str not in self._cumulative_distances:

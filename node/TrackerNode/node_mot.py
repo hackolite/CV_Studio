@@ -197,6 +197,7 @@ class Node(Node):
     _model_instance = {}
     _class_name_dict = None
     _track_id_dict = {}
+    _previous_tracking_state = {}  # Track previous tracking_enabled state per node
 
     def __init__(self):
         pass
@@ -318,6 +319,18 @@ class Node(Node):
 
         model_name_with_provider = tag_node_name + ':' + model_name
 
+        # Check if tracking state changed from disabled to enabled (stop->start transition)
+        previous_state = self._previous_tracking_state.get(node_id, True)
+        if not previous_state and tracking_enabled:
+            # Transition from stop to start: reset MOT state
+            logger.info(f"Tracking re-enabled for node {node_id}, resetting MOT state")
+            if model_name_with_provider in self._model_instance:
+                del self._model_instance[model_name_with_provider]
+            if node_id in self._track_id_dict:
+                self._track_id_dict[node_id] = {}
+        
+        # Update tracking state for next iteration
+        self._previous_tracking_state[node_id] = tracking_enabled
 
         if frame is not None:
             if model_name_with_provider not in self._model_instance:
