@@ -331,16 +331,18 @@ class Node(Node):
             return False
         
         # Number of clusters = number of slots
-        n_clusters = self._slot_id.get(tag_node_name, 1)
+        n_clusters_requested = self._slot_id.get(tag_node_name, 1)
         
-        # CRITICAL FIX: Don't reduce n_clusters if we have fewer samples than expected
-        # This prevents cluster collapse where all players map to the same centroid
-        # Instead, if we have fewer samples, we'll still initialize the requested number of clusters
-        # and let K-means handle it (some clusters may have no assignments initially)
-        if len(features) < n_clusters:
+        # CRITICAL FIX: K-means will fail if n_clusters > n_samples
+        # We must cap the clusters at the number of available samples
+        # However, we still maintain separate cluster IDs for unmatched slots
+        n_clusters = min(n_clusters_requested, len(features))
+        
+        if len(features) < n_clusters_requested:
             logger.warning(
-                f"Only {len(features)} samples collected but {n_clusters} clusters requested. "
-                f"K-means will initialize all {n_clusters} clusters but some may overlap initially."
+                f"Only {len(features)} samples collected but {n_clusters_requested} slots requested. "
+                f"Training K-means with {n_clusters} clusters. "
+                f"Additional slots will share centroids initially."
             )
         
         if n_clusters < 1:
@@ -349,9 +351,9 @@ class Node(Node):
         # Train K-means
         try:
             features_array = np.array(features)
-            # Use n_init=20 for more robust initialization, and random_state=None for randomness
-            # This helps prevent identical centroids when features are very similar
-            kmeans = KMeans(n_clusters=n_clusters, random_state=None, n_init=20)
+            # Use n_init=20 for more robust initialization
+            # random_state=42 for reproducibility in testing/debugging
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=20)
             kmeans.fit(features_array)
             
             # Store centroids
@@ -382,10 +384,11 @@ class Node(Node):
         tied_indices = np.where(np.isclose(distances, min_distance, rtol=1e-5))[0]
         
         if len(tied_indices) > 1:
-            # If there's a tie, use a stable but distinct selection based on feature variance
-            # This ensures different features with same distances get assigned differently
-            feature_sum = np.sum(feature)
-            nearest_idx = tied_indices[int(feature_sum * 1000) % len(tied_indices)]
+            # Tie-breaking: Use Python's built-in hash on feature tuple for stable selection
+            # This provides a deterministic but distinct assignment based on feature values
+            # The hash distributes features evenly across tied indices
+            feature_hash = hash(tuple(feature))
+            nearest_idx = tied_indices[feature_hash % len(tied_indices)]
             logger.debug(f"Tie-breaking: {len(tied_indices)} centroids equidistant, selected index {nearest_idx}")
         else:
             nearest_idx = tied_indices[0]
