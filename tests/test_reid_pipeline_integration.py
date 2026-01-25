@@ -4,7 +4,6 @@
 Integration test showing the correct pipeline flow:
 ObjectDetection → ReId → MultiObjectTracking
 """
-import pytest
 import numpy as np
 import sys
 import os
