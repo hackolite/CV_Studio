@@ -244,7 +244,7 @@ if __name__ == '__main__':
         print("  ✓ Full pipeline works with actual tracking data")
         print()
         print("Issue resolved: 'vérifie que seules données affichées")
-        print("                (boundings box), par le tracker, sont")
+        print("                (bounding boxes), par le tracker, sont")
         print("                envoyées à l\\'homographie'")
         
     except AssertionError as e:
