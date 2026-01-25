@@ -399,23 +399,10 @@ class Node(Node):
                 )
 
         elif frame is not None and not tracking_enabled:
-            # Tracking is disabled, pass through original detection results without tracking IDs
-            logger.debug(f"Tracking disabled, passing through detection results")
-            
-            # Get detection data from JSON input (Input04) if connected, otherwise fall back to node_result_dict
-            node_result = {}
-            if json_detection_connection_src:
-                node_result = node_result_dict.get(json_detection_connection_src, {})
-            elif connection_info_src:
-                node_result = node_result_dict.get(connection_info_src, {})
-            
-            # Validate and pass through if we have valid detection data
-            if node_result and self._is_valid_detection_format(node_result):
-                result['bboxes'] = node_result.get('bboxes', [])
-                result['scores'] = node_result.get('scores', [])
-                result['class_ids'] = node_result.get('class_ids', [])
-                result['class_names'] = node_result.get('class_names', [])
-                result['track_ids'] = []  # No tracking IDs when disabled
+            # Tracking is disabled, output empty result (no data should be sent downstream)
+            logger.debug(f"Tracking disabled, outputting empty result")
+            # result remains empty dict - no bboxes, no tracking data
+            # This ensures homography and tennis court receive no data and display nothing
 
 
         if frame is not None and use_pref_counter:
