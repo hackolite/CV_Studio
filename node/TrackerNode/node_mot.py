@@ -238,6 +238,76 @@ class Node(Node):
         
         return True
 
+    def _filter_tracking_data(self, data):
+        """
+        Filter tracking data to exclude balls and objects without valid labels.
+        This ensures the MOT display matches what will be shown on tennis court.
+        
+        Args:
+            data: Dictionary with tracking data containing bboxes, class_ids, class_names, etc.
+            
+        Returns:
+            dict: Filtered tracking data with only valid objects
+        """
+        if not data or 'bboxes' not in data or len(data['bboxes']) == 0:
+            return data
+        
+        # Extract all fields
+        track_ids = data.get('track_ids', [])
+        bboxes = data.get('bboxes', [])
+        scores = data.get('scores', [])
+        class_ids = data.get('class_ids', [])
+        class_names = data.get('class_names', [])
+        track_id_dict = data.get('track_id_dict', {})
+        
+        # Track which labels have been included to avoid duplicates
+        seen_labels = set()
+        
+        # Filter indices
+        filtered_indices = []
+        for i in range(len(bboxes)):
+            # Get label for this object
+            label = None
+            if i < len(class_ids):
+                class_id = class_ids[i]
+                # Get label from class_names (handles both dict and list formats)
+                if isinstance(class_names, dict):
+                    label = class_names.get(class_id, None)
+                elif isinstance(class_names, list) and i < len(class_names):
+                    label = class_names[i]
+            
+            # Skip if label is None (object not classified by ReId)
+            if label is None:
+                logger.debug(f"Filtering out object {i}: no valid label")
+                continue
+            
+            # Skip if this is a ball
+            if isinstance(label, str) and 'ball' in label.lower():
+                logger.debug(f"Filtering out object {i}: detected as ball ({label})")
+                continue
+            
+            # Skip if we've already included this label (avoid duplicates)
+            if label in seen_labels:
+                logger.debug(f"Filtering out object {i}: duplicate label ({label})")
+                continue
+            
+            # This object passes all filters
+            seen_labels.add(label)
+            filtered_indices.append(i)
+        
+        # Build filtered result
+        filtered_result = {
+            'track_ids': [track_ids[i] for i in filtered_indices] if track_ids else [],
+            'bboxes': [bboxes[i] for i in filtered_indices] if bboxes else [],
+            'scores': [scores[i] for i in filtered_indices] if scores else [],
+            'class_ids': [class_ids[i] for i in filtered_indices] if class_ids else [],
+            'class_names': class_names,  # Keep original format (dict or list)
+            'track_id_dict': track_id_dict,
+        }
+        
+        logger.debug(f"Filtered tracking data: {len(bboxes)} objects -> {len(filtered_indices)} objects")
+        return filtered_result
+
 
 
     def update(
@@ -415,6 +485,11 @@ class Node(Node):
 
         # Initialize output_frame for downstream nodes
         output_frame = None
+        
+        # Filter tracking data to exclude balls and objects without valid labels
+        # This ensures display and downstream data are synchronized
+        if result and len(result.get('bboxes', [])) > 0:
+            result = self._filter_tracking_data(result)
         
         # Check if result has displayable data (bboxes that will be drawn)
         # Only send data if tracking is enabled AND there are bboxes to display
