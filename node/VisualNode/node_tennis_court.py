@@ -432,11 +432,15 @@ class Node(Node):
         # Track which labels have been drawn in this frame to avoid duplicates
         drawn_labels = set()
         
-        # Draw positions (filtering out balls and avoiding duplicates)
+        # Draw positions (filtering out balls, invalid labels, and avoiding duplicates)
         for i, point in enumerate(transformed_points):
             if len(point) >= 2:
                 # Get label for this point
-                label = labels[i] if labels and i < len(labels) else f"Player {i+1}"
+                label = labels[i] if labels and i < len(labels) else None
+                
+                # Skip if label is None (object not classified by ReId)
+                if label is None:
+                    continue
                 
                 # Skip if this is a ball
                 if 'ball' in label.lower():
@@ -522,11 +526,11 @@ class Node(Node):
                 labels = []
                 for class_id in class_ids:
                     if isinstance(class_names, dict):
-                        label = class_names.get(class_id, f"Object {class_id}")
+                        label = class_names.get(class_id, None)
                     elif isinstance(class_names, list) and class_id < len(class_names):
                         label = class_names[class_id]
                     else:
-                        label = f"Object {class_id}"
+                        label = None
                     labels.append(label)
             
             # Update position history if we have new data

@@ -271,11 +271,15 @@ class Node(Node):
                 class_id = class_ids[i]
                 # Get label from class_names
                 if isinstance(class_names, dict):
-                    label = class_names.get(class_id, f'Object {class_id}')
+                    label = class_names.get(class_id, None)
                 elif isinstance(class_names, list) and class_id < len(class_names):
                     label = class_names[class_id]
                 else:
-                    label = f'Object {class_id}'
+                    label = None
+                
+                # Skip objects without valid ReId labels
+                if label is None:
+                    continue
                 
                 # Add point to this label's list
                 if label not in label_points:

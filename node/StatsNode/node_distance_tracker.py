@@ -220,13 +220,17 @@ class Node(Node):
             if transformed_points is not None and len(transformed_points) > 0:
                 for i, current_point in enumerate(transformed_points):
                     # Get label for this point
-                    label = f"Object {i}"
+                    label = None
                     if i < len(class_ids):
                         class_id = class_ids[i]
                         if isinstance(class_names, dict):
-                            label = class_names.get(class_id, f"Object {class_id}")
+                            label = class_names.get(class_id, None)
                         elif isinstance(class_names, list) and class_id < len(class_names):
                             label = class_names[class_id]
+                    
+                    # Skip objects without valid ReId labels
+                    if label is None:
+                        continue
                     
                     # Get previous position for this label
                     prev_position = self._previous_positions[node_id_str].get(label, None)
