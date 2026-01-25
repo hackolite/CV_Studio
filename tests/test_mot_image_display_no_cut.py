@@ -18,7 +18,7 @@ def test_image_display_logic():
     """
     Test that image is ALWAYS displayed, regardless of tracking state or bbox presence.
     
-    This verifies the fix in node_mot.py line 444:
+    This verifies the fix in node_mot.py update() method:
     - Before fix: debug_frame = frame if not tracking_enabled else np.zeros(...)
     - After fix: debug_frame = frame
     
@@ -78,10 +78,10 @@ def test_image_display_logic():
         tracking_enabled = test_case['tracking_enabled']
         has_frame = test_case['has_frame']
         
-        # This is the core logic from node_mot.py (lines 417-445)
+        # This is the core logic from node_mot.py update() method
         has_displayable_bboxes = tracking_enabled and bool(result) and len(result.get('bboxes', [])) > 0
         
-        # Display logic - AFTER FIX (line 444)
+        # Display logic - AFTER FIX
         # The fix: ALWAYS use frame (never use np.zeros black screen)
         if has_frame:
             if has_displayable_bboxes:
@@ -184,9 +184,9 @@ if __name__ == '__main__':
         print("="*70)
         print()
         print("Fix Summary:")
-        print("  • Changed line 444: debug_frame = frame (was: frame if not tracking_enabled else np.zeros)")
+        print("  • Changed debug_frame assignment: debug_frame = frame (was: frame if not tracking_enabled else np.zeros)")
         print("  • Result: Image is ALWAYS displayed (never cut with black screen)")
-        print("  • JSON sending remains conditional (unchanged, line 455)")
+        print("  • JSON sending remains conditional (unchanged)")
         print()
         print("Issue resolved: ✓ MOT, pas de coupure de l'affichage de l'image,")
         print("                  mais l'envoie de json reste conditionnelle comme déjà fait")
