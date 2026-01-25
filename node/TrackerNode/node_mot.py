@@ -414,8 +414,12 @@ class Node(Node):
         # Initialize output_frame for downstream nodes
         output_frame = None
         
+        # Check if result has displayable data (bboxes that will be drawn)
+        # Only send data if tracking is enabled AND there are bboxes to display
+        has_displayable_bboxes = tracking_enabled and bool(result) and len(result.get('bboxes', [])) > 0
+        
         if frame is not None:
-            if tracking_enabled and result:
+            if has_displayable_bboxes:
 
                 debug_frame = copy.deepcopy(frame)
                 track_ids = result.get('track_ids', [])
@@ -446,7 +450,11 @@ class Node(Node):
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return {"image": output_frame, "json": result, "audio": None}
+        # Only send result to downstream nodes if there are actual bboxes being displayed
+        # This ensures homography only receives data that was actually displayed on screen
+        json_output = result if has_displayable_bboxes else {}
+        
+        return {"image": output_frame, "json": json_output, "audio": None}
 
     def close(self, node_id):
         pass
