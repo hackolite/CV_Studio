@@ -211,23 +211,28 @@ class Node(Node):
         Returns:
             bool: True if data contains valid detection format
         """
+        required_keys = ['bboxes', 'scores', 'class_ids', 'class_names']
+        
         if not isinstance(data, dict):
+            logger.debug(f"Invalid detection format: expected dict, got {type(data).__name__}")
             return False
         
         # Check for required keys
-        required_keys = ['bboxes', 'scores', 'class_ids', 'class_names']
-        if not all(key in data for key in required_keys):
+        missing_keys = [key for key in required_keys if key not in data]
+        if missing_keys:
+            logger.debug(f"Invalid detection format: missing required keys {missing_keys}. Found keys: {list(data.keys())}")
             return False
         
         # Check that values are lists (or compatible types)
         for key in required_keys:
             if not isinstance(data[key], (list, tuple)):
+                logger.debug(f"Invalid detection format: '{key}' must be a list or tuple, got {type(data[key]).__name__}")
                 return False
         
         # Check that all lists have the same length (consistency check)
         lengths = [len(data[key]) for key in required_keys]
         if len(set(lengths)) > 1:
-            logger.warning(f"Detection format validation: inconsistent lengths {dict(zip(required_keys, lengths))}")
+            logger.warning(f"Detection format validation failed: inconsistent lengths {dict(zip(required_keys, lengths))}")
             return False
         
         return True
@@ -372,7 +377,13 @@ class Node(Node):
                 result['track_id_dict'] = self._track_id_dict[node_id]
             elif node_result:
                 # node_result exists but doesn't have valid detection format
-                logger.warning(f"Node result does not contain valid detection format. Expected keys: bboxes, scores, class_ids, class_names")
+                required_keys = ['bboxes', 'scores', 'class_ids', 'class_names']
+                found_keys = list(node_result.keys()) if isinstance(node_result, dict) else []
+                logger.warning(
+                    f"Node result has invalid detection format. "
+                    f"Expected keys: {required_keys}, "
+                    f"Found: {found_keys if isinstance(node_result, dict) else type(node_result).__name__}"
+                )
 
         elif frame is not None and not tracking_enabled:
             # Tracking is disabled, pass through original detection results without tracking IDs

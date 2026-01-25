@@ -40,11 +40,6 @@ class TestMOTJSONInput:
     
     def test_detection_format_validation(self):
         """Test validation of detection format"""
-        # Import here to avoid dearpygui issues
-        import sys
-        import os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        
         # Mock the MOT node class to test validation
         class MockMOTNode:
             def _is_valid_detection_format(self, data):
