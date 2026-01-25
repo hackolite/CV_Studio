@@ -132,6 +132,11 @@ class Node(Node):
     VISUALIZATION_WIDTH = 300   # Display width in pixels (divided by 2)
     VISUALIZATION_HEIGHT = 400  # Display height in pixels (divided by 2)
     VISUALIZATION_MARGIN = 30   # Total margin in pixels (divided by 2)
+    
+    # NMS (Non-Maximum Suppression) threshold for filtering duplicate detections
+    # Lower values = more aggressive filtering (fewer detections kept)
+    # Higher values = less aggressive filtering (more detections kept)
+    NMS_IOU_THRESHOLD = 0.5
 
     def __init__(self):
         """
@@ -186,6 +191,108 @@ class Node(Node):
                 y_avg = sum(p[1] for p in positions) / len(positions)
                 averages[label] = [x_avg, y_avg]
         return averages
+    
+    def _nms(self, bboxes, scores, iou_threshold):
+        """
+        Apply Non-Maximum Suppression to filter overlapping bounding boxes.
+        
+        Args:
+            bboxes: numpy array of bounding boxes in format [x1, y1, x2, y2]
+            scores: numpy array of confidence scores for each bbox
+            iou_threshold: IoU threshold for suppression (boxes with IoU > threshold are suppressed)
+            
+        Returns:
+            list of indices to keep
+        """
+        if len(bboxes) == 0:
+            return []
+        
+        # Convert to numpy arrays if needed
+        bboxes = np.array(bboxes, dtype=np.float32)
+        scores = np.array(scores, dtype=np.float32)
+        
+        x1 = bboxes[:, 0]
+        y1 = bboxes[:, 1]
+        x2 = bboxes[:, 2]
+        y2 = bboxes[:, 3]
+        
+        # Calculate areas of all boxes (using modern continuous coordinates without +1)
+        areas = (x2 - x1) * (y2 - y1)
+        
+        # Sort by scores in descending order
+        order = np.argsort(scores)[::-1]
+        
+        keep = []
+        while order.size > 0:
+            # Pick the box with highest score
+            i = order[0]
+            keep.append(i)
+            
+            # Calculate IoU of this box with all remaining boxes
+            xx1 = np.maximum(x1[i], x1[order[1:]])
+            yy1 = np.maximum(y1[i], y1[order[1:]])
+            xx2 = np.minimum(x2[i], x2[order[1:]])
+            yy2 = np.minimum(y2[i], y2[order[1:]])
+            
+            # Calculate intersection (using continuous coordinates)
+            w = np.maximum(0.0, xx2 - xx1)
+            h = np.maximum(0.0, yy2 - yy1)
+            inter = w * h
+            
+            # Calculate IoU
+            iou = inter / (areas[i] + areas[order[1:]] - inter)
+            
+            # Keep only boxes with IoU below threshold
+            inds = np.where(iou <= iou_threshold)[0]
+            order = order[inds + 1]
+        
+        return keep
+    
+    def _apply_nms_to_tracking(self, transformed_points, bboxes, scores, class_ids, labels):
+        """
+        Apply NMS to filter duplicate tracking detections based on bounding box overlap.
+        This ensures tennis court display is synchronized with MOT display by removing duplicates.
+        
+        Args:
+            transformed_points: list of [x, y] coordinates in meters
+            bboxes: list of bounding boxes [x1, y1, x2, y2]
+            scores: list of confidence scores
+            class_ids: list of class IDs
+            labels: list of label strings (can be None)
+            
+        Returns:
+            tuple of (filtered_transformed_points, filtered_labels, filtered_class_ids)
+        """
+        # If no bboxes or invalid data, return as-is
+        if not bboxes or len(bboxes) == 0:
+            return transformed_points, labels, class_ids
+        
+        # Validate array lengths match (including labels if not None)
+        expected_length = len(bboxes)
+        if len(transformed_points) != expected_length or len(class_ids) != expected_length:
+            return transformed_points, labels, class_ids
+        
+        # Also validate labels length if it's not None
+        if labels is not None and len(labels) != expected_length:
+            return transformed_points, labels, class_ids
+        
+        # Use scores if available, otherwise use uniform scores (all equal priority)
+        if scores and len(scores) == len(bboxes):
+            nms_scores = scores
+        else:
+            # No scores available - use uniform scores (all boxes have equal priority)
+            # In this case, NMS will still work based on IoU but ordering might differ
+            nms_scores = [1.0] * len(bboxes)
+        
+        # Apply NMS to get indices to keep
+        keep_indices = self._nms(bboxes, nms_scores, self.NMS_IOU_THRESHOLD)
+        
+        # Filter all data by kept indices
+        filtered_transformed_points = [transformed_points[i] for i in keep_indices]
+        filtered_labels = [labels[i] for i in keep_indices] if labels else None
+        filtered_class_ids = [class_ids[i] for i in keep_indices] if class_ids else None
+        
+        return filtered_transformed_points, filtered_labels, filtered_class_ids
 
     def _draw_tennis_court(self, image, template, scale=40, offset_x=50, offset_y=50):
         """
@@ -518,10 +625,16 @@ class Node(Node):
             transformed_points = json_data.get('transformed_points', None)
             input_points = json_data.get('input_points', None)  # Original image coordinates
             
+            # Initialize labels as None by default
+            labels = None
+            
             # Extract labels from bboxes and class_ids (from object detection)
             if 'bboxes' in json_data and 'class_ids' in json_data and 'class_names' in json_data:
                 class_ids = json_data.get('class_ids', [])
                 class_names = json_data.get('class_names', {})
+                bboxes = json_data.get('bboxes', [])
+                scores = json_data.get('scores', [])
+                
                 # Create labels for each detected object
                 labels = []
                 for class_id in class_ids:
@@ -532,6 +645,13 @@ class Node(Node):
                     else:
                         label = None
                     labels.append(label)
+                
+                # Apply NMS to filter duplicate detections
+                # This synchronizes the tennis court display with MOT display
+                if transformed_points is not None and bboxes and len(bboxes) > 0:
+                    transformed_points, labels, class_ids = self._apply_nms_to_tracking(
+                        transformed_points, bboxes, scores, class_ids, labels
+                    )
             
             # Update position history if we have new data
             if transformed_points is not None and labels is not None:
