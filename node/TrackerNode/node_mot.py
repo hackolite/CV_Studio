@@ -391,20 +391,14 @@ class Node(Node):
                 confidence_threshold = dpg_get_value(confidence_threshold_tag)
                 
                 # Filter detections based on confidence threshold
-                if confidence_threshold > 0.0:
-                    filtered_bboxes = []
-                    filtered_scores = []
-                    filtered_class_ids = []
+                if confidence_threshold > 0.0 and len(od_bboxes) > 0:
+                    # Use numpy for efficient filtering
+                    scores_array = np.array(od_scores)
+                    mask = scores_array >= confidence_threshold
                     
-                    for bbox, score, class_id in zip(od_bboxes, od_scores, od_class_ids):
-                        if score >= confidence_threshold:
-                            filtered_bboxes.append(bbox)
-                            filtered_scores.append(score)
-                            filtered_class_ids.append(class_id)
-                    
-                    od_bboxes = filtered_bboxes
-                    od_scores = filtered_scores
-                    od_class_ids = filtered_class_ids
+                    od_bboxes = [bbox for bbox, keep in zip(od_bboxes, mask) if keep]
+                    od_scores = scores_array[mask].tolist()
+                    od_class_ids = [cid for cid, keep in zip(od_class_ids, mask) if keep]
                     
                     logger.debug(f"After confidence filtering ({confidence_threshold}): {len(od_bboxes)} objects remain")
 
@@ -532,6 +526,6 @@ class Node(Node):
 
         dpg_set_value(input_value02_tag, model_name)
         
-        # Set confidence threshold if it exists in the settings
-        if confidence_threshold_tag in setting_dict:
-            dpg_set_value(confidence_threshold_tag, setting_dict[confidence_threshold_tag])
+        # Set confidence threshold with default value for backward compatibility
+        confidence_value = setting_dict.get(confidence_threshold_tag, 0.0)
+        dpg_set_value(confidence_threshold_tag, confidence_value)
