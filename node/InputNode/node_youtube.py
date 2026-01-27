@@ -282,35 +282,7 @@ class YoutubeNode(Node):
             # Change button label back to Start
             dpg.set_item_label(tag_node_button_value_name, self._start_label)
         
-    def _update(self, node_id, connection_list, node_image_dict, node_result_dict):
-        """Updates the video stream image."""
-        print("update YT")
-        ret, frame = False, None
-        tag_node_name = f"{node_id}:{self.node_tag}"
-        output_value01_tag = f"{tag_node_name}:{self.TYPE_IMAGE}:Output01Value"
 
-        self.current_time = time.time()
-        
-        # Check if capture is initialized
-        if self.cap is not None:
-            try:
-                ret, frame = self.cap.read()
-                print(f"Frame read: ret={ret}, frame shape={frame.shape if frame is not None else None}")
-            except Exception as e:
-                print(f"Error reading frame: {e}")
-                ret, frame = False, None
-
-        if ret and frame is not None:
-            # Convert and update texture
-            texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
-            dpg_set_value(output_value01_tag, texture)
-            print("Texture updated")
-        else:
-            print("No valid frame")
-
-        return {"image": frame, "json": None}   
-
-    
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
       """Updates the video stream image."""
       tag_node_name = f"{node_id}:{self.node_tag}"
@@ -331,7 +303,7 @@ class YoutubeNode(Node):
         try:
             ret, frame = self.cap.read()
         except Exception as e:
-            print(f"Video read error: {e}")
+            print(f"YouTube node: Video read error: {e}")
             ret, frame = False, None
 
         if ret and frame is not None:
@@ -341,8 +313,9 @@ class YoutubeNode(Node):
                 texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
                 dpg_set_value(output_value01_tag, texture)
                 self._last_frame_time = self.current_time
-        else:
-            print("No valid frame")
+        elif self.cap is not None:
+            # Only print error if capture is active (not before Start is clicked)
+            print("YouTube node: Failed to read frame from stream")
 
       return {"image": getattr(self, "_last_frame", None), "json": None, "audio": None}
     
