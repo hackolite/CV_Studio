@@ -313,8 +313,8 @@ class YoutubeNode(Node):
                 texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
                 dpg_set_value(output_value01_tag, texture)
                 self._last_frame_time = self.current_time
-        elif self.cap is not None:
-            # Only print error if capture is active (not before Start is clicked)
+        elif self.cap.isOpened():
+            # Only print error if capture is still open (stream is active but no frame received)
             print("YouTube node: Failed to read frame from stream")
 
       return {"image": getattr(self, "_last_frame", None), "json": None, "audio": None}
