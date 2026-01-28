@@ -656,6 +656,9 @@ def draw_multi_object_tracking_info(
     vertical_offset_2 = int(12 * (font_scale / 0.5))
     thickness = max(1, int(2 * (font_scale / 0.5)))
     
+    # Thicker bounding box edges as requested
+    bbox_thickness = 3
+    
     for id, bbox, score, class_id in zip(track_ids, bboxes, scores, class_ids):
         x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
 
@@ -667,16 +670,21 @@ def draw_multi_object_tracking_info(
             (x1, y1),
             (x2, y2),
             color,
-            thickness=2,
+            thickness=bbox_thickness,
         )
 
         # トラックID、スコア
         score = '%.2f' % score
         text = 'TID:%s(%s)' % (str(int(track_id_dict[id])), str(score))
+        # Ensure TID label is drawn within frame boundaries
+        # If too close to top, draw below the box top edge instead
+        tid_y = y1 - vertical_offset_1
+        if tid_y < 20:  # Minimum margin from top of frame
+            tid_y = y1 + 20  # Draw inside the box instead
         image = cv2.putText(
             image,
             text,
-            (x1, y1 - vertical_offset_1),
+            (x1, tid_y),
             cv2.FONT_HERSHEY_SIMPLEX,
             font_scale,
             color,
@@ -685,10 +693,19 @@ def draw_multi_object_tracking_info(
 
         # クラスID
         text = 'CID:%s(%s)' % (str(int(class_id)), class_names[int(class_id)])
+        # Ensure CID label is drawn within frame boundaries
+        # If too close to top, draw it below the TID label
+        cid_y = y1 - vertical_offset_2
+        if cid_y < 5:  # Minimum margin from top of frame
+            # If TID was moved inside, place CID below it
+            if tid_y > y1:
+                cid_y = tid_y + 20  # Below TID inside box
+            else:
+                cid_y = y1 + 5  # Just inside the box top
         image = cv2.putText(
             image,
             text,
-            (x1, y1 - vertical_offset_2),
+            (x1, cid_y),
             cv2.FONT_HERSHEY_SIMPLEX,
             font_scale,
             color,
