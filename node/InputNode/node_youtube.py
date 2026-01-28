@@ -15,7 +15,7 @@ from node.basenode import Node
 
 
 def get_light_live_stream_url(url):
-    """Retrieves live stream URL in low resolution (max 360p).
+    """Retrieves live stream URL in low resolution (max 480p).
     
     Uses format selection that works better with OpenCV's VideoCapture:
     - Prefers non-HLS formats (avoids m3u8 playlists)
@@ -48,7 +48,7 @@ def get_light_live_stream_url(url):
             "format": format_spec,
             # Additional options to help with stream compatibility
             "nocheckcertificate": True,
-            "no_check_certificate": True,
+            "socket_timeout": 10,  # Timeout to prevent hanging on slow connections
         }
 
         try:
@@ -57,6 +57,7 @@ def get_light_live_stream_url(url):
                 video_url = info.get("url", None)
                 
                 if not video_url:
+                    last_error = f"No video URL found with format: {format_spec}"
                     continue
                 
                 # Skip URLs that contain m3u8 (HLS) as they often don't work well with OpenCV
@@ -75,14 +76,30 @@ def get_light_live_stream_url(url):
                         # Sort by height (prefer lower resolution for performance)
                         non_hls_formats.sort(key=lambda x: x.get("height", 0))
                         video_url = non_hls_formats[0].get("url")
+                        
+                        # Validate the new URL
+                        if not video_url:
+                            last_error = f"Found non-HLS format but URL was empty for format: {format_spec}"
+                            continue
+                    else:
+                        # No non-HLS formats found, skip this strategy
+                        last_error = f"Only HLS formats available with format: {format_spec}, skipping"
+                        continue
                 
-                # Try to open with OpenCV
-                cap = cv2.VideoCapture(video_url)
-                if cap.isOpened():
-                    return cap
-                else:
-                    cap.release()
-                    last_error = f"OpenCV failed to open stream with format: {format_spec}"
+                # Try to open with OpenCV with proper resource cleanup
+                cap = None
+                try:
+                    cap = cv2.VideoCapture(video_url)
+                    if cap.isOpened():
+                        return cap
+                    else:
+                        cap.release()
+                        last_error = f"OpenCV failed to open stream with format: {format_spec}"
+                        continue
+                except Exception as e:
+                    if cap is not None:
+                        cap.release()
+                    last_error = f"Exception opening stream with format {format_spec}: {e}"
                     continue
                     
         except yt_dlp.utils.DownloadError as e:
