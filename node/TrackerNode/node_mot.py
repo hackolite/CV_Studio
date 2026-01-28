@@ -67,6 +67,9 @@ class FactoryNode:
         # Tag for confidence threshold slider
         node.tag_node_confidence_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':ConfThresh'
         node.tag_node_confidence_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':ConfThreshValue'
+        
+        # Tag for enable/disable tracking checkbox
+        node.tag_node_enable_checkbox_name = node.tag_node_name + ':EnableCheckbox'
 
 
         node._opencv_setting_dict = opencv_setting_dict
@@ -164,6 +167,18 @@ class FactoryNode:
                     default_value=0.0,
                     min_value=0.0,
                     max_value=1.0,
+                    callback=None,
+                )
+            
+            # Enable/Disable tracking checkbox
+            with dpg.node_attribute(
+                    tag=node.tag_node_enable_checkbox_name + ':Attribute',
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_checkbox(
+                    tag=node.tag_node_enable_checkbox_name,
+                    label="Enable Tracking",
+                    default_value=True,
                     callback=None,
                 )
 
@@ -271,6 +286,7 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         confidence_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':ConfThreshValue'
+        enable_checkbox_tag = tag_node_name + ':EnableCheckbox'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
@@ -323,14 +339,20 @@ class Node(Node):
 
         frame = node_image_dict.get(connection_info_src, None)
         
-        # Get JSON input for enable/disable tracking (default: True)
-        tracking_enabled = True
+        # Get tracking enabled state from checkbox (primary control)
+        checkbox_enabled = dpg_get_value(enable_checkbox_tag)
+        if checkbox_enabled is None:
+            checkbox_enabled = True  # Default to enabled if checkbox value not found
+        
+        # Get JSON input for enable/disable tracking (secondary control for backward compatibility)
+        # JSON input can override checkbox if connected
+        tracking_enabled = checkbox_enabled
         if json_connection_info_src:
             json_data = node_result_dict.get(json_connection_info_src, None)
             if json_data is not None:
                 # Extract boolean value from JSON
                 if isinstance(json_data, dict):
-                    tracking_enabled = json_data.get('enabled', True)
+                    tracking_enabled = json_data.get('enabled', checkbox_enabled)
                 elif isinstance(json_data, bool):
                     tracking_enabled = json_data
 
@@ -513,12 +535,18 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         confidence_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':ConfThreshValue'
+        enable_checkbox_tag = tag_node_name + ':EnableCheckbox'
 
         # 選択モデル
         model_name = dpg_get_value(input_value02_tag)
         
         # Get confidence threshold value
         confidence_threshold = dpg_get_value(confidence_threshold_tag)
+        
+        # Get enable checkbox value
+        enable_checkbox = dpg_get_value(enable_checkbox_tag)
+        if enable_checkbox is None:
+            enable_checkbox = True
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -527,6 +555,7 @@ class Node(Node):
         setting_dict['pos'] = pos
         setting_dict[input_value02_tag] = model_name
         setting_dict[confidence_threshold_tag] = confidence_threshold
+        setting_dict[enable_checkbox_tag] = enable_checkbox
 
         return setting_dict
 
@@ -534,6 +563,7 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         confidence_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':ConfThreshValue'
+        enable_checkbox_tag = tag_node_name + ':EnableCheckbox'
 
         model_name = setting_dict[input_value02_tag]
 
@@ -542,3 +572,7 @@ class Node(Node):
         # Set confidence threshold with default value for backward compatibility
         confidence_value = setting_dict.get(confidence_threshold_tag, 0.0)
         dpg_set_value(confidence_threshold_tag, confidence_value)
+        
+        # Set enable checkbox with default value for backward compatibility
+        enable_checkbox_value = setting_dict.get(enable_checkbox_tag, True)
+        dpg_set_value(enable_checkbox_tag, enable_checkbox_value)
