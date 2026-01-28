@@ -491,6 +491,17 @@ class Node(Node):
         # This ensures homography only receives data that was actually displayed on screen
         json_output = result if has_displayable_bboxes else {}
         
+        # Log JSON output with CID and TID for verification
+        if json_output and logger.isEnabledFor(10):  # DEBUG level
+            track_ids = json_output.get('track_ids', [])
+            class_ids = json_output.get('class_ids', [])
+            class_names = json_output.get('class_names', [])
+            logger.debug(f"MOT JSON Output - Node {node_id}:")
+            logger.debug(f"  Track IDs (TID): {track_ids}")
+            logger.debug(f"  Class IDs (CID): {class_ids}")
+            logger.debug(f"  Class Names: {class_names}")
+            logger.debug(f"  Total tracked objects: {len(track_ids)}")
+        
         return {"image": output_frame, "json": json_output, "audio": None}
 
     def close(self, node_id):
