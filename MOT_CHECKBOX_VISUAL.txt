@@ -1,0 +1,78 @@
+MOT TRACKER NODE - BEFORE AND AFTER
+====================================
+
+BEFORE (Without Checkbox):
+--------------------------
+┌──────────────────────────────────┐
+│  MOT (Multi-Object Tracking)     │
+├──────────────────────────────────┤
+│ ◉ Image                          │  ← Image Input
+│ ◉ JSON Start/Stop (boolean)      │  ← JSON Input for Enable/Disable
+│ ◉ JSON Detections                │  ← JSON Input for Detections
+│                                  │
+│ [Tracker Model: motpy      ▼]    │  ← Model Selector
+│ [━━━━━━━━━━] confidence          │  ← Confidence Threshold
+│                                  │
+│ ○ Image                          │  ← Image Output
+│ ○ JSON                           │  ← JSON Output
+└──────────────────────────────────┘
+
+To control tracking, you needed:
+- Separate JsonBoolean node
+- Connection from JsonBoolean to "JSON Start/Stop"
+- More nodes = more complex pipeline
+
+
+AFTER (With Checkbox):
+----------------------
+┌──────────────────────────────────┐
+│  MOT (Multi-Object Tracking)     │
+├──────────────────────────────────┤
+│ ◉ Image                          │  ← Image Input
+│ ◉ JSON Start/Stop (boolean)      │  ← JSON Input (optional)
+│ ◉ JSON Detections                │  ← JSON Input for Detections
+│                                  │
+│ [Tracker Model: motpy      ▼]    │  ← Model Selector
+│ [━━━━━━━━━━] confidence          │  ← Confidence Threshold
+│ ☑ Enable Tracking                │  ← NEW! Direct Control
+│                                  │
+│ ○ Image                          │  ← Image Output
+│ ○ JSON                           │  ← JSON Output
+└──────────────────────────────────┘
+
+Now you can:
+✓ Check/uncheck to enable/disable tracking
+✓ No extra nodes needed for simple on/off
+✓ JSON input still works if you need it
+
+
+USAGE EXAMPLES:
+==============
+
+Example 1: Simple Toggle
+------------------------
+1. Click checkbox to disable: ☐ Enable Tracking
+   → Tracking stops, no bboxes drawn
+   
+2. Click checkbox to enable: ☑ Enable Tracking
+   → Tracking resumes, bboxes appear
+
+
+Example 2: With JSON Override
+-----------------------------
+Checkbox: ☑ Enabled
+JSON Input: {"enabled": false}
+Result: Tracking DISABLED (JSON overrides)
+
+Checkbox: ☐ Disabled  
+JSON Input: {"enabled": true}
+Result: Tracking ENABLED (JSON overrides)
+
+
+BENEFITS:
+=========
+✓ Simpler pipelines
+✓ Faster workflow
+✓ Direct control
+✓ Backward compatible
+✓ Clear visual indicator
