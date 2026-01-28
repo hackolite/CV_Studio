@@ -24,6 +24,7 @@ class TestMOTLabelPositioningLogic(unittest.TestCase):
         font_scale = max(0.3, min(1.0, (image_height / 720.0) * 0.5))
         vertical_offset_1 = int(36 * (font_scale / 0.5))
         vertical_offset_2 = int(12 * (font_scale / 0.5))
+        margin = 5
         
         # Test case 1: Bbox at y1 = 0 (very top)
         y1 = 0
@@ -33,7 +34,7 @@ class TestMOTLabelPositioningLogic(unittest.TestCase):
         self.assertLess(tid_y_pos, 0, "Original position should be negative")
         
         # Apply fix logic
-        if tid_y_pos < 0:
+        if tid_y_pos < margin:
             tid_y_pos = y1 + vertical_offset_1
         
         self.assertGreater(tid_y_pos, 0, "Fixed TID position should be positive")
@@ -43,7 +44,7 @@ class TestMOTLabelPositioningLogic(unittest.TestCase):
         cid_y_pos = y1 - vertical_offset_2
         self.assertLess(cid_y_pos, 0, "Original CID position should be negative")
         
-        if cid_y_pos < 0:
+        if cid_y_pos < margin:
             cid_y_pos = y1 + vertical_offset_1 + vertical_offset_2
         
         self.assertGreater(cid_y_pos, 0, "Fixed CID position should be positive")
@@ -56,6 +57,7 @@ class TestMOTLabelPositioningLogic(unittest.TestCase):
         font_scale = max(0.3, min(1.0, (image_height / 720.0) * 0.5))
         vertical_offset_1 = int(36 * (font_scale / 0.5))
         vertical_offset_2 = int(12 * (font_scale / 0.5))
+        margin = 5
         
         # Small y1 value
         y1 = 10
@@ -65,7 +67,7 @@ class TestMOTLabelPositioningLogic(unittest.TestCase):
         self.assertLess(tid_y_pos, 0, "Original position should be negative")
         
         # Apply fix
-        if tid_y_pos < 0:
+        if tid_y_pos < margin:
             tid_y_pos = y1 + vertical_offset_1
         
         self.assertGreater(tid_y_pos, 0, "Fixed position should be positive")
@@ -77,6 +79,7 @@ class TestMOTLabelPositioningLogic(unittest.TestCase):
         font_scale = max(0.3, min(1.0, (image_height / 720.0) * 0.5))
         vertical_offset_1 = int(36 * (font_scale / 0.5))
         vertical_offset_2 = int(12 * (font_scale / 0.5))
+        margin = 5
         
         # Bbox with enough space above (y1 = 100)
         y1 = 100
@@ -86,7 +89,7 @@ class TestMOTLabelPositioningLogic(unittest.TestCase):
         self.assertGreater(tid_y_pos, 0, "Position should be positive with sufficient space")
         
         # No fix should be applied
-        if tid_y_pos < 0:
+        if tid_y_pos < margin:
             tid_y_pos = y1 + vertical_offset_1
         
         # Should remain above the bbox
@@ -96,7 +99,7 @@ class TestMOTLabelPositioningLogic(unittest.TestCase):
         cid_y_pos = y1 - vertical_offset_2
         self.assertGreater(cid_y_pos, 0, "CID position should be positive")
         
-        if cid_y_pos < 0:
+        if cid_y_pos < margin:
             cid_y_pos = y1 + vertical_offset_1 + vertical_offset_2
         
         self.assertEqual(cid_y_pos, y1 - vertical_offset_2, "CID should stay above bbox")
@@ -106,6 +109,7 @@ class TestMOTLabelPositioningLogic(unittest.TestCase):
         image_height = 720
         font_scale = max(0.3, min(1.0, (image_height / 720.0) * 0.5))
         vertical_offset_1 = int(36 * (font_scale / 0.5))
+        margin = 5
         
         # y1 exactly at threshold
         y1 = vertical_offset_1
@@ -114,17 +118,18 @@ class TestMOTLabelPositioningLogic(unittest.TestCase):
         # Should be exactly 0
         self.assertEqual(tid_y_pos, 0, "Position should be 0 at threshold")
         
-        # Fix should be applied since 0 is not acceptable (would be at image edge)
-        if tid_y_pos < 0:
+        # Fix should be applied since 0 < margin
+        if tid_y_pos < margin:
             tid_y_pos = y1 + vertical_offset_1
         
-        # With our fix checking < 0, position 0 won't be adjusted
-        # This is acceptable as position 0 is technically visible (at top edge)
-        # But in practice, bboxes at exactly offset are rare
+        # Position should now be inside the box
+        self.assertEqual(tid_y_pos, y1 + vertical_offset_1,
+                        "Position should be repositioned inside box when at margin threshold")
     
     def test_multiple_image_sizes(self):
         """Test label positioning logic across different image sizes"""
         test_heights = [360, 480, 720, 1080, 1440]
+        margin = 5
         
         for image_height in test_heights:
             font_scale = max(0.3, min(1.0, (image_height / 720.0) * 0.5))
@@ -137,9 +142,9 @@ class TestMOTLabelPositioningLogic(unittest.TestCase):
             cid_y_pos = y1 - vertical_offset_2
             
             # Apply fix
-            if tid_y_pos < 0:
+            if tid_y_pos < margin:
                 tid_y_pos = y1 + vertical_offset_1
-            if cid_y_pos < 0:
+            if cid_y_pos < margin:
                 cid_y_pos = y1 + vertical_offset_1 + vertical_offset_2
             
             # Verify fix works for all sizes
@@ -158,6 +163,7 @@ class TestMOTLabelPositioningLogic(unittest.TestCase):
         font_scale = max(0.3, min(1.0, (image_height / 720.0) * 0.5))
         vertical_offset_1 = int(36 * (font_scale / 0.5))
         vertical_offset_2 = int(12 * (font_scale / 0.5))
+        margin = 5
         
         # Bbox at top where both labels need repositioning
         y1 = 0
@@ -167,9 +173,9 @@ class TestMOTLabelPositioningLogic(unittest.TestCase):
         cid_y_pos = y1 - vertical_offset_2
         
         # Apply fix
-        if tid_y_pos < 0:
+        if tid_y_pos < margin:
             tid_y_pos = y1 + vertical_offset_1
-        if cid_y_pos < 0:
+        if cid_y_pos < margin:
             cid_y_pos = y1 + vertical_offset_1 + vertical_offset_2
         
         # When repositioned inside, CID should be below TID
@@ -197,19 +203,21 @@ class TestImplementationInFiles(unittest.TestCase):
             content = f.read()
         
         # Check for the fix logic
+        self.assertIn('margin = 5', content,
+                     "Should define margin for edge detection")
         self.assertIn('tid_y_pos = y1 - vertical_offset_1', content,
                      "Should calculate tid_y_pos")
-        self.assertIn('if tid_y_pos < 0:', content,
-                     "Should check if tid_y_pos is negative")
+        self.assertIn('if tid_y_pos < margin:', content,
+                     "Should check if tid_y_pos is less than margin")
         self.assertIn('tid_y_pos = y1 + vertical_offset_1', content,
-                     "Should reposition tid_y_pos when negative")
+                     "Should reposition tid_y_pos when too close to edge")
         
         self.assertIn('cid_y_pos = y1 - vertical_offset_2', content,
                      "Should calculate cid_y_pos")
-        self.assertIn('if cid_y_pos < 0:', content,
-                     "Should check if cid_y_pos is negative")
+        self.assertIn('if cid_y_pos < margin:', content,
+                     "Should check if cid_y_pos is less than margin")
         self.assertIn('cid_y_pos = y1 + vertical_offset_1 + vertical_offset_2', content,
-                     "Should reposition cid_y_pos when negative")
+                     "Should reposition cid_y_pos when too close to edge")
         
         # Check that positioning uses the new variables
         self.assertIn('(x1, tid_y_pos)', content,
@@ -231,19 +239,21 @@ class TestImplementationInFiles(unittest.TestCase):
             content = f.read()
         
         # Check for the fix logic
+        self.assertIn('margin = 5', content,
+                     "Should define margin for edge detection")
         self.assertIn('tid_y_pos = y1 - vertical_offset_1', content,
                      "Should calculate tid_y_pos")
-        self.assertIn('if tid_y_pos < 0:', content,
-                     "Should check if tid_y_pos is negative")
+        self.assertIn('if tid_y_pos < margin:', content,
+                     "Should check if tid_y_pos is less than margin")
         self.assertIn('tid_y_pos = y1 + vertical_offset_1', content,
-                     "Should reposition tid_y_pos when negative")
+                     "Should reposition tid_y_pos when too close to edge")
         
         self.assertIn('cid_y_pos = y1 - vertical_offset_2', content,
                      "Should calculate cid_y_pos")
-        self.assertIn('if cid_y_pos < 0:', content,
-                     "Should check if cid_y_pos is negative")
+        self.assertIn('if cid_y_pos < margin:', content,
+                     "Should check if cid_y_pos is less than margin")
         self.assertIn('cid_y_pos = y1 + vertical_offset_1 + vertical_offset_2', content,
-                     "Should reposition cid_y_pos when negative")
+                     "Should reposition cid_y_pos when too close to edge")
         
         # Check that positioning uses the new variables
         self.assertIn('(x1, tid_y_pos)', content,

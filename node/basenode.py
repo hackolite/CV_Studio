@@ -961,8 +961,10 @@ class Node:
             text = "TID:%s(%s)" % (str(int(track_id_dict[id])), str(score))
             
             # Position text above bbox if there's space, otherwise inside/below
+            # Use margin of 5 pixels to avoid text being cut off at image edge
+            margin = 5
             tid_y_pos = y1 - vertical_offset_1
-            if tid_y_pos < 0:
+            if tid_y_pos < margin:
                 # Not enough space above, put it inside the box
                 tid_y_pos = y1 + vertical_offset_1
             
@@ -981,7 +983,7 @@ class Node:
             
             # Position text above bbox if there's space, otherwise inside/below
             cid_y_pos = y1 - vertical_offset_2
-            if cid_y_pos < 0:
+            if cid_y_pos < margin:
                 # Not enough space above, put it below TID text
                 cid_y_pos = y1 + vertical_offset_1 + vertical_offset_2
             
