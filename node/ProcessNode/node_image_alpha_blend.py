@@ -414,10 +414,14 @@ class Node(Node):
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
-        input_value03_tag = tag_node_name + ':' + self.TYPE_INT + ':Input03Value'
+        input_value03_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
+        input_value04_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input04Value'
+        input_value05_tag = tag_node_name + ':' + self.TYPE_INT + ':Input05Value'
         enable_checkbox_tag = tag_node_name + ':EnableCheckboxValue'
 
-        kernel_size = dpg_get_value(input_value03_tag)
+        alpha_val = dpg_get_value(input_value03_tag)
+        beta_val = dpg_get_value(input_value04_tag)
+        gamma_val = dpg_get_value(input_value05_tag)
         enable_value = dpg_get_value(enable_checkbox_tag)
 
         pos = dpg.get_item_pos(tag_node_name)
@@ -425,19 +429,27 @@ class Node(Node):
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
-        setting_dict[input_value03_tag] = kernel_size
+        setting_dict[input_value03_tag] = alpha_val
+        setting_dict[input_value04_tag] = beta_val
+        setting_dict[input_value05_tag] = gamma_val
         setting_dict[enable_checkbox_tag] = enable_value
 
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = str(node_id) + ':' + self.node_tag
-        input_value03_tag = tag_node_name + ':' + self.TYPE_INT + ':Input02Value'
+        input_value03_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
+        input_value04_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input04Value'
+        input_value05_tag = tag_node_name + ':' + self.TYPE_INT + ':Input05Value'
         enable_checkbox_tag = tag_node_name + ':EnableCheckboxValue'
 
-        kernel_size = int(setting_dict[input_value03_tag])
+        alpha_val = float(setting_dict[input_value03_tag])
+        beta_val = float(setting_dict[input_value04_tag])
+        gamma_val = int(setting_dict[input_value05_tag])
 
-        dpg_set_value(input_value03_tag, kernel_size)
+        dpg_set_value(input_value03_tag, alpha_val)
+        dpg_set_value(input_value04_tag, beta_val)
+        dpg_set_value(input_value05_tag, gamma_val)
         
         if enable_checkbox_tag in setting_dict:
             enable_value = setting_dict[enable_checkbox_tag]
