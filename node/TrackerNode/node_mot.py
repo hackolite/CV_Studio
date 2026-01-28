@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import copy
 import time
+import logging
 
 import numpy as np
 import dearpygui.dearpygui as dpg
@@ -490,6 +491,18 @@ class Node(Node):
         # Only send result to downstream nodes if there are actual bboxes being displayed
         # This ensures homography only receives data that was actually displayed on screen
         json_output = result if has_displayable_bboxes else {}
+        
+        # Log JSON output with CID and TID for verification
+        if json_output and logger.isEnabledFor(logging.DEBUG):
+            # Reuse already extracted values from result
+            track_ids = result.get('track_ids', [])
+            class_ids = result.get('class_ids', [])
+            class_names = result.get('class_names', [])
+            logger.debug(f"MOT JSON Output - Node {node_id}:")
+            logger.debug(f"  Track IDs (TID): {track_ids}")
+            logger.debug(f"  Class IDs (CID): {class_ids}")
+            logger.debug(f"  Class Names: {class_names}")
+            logger.debug(f"  Total tracked objects: {len(track_ids)}")
         
         return {"image": output_frame, "json": json_output, "audio": None}
 
