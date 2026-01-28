@@ -5,7 +5,6 @@ import threading
 from threading import Lock
 
 import cv2
-import pafy
 import numpy as np
 import dearpygui.dearpygui as dpg
 import yt_dlp
@@ -16,7 +15,13 @@ from node.basenode import Node
 
 
 def get_light_live_stream_url(url):
-    """Retrieves live stream URL in low resolution (max 360p)."""
+    """Retrieves live stream URL in low resolution (max 360p).
+    
+    Uses format selection that works better with OpenCV's VideoCapture:
+    - Prefers non-HLS formats (avoids m3u8 playlists)
+    - Falls back to lower quality if needed
+    - Tries multiple format strategies
+    """
     # Validate input URL
     if not url or not isinstance(url, str):
         raise ValueError("URL must be a non-empty string")
@@ -25,22 +30,71 @@ def get_light_live_stream_url(url):
     if not url:
         raise ValueError("URL cannot be empty or whitespace")
     
-    ydl_opts = {
-        "quiet": True,
-        "format": "best[height<=400]",  # Limit to 360p to reduce load
-    }
+    # Strategy 1: Try to get a progressive format (video+audio) that's not HLS
+    # Progressive formats work best with OpenCV
+    format_strategies = [
+        "best[height<=480][protocol^=http][protocol!=m3u8_native]/best[height<=480][protocol^=https][protocol!=m3u8_native]/best[height<=480]",
+        "best[height<=360][protocol^=http]/best[height<=360][protocol^=https]/best[height<=360]",
+        "worstvideo[height>=240][height<=480]+worstaudio/worst[height>=240][height<=480]",
+        "best[height<=480]",  # Final fallback
+    ]
+    
+    last_error = None
+    
+    for format_spec in format_strategies:
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "format": format_spec,
+            # Additional options to help with stream compatibility
+            "nocheckcertificate": True,
+            "no_check_certificate": True,
+        }
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            video_url = info.get("url", None)
-            if not video_url:
-                raise ValueError("No video URL found in the response")
-            return cv2.VideoCapture(video_url)
-    except yt_dlp.utils.DownloadError as e:
-        raise ValueError(f"Failed to download video info: {e}")
-    except Exception as e:
-        raise ValueError(f"Unexpected error while processing URL: {e}")
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                video_url = info.get("url", None)
+                
+                if not video_url:
+                    continue
+                
+                # Skip URLs that contain m3u8 (HLS) as they often don't work well with OpenCV
+                if "m3u8" in video_url.lower():
+                    # Try to find a better format if this is HLS
+                    formats = info.get("formats", [])
+                    # Look for non-HLS formats
+                    non_hls_formats = [
+                        f for f in formats 
+                        if f.get("url") and "m3u8" not in f.get("url", "").lower()
+                        and f.get("vcodec") != "none"
+                        and f.get("height", 0) <= 480
+                    ]
+                    
+                    if non_hls_formats:
+                        # Sort by height (prefer lower resolution for performance)
+                        non_hls_formats.sort(key=lambda x: x.get("height", 0))
+                        video_url = non_hls_formats[0].get("url")
+                
+                # Try to open with OpenCV
+                cap = cv2.VideoCapture(video_url)
+                if cap.isOpened():
+                    return cap
+                else:
+                    cap.release()
+                    last_error = f"OpenCV failed to open stream with format: {format_spec}"
+                    continue
+                    
+        except yt_dlp.utils.DownloadError as e:
+            last_error = f"Failed to download video info: {e}"
+            continue
+        except Exception as e:
+            last_error = f"Unexpected error with format {format_spec}: {e}"
+            continue
+    
+    # If all strategies failed, raise an error
+    error_msg = f"Failed to open YouTube stream after trying multiple formats. Last error: {last_error}"
+    raise ValueError(error_msg)
 
 
 class FactoryNode:
@@ -280,10 +334,12 @@ class YoutubeNode(Node):
                     self.cap = None
                 
                 # Initialize the video capture
+                print(f"Attempting to open YouTube stream: {youtube_url}")
                 self.cap = get_light_live_stream_url(youtube_url)
                 
                 if self.cap is None or not self.cap.isOpened():
-                    print("Error: Failed to open YouTube stream")
+                    print("Error: Failed to open YouTube stream - OpenCV could not initialize the video capture")
+                    self.cap = None
                     return
                 
                 print(f"YouTube stream started: {youtube_url}")
