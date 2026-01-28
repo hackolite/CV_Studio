@@ -114,6 +114,17 @@ class FactoryNode:
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 153, 255))
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 153, 255))
 
+        # Create blue theme for buttons when stream is active
+        with dpg.theme() as blue_button_theme:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (100, 149, 237, 255))  # Cornflower blue
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (65, 105, 225, 255))  # Royal blue on hover
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (25, 25, 112, 255))  # Midnight blue on press
+        
+        # Store themes in node for later use
+        node.yellow_button_theme = yellow_button_theme
+        node.blue_button_theme = blue_button_theme
+
 		
         with dpg.node(
                 tag=node.tag_node_name,
@@ -220,6 +231,9 @@ class YoutubeNode(Node):
         self.cap = None
         self.small_window_w = 240
         self.small_window_h = 135
+        self.yellow_button_theme = None
+        self.blue_button_theme = None
+        self.is_streaming = False  # Track streaming state
         
     def convert_cv_to_dpg(self, cv_img, w, h):
         """Converts OpenCV image to DearPyGui format"""
@@ -260,17 +274,36 @@ class YoutubeNode(Node):
                 return
             
             try:
+                # Release any existing capture before creating a new one
+                if self.cap is not None:
+                    self.cap.release()
+                    self.cap = None
+                
                 # Initialize the video capture
                 self.cap = get_light_live_stream_url(youtube_url)
+                
+                if self.cap is None or not self.cap.isOpened():
+                    print("Error: Failed to open YouTube stream")
+                    return
+                
                 print(f"YouTube stream started: {youtube_url}")
+                self.is_streaming = True
+                
                 # Change button label to Stop
                 dpg.set_item_label(tag_node_button_value_name, self._stop_label)
+                
+                # Change button theme to blue to indicate active stream
+                if self.blue_button_theme is not None:
+                    dpg.bind_item_theme(tag_node_button_value_name, self.blue_button_theme)
+                    
             except ValueError as e:
                 print(f"Error: {e}")
                 self.cap = None
+                self.is_streaming = False
             except Exception as e:
                 print(f"Unexpected error: {e}")
                 self.cap = None
+                self.is_streaming = False
         
         elif label == self._stop_label:
             # Stopping the stream
@@ -279,8 +312,14 @@ class YoutubeNode(Node):
                 self.cap = None
                 print("YouTube stream stopped")
             
+            self.is_streaming = False
+            
             # Change button label back to Start
             dpg.set_item_label(tag_node_button_value_name, self._start_label)
+            
+            # Change button theme back to yellow
+            if self.yellow_button_theme is not None:
+                dpg.bind_item_theme(tag_node_button_value_name, self.yellow_button_theme)
         
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
@@ -292,14 +331,16 @@ class YoutubeNode(Node):
 
       if not hasattr(self, "_last_frame_time"):
         self._last_frame_time = 0
-      if not hasattr(self, "_frame_interval"):
-        try:
-            slider_tag = f"{tag_node_name}:{self.TYPE_INT}:Input02Value"
-            self._frame_interval = max(1, dpg_get_value(slider_tag)) / 1000  # ms -> s
-        except:
-            self._frame_interval = 0.033  # default 33 ms
+      
+      # Always get the current frame interval from the slider
+      try:
+          slider_tag = f"{tag_node_name}:{self.TYPE_INT}:Input02Value"
+          self._frame_interval = max(1, dpg_get_value(slider_tag)) / 1000  # ms -> s
+      except:
+          self._frame_interval = 0.033  # default 33 ms
 
-      if self.cap is not None and self.current_time - self._last_frame_time >= self._frame_interval:
+      # Only try to read frames if streaming is active
+      if self.cap is not None and self.is_streaming and self.current_time - self._last_frame_time >= self._frame_interval:
         try:
             ret, frame = self.cap.read()
         except Exception as e:
@@ -307,23 +348,25 @@ class YoutubeNode(Node):
             ret, frame = False, None
 
         if ret and frame is not None:
-            # Only update if frame is different (avoid jitter on frozen stream)
-            if not hasattr(self, "_last_frame") or not np.array_equal(self._last_frame, frame):
-                self._last_frame = frame
-                texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
-                dpg_set_value(output_value01_tag, texture)
-                self._last_frame_time = self.current_time
+            # Update the frame and texture
+            self._last_frame = frame
+            texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
+            dpg_set_value(output_value01_tag, texture)
+            self._last_frame_time = self.current_time
         elif self.cap.isOpened():
-            # Only print error if capture is still open (stream is active but no frame received)
-            print("YouTube node: Failed to read frame from stream")
+            # Stream is open but no frame received - this can be normal for live streams
+            # Don't spam console, just skip this frame
+            pass
 
       return {"image": getattr(self, "_last_frame", None), "json": None, "audio": None}
     
     
     def close(self, node_id):
+        """Clean up resources when node is closed."""
         if self.cap is not None:
             self.cap.release()
             self.cap = None
+        self.is_streaming = False
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
