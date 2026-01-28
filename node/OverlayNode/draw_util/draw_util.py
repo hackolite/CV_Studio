@@ -673,10 +673,17 @@ def draw_multi_object_tracking_info(
         # トラックID、スコア
         score = '%.2f' % score
         text = 'TID:%s(%s)' % (str(int(track_id_dict[id])), str(score))
+        
+        # Position text above bbox if there's space, otherwise inside/below
+        tid_y_pos = y1 - vertical_offset_1
+        if tid_y_pos < 0:
+            # Not enough space above, put it inside the box
+            tid_y_pos = y1 + vertical_offset_1
+        
         image = cv2.putText(
             image,
             text,
-            (x1, y1 - vertical_offset_1),
+            (x1, tid_y_pos),
             cv2.FONT_HERSHEY_SIMPLEX,
             font_scale,
             color,
@@ -685,10 +692,17 @@ def draw_multi_object_tracking_info(
 
         # クラスID
         text = 'CID:%s(%s)' % (str(int(class_id)), class_names[int(class_id)])
+        
+        # Position text above bbox if there's space, otherwise inside/below
+        cid_y_pos = y1 - vertical_offset_2
+        if cid_y_pos < 0:
+            # Not enough space above, put it below TID text
+            cid_y_pos = y1 + vertical_offset_1 + vertical_offset_2
+        
         image = cv2.putText(
             image,
             text,
-            (x1, y1 - vertical_offset_2),
+            (x1, cid_y_pos),
             cv2.FONT_HERSHEY_SIMPLEX,
             font_scale,
             color,
