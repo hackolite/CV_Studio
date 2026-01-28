@@ -315,6 +315,11 @@ class Node(Node):
     def _per_class_nms(self, bboxes, scores, class_ids):
         """Apply NMS per class to keep only the best detection per class.
         
+        DEPRECATED: This method is no longer used as it was limiting detections to
+        only 1 object per class. The method is kept for backward compatibility but
+        should not be called. All detections from the model are now passed through
+        without per-class filtering.
+        
         Args:
             bboxes: List or numpy array of bounding boxes [x1, y1, x2, y2]
             scores: List or numpy array of confidence scores
