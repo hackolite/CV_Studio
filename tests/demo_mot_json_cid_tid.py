@@ -145,7 +145,7 @@ def main():
     print("  • The MOT node outputs both TID and CID in JSON format via Output03")
     print("  • Track IDs persist across frames for continuous object tracking")
     print()
-    print("✓ Le noeud MOT fonctionne correctement et track les objets")
+    print("✓ Le nœud MOT fonctionne correctement et effectue le suivi des objets")
     print("✓ Les CID et TID sont affichés dans l'output JSON")
     print()
 

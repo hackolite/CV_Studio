@@ -89,7 +89,7 @@ def verify_mot_tracking():
         'scores': t_scores_f1,
         'class_ids': t_class_ids_f1,    # CID: Class IDs
         'class_names': ['person', 'person'],
-        'track_id_dict': {tid: idx for idx, tid in enumerate(track_ids_f1)}
+        'track_id_dict': {tid: idx for idx, tid in enumerate(track_ids_f1)}  # Maps track_id to list index
     }
     
     print(f"\nDetected {len(bboxes_f1)} objects")
@@ -293,7 +293,7 @@ def main():
         print("  • 'class_names'     - Human-readable class labels")
         print("  • 'track_id_dict'   - Track ID to display index mapping")
         
-        print("\n✓ MOT module (node) fonctionné correctement et track,")
+        print("\n✓ MOT module (node) fonctionne correctement et effectue le suivi,")
         print("  en affichant les CID et TID avec les données servies")
         print("  en output au format JSON\n")
         

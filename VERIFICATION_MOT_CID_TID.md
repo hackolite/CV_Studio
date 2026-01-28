@@ -2,7 +2,7 @@
 
 ## Résumé
 
-Ce document vérifie que le nœud MOT (Module de Tracking / Multiple Object Tracking) fonctionne correctement et track les objets en affichant les **CID** (Class ID) et **TID** (Track ID) avec les données servies en output au format **JSON**.
+Ce document vérifie que le nœud MOT (Module de Tracking / Multiple Object Tracking) fonctionne correctement et effectue le suivi des objets en affichant les **CID** (Class ID) et **TID** (Track ID) avec les données servies en output au format **JSON**.
 
 ## Vérification Effectuée
 
@@ -139,7 +139,7 @@ Les tests suivants vérifient déjà le fonctionnement:
 
 ## Conclusion
 
-✅ **VÉRIFIÉ**: Le nœud MOT fonctionne correctement et track les objets  
+✅ **VÉRIFIÉ**: Le nœud MOT fonctionne correctement et effectue le suivi des objets  
 ✅ **VÉRIFIÉ**: Les CID (Class ID) sont inclus dans l'output JSON  
 ✅ **VÉRIFIÉ**: Les TID (Track ID) sont inclus dans l'output JSON  
 ✅ **VÉRIFIÉ**: Le format JSON est correct et complet  

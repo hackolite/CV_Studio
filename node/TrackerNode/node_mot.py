@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import copy
 import time
+import logging
 
 import numpy as np
 import dearpygui.dearpygui as dpg
@@ -492,10 +493,11 @@ class Node(Node):
         json_output = result if has_displayable_bboxes else {}
         
         # Log JSON output with CID and TID for verification
-        if json_output and logger.isEnabledFor(10):  # DEBUG level
-            track_ids = json_output.get('track_ids', [])
-            class_ids = json_output.get('class_ids', [])
-            class_names = json_output.get('class_names', [])
+        if json_output and logger.isEnabledFor(logging.DEBUG):
+            # Reuse already extracted values from result
+            track_ids = result.get('track_ids', [])
+            class_ids = result.get('class_ids', [])
+            class_names = result.get('class_names', [])
             logger.debug(f"MOT JSON Output - Node {node_id}:")
             logger.debug(f"  Track IDs (TID): {track_ids}")
             logger.debug(f"  Class IDs (CID): {class_ids}")
