@@ -125,7 +125,7 @@ class FactoryNode:
         node.yellow_button_theme = yellow_button_theme
         node.blue_button_theme = blue_button_theme
 
-		
+        
         with dpg.node(
                 tag=node.tag_node_name,
                 parent=parent,
@@ -336,8 +336,9 @@ class YoutubeNode(Node):
       try:
           slider_tag = f"{tag_node_name}:{self.TYPE_INT}:Input02Value"
           self._frame_interval = max(1, dpg_get_value(slider_tag)) / 1000  # ms -> s
-      except:
-          self._frame_interval = 0.033  # default 33 ms
+      except (ValueError, KeyError, AttributeError, TypeError) as e:
+          # Default to 33ms if slider value cannot be retrieved
+          self._frame_interval = 0.033
 
       # Only try to read frames if streaming is active
       if self.cap is not None and self.is_streaming and self.current_time - self._last_frame_time >= self._frame_interval:
