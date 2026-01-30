@@ -315,6 +315,53 @@ Verify models are included in `datas` in the spec file:
 datas.append(('node/DLNode', 'node/DLNode'))
 ```
 
+### Problem: FileNotFoundError for setting.json
+
+**Error message:**
+```
+FileNotFoundError: [Errno 2] No such file or directory: 
+'C:\Users\...\AppData\Local\Temp\_MEI...\node_editor\setting\setting.json'
+```
+
+**Root Cause:** This occurs when the `setting.json` configuration file is not properly bundled into the executable, or when there are conflicting data entries in the PyInstaller spec file.
+
+**Solution:**
+
+1. **Verify the spec file** (`CV_Studio.spec`) has the correct data entries:
+
+```python
+# Correct - Add entire directories once
+datas.append(('node_editor', 'node_editor'))
+
+# WRONG - Don't add subdirectories separately as it can cause conflicts
+# datas.append(('node_editor/setting', 'node_editor/setting'))  # Remove this!
+# datas.append(('node_editor/font', 'node_editor/font'))        # Remove this!
+```
+
+2. **Rebuild the executable:**
+
+```bash
+# Clean previous builds
+python build_exe.py --clean
+
+# Or manually:
+pyinstaller CV_Studio.spec --clean
+```
+
+3. **Enable debug logging** to diagnose path issues:
+
+```bash
+dist\CV_Studio\CV_Studio.exe --use_debug_print
+```
+
+This will show detailed path resolution information including:
+- Whether running in frozen (exe) or script mode
+- Base path (_MEIPASS location)
+- Resolved configuration file path
+- Whether the file exists at that location
+
+**Note:** The fix has been implemented in the latest version. If you're using an older version, update the `CV_Studio.spec` file to remove redundant data entries.
+
 ### Problem: Exe won't start
 
 1. **Test from command line** to see errors:
