@@ -121,7 +121,31 @@ For Windows users who want a standalone .exe file that doesn't require Python in
 
 📖 **Detailed instructions:** See [COMMENT_OBTENIR_EXE.md](COMMENT_OBTENIR_EXE.md) (Français) or [HOW_TO_GET_EXE.md](HOW_TO_GET_EXE.md) (English)
 
-#### 🔧 Option B: Build Locally on Your Windows Machine
+#### 🎬 Option B: Automated Build Script (RECOMMENDED FOR LOCAL BUILD)
+
+**The easiest way to build locally!** Just download and run a script that does everything automatically:
+
+**Using Batch Script (Simple - Double-click to run):**
+1. Download [`build_windows.bat`](build_windows.bat)
+2. Double-click the file
+3. Wait 5-15 minutes
+4. Find your executable in `dist/CV_Studio/CV_Studio.exe`
+
+**Using PowerShell (Modern):**
+```powershell
+# Download the script (or clone the repo to get it)
+powershell -ExecutionPolicy Bypass -File build_windows.ps1
+```
+
+The script automatically:
+- ✅ Clones the repository (if needed)
+- ✅ Installs all Python dependencies
+- ✅ Builds the .exe with PyInstaller
+- ✅ Shows you where to find the result
+
+📖 **Full guide:** See [BUILD_WINDOWS_SCRIPT.md](BUILD_WINDOWS_SCRIPT.md) for detailed instructions and troubleshooting
+
+#### 🔧 Option C: Manual Build on Your Windows Machine
 
 #### 📋 Prérequis / Prerequisites
 
