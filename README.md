@@ -494,6 +494,12 @@ See **[examples/README.md](examples/README.md)** for detailed documentation on e
 
 #### Common Issues and Solutions
 
+**Problem:** `ModuleNotFoundError: No module named 'cv2'`
+- **Root Cause:** Dependencies not installed (opencv-contrib-python provides cv2)
+- **Solution 1:** Install all dependencies: `pip install -r requirements.txt`
+- **Solution 2:** If installation fails, try installing OpenCV separately: `pip install opencv-contrib-python`
+- **Note:** If you encounter package version conflicts, check that pip is up to date: `pip install --upgrade pip`
+
 **Problem:** Application crashes on startup
 - **Solution:** Check if required dependencies are installed: `pip install -r requirements.txt`
 - **Solution:** Ensure you have a compatible Python version (3.7+)

@@ -7,7 +7,6 @@
 - [x] Corrections de sécurité appliquées:
   - opencv-contrib-python >=4.8.1.78 (CVE-2023-4863)
   - protobuf >=3.20.2,<4.0.0 (DoS fixes)
-  - pyserial >=3.5.1 (buffer overflow fix)
 - [x] Versions obsolètes mises à jour (matplotlib, scipy)
 - [x] Package incorrect corrigé (serial → pyserial)
 

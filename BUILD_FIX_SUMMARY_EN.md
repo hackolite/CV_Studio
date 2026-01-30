@@ -13,7 +13,7 @@ Key changes:
 - ✅ Added version to `onnxruntime-gpu` (now `>=1.16.0`)
 - ✅ Upgraded `matplotlib==3.5.3` → `>=3.5.0` (better Python 3.10+ support)
 - ✅ Upgraded `scipy==1.10.1` → `>=1.10.0` (better compatibility)
-- ✅ Fixed incorrect package name: `serial` → `pyserial>=3.5.1`
+- ✅ Fixed incorrect package name: `serial` → `pyserial>=3.5`
 - ✅ Added minimum versions for all critical packages
 
 ### 2. Security Vulnerabilities Fixed
@@ -23,7 +23,8 @@ Three critical security vulnerabilities were identified and patched:
 |--------------|--------|-------|-----|
 | CVE-2023-4863 (libwebp) | opencv-contrib-python>=4.5.5.64 | >=4.8.1.78 | ✅ Patched |
 | DoS in protobuf | protobuf>=3.20.0 | >=3.20.2,<4.0.0 | ✅ Patched |
-| Buffer overflow | pyserial>=3.5 | >=3.5.1 | ✅ Patched |
+
+**Note:** Previous documentation incorrectly referenced `pyserial>=3.5.1`, but PyPI only has version 3.5 available. GitHub Advisory Database confirms no known vulnerabilities in pyserial 3.5.
 
 All fixes verified using GitHub Advisory Database.
 
