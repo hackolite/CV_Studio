@@ -54,7 +54,9 @@ def get_resource_path(relative_path):
         # Running in normal Python environment (script mode)
         base_path = os.path.dirname(os.path.abspath(__file__))
 
-    return os.path.join(base_path, relative_path)
+    # Normalize path separators for cross-platform compatibility
+    # This handles cases where relative_path uses forward slashes on Windows
+    return os.path.normpath(os.path.join(base_path, relative_path))
 
 
 def get_args():
