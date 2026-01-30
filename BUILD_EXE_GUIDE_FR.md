@@ -261,6 +261,7 @@ Exécutez le script de construction et lorsque vous y êtes invité, sélectionn
 python build_exe.py --clean
 
 # Lorsqu'on vous le demande, choisissez l'option 1 pour installer les packages automatiquement
+# (Le message s'affiche en anglais)
 Choose option (1/2/3) [1]: 1
 ```
 
