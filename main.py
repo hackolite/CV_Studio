@@ -33,16 +33,37 @@ from node.queue_adapter import QueueBackedDict
 logger = get_logger(__name__)
 
 
+def get_resource_path(relative_path):
+    """
+    Get the absolute path to a resource, works for both development and frozen mode.
+
+    When running as a script, returns the path relative to the script directory.
+    When running as a PyInstaller executable (.exe), returns the path relative to
+    the temporary directory where PyInstaller extracts files (sys._MEIPASS).
+
+    Args:
+        relative_path (str): Relative path to the resource (e.g., 'assets/image.png')
+
+    Returns:
+        str: Absolute path to the resource
+    """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except AttributeError:
+        # Running in normal Python environment (script mode)
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, relative_path)
+
+
 def get_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
         "--setting",
         type=str,
-        # get abs
-        default=os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "node_editor/setting/setting.json")
-        ),
+        default=get_resource_path("node_editor/setting/setting.json"),
     )
     parser.add_argument("--unuse_async_draw", action="store_true")
     parser.add_argument("--use_debug_print", action="store_true")
