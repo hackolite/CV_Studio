@@ -61,12 +61,14 @@ def get_resource_path(relative_path):
     resource_path = os.path.normpath(os.path.join(base_path, relative_path))
     
     # Debug logging to help troubleshoot path issues
-    logger.debug(f"Resource path resolution:")
-    logger.debug(f"  Frozen mode: {frozen}")
-    logger.debug(f"  Base path: {base_path}")
-    logger.debug(f"  Relative path: {relative_path}")
-    logger.debug(f"  Resolved path: {resource_path}")
-    logger.debug(f"  Path exists: {os.path.exists(resource_path)}")
+    logger.debug(
+        f"Resource path resolution:\n"
+        f"  Frozen mode: {frozen}\n"
+        f"  Base path: {base_path}\n"
+        f"  Relative path: {relative_path}\n"
+        f"  Resolved path: {resource_path}\n"
+        f"  Path exists: {os.path.exists(resource_path)}"
+    )
     
     return resource_path
 
