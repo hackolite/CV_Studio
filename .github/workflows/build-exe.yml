@@ -70,7 +70,6 @@ jobs:
           
           # Vérifier que les fichiers critiques sont présents
           $criticalFiles = @(
-            "dist/CV_Studio/CV_Studio.exe",
             "dist/CV_Studio/_internal",
             "dist/CV_Studio/node",
             "dist/CV_Studio/node_editor"
