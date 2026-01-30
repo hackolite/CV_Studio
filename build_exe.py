@@ -241,6 +241,21 @@ hiddenimports += [
     'pickle',
     'hashlib',
     'base64',
+    'abc',
+    'dataclasses',
+    'enum',
+    'glob',
+    'importlib',
+    'itertools',
+    'pathlib',
+    'typing',
+    'io',
+    'math',
+    'platform',
+    'shutil',
+    'subprocess',
+    'tempfile',
+    'weakref',
 ]
 
 hiddenimports += collect_submodules('dearpygui')
