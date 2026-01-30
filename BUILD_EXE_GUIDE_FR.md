@@ -316,6 +316,53 @@ Vérifier que les modèles sont inclus dans `datas` dans le fichier spec :
 datas.append(('node/DLNode', 'node/DLNode'))
 ```
 
+### Problème : FileNotFoundError pour setting.json
+
+**Message d'erreur :**
+```
+FileNotFoundError: [Errno 2] No such file or directory: 
+'C:\Users\...\AppData\Local\Temp\_MEI...\node_editor\setting\setting.json'
+```
+
+**Cause principale :** Cela se produit lorsque le fichier de configuration `setting.json` n'est pas correctement inclus dans l'exécutable, ou lorsqu'il y a des entrées de données conflictuelles dans le fichier spec de PyInstaller.
+
+**Solution :**
+
+1. **Vérifier le fichier spec** (`CV_Studio.spec`) a les bonnes entrées de données :
+
+```python
+# Correct - Ajouter les répertoires entiers une seule fois
+datas.append(('node_editor', 'node_editor'))
+
+# INCORRECT - Ne pas ajouter les sous-répertoires séparément car cela peut causer des conflits
+# datas.append(('node_editor/setting', 'node_editor/setting'))  # Supprimer ceci !
+# datas.append(('node_editor/font', 'node_editor/font'))        # Supprimer ceci !
+```
+
+2. **Reconstruire l'exécutable :**
+
+```bash
+# Nettoyer les constructions précédentes
+python build_exe.py --clean
+
+# Ou manuellement :
+pyinstaller CV_Studio.spec --clean
+```
+
+3. **Activer les logs de débogage** pour diagnostiquer les problèmes de chemin :
+
+```bash
+dist\CV_Studio\CV_Studio.exe --use_debug_print
+```
+
+Cela affichera des informations détaillées sur la résolution des chemins incluant :
+- Si l'exécution est en mode gelé (exe) ou script
+- Chemin de base (emplacement _MEIPASS)
+- Chemin résolu du fichier de configuration
+- Si le fichier existe à cet emplacement
+
+**Note :** Le correctif a été implémenté dans la dernière version. Si vous utilisez une version plus ancienne, mettez à jour le fichier `CV_Studio.spec` pour supprimer les entrées de données redondantes.
+
 ### Problème : L'exe ne démarre pas
 
 1. **Tester depuis la ligne de commande** pour voir les erreurs :

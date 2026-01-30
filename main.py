@@ -50,13 +50,27 @@ def get_resource_path(relative_path):
     try:
         # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
+        frozen = True
     except AttributeError:
         # Running in normal Python environment (script mode)
         base_path = os.path.dirname(os.path.abspath(__file__))
+        frozen = False
 
     # Normalize path separators for cross-platform compatibility
     # This handles cases where relative_path uses forward slashes on Windows
-    return os.path.normpath(os.path.join(base_path, relative_path))
+    resource_path = os.path.normpath(os.path.join(base_path, relative_path))
+    
+    # Debug logging to help troubleshoot path issues
+    logger.debug(
+        f"Resource path resolution:\n"
+        f"  Frozen mode: {frozen}\n"
+        f"  Base path: {base_path}\n"
+        f"  Relative path: {relative_path}\n"
+        f"  Resolved path: {resource_path}\n"
+        f"  Path exists: {os.path.exists(resource_path)}"
+    )
+    
+    return resource_path
 
 
 def get_args():
@@ -229,9 +243,24 @@ def main():
     logger.info("Buffer system initialized: keeps last 10 timestamped items per node for synchronization")
 
     logger.info("Loading configuration")
+    logger.debug(f"Configuration file path: {setting}")
+    
+    # Verify the configuration file exists before attempting to load
+    if not os.path.exists(setting):
+        logger.error(f"Configuration file not found: {setting}")
+        # Check if we're in a frozen (PyInstaller) environment
+        if getattr(sys, 'frozen', False):
+            logger.error(f"Running in frozen mode. Base path (_MEIPASS): {sys._MEIPASS}")
+            logger.error("The setting.json file may not have been properly bundled with PyInstaller.")
+            logger.error("Please ensure CV_Studio.spec includes: datas.append(('node_editor', 'node_editor'))")
+        else:
+            logger.error("Running in script mode. The setting.json file should be in node_editor/setting/")
+        raise FileNotFoundError(f"Configuration file not found: {setting}")
+    
     opencv_setting_dict = None
     with open(setting) as fp:
         opencv_setting_dict = json.load(fp)
+    logger.info("Configuration loaded successfully")
     webcam_width = opencv_setting_dict["webcam_width"]
     webcam_height = opencv_setting_dict["webcam_height"]
 

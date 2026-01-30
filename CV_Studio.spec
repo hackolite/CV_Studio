@@ -136,11 +136,8 @@ datas.append(('src', 'src'))
 # - All node Python modules and supporting files
 # This ensures all ONNX models for object detection are bundled
 
-# Add fonts
-datas.append(('node_editor/font', 'node_editor/font'))
-
-# Add setting files
-datas.append(('node_editor/setting', 'node_editor/setting'))
+# Note: Font and setting files are already included in the node_editor directory above
+# No need to add them separately as it can cause PyInstaller bundling conflicts
 
 # Collect data files from packages that need them
 datas += collect_data_files('dearpygui')
