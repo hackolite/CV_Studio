@@ -1,12 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import sys
+import os
+
+# Add the current directory to Python path to allow imports from src package
+# This is necessary when running main.py directly without installing the package
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+
 import copy
 import json
 import asyncio
 import argparse
 from collections import OrderedDict
-import os
 import time
 import cv2
 import dearpygui.dearpygui as dpg
