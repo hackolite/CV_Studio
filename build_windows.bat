@@ -119,11 +119,30 @@ echo [5/6] Construction de l'executable...
 echo   Cela peut prendre 5-10 minutes selon votre machine...
 echo.
 
+REM Check for running CV_Studio.exe processes
+tasklist /FI "IMAGENAME eq CV_Studio.exe" 2>NUL | find /I /N "CV_Studio.exe">NUL
+if "%ERRORLEVEL%"=="0" (
+    echo   ! ATTENTION: CV_Studio.exe est en cours d'execution
+    echo   Cela peut causer des erreurs de build ^(fichiers verrouilles^)
+    echo.
+    echo   Fermez toutes les instances de CV_Studio.exe et reessayez
+    echo.
+    pause
+    exit /b 1
+)
+
 python build_exe.py --clean --skip-package-check
 if errorlevel 1 (
     echo.
     echo   X ERREUR: La construction a echoue
     echo   Consultez les messages d'erreur ci-dessus
+    echo.
+    echo   Si l'erreur mentionne "PermissionError" ou "Acces refuse":
+    echo     1. Fermez toutes les instances de CV_Studio.exe
+    echo     2. Fermez l'Explorateur Windows dans le dossier dist
+    echo     3. Supprimez manuellement le dossier dist si necessaire
+    echo     4. Relancez ce script
+    echo.
     pause
     exit /b 1
 )

@@ -44,6 +44,8 @@ import sys
 import shutil
 import subprocess
 import argparse
+import time
+import stat
 
 # Ensure UTF-8 encoding for Windows console output
 if sys.platform == 'win32':
@@ -52,6 +54,53 @@ if sys.platform == 'win32':
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     if sys.stderr.encoding and sys.stderr.encoding.lower() != 'utf-8':
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
+
+def check_running_processes():
+    """
+    Check if CV_Studio.exe is currently running (Windows only).
+    
+    Returns:
+        bool: True if no conflicts found, False if CV_Studio.exe is running
+    """
+    if sys.platform != 'win32':
+        return True  # Only check on Windows
+    
+    try:
+        # Use tasklist to check for running CV_Studio.exe processes
+        result = subprocess.run(
+            ['tasklist', '/FI', 'IMAGENAME eq CV_Studio.exe'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        # Check if CV_Studio.exe appears in the output
+        if 'CV_Studio.exe' in result.stdout:
+            print("\n⚠ WARNING: CV_Studio.exe is currently running!")
+            print("  This may cause build errors (file permission issues).")
+            print("\n  Please:")
+            print("    1. Close all CV_Studio.exe instances")
+            print("    2. Check Task Manager for any remaining processes")
+            print("    3. Rerun this build script")
+            
+            if not sys.stdin.isatty():
+                print("\n  Running in non-interactive mode, attempting to continue...")
+                return True
+            
+            try:
+                response = input("\n  Continue anyway? (y/N): ")
+                if response.lower() != 'y':
+                    return False
+            except EOFError:
+                print("\n  Cannot read input, attempting to continue...")
+                return True
+        
+        return True
+    except Exception as e:
+        # If we can't check, just continue
+        print(f"  ℹ Could not check for running processes: {e}")
+        return True
 
 
 def print_banner():
@@ -159,16 +208,74 @@ def check_requirements(skip_package_check=False):
     return True
 
 
+def remove_readonly(func, path, excinfo):
+    """
+    Error handler for shutil.rmtree on Windows.
+    
+    If the error is due to an access error (read only file),
+    it attempts to add write permission and then retries.
+    
+    Args:
+        func: The function that raised the exception
+        path: The path that caused the exception
+        excinfo: Exception information
+    """
+    # Check if it's a permission error
+    if not os.access(path, os.W_OK):
+        # Try to add write permission
+        os.chmod(path, stat.S_IWUSR | stat.S_IREAD)
+        func(path)
+    else:
+        raise
+
+
+def remove_directory_with_retry(dir_path, max_retries=5, initial_delay=0.5):
+    """
+    Remove a directory with retry logic for Windows file locking issues.
+    
+    Args:
+        dir_path: Path to directory to remove
+        max_retries: Maximum number of retry attempts
+        initial_delay: Initial delay in seconds (doubles with each retry)
+        
+    Returns:
+        bool: True if successfully removed, False otherwise
+    """
+    for attempt in range(max_retries):
+        try:
+            if os.path.exists(dir_path):
+                # Use onerror callback to handle read-only files on Windows
+                shutil.rmtree(dir_path, onerror=remove_readonly)
+            return True
+        except PermissionError as e:
+            if attempt < max_retries - 1:
+                delay = initial_delay * (2 ** attempt)
+                print(f"    ⚠ Permission denied, retrying in {delay:.1f}s... (attempt {attempt + 1}/{max_retries})")
+                time.sleep(delay)
+            else:
+                print(f"    ✗ Could not remove {dir_path}: {e}")
+                print(f"    ℹ Please close any running instances of CV_Studio.exe and try again")
+                return False
+        except Exception as e:
+            print(f"    ✗ Unexpected error removing {dir_path}: {e}")
+            return False
+    return False
+
+
 def clean_build_directories():
-    """Clean previous build artifacts"""
+    """Clean previous build artifacts with robust error handling for Windows"""
     print("[2/5] Cleaning build directories...")
     
     dirs_to_clean = ['build', 'dist', '__pycache__']
     
+    # Track if any directories couldn't be cleaned
+    failed_dirs = []
+    
     for dir_name in dirs_to_clean:
         if os.path.exists(dir_name):
             print(f"  - Removing {dir_name}/")
-            shutil.rmtree(dir_name)
+            if not remove_directory_with_retry(dir_name):
+                failed_dirs.append(dir_name)
     
     # Clean __pycache__ directories recursively
     # Use a list to avoid modification during iteration
@@ -181,9 +288,31 @@ def clean_build_directories():
     for dir_path in pycache_dirs:
         if os.path.exists(dir_path):
             print(f"  - Removing {dir_path}")
-            shutil.rmtree(dir_path)
+            remove_directory_with_retry(dir_path, max_retries=2, initial_delay=0.1)
     
-    print("  ✓ Clean complete\n")
+    if failed_dirs:
+        print(f"\n  ⚠ Warning: Could not clean: {', '.join(failed_dirs)}")
+        print("  ℹ This may cause build issues. Recommendations:")
+        print("    1. Close any running CV_Studio.exe instances")
+        print("    2. Close any file explorer windows browsing the dist folder")
+        print("    3. If the issue persists, manually delete the folders and retry")
+        print()
+        
+        # Ask if user wants to continue
+        if not sys.stdin.isatty():
+            print("  ℹ Running in non-interactive mode, attempting to continue...")
+        else:
+            try:
+                response = input("  Continue anyway? (y/N): ")
+                if response.lower() != 'y':
+                    print("\n  Build cancelled by user")
+                    return False
+            except EOFError:
+                print("\n  ℹ Cannot read input, attempting to continue...")
+    else:
+        print("  ✓ Clean complete\n")
+    
+    return True
 
 
 def generate_spec_file():
@@ -646,13 +775,20 @@ def main():
     
     print_banner()
     
+    # Check for running processes that might interfere
+    if not check_running_processes():
+        print("\n  Build cancelled - please close CV_Studio.exe and try again")
+        sys.exit(1)
+    
     # Check requirements
     if not check_requirements(skip_package_check=args.skip_package_check):
         sys.exit(1)
     
     # Clean if requested
     if args.clean:
-        clean_build_directories()
+        if not clean_build_directories():
+            print("\n  ✗ Clean operation failed or was cancelled")
+            sys.exit(1)
     
     # Configure build
     if not modify_spec_file(args):
