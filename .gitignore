@@ -131,6 +131,7 @@ dmypy.json
 
 # bat
 *.bat
+!build_windows.bat
 
 # Mac
 .DS_Store
