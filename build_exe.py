@@ -217,6 +217,32 @@ base_path = os.path.abspath('.')
 
 # Collect all submodules for key packages
 hiddenimports = []
+
+# Add standard library modules explicitly
+# These are built-in Python modules that PyInstaller sometimes misses
+hiddenimports += [
+    'uuid',
+    'json',
+    'time',
+    'os',
+    'sys',
+    'copy',
+    'traceback',
+    'asyncio',
+    'collections',
+    'argparse',
+    'threading',
+    'multiprocessing',
+    'queue',
+    'datetime',
+    're',
+    'random',
+    'logging',
+    'pickle',
+    'hashlib',
+    'base64',
+]
+
 hiddenimports += collect_submodules('dearpygui')
 hiddenimports += collect_submodules('cv2')
 hiddenimports += collect_submodules('onnxruntime')
