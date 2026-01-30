@@ -7,7 +7,6 @@ import asyncio
 import argparse
 from collections import OrderedDict
 import os
-import serial
 import time
 import cv2
 import dearpygui.dearpygui as dpg
