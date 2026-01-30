@@ -13,7 +13,7 @@ python build_exe.py --clean
 ```
 
 **Features:**
-- ✅ Command-line arguments (`--clean`, `--windowed`, `--onefile`, etc.)
+- ✅ Command-line arguments (`--clean`, `--windowed`, `--debug`, etc.)
 - ✅ Package verification and dependency checking
 - ✅ Comprehensive error handling and user feedback
 - ✅ Uses `CV_Studio.spec` for complete configuration
@@ -21,6 +21,7 @@ python build_exe.py --clean
 - ✅ Includes all ONNX models and data files
 - ✅ Runtime hooks for proper path management
 - ✅ Creates README documentation for end users
+- ℹ️  Note: Both scripts create directory-based output (dist/CV_Studio/)
 
 **Usage:**
 ```bash
@@ -97,7 +98,6 @@ hiddenimports += collect_submodules('numpy')
 | **CI/CD automation** | `build_exe.py --skip-package-check` |
 | **Quick rebuild** | Either script works |
 | **Need debug build** | `build_exe.py --debug` |
-| **Single file exe** | `build_exe.py --onefile` |
 
 ## Direct PyInstaller Usage
 

@@ -185,7 +185,7 @@ def build_executable():
     # Verify CV_Studio.spec exists
     if not os.path.exists(spec_file):
         log_error(f"Le fichier CV_Studio.spec n'a pas été trouvé: {spec_file}")
-        log_info("Le fichier spec contient la configuration complète pour inclure tous les modules")
+        log_info("Veuillez vous assurer que le fichier .spec existe et contient la configuration complète")
         return False
     
     log_info(f"Fichier de configuration: CV_Studio.spec")
@@ -291,7 +291,7 @@ def display_summary(success):
         print("║" + _pad_line("  Vérifiez les erreurs ci-dessus.") + "║")
         print("║" + _pad_line("  Assurez-vous que:") + "║")
         print("║" + _pad_line("    - PyInstaller est installé (pip install pyinstaller)") + "║")
-        print("║" + _pad_line("    - CV_Studio.spec existe") + "║")
+        print("║" + _pad_line("    - Le fichier CV_Studio.spec existe") + "║")
         print("║" + _pad_line("    - Les dépendances sont installées") + "║")
         print("╚" + "═" * BOX_WIDTH + "╝")
         print()

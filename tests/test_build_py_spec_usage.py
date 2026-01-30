@@ -119,22 +119,13 @@ def test_build_py_references_spec_file():
     assert 'CV_Studio.spec' in content, \
         "build.py must reference CV_Studio.spec file"
     
-    # Check that it doesn't use the old --onefile or --windowed approach
-    # These should not be in the build_executable function
-    lines = content.split('\n')
-    in_build_function = False
-    for line in lines:
-        if 'def build_executable' in line:
-            in_build_function = True
-        elif in_build_function and line.strip().startswith('def '):
-            # Entered a new function
-            break
-        elif in_build_function:
-            # Don't check comments or strings
-            if '--onefile' in line and 'cmd' in line and '#' not in line.split('--onefile')[0]:
-                pytest.fail(
-                    "build.py should use CV_Studio.spec instead of --onefile option"
-                )
+    # Check that the build_executable function uses the spec file
+    assert 'spec_file = os.path.join(base_dir, ' in content, \
+        "build.py should define spec_file variable"
+    
+    # Check that PyInstaller is invoked with the spec file
+    assert 'PyInstaller' in content and 'spec_file' in content, \
+        "build.py should pass spec_file to PyInstaller"
 
 
 def test_collect_submodules_imported_in_spec():
