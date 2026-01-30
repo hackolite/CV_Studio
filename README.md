@@ -299,6 +299,12 @@ pip install -r requirements.txt
 pip install -r requirements-build.txt
 ```
 
+**Problem:** PermissionError during build (Windows)
+- Close all running CV_Studio.exe instances
+- Close Windows Explorer windows in the dist folder
+- Wait 10-30 seconds and retry
+- See [PYINSTALLER_PERMISSION_FIX.md](PYINSTALLER_PERMISSION_FIX.md) for detailed solutions
+
 **Problem:** Exe doesn't start
 - Install [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)
 - Run from command line to see error messages: `CV_Studio.exe --use_debug_print`
