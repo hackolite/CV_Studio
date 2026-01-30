@@ -4,21 +4,22 @@
 Build script for CV_Studio executable using PyInstaller
 
 This script automates the process of building a standalone .exe for CV_Studio
-on Windows. It handles path management for frozen executables, cleanup of
-build artifacts, and PyInstaller configuration.
+on Windows. It uses the CV_Studio.spec file which includes comprehensive
+configuration for all dependencies, hidden imports, and data files.
 
 Features:
-- Path management using sys._MEIPASS for frozen executables
+- Uses CV_Studio.spec for complete dependency configuration
+- Includes all hidden imports (cv2, onnxruntime, mediapipe, etc.)
 - Automatic cleanup of build/, dist/, and .spec files
-- PyInstaller optimization with --onefile, --windowed, --noconfirm
-- Support for assets/ folder and icon.ico
-- Increased recursion limit for large libraries (Pandas, Tkinter)
 - Clear console logging at each step
+- Runtime hooks for proper path management in frozen executables
+- Includes all ONNX models, nodes, fonts, and settings
 
 Usage:
     python build.py
 
-The script will build main.py into a standalone executable.
+The script will build main.py into a standalone executable using the
+CV_Studio.spec configuration file, ensuring all modules are properly included.
 """
 
 import os
@@ -162,14 +163,15 @@ def cleanup_build_artifacts():
 # ============================================================================
 def build_executable():
     """
-    Build the executable using PyInstaller with optimized settings.
+    Build the executable using PyInstaller with the CV_Studio.spec configuration.
     
-    Options used:
-    - --onefile: Create a single executable file
-    - --windowed: No console window (GUI application)
-    - --noconfirm: Overwrite output directory without confirmation
-    - --add-data: Include assets/ folder and other resources
-    - --icon: Use custom icon if available
+    The CV_Studio.spec file includes:
+    - Hidden imports for cv2, onnxruntime, mediapipe, and all dependencies
+    - Data files for node directories, fonts, settings
+    - Runtime hooks for proper path management
+    - All ONNX models and resources
+    
+    This ensures all modules, especially cv2, are properly included in the executable.
     
     Returns:
         bool: True if build succeeded, False otherwise
@@ -178,46 +180,25 @@ def build_executable():
     
     # Get the base directory
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    main_script = os.path.join(base_dir, 'main.py')
+    spec_file = os.path.join(base_dir, 'CV_Studio.spec')
     
-    # Verify main.py exists
-    if not os.path.exists(main_script):
-        log_error(f"Le fichier main.py n'a pas été trouvé: {main_script}")
+    # Verify CV_Studio.spec exists
+    if not os.path.exists(spec_file):
+        log_error(f"Le fichier CV_Studio.spec n'a pas été trouvé: {spec_file}")
+        log_info("Veuillez vous assurer que le fichier .spec existe et contient la configuration complète")
         return False
     
-    log_info(f"Script principal: {main_script}")
+    log_info(f"Fichier de configuration: CV_Studio.spec")
+    log_info("Ce fichier inclut tous les imports cachés (cv2, onnxruntime, etc.)")
     
-    # Build PyInstaller command
+    # Build PyInstaller command using the spec file
     cmd = [
         sys.executable, '-m', 'PyInstaller',
-        '--onefile',        # Single executable file
-        '--windowed',       # No console window (GUI mode)
         '--noconfirm',      # Overwrite without asking
-        '--name', 'CV_Studio',  # Output name
+        spec_file,          # Use the comprehensive spec file
     ]
     
-    # Add assets folder if it exists
-    assets_dir = os.path.join(base_dir, 'assets')
-    if os.path.exists(assets_dir) and os.path.isdir(assets_dir):
-        # Use the appropriate separator for the platform
-        separator = ';' if sys.platform == 'win32' else ':'
-        cmd.extend(['--add-data', f'{assets_dir}{separator}assets'])
-        log_info(f"Dossier assets/ inclus: {assets_dir}")
-    else:
-        log_warning("Dossier assets/ non trouvé, il sera ignoré")
-    
-    # Add icon if it exists
-    icon_path = os.path.join(base_dir, 'icon.ico')
-    if os.path.exists(icon_path):
-        cmd.extend(['--icon', icon_path])
-        log_info(f"Icône personnalisée incluse: {icon_path}")
-    else:
-        log_warning("Fichier icon.ico non trouvé, l'icône par défaut sera utilisée")
-    
-    # Add the main script
-    cmd.append(main_script)
-    
-    log_info("Lancement de PyInstaller...")
+    log_info("Lancement de PyInstaller avec CV_Studio.spec...")
     log_info(f"Commande: {' '.join(cmd)}")
     print()
     
@@ -265,7 +246,8 @@ def display_summary(success):
     
     if success:
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        exe_path = os.path.join(base_dir, 'dist', 'CV_Studio.exe')
+        exe_path = os.path.join(base_dir, 'dist', 'CV_Studio', 'CV_Studio.exe')
+        dist_folder = os.path.join(base_dir, 'dist', 'CV_Studio')
         
         print()
         print("╔" + "═" * BOX_WIDTH + "╗")
@@ -276,14 +258,29 @@ def display_summary(success):
             # Get file size
             size_bytes = os.path.getsize(exe_path)
             size_mb = size_bytes / (1024 * 1024)
-            print("║" + _pad_line("  Exécutable créé: dist/CV_Studio.exe") + "║")
-            print("║" + _pad_line(f"  Taille: {size_mb:.1f} MB") + "║")
+            print("║" + _pad_line("  Exécutable créé: dist/CV_Studio/CV_Studio.exe") + "║")
+            print("║" + _pad_line(f"  Taille de l'exe: {size_mb:.1f} MB") + "║")
+            
+            # Get folder size
+            total_size = 0
+            for dirpath, dirnames, filenames in os.walk(dist_folder):
+                for filename in filenames:
+                    fp = os.path.join(dirpath, filename)
+                    if os.path.exists(fp):
+                        total_size += os.path.getsize(fp)
+            folder_size_mb = total_size / (1024 * 1024)
+            print("║" + _pad_line(f"  Taille totale du dossier: {folder_size_mb:.1f} MB") + "║")
         else:
-            print("║" + _pad_line("  Exécutable: dist/CV_Studio.exe") + "║")
+            print("║" + _pad_line("  Exécutable: dist/CV_Studio/CV_Studio.exe") + "║")
         
         print("╠" + "═" * BOX_WIDTH + "╣")
         print("║" + _pad_line("  Pour lancer l'application:") + "║")
-        print("║" + _pad_line("    .\\dist\\CV_Studio.exe") + "║")
+        print("║" + _pad_line("    .\\dist\\CV_Studio\\CV_Studio.exe") + "║")
+        print("║" + _pad_line("") + "║")
+        print("║" + _pad_line("  Le dossier dist/CV_Studio/ contient:") + "║")
+        print("║" + _pad_line("    - CV_Studio.exe (exécutable principal)") + "║")
+        print("║" + _pad_line("    - _internal/ (dépendances Python et modules)") + "║")
+        print("║" + _pad_line("    - node/ (tous les noeuds avec modèles ONNX)") + "║")
         print("╚" + "═" * BOX_WIDTH + "╝")
         print()
     else:
@@ -294,7 +291,7 @@ def display_summary(success):
         print("║" + _pad_line("  Vérifiez les erreurs ci-dessus.") + "║")
         print("║" + _pad_line("  Assurez-vous que:") + "║")
         print("║" + _pad_line("    - PyInstaller est installé (pip install pyinstaller)") + "║")
-        print("║" + _pad_line("    - main.py existe dans le répertoire courant") + "║")
+        print("║" + _pad_line("    - Le fichier CV_Studio.spec existe") + "║")
         print("║" + _pad_line("    - Les dépendances sont installées") + "║")
         print("╚" + "═" * BOX_WIDTH + "╝")
         print()
