@@ -2,6 +2,12 @@
 # ============================================================================
 # Script de construction CV_Studio - Version Bash pour Git Bash/Linux
 # ============================================================================
+# 
+# Usage:
+#   ./build.sh              # Build with GPU support (requires CUDA)
+#   ./build.sh --cpu        # Build with CPU-only support (no CUDA required)
+#   ./build.sh --help       # Show help message
+# ============================================================================
 
 set -e  # Exit on error
 
@@ -12,8 +18,38 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# Parse command line arguments
+USE_CPU=false
+for arg in "$@"; do
+    case $arg in
+        --cpu)
+            USE_CPU=true
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: $0 [options]"
+            echo ""
+            echo "Options:"
+            echo "  --cpu     Build with CPU-only support (no CUDA required)"
+            echo "  --help    Show this help message"
+            echo ""
+            echo "Examples:"
+            echo "  $0              # Build with GPU support"
+            echo "  $0 --cpu        # Build with CPU-only support"
+            exit 0
+            ;;
+        *)
+            ;;
+    esac
+done
+
 echo -e "${CYAN}============================================================================${NC}"
 echo -e "${CYAN}  CV_Studio - Script de Construction (Git Bash/Linux)${NC}"
+if [ "$USE_CPU" = true ]; then
+    echo -e "${CYAN}  Mode: CPU-only (sans CUDA)${NC}"
+else
+    echo -e "${CYAN}  Mode: GPU support (avec CUDA)${NC}"
+fi
 echo -e "${CYAN}============================================================================${NC}"
 echo ""
 
@@ -59,8 +95,15 @@ $PYTHON_CMD -m pip install --upgrade pip setuptools wheel
 echo "  Installation de PyInstaller..."
 $PYTHON_CMD -m pip install -r requirements-build.txt
 
-echo "  Installation des dependances principales..."
-$PYTHON_CMD -m pip install -r requirements.txt
+# Install main dependencies based on CPU/GPU mode
+if [ "$USE_CPU" = true ]; then
+    echo "  Installation des dependances principales (mode CPU)..."
+    echo -e "${YELLOW}  Note: Installation de onnxruntime (CPU) au lieu de onnxruntime-gpu${NC}"
+    $PYTHON_CMD -m pip install -r requirements-build-cpu.txt
+else
+    echo "  Installation des dependances principales (mode GPU)..."
+    $PYTHON_CMD -m pip install -r requirements.txt
+fi
 
 echo -e "${GREEN}  OK: Tous les modules sont installes${NC}"
 
