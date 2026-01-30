@@ -249,11 +249,46 @@ python build_exe.py --debug
 pip install pyinstaller
 ```
 
-### Problème : Dépendances manquantes
+### Problème : Dépendances manquantes (ModuleNotFoundError: No module named 'cv2')
+
+Si vous rencontrez `ModuleNotFoundError` en exécutant `python build_exe.py`, cela signifie que les packages Python requis ne sont pas installés.
+
+**Solution 1 : Laisser le script d'installation les installer automatiquement (Recommandé)**
+
+Exécutez le script de construction et lorsque vous y êtes invité, sélectionnez l'option 1 :
 
 ```bash
-pip install -r requirements.txt
+python build_exe.py --clean
+
+# Lorsqu'on vous le demande, choisissez l'option 1 pour installer les packages automatiquement
+Choose option (1/2/3) [1]: 1
 ```
+
+**Solution 2 : Installer manuellement d'abord**
+
+```bash
+# Installer toutes les dépendances avant la construction
+pip install -r requirements.txt
+
+# Puis exécuter le script de construction
+python build_exe.py --clean
+```
+
+**Solution 3 : Ignorer la vérification des packages (environnements CI/CD)**
+
+Si les packages sont déjà installés mais la vérification échoue, utilisez :
+
+```bash
+python build_exe.py --clean --skip-package-check
+```
+
+**Note** : La construction nécessite tous les packages de `requirements.txt` incluant :
+- opencv-contrib-python (cv2)
+- onnxruntime-gpu
+- dearpygui
+- numpy
+- mediapipe
+- Et beaucoup d'autres...
 
 ### Problème : Erreur "module not found" dans l'exe
 

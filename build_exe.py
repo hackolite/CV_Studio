@@ -136,23 +136,81 @@ def check_requirements(skip_package_check=False):
             print(f"  ✗ {package_name}")
     
     if missing_packages:
-        print(f"\nWARNING: Missing packages: {', '.join(missing_packages)}")
-        print("Install them with: pip install -r requirements.txt")
+        print(f"\nWARNING: Missing {len(missing_packages)} package(s):")
+        for pkg in missing_packages:
+            print(f"  - {pkg}")
+        print()
         
         # Check if running in non-interactive environment (CI/CD)
         if not sys.stdin.isatty():
             print("Running in non-interactive mode (CI/CD detected)")
             print("ERROR: Cannot continue with missing packages in non-interactive mode")
+            print("\nTo fix this issue:")
+            print("  1. Install dependencies: pip install -r requirements.txt")
+            print("  2. Or use: python build_exe.py --skip-package-check")
             return False
         
-        # Interactive mode: ask user
+        # Interactive mode: offer to install packages
+        print("Options:")
+        print("  1. Install missing packages now (recommended)")
+        print("  2. Continue without installing (not recommended, build will likely fail)")
+        print("  3. Exit and install manually")
+        print()
+        
         try:
-            response = input("Continue anyway? (y/N): ")
-            if response.lower() != 'y':
+            response = input("Choose option (1/2/3) [1]: ").strip()
+            if not response:
+                response = '1'
+            
+            if response == '1':
+                # Install missing packages
+                print("\nInstalling missing packages from requirements.txt...")
+                print("This may take several minutes...\n")
+                try:
+                    subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
+                        check=True
+                    )
+                    print("\n✓ Packages installed successfully!")
+                    print("  Re-checking requirements...\n")
+                    
+                    # Re-check if packages are now available
+                    still_missing = []
+                    for package_name, import_name in required_packages.items():
+                        try:
+                            __import__(import_name)
+                        except ImportError:
+                            still_missing.append(package_name)
+                    
+                    if still_missing:
+                        print(f"WARNING: Some packages still missing: {', '.join(still_missing)}")
+                        print("You may need to install them manually or check for installation errors.")
+                        response = input("\nContinue anyway? (y/N): ")
+                        if response.lower() != 'y':
+                            return False
+                    else:
+                        print("✓ All packages are now available!")
+                        
+                except subprocess.CalledProcessError as e:
+                    print(f"\n✗ Failed to install packages (error code {e.returncode})")
+                    print("Please install manually with: pip install -r requirements.txt")
+                    return False
+            elif response == '2':
+                print("\nWARNING: Continuing without installing packages.")
+                print("The build will likely fail if required modules are not available.")
+            elif response == '3':
+                print("\nExiting. Install packages with: pip install -r requirements.txt")
                 return False
+            else:
+                print("\nInvalid option. Exiting.")
+                return False
+                
         except EOFError:
             # Handle EOF error gracefully
             print("\nERROR: Cannot read input (non-interactive environment)")
+            print("\nTo fix this issue:")
+            print("  1. Install dependencies: pip install -r requirements.txt")
+            print("  2. Or use: python build_exe.py --skip-package-check")
             return False
     
     print()
