@@ -2,7 +2,13 @@
 
 ## 🎯 Automatic Method - GitHub Actions (RECOMMENDED)
 
-The Windows executable is now automatically built via GitHub Actions!
+The Windows executable is now automatically built via GitHub Actions with enhanced validation!
+
+**Latest improvements:**
+- ✅ Automatic dependency verification before build
+- ✅ Enhanced validation of critical files and directories
+- ✅ Better error reporting and debugging information
+- ✅ Ensures complete and functional .exe distribution
 
 ### Option 1: Manual Build (Easiest)
 

@@ -2,7 +2,13 @@
 
 ## 🎯 Méthode Automatique - GitHub Actions (RECOMMANDÉ)
 
-L'exécutable Windows est maintenant créé automatiquement via GitHub Actions !
+L'exécutable Windows est maintenant créé automatiquement via GitHub Actions avec validation améliorée !
+
+**Dernières améliorations :**
+- ✅ Vérification automatique des dépendances avant la construction
+- ✅ Validation renforcée des fichiers et répertoires critiques
+- ✅ Meilleurs rapports d'erreur et informations de débogage
+- ✅ Garantit une distribution .exe complète et fonctionnelle
 
 ### Option 1 : Construction Manuelle (La Plus Simple)
 
