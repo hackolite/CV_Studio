@@ -350,9 +350,9 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
-    hookspath=[],
+    hookspath=[base_path],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[os.path.join(base_path, 'hook-runtime-cv-studio.py')],
     excludes=[
         'tkinter',
         'PyQt5',
