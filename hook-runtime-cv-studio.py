@@ -20,7 +20,8 @@ if getattr(sys, 'frozen', False):
         sys.path.insert(0, bundle_dir)
     
     # Ensure that node, node_editor, and src directories are accessible
-    for subdir in ['node', 'node_editor', 'src']:
+    # Add in reverse order so they end up in the correct priority
+    for subdir in reversed(['node', 'node_editor', 'src']):
         subdir_path = os.path.join(bundle_dir, subdir)
         if os.path.exists(subdir_path) and subdir_path not in sys.path:
             sys.path.insert(0, subdir_path)
