@@ -20,8 +20,8 @@ NC='\033[0m' # No Color
 
 # Parse command line arguments
 USE_CPU=false
-for arg in "$@"; do
-    case $arg in
+while [[ $# -gt 0 ]]; do
+    case $1 in
         --cpu)
             USE_CPU=true
             shift
@@ -39,6 +39,9 @@ for arg in "$@"; do
             exit 0
             ;;
         *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
             ;;
     esac
 done
@@ -60,17 +63,17 @@ echo -e "${YELLOW}[1/6] Verification de Python...${NC}"
 if ! command -v python3 &> /dev/null && ! command -v python &> /dev/null; then
     echo -e "${RED}  [!] ERREUR: Python est introuvable.${NC}"
     exit 1
-else
-    # Try python3 first, then python
-    if command -v python3 &> /dev/null; then
-        PYTHON_CMD=python3
-    else
-        PYTHON_CMD=python
-    fi
-    
-    PY_VERSION=$($PYTHON_CMD --version 2>&1)
-    echo -e "${GREEN}  OK: $PY_VERSION detecte${NC}"
 fi
+
+# Try python3 first, then python
+if command -v python3 &> /dev/null; then
+    PYTHON_CMD=python3
+else
+    PYTHON_CMD=python
+fi
+
+PY_VERSION=$("$PYTHON_CMD" --version 2>&1)
+echo -e "${GREEN}  OK: $PY_VERSION detecte${NC}"
 
 # ============================================================================
 # ETAPE 2: Verification de Git (Optionnel si deja dans le dossier)
@@ -90,19 +93,19 @@ fi
 # ============================================================================
 echo -e "${YELLOW}[3/6] Installation des modules requis...${NC}"
 echo "  Mise a jour de pip, setuptools et wheel..."
-$PYTHON_CMD -m pip install --upgrade pip setuptools wheel
+"$PYTHON_CMD" -m pip install --upgrade pip setuptools wheel
 
 echo "  Installation de PyInstaller..."
-$PYTHON_CMD -m pip install -r requirements-build.txt
+"$PYTHON_CMD" -m pip install -r requirements-build.txt
 
 # Install main dependencies based on CPU/GPU mode
 if [ "$USE_CPU" = true ]; then
     echo "  Installation des dependances principales (mode CPU)..."
     echo -e "${YELLOW}  Note: Installation de onnxruntime (CPU) au lieu de onnxruntime-gpu${NC}"
-    $PYTHON_CMD -m pip install -r requirements-build-cpu.txt
+    "$PYTHON_CMD" -m pip install -r requirements-build-cpu.txt
 else
     echo "  Installation des dependances principales (mode GPU)..."
-    $PYTHON_CMD -m pip install -r requirements.txt
+    "$PYTHON_CMD" -m pip install -r requirements.txt
 fi
 
 echo -e "${GREEN}  OK: Tous les modules sont installes${NC}"
@@ -129,7 +132,7 @@ echo "  Utilisation du fichier CV_Studio.spec pour la configuration complete..."
 
 # Use the spec file for complete configuration
 if [ -f "CV_Studio.spec" ]; then
-    $PYTHON_CMD -m PyInstaller CV_Studio.spec --noconfirm
+    "$PYTHON_CMD" -m PyInstaller CV_Studio.spec --noconfirm
 else
     echo -e "${RED}  [!] ERREUR: CV_Studio.spec introuvable${NC}"
     exit 1

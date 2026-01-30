@@ -1,6 +1,7 @@
 # Alternative requirements for building CV_Studio executable on systems without CUDA
 # This file replaces onnxruntime-gpu with onnxruntime (CPU version)
-# Install with: pip install -r requirements-build-cpu.txt -r requirements-build.txt
+# Used automatically by build.sh when --cpu flag is specified
+# For manual installation: pip install -r requirements-build-cpu.txt
 
 # NOTE: numpy must be listed first because some packages below (like lap)
 # require numpy to be available during their build process.
