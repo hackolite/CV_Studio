@@ -31,7 +31,7 @@ def test_required_packages_can_be_imported():
     import_checks = {
         'dearpygui': 'dearpygui',
         'opencv-contrib-python': 'cv2',
-        'onnxruntime-cpu': 'onnxruntime',
+        'onnxruntime': 'onnxruntime',
         'numpy': 'numpy',
         'mediapipe': 'mediapipe',
         'scipy': 'scipy',
