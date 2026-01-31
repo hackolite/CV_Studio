@@ -95,7 +95,8 @@ class FactoryNode:
 def screen_capture_process(image_queue, request):
     while True:
         # On Windows, all_screens parameter can cause issues
-        # Use platform-specific approach
+        # Windows: Captures primary screen only (ImageGrab.grab())
+        # Other platforms: Captures all screens (ImageGrab.grab(all_screens=True))
         if sys.platform == 'win32':
             pil_image = ImageGrab.grab()
         else:
