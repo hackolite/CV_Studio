@@ -51,6 +51,7 @@ hiddenimports += collect_submodules('lap')
 hiddenimports += collect_submodules('motpy')
 hiddenimports += collect_submodules('norfair')
 hiddenimports += collect_submodules('ffmpeg')
+hiddenimports += collect_submodules('streamlink')
 
 # Add explicit hidden imports for node modules
 hiddenimports += [
@@ -116,6 +117,7 @@ hiddenimports += [
     'norfair',
     'ffmpeg',
     'sounddevice',
+    'streamlink',
 ]
 
 # Collect data files
@@ -145,6 +147,7 @@ datas += collect_data_files('mediapipe')
 datas += collect_data_files('onnxruntime')
 datas += collect_data_files('librosa')
 datas += collect_data_files('sklearn')
+datas += collect_data_files('streamlink')
 
 # Binary excludes - exclude unnecessary binaries
 binaries = []
