@@ -23,7 +23,7 @@ from src.utils.logging import setup_logging, get_logger
 from src.utils.gpu_utils import log_gpu_info
 
 from node_editor.util import check_camera_connection
-from node_editor.node_editor import DpgNodeEditor
+from node_editor.node_main import DpgNodeEditor
 
 # Import timestamped queue system
 from node.timestamped_queue import NodeDataQueueManager

@@ -37,7 +37,7 @@ def test_export_uses_correct_dictionary():
     """
     print("Testing export uses correct _node_instances_list dictionary...")
     
-    from node_editor.node_editor import DpgNodeEditor
+    from node_editor.node_main import DpgNodeEditor
     
     # Mock dpg to avoid GUI initialization
     with patch('dearpygui.dearpygui.create_context'):
@@ -104,7 +104,7 @@ def test_import_uses_factory_to_create_nodes():
     """
     print("\nTesting import uses factory to create nodes...")
     
-    from node_editor.node_editor import DpgNodeEditor
+    from node_editor.node_main import DpgNodeEditor
     
     # Mock dpg to avoid GUI initialization
     with patch('dearpygui.dearpygui.create_context'):
@@ -182,7 +182,7 @@ def test_export_import_roundtrip(tmp_path):
     """
     print("\nTesting export/import roundtrip...")
     
-    from node_editor.node_editor import DpgNodeEditor
+    from node_editor.node_main import DpgNodeEditor
     
     # Mock dpg to avoid GUI initialization
     with patch('dearpygui.dearpygui.create_context'):
@@ -279,7 +279,7 @@ def test_import_handles_empty_file():
     """
     print("\nTesting import edge cases...")
     
-    from node_editor.node_editor import DpgNodeEditor
+    from node_editor.node_main import DpgNodeEditor
     
     # Mock dpg to avoid GUI initialization
     with patch('dearpygui.dearpygui.create_context'):
