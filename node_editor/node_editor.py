@@ -13,8 +13,8 @@ from importlib import import_module
 import dearpygui.dearpygui as dpg
 from node.node_factory import NodeFactory
 import time
-from .style import STYLE
-from .util import _dpg_lock  # Import shared DearPyGUI lock
+from node_editor.style import STYLE
+from node_editor.util import _dpg_lock  # Import shared DearPyGUI lock
 from src.utils.logging import get_logger
 
 dpg.create_context()
