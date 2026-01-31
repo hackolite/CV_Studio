@@ -33,6 +33,7 @@ MANIFEST
 *.manifest
 *.spec
 !CV_Studio.spec
+!CV_Studio_new.spec
 
 # Installer logs
 pip-log.txt
@@ -132,6 +133,7 @@ dmypy.json
 # bat
 *.bat
 !build_windows.bat
+!build_simple.bat
 
 # Mac
 .DS_Store

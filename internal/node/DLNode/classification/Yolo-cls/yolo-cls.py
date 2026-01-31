@@ -1,0 +1,91 @@
+#!/usr/bin/env python
+import cv2 as cv
+import numpy as np
+import onnxruntime
+
+
+class YoloCls(object):
+
+    def __init__(
+        self,
+        model_path,
+        input_size=(224, 224),
+        providers=[
+            # ('TensorrtExecutionProvider', {
+            #     'trt_engine_cache_enable': True,
+            #     'trt_engine_cache_path': '.',
+            #     'trt_fp16_enable': True,
+            # }),
+            'CUDAExecutionProvider',
+            'CPUExecutionProvider',
+        ],
+    ):
+        # モデル読み込み
+        self.onnx_session = onnxruntime.InferenceSession(
+            model_path,
+            providers=providers,
+        )
+
+        self.input_detail = self.onnx_session.get_inputs()[0]
+        self.input_name = self.input_detail.name
+        self.output_name = self.onnx_session.get_outputs()[0].name
+
+        # 各種設定
+        self.input_shape = input_size
+
+    def __call__(self, image, top_k=5):
+        # Pre process: Resize, BGR->RGB, HWC->CHW transpose, add batch dim, float32 cast
+        input_image = cv.resize(
+            image,
+            dsize=(self.input_shape[1], self.input_shape[0]),
+        )
+        input_image = cv.cvtColor(input_image, cv.COLOR_BGR2RGB)
+        input_image = input_image.transpose(2, 0, 1)  # HWC to CHW for NCHW format
+        input_image = np.expand_dims(input_image, axis=0).astype('float32') / 255
+
+        # Inference
+        input_name = self.onnx_session.get_inputs()[0].name
+        result = self.onnx_session.run(None, {input_name: input_image})
+
+        # Vérifier la sortie
+        result = np.array(result[0]).squeeze()  # <-- correction parenthèse
+        result = result.flatten()  # s'assurer que c'est un vecteur 1D
+
+        # Top-k
+        top_k = min(top_k, len(result))
+        sorted_idx = np.argsort(result)[::-1][:top_k]
+        class_scores = result[sorted_idx]
+        class_ids = sorted_idx
+
+        # Affichage debug
+        for i in range(top_k):
+            print(f"Classe {class_ids[i]} - Score {class_scores[i]:.4f}")
+
+        return class_scores, class_ids
+
+
+if __name__ == '__main__':
+    cap = cv.VideoCapture(0)
+
+    # Load model
+    model_path = 'model/son.onnx'
+    model = YoloCls(model_path)
+
+    while True:
+        # Capture read
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Inference execution
+        class_scores, class_ids = model(frame)
+        # Debug: print(class_scores)
+        # Debug: print(class_ids)
+
+        key = cv.waitKey(1)
+        if key == 27:  # ESC
+            break
+        cv.imshow('YoloCls Input', frame)
+
+    cap.release()
+    cv.destroyAllWindows()
