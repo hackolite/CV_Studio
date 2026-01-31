@@ -284,7 +284,7 @@ Si vous n'avez pas de GPU NVIDIA ou CUDA :
 2. Décochez simplement l'option "GPU" dans les nœuds Deep Learning
 3. Le traitement sera plus lent mais fonctionnel
 
-**Note :** Cette version de CV_Studio utilise onnxruntime-cpu uniquement. Le support GPU n'est pas disponible dans cette configuration.
+**Note :** CV_Studio utilise onnxruntime. La disponibilité du support GPU dépend de la variante du package onnxruntime installé (onnxruntime-gpu pour le support GPU).
 
 ### Problème : Erreur de politique d'exécution PowerShell
 

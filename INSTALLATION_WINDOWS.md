@@ -284,7 +284,7 @@ If you don't have an NVIDIA GPU or CUDA:
 2. Simply uncheck the "GPU" option in Deep Learning nodes
 3. Processing will be slower but functional
 
-**Note:** This version of CV_Studio uses onnxruntime-cpu only. GPU support is not available in this configuration.
+**Note:** CV_Studio uses onnxruntime. GPU support availability depends on your installed onnxruntime package variant (onnxruntime-gpu for GPU support).
 
 ### Problem: PowerShell execution policy error
 

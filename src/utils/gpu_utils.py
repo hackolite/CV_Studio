@@ -35,7 +35,7 @@ def check_gpu_availability() -> Tuple[bool, List[str], str]:
             message = "GPU support is not available. Only CPU execution will be used."
             logger.warning(message)
             logger.info(f"Available providers: {', '.join(available_providers)}")
-            logger.info("Note: This installation uses onnxruntime-cpu. GPU support is not available.")
+            logger.info("Note: GPU support is not available. Install onnxruntime-gpu for GPU acceleration.")
             return False, available_providers, message
             
     except ImportError as e:
