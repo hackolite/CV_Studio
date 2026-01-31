@@ -1,3 +1,3 @@
 """Machine Learning node implementations"""
 
-from .adapters import *
+from src.nodes.ml.adapters import *

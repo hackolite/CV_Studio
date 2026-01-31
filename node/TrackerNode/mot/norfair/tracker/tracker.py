@@ -4,8 +4,8 @@ from typing import Callable, List, Optional, Sequence
 import numpy as np
 from rich import print
 
-from .utils import validate_points
-from .filter import FilterSetup
+from node.TrackerNode.mot.norfair.tracker.utils import validate_points
+from node.TrackerNode.mot.norfair.tracker.filter import FilterSetup
 
 
 class Tracker:

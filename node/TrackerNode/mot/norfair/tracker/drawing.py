@@ -3,14 +3,14 @@ from typing import Optional, Sequence, Tuple
 try:
     import cv2
 except ImportError:
-    from .utils import DummyOpenCVImport
+    from node.TrackerNode.mot.norfair.tracker.utils import DummyOpenCVImport
 
     cv2 = DummyOpenCVImport()
 import random
 
 import numpy as np
 
-from .utils import validate_points
+from node.TrackerNode.mot.norfair.tracker.utils import validate_points
 
 
 def draw_points(

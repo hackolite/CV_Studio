@@ -3,8 +3,8 @@
 """Node factory for creating node instances"""
 
 from typing import Dict, Type, Optional, Any
-from ...utils.logging import get_logger
-from ...utils.exceptions import NodeError
+from src.utils.logging import get_logger
+from src.utils.exceptions import NodeError
 
 logger = get_logger(__name__)
 

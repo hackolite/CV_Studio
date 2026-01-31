@@ -6,8 +6,8 @@ import json
 from typing import Dict, Any, Optional
 from pathlib import Path
 
-from ...utils.logging import get_logger
-from ...utils.exceptions import NodeConfigurationError
+from src.utils.logging import get_logger
+from src.utils.exceptions import NodeConfigurationError
 
 logger = get_logger(__name__)
 

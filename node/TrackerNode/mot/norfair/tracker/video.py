@@ -5,14 +5,14 @@ from typing import List, Optional, Union
 try:
     import cv2
 except ImportError:
-    from .utils import DummyOpenCVImport
+    from node.TrackerNode.mot.norfair.tracker.utils import DummyOpenCVImport
 
     cv2 = DummyOpenCVImport()
 import numpy as np
 from rich import print
 from rich.progress import BarColumn, Progress, ProgressColumn, TimeRemainingColumn
 
-from .utils import get_terminal_size
+from node.TrackerNode.mot.norfair.tracker.utils import get_terminal_size
 
 
 class Video:

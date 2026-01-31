@@ -31,9 +31,9 @@ else:
         dpg = None
 
 # Import from new architecture
-from ...utils.logging import get_logger
-from ...utils.exceptions import NodeExecutionError, NodeConfigurationError
-from ..nodes.base import BaseNode
+from src.utils.logging import get_logger
+from src.utils.exceptions import NodeExecutionError, NodeConfigurationError
+from src.core.nodes.base import BaseNode
 
 logger = get_logger(__name__)
 

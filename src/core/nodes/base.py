@@ -6,8 +6,8 @@ from abc import ABCMeta, abstractmethod
 from typing import Dict, Any, Optional, List
 import uuid
 
-from ...utils.logging import get_logger
-from ...utils.exceptions import NodeExecutionError, NodeConfigurationError
+from src.utils.logging import get_logger
+from src.utils.exceptions import NodeExecutionError, NodeConfigurationError
 
 logger = get_logger(__name__)
 
