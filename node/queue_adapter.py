@@ -10,7 +10,7 @@ from the new queue-based architecture.
 
 import logging
 from typing import Any, Optional, Dict
-from .timestamped_queue import NodeDataQueueManager
+from node.timestamped_queue import NodeDataQueueManager
 
 # Set up logger for this module
 logger = logging.getLogger(__name__)

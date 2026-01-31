@@ -4,8 +4,8 @@
 
 import weakref
 from typing import Any, Dict, Optional
-from .logging import get_logger
-from .exceptions import ResourceError
+from src.utils.logging import get_logger
+from src.utils.exceptions import ResourceError
 
 logger = get_logger(__name__)
 

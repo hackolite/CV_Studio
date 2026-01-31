@@ -1,8 +1,8 @@
 import sys
 import glob
-from .extractor import get_live_stream_url
-from .segmenter import download_segments
-from .utils import is_valid_video
+from node.InputNode.streaming.extractor import get_live_stream_url
+from node.InputNode.streaming.segmenter import download_segments
+from node.InputNode.streaming.utils import is_valid_video
 
 def main():
     if len(sys.argv) < 2:

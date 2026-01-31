@@ -1,7 +1,7 @@
 import subprocess
 import os
-from .downloader import fallback_recording
-from .utils import is_valid_video
+from node.InputNode.streaming.downloader import fallback_recording
+from node.InputNode.streaming.utils import is_valid_video
 
 def download_segments(manifest_url, output_pattern="chunk_%03d.mp4", segment_time=30):
     if not manifest_url:

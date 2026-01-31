@@ -1,3 +1,3 @@
 """Input node implementations"""
 
-from .adapters import *
+from src.nodes.input.adapters import *

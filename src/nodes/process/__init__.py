@@ -1,3 +1,3 @@
 """Process node implementations"""
 
-from .adapters import *
+from src.nodes.process.adapters import *
