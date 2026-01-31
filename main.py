@@ -16,6 +16,7 @@ import asyncio
 import argparse
 from collections import OrderedDict
 import time
+import multiprocessing
 import cv2
 import dearpygui.dearpygui as dpg
 
@@ -397,4 +398,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # Enable multiprocessing support for frozen executables (PyInstaller)
+    # This must be called before any multiprocessing code runs
+    # On Windows, when the executable spawns child processes for multiprocessing,
+    # they will re-execute this script with special arguments that freeze_support() handles
+    multiprocessing.freeze_support()
     main()
