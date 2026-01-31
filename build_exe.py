@@ -124,6 +124,7 @@ def check_requirements(skip_package_check=False):
         'pafy': 'pafy',
         'yt-dlp': 'yt_dlp',
         'pytz': 'pytz',
+        'streamlink': 'streamlink',
     }
     
     missing_packages = []
