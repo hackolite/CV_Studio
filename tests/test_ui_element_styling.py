@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import dearpygui.dearpygui as dpg
-from node_editor.node_editor import node_style
+from node_editor.node_main import node_style
 from node_editor.style import STYLE
 
 

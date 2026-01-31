@@ -73,7 +73,7 @@ hiddenimports += [
     'node.queue_adapter',
     'node.basenode',
     'node_editor',
-    'node_editor.node_editor',
+    'node_editor.node_main',
     'node_editor.util',
     'node_editor.style',
     'src',
