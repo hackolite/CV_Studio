@@ -14,6 +14,7 @@ from node.basenode import Node
 from node.DLNode.low_light_image_enhancement.TBEFN.tbefn import TBEFN
 from node.DLNode.low_light_image_enhancement.SCI.sci import SCI
 from node.DLNode.low_light_image_enhancement.AGLLNet.agllnet import AGLLNet
+from src.utils import resource_path
 
 class FactoryNode:
     node_label = 'LLIE'
@@ -147,20 +148,19 @@ class Node(Node):
         'AGLLNet(256x256)': AGLLNet,
         'AGLLNet(512x384)': AGLLNet,
     }
-    _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/low_light_image_enhancement/'
     _model_path_setting = {
         'TBEFN(320x180)':
-        _model_base_path + 'TBEFN/saved_model_180x320/model_float32.onnx',
+        resource_path('node/DLNode/low_light_image_enhancement/TBEFN/saved_model_180x320/model_float32.onnx'),
         'TBEFN(640x360)':
-        _model_base_path + 'TBEFN/saved_model_360x640/model_float32.onnx',
+        resource_path('node/DLNode/low_light_image_enhancement/TBEFN/saved_model_360x640/model_float32.onnx'),
         'SCI(320x180)':
-        _model_base_path + 'SCI/sci_180x320/sci_180x320.onnx',
+        resource_path('node/DLNode/low_light_image_enhancement/SCI/sci_180x320/sci_180x320.onnx'),
         'SCI(640x360)':
-        _model_base_path + 'SCI/sci_360x640/sci_360x640.onnx',
+        resource_path('node/DLNode/low_light_image_enhancement/SCI/sci_360x640/sci_360x640.onnx'),
         'AGLLNet(256x256)':
-        _model_base_path + 'AGLLNet/saved_model_256x256/model_float32.onnx',
+        resource_path('node/DLNode/low_light_image_enhancement/AGLLNet/saved_model_256x256/model_float32.onnx'),
         'AGLLNet(512x384)':
-        _model_base_path + 'AGLLNet/saved_model_384x512/model_float32.onnx',
+        resource_path('node/DLNode/low_light_image_enhancement/AGLLNet/saved_model_384x512/model_float32.onnx'),
     }
 
     _model_instance = {}

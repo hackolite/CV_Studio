@@ -20,6 +20,7 @@ from node.DLNode.object_detection.coco_class_names_only_person import coco_class
 from node.DLNode.object_detection.coco_class_names_tennis import coco_class_names_tennis
 from src.utils.logging import get_logger
 from src.utils.gpu_utils import get_execution_providers
+from src.utils import resource_path
 
 logger = get_logger(__name__)
 
@@ -253,10 +254,6 @@ class Node(Node):
     _opencv_setting_dict = None
 
 
-    # Chemin de base pour les modèles
-    _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/object_detection/'
-
-
     _model_class = {
         'YOLOX-Nano(416x416)': YOLOX,
         'YOLOX-Tiny(416x416)': YOLOX,
@@ -273,23 +270,20 @@ class Node(Node):
 
     _model_path_setting = {
         'YOLOX-Nano(416x416)':
-        _model_base_path + 'YOLOX/model/yolox_nano.onnx',
+        resource_path('node/DLNode/object_detection/YOLOX/model/yolox_nano.onnx'),
         'YOLOX-Tiny(416x416)':
-        _model_base_path + 'YOLOX/model/yolox_tiny.onnx',
+        resource_path('node/DLNode/object_detection/YOLOX/model/yolox_tiny.onnx'),
         'YOLOX-S(640x640)':
-        _model_base_path + 'YOLOX/model/yolox_s.onnx',
-        'YOLO11Nano' : _model_base_path + 'YOLO/model/yolo11_n.onnx',
+        resource_path('node/DLNode/object_detection/YOLOX/model/yolox_s.onnx'),
+        'YOLO11Nano': resource_path('node/DLNode/object_detection/YOLO/model/yolo11_n.onnx'),
         'FreeYOLO-Nano(640x640)':
-        _model_base_path + 'FreeYOLO/model/yolo_free_nano_640x640.onnx',
+        resource_path('node/DLNode/object_detection/FreeYOLO/model/yolo_free_nano_640x640.onnx'),
         'FreeYOLO-Nano-CrowdHuman(640x640)':
-        _model_base_path +
-        'FreeYOLO/model/yolo_free_nano_crowdhuman_640x640.onnx',
-         'Light-Weight Person Detector': 
-        _model_base_path +
-        'LightWeightPersonDetector/model/model.onnx',
+        resource_path('node/DLNode/object_detection/FreeYOLO/model/yolo_free_nano_crowdhuman_640x640.onnx'),
+        'Light-Weight Person Detector': 
+        resource_path('node/DLNode/object_detection/LightWeightPersonDetector/model/model.onnx'),
         'YOLOTENNIS': 
-        _model_base_path +
-        'TennisYOLO/model/tennis.onnx'
+        resource_path('node/DLNode/object_detection/TennisYOLO/model/tennis.onnx')
 
     }
 

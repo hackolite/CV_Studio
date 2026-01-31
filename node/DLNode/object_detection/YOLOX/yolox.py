@@ -7,6 +7,8 @@ import cv2
 import numpy as np
 import onnxruntime
 
+from src.utils import resource_path
+
 
 class YOLOX(object):
     def __init__(
@@ -316,11 +318,11 @@ if __name__ == '__main__':
     cap = cv2.VideoCapture(0)
 
     # Load model
-    model_path = './model/yolox_nano.onnx'
+    model_path = resource_path('node/DLNode/object_detection/YOLOX/model/yolox_nano.onnx')
     model = YOLOX(model_path)
 
     # Load COCO Classes List
-    with open('coco_classes.txt', 'rt') as f:
+    with open(resource_path('node/DLNode/object_detection/YOLOX/coco_classes.txt'), 'rt') as f:
         coco_classes = f.read().rstrip('\n').split('\n')
 
     while True:

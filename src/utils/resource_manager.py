@@ -2,12 +2,49 @@
 # -*- coding: utf-8 -*-
 """Resource management utilities"""
 
+import os
+import sys
 import weakref
 from typing import Any, Dict, Optional
 from .logging import get_logger
 from .exceptions import ResourceError
 
 logger = get_logger(__name__)
+
+
+def resource_path(relative_path):
+    """
+    Get the absolute path to a resource, works for both development and PyInstaller frozen mode.
+    
+    When running as a script, returns the path relative to the project root directory.
+    When running as a PyInstaller executable (.exe), returns the path relative to
+    the temporary directory where PyInstaller extracts files (sys._MEIPASS).
+    
+    This function should be used for all file access to resources that are bundled
+    with the application (models, config files, fonts, images, etc.).
+    
+    Args:
+        relative_path (str): Relative path to the resource from project root
+                           (e.g., 'node/DLNode/classification/MobileNetV3/model/MobileNetV3Small.onnx')
+    
+    Returns:
+        str: Absolute path to the resource
+        
+    Example:
+        >>> model_path = resource_path('node/DLNode/YOLOX/model/yolox_nano.onnx')
+        >>> with open(resource_path('node_editor/setting/setting.json')) as f:
+        ...     config = json.load(f)
+    """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except AttributeError:
+        # Running in normal Python environment (script mode)
+        # Get the project root (3 levels up from src/utils/resource_manager.py)
+        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    
+    # Normalize path separators for cross-platform compatibility
+    return os.path.normpath(os.path.join(base_path, relative_path))
 
 
 class ResourceManager:

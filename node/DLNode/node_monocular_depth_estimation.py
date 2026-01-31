@@ -14,6 +14,7 @@ from node.node_abc import DpgNodeABC
 from node.basenode import Node
 from node.DLNode.monocular_depth_estimation.FSRE_Depth.fsre_depth import FSRE_Depth
 from node.DLNode.monocular_depth_estimation.HR_Depth.hr_depth import HR_Depth
+from src.utils import resource_path
 
 class FactoryNode:
     node_label = 'MonocularDepthEstimation'
@@ -169,20 +170,15 @@ class Node(Node):
         'Lite-HR-Depth(1280x384)': HR_Depth,
         'HR-Depth(1280x384)': HR_Depth,
     }
-    _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/monocular_depth_estimation/'
     _model_path_setting = {
         'FSRE-Depth(320x192)':
-        _model_base_path +
-        'FSRE_Depth/fsre_depth_192x320/fsre_depth_full_192x320.onnx',
+        resource_path('node/DLNode/monocular_depth_estimation/FSRE_Depth/fsre_depth_192x320/fsre_depth_full_192x320.onnx'),
         'FSRE-Depth(640x384)':
-        _model_base_path +
-        'FSRE_Depth/fsre_depth_384x640/fsre_depth_full_384x640.onnx',
+        resource_path('node/DLNode/monocular_depth_estimation/FSRE_Depth/fsre_depth_384x640/fsre_depth_full_384x640.onnx'),
         'Lite-HR-Depth(1280x384)':
-        _model_base_path +
-        'HR_Depth/saved_model_lite_hr_depth_384x1280/lite_hr_depth_k_t_encoder_depth_384x1280.onnx',
+        resource_path('node/DLNode/monocular_depth_estimation/HR_Depth/saved_model_lite_hr_depth_384x1280/lite_hr_depth_k_t_encoder_depth_384x1280.onnx'),
         'HR-Depth(1280x384)':
-        _model_base_path +
-        'HR_Depth/saved_model_hr_depth_384x1280/hr_depth_k_m_depth_encoder_depth_384x1280.onnx',
+        resource_path('node/DLNode/monocular_depth_estimation/HR_Depth/saved_model_hr_depth_384x1280/hr_depth_k_m_depth_encoder_depth_384x1280.onnx'),
     }
 
     _model_instance = {}

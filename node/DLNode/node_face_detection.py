@@ -23,6 +23,7 @@ from node.DLNode.face_detection.mediapipe_facemesh.mediapipe_facemesh import (
 )
 from src.utils.logging import get_logger
 from src.utils.gpu_utils import get_execution_providers
+from src.utils import resource_path
 
 logger = get_logger(__name__)
 
@@ -64,10 +65,9 @@ class Node(Node):
         'MediaPipe FaceMesh': MediaPipeFaceMeshNonRefine,
         'MediaPipe FaceMesh(Refine Landmark)': MediaPipeFaceMeshRefine,
     }
-    _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/face_detection/'
     _model_path_setting = {
         'YuNet':
-        _model_base_path + 'YuNet/model/face_detection_yunet_120x160.onnx',
+        resource_path('node/DLNode/face_detection/YuNet/model/face_detection_yunet_120x160.onnx'),
         'MediaPipe FaceDetection(~2m)': None,
         'MediaPipe FaceDetection(~5m)': None,
         'MediaPipe FaceMesh': None,

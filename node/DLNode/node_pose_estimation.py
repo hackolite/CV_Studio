@@ -12,6 +12,7 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 #from node_editor.util import convert_cv_to_dpg
 
+from src.utils import resource_path
 
 from node.basenode import Node
 
@@ -208,16 +209,15 @@ class Node(Node):
         'TennisKeyPoints_2': tennis_keypoints_2,
     }
 
-    _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/pose_estimation/'
     _model_path_setting = {
         'MoveNet(SinglePose Lightning)':
-        _model_base_path + 'movenet/model/movenet_singlepose_lightning_4.onnx',
+        resource_path('node/DLNode/pose_estimation/movenet/model/movenet_singlepose_lightning_4.onnx'),
         'MoveNet(SinglePose Thunder)':
-        _model_base_path + 'movenet/model/movenet_singlepose_thunder_4.onnx',
+        resource_path('node/DLNode/pose_estimation/movenet/model/movenet_singlepose_thunder_4.onnx'),
         'MoveNet(MulitPose Lightning)':
-        _model_base_path + 'movenet/model/movenet_multipose_lightning_1.onnx',
-        'TennisKeyPoints': _model_base_path + 'tennis_keypoints/model/tennis.onnx',
-        'TennisKeyPoints_2': _model_base_path + 'tennis_keypoints_2/model/tennis_old.onnx',
+        resource_path('node/DLNode/pose_estimation/movenet/model/movenet_multipose_lightning_1.onnx'),
+        'TennisKeyPoints': resource_path('node/DLNode/pose_estimation/tennis_keypoints/model/tennis.onnx'),
+        'TennisKeyPoints_2': resource_path('node/DLNode/pose_estimation/tennis_keypoints_2/model/tennis_old.onnx'),
         'MediaPipe Hands(Complexity0)': None,
         'MediaPipe Hands(Complexity1)': None,
         'MediaPipe Pose(Complexity0)': None,

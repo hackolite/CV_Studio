@@ -2,7 +2,7 @@
 
 from .exceptions import NodeError, NodeExecutionError, NodeConfigurationError
 from .logging import setup_logging, get_logger
-from .resource_manager import ResourceManager, get_resource_manager
+from .resource_manager import ResourceManager, get_resource_manager, resource_path
 
 __all__ = [
     'NodeError', 
@@ -11,5 +11,6 @@ __all__ = [
     'setup_logging',
     'get_logger',
     'ResourceManager',
-    'get_resource_manager'
+    'get_resource_manager',
+    'resource_path'
 ]

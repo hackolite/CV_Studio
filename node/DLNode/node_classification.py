@@ -18,9 +18,10 @@ from node.DLNode.classification.ResNet50.resnet50 import ResNet50
 
 # Import YoloCls using importlib.util due to hyphenated directory name
 import importlib.util
-_yolo_cls_init_path = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    'classification', 'Yolo-cls', '__init__.py'
+from src.utils import resource_path
+
+_yolo_cls_init_path = resource_path(
+    'node/DLNode/classification/Yolo-cls/__init__.py'
 )
 _yolo_cls_spec = importlib.util.spec_from_file_location(
     'yolo_cls_init_module', _yolo_cls_init_path
@@ -186,18 +187,17 @@ class Node(Node):
         'ResNet50': ResNet50,
         'Yolo-cls': YoloCls,
     }
-    _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/classification/'
     _model_path_setting = {
         'MobileNetV3 Small':
-        _model_base_path + 'MobileNetV3/model/MobileNetV3Small.onnx',
+        resource_path('node/DLNode/classification/MobileNetV3/model/MobileNetV3Small.onnx'),
         'MobileNetV3 Large':
-        _model_base_path + 'MobileNetV3/model/MobileNetV3Large.onnx',
+        resource_path('node/DLNode/classification/MobileNetV3/model/MobileNetV3Large.onnx'),
         'EfficientNet B0':
-        _model_base_path + 'EfficientNetB0/model/EfficientNetB0.onnx',
+        resource_path('node/DLNode/classification/EfficientNetB0/model/EfficientNetB0.onnx'),
         'ResNet50':
-        _model_base_path + 'ResNet50/model/ResNet50.onnx',
+        resource_path('node/DLNode/classification/ResNet50/model/ResNet50.onnx'),
         'Yolo-cls':
-        _model_base_path + 'Yolo-cls/model/son.onnx',
+        resource_path('node/DLNode/classification/Yolo-cls/model/son.onnx'),
     }
     _model_class_name_dict = {
         'MobileNetV3 Small': imagenet_class_names,

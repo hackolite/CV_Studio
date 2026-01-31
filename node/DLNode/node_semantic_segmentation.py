@@ -20,6 +20,7 @@ from node.DLNode.semantic_segmentation.mediapipe_selfie_segmentation.mediapipe_s
 )
 from node.DLNode.semantic_segmentation.yolov8_seg.yolov8_seg import YOLOv8Seg
 
+from src.utils import resource_path
 
 from node.basenode import Node
 #from node.draw_node.draw_util.draw_util import draw_semantic_segmentation_info
@@ -64,18 +65,17 @@ class Node(Node):
         'YOLOv8-nano-seg':
         YOLOv8Seg,
     }
-    _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/semantic_segmentation/'
     _model_path_setting = {
         'DeepLabV3':
-        _model_base_path + 'deeplab_v3/model/deeplab_v3_1_default_1.onnx',
-        'Road Segmentation ADAS 0001': _model_base_path +
-        'road_segmentation_adas_0001/saved_model/model_float32.onnx',
-        'Skin Clothes Hair Segmentation': _model_base_path +
-        'skin_clothes_hair_segmentation/model/DeepLabV3Plus(timm-mobilenetv3_small_100)_452_2.16M_0.8385/best_model_simplifier.onnx',
+        resource_path('node/DLNode/semantic_segmentation/deeplab_v3/model/deeplab_v3_1_default_1.onnx'),
+        'Road Segmentation ADAS 0001':
+        resource_path('node/DLNode/semantic_segmentation/road_segmentation_adas_0001/saved_model/model_float32.onnx'),
+        'Skin Clothes Hair Segmentation':
+        resource_path('node/DLNode/semantic_segmentation/skin_clothes_hair_segmentation/model/DeepLabV3Plus(timm-mobilenetv3_small_100)_452_2.16M_0.8385/best_model_simplifier.onnx'),
         'MediaPipe SelfieSegmentation(Normal)': None,
         'MediaPipe SelfieSegmentation(LandScape)': None,
-        'YOLOv8-nano-seg': _model_base_path +
-        'yolov8_seg/model/yolov8n-seg.onnx',
+        'YOLOv8-nano-seg':
+        resource_path('node/DLNode/semantic_segmentation/yolov8_seg/model/yolov8n-seg.onnx'),
     }
     _model_instance = {}
 
