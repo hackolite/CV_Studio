@@ -26,7 +26,7 @@ IMPORT_TO_PACKAGE = {
     # Core dependencies
     'numpy': 'numpy',
     'cv2': 'opencv-contrib-python',
-    'onnxruntime': 'onnxruntime-gpu',
+    'onnxruntime': 'onnxruntime-cpu',
     'dearpygui': 'dearpygui',
     'dpg': 'dearpygui',
     'mediapipe': 'mediapipe',

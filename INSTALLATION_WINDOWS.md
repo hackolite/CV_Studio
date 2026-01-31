@@ -284,10 +284,7 @@ If you don't have an NVIDIA GPU or CUDA:
 2. Simply uncheck the "GPU" option in Deep Learning nodes
 3. Processing will be slower but functional
 
-If you have an NVIDIA GPU:
-1. Install [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads)
-2. Install onnxruntime-gpu: `pip install onnxruntime-gpu`
-3. Verify that your NVIDIA drivers are up to date
+**Note:** This version of CV_Studio uses onnxruntime-cpu only. GPU support is not available in this configuration.
 
 ### Problem: PowerShell execution policy error
 

@@ -102,7 +102,7 @@ def check_requirements(skip_package_check=False):
     required_packages = {
         'dearpygui': 'dearpygui',
         'opencv-contrib-python': 'cv2',
-        'onnxruntime-gpu': 'onnxruntime',
+        'onnxruntime-cpu': 'onnxruntime',
         'numpy': 'numpy',
         'mediapipe': 'mediapipe',
         'scipy': 'scipy',
