@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import copy
 import time
+import sys
 import multiprocessing as mp
 
 import cv2
@@ -93,7 +94,14 @@ class FactoryNode:
 
 def screen_capture_process(image_queue, request):
     while True:
-        pil_image = ImageGrab.grab(all_screens=True)
+        # On Windows, all_screens parameter can cause issues
+        # Windows: Captures primary screen only (ImageGrab.grab())
+        # Other platforms: Captures all screens (ImageGrab.grab(all_screens=True))
+        if sys.platform == 'win32':
+            pil_image = ImageGrab.grab()
+        else:
+            pil_image = ImageGrab.grab(all_screens=True)
+        
         cv_image = np.array(pil_image, dtype=np.uint8)
         frame = cv2.cvtColor(cv_image, cv2.COLOR_RGB2BGR)
 
