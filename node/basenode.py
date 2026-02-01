@@ -954,7 +954,7 @@ class Node:
                 (x1, y1),
                 (x2, y2),
                 color,
-                thickness=2,
+                thickness=thickness,
             )
 
             score = "%.2f" % score

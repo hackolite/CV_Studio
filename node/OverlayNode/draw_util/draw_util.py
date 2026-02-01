@@ -667,7 +667,7 @@ def draw_multi_object_tracking_info(
             (x1, y1),
             (x2, y2),
             color,
-            thickness=2,
+            thickness=thickness,
         )
 
         # トラックID、スコア
