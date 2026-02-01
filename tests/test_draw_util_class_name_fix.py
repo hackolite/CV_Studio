@@ -169,6 +169,60 @@ def test_draw_multi_object_tracking_info_cid_tid_display():
     return True
 
 
+def test_draw_object_detection_info():
+    """Test that draw_object_detection_info works with both class_names formats"""
+    print("Testing draw_object_detection_info with dictionary class_names...")
+    
+    from node.OverlayNode.draw_util.draw_util import draw_object_detection_info
+    
+    image = np.ones((480, 640, 3), dtype=np.uint8) * 255
+    
+    # Test with dictionary class_names
+    bboxes = [[100, 100, 200, 200], [300, 150, 400, 250]]
+    scores = [0.95, 0.88]
+    class_ids = [0, 1]
+    class_names = {0: 'person', 1: 'ball'}
+    score_th = 0.0
+    
+    result_image = draw_object_detection_info(
+        image,
+        score_th,
+        bboxes,
+        scores,
+        class_ids,
+        class_names,
+    )
+    
+    assert result_image is not None
+    print("  ✓ draw_object_detection_info works correctly")
+    return True
+
+
+def test_draw_classification_info():
+    """Test that draw_classification_info works with both class_names formats"""
+    print("Testing draw_classification_info with dictionary class_names...")
+    
+    from node.OverlayNode.draw_util.draw_util import draw_classification_info
+    
+    image = np.ones((480, 640, 3), dtype=np.uint8) * 255
+    
+    # Test with dictionary class_names
+    class_ids = [0, 1]
+    class_scores = [0.95, 0.88]
+    class_names = {0: 'person', 1: 'ball'}
+    
+    result_image = draw_classification_info(
+        image,
+        class_ids,
+        class_scores,
+        class_names,
+    )
+    
+    assert result_image is not None
+    print("  ✓ draw_classification_info works correctly")
+    return True
+
+
 def main():
     """Run all tests"""
     print("=" * 70)
@@ -188,6 +242,10 @@ def main():
         all_passed &= test_draw_multi_object_tracking_info_with_dict()
         all_passed &= test_draw_multi_object_tracking_info_with_list()
         all_passed &= test_draw_multi_object_tracking_info_cid_tid_display()
+        
+        # Test other draw functions
+        all_passed &= test_draw_object_detection_info()
+        all_passed &= test_draw_classification_info()
         
         print()
         print("=" * 70)
