@@ -957,24 +957,34 @@ class Node:
                 thickness=2,
             )
 
+            # Adjust label position to keep it visible within image bounds
             score = "%.2f" % score
             text = "TID:%s(%s)" % (str(int(track_id_dict[id])), str(score))
+            tid_y = y1 - vertical_offset_1
+            if tid_y < vertical_offset_1:
+                # If label would be outside image bounds, place it inside the bbox
+                tid_y = y1 + vertical_offset_1
             image = cv2.putText(
                 image,
                 text,
-                (x1, y1 - vertical_offset_1),
+                (x1, tid_y),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 font_scale,
                 color,
                 thickness=thickness,
             )
 
+            # Adjust label position to keep it visible within image bounds
             class_name = self.get_class_name(class_id, class_names)
             text = "CID:%s(%s)" % (str(int(class_id)), class_name)
+            cid_y = y1 - vertical_offset_2
+            if cid_y < vertical_offset_2:
+                # If label would be outside image bounds, place it inside the bbox
+                cid_y = y1 + vertical_offset_2 + vertical_offset_1
             image = cv2.putText(
                 image,
                 text,
-                (x1, y1 - vertical_offset_2),
+                (x1, cid_y),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 font_scale,
                 color,
