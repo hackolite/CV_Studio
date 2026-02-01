@@ -944,6 +944,9 @@ class Node:
         vertical_offset_2 = int(12 * (font_scale / 0.5))
         thickness = max(1, int(2 * (font_scale / 0.5)))
         
+        # Minimum spacing from top to ensure text is visible
+        min_text_y = max(vertical_offset_1 + 5, 15)
+        
         for id, bbox, score, class_id in zip(track_ids, bboxes, scores, class_ids):
             x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
 
@@ -959,10 +962,12 @@ class Node:
 
             score = "%.2f" % score
             text = "TID:%s(%s)" % (str(int(track_id_dict[id])), str(score))
+            # Ensure text Y position is within image bounds
+            tid_y = max(y1 - vertical_offset_1, min_text_y)
             image = cv2.putText(
                 image,
                 text,
-                (x1, y1 - vertical_offset_1),
+                (x1, tid_y),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 font_scale,
                 color,
@@ -971,10 +976,12 @@ class Node:
 
             class_name = self.get_class_name(class_id, class_names)
             text = "CID:%s(%s)" % (str(int(class_id)), class_name)
+            # Ensure text Y position is within image bounds
+            cid_y = max(y1 - vertical_offset_2, min_text_y)
             image = cv2.putText(
                 image,
                 text,
-                (x1, y1 - vertical_offset_2),
+                (x1, cid_y),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 font_scale,
                 color,
