@@ -4,6 +4,26 @@ import cv2
 import numpy as np
 
 
+def get_class_name(class_id, class_names):
+    """
+    Safely get class name from class_names, handling both dict and list formats.
+    
+    Args:
+        class_id: The class ID (will be converted to int)
+        class_names: Dictionary or list of class names
+        
+    Returns:
+        Class name string, or fallback 'class_N' if not found
+    """
+    class_id_int = int(class_id)
+    if isinstance(class_names, dict):
+        return class_names.get(class_id_int, f"class_{class_id_int}")
+    elif isinstance(class_names, list) and 0 <= class_id_int < len(class_names):
+        return class_names[class_id_int]
+    else:
+        return f"class_{class_id_int}"
+
+
 def draw_info(node_name, node_result, image):
     classification_nodes = ['Classification']
     object_detection_nodes = ['ObjectDetection']
@@ -684,7 +704,8 @@ def draw_multi_object_tracking_info(
         )
 
         # クラスID
-        text = 'CID:%s(%s)' % (str(int(class_id)), class_names[int(class_id)])
+        class_name = get_class_name(class_id, class_names)
+        text = 'CID:%s(%s)' % (str(int(class_id)), class_name)
         image = cv2.putText(
             image,
             text,
