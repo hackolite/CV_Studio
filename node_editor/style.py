@@ -4,7 +4,7 @@ INPUT = [
 ]
 PROCESS = [
     "Resize", "Crop", "Zoom", "Grayscale", "ApplyColorMap", "Contrast",
-    "Flip", "Brightness", "EqualizeHist", "GammaCorrection",
+    "Flip", "Brightness", "EqualizeHist", "CLAHE", "GammaCorrection",
     "OmnidirectionalViewer", "Blur", "Canny", "SimpleFilter",
     "Threshold", "ImageAlphaBlend"
 ]
