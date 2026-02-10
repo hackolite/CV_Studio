@@ -259,7 +259,7 @@ class Node(Node):
             logger.debug(f"Invalid detection format: missing required keys {missing_keys}. Found keys: {list(data.keys())}")
             return False
         
-        # Check that values are lists/tuples (or dict for class_names)
+        # Check that values are lists, tuples, or dict for class_names
         for key in required_keys:
             if key == 'class_names':
                 # class_names can be either a dict (mapping class_id -> name) or a list

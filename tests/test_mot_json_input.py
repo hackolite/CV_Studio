@@ -51,7 +51,7 @@ class TestMOTJSONInput:
                 if not all(key in data for key in required_keys):
                     return False
                 
-                # Check that values are lists/tuples (or dict for class_names)
+                # Check that values are lists, tuples, or dict for class_names
                 for key in required_keys:
                     if key == 'class_names':
                         # class_names can be either a dict (mapping class_id -> name) or a list
