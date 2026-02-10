@@ -694,16 +694,16 @@ def draw_multi_object_tracking_info(
 
         # トラックID、スコア - with filled background
         score_text = '%.2f' % score
-        tid_text = 'TID:%s(%s)' % (str(int(track_id_dict[id])), str(score_text))
+        tid_text = 'TID:%s(%s)' % (str(int(track_id_dict[id])), score_text)
         
         # Get text size for TID
         (tid_width, tid_height), tid_baseline = cv2.getTextSize(
             tid_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness
         )
         
-        # Draw filled background rectangle for TID
-        tid_bg_y1 = y1 - vertical_offset_1 - tid_height - tid_baseline
-        tid_bg_y2 = y1 - vertical_offset_1 + tid_baseline
+        # Draw filled background rectangle for TID with bounds checking
+        tid_bg_y1 = max(0, y1 - vertical_offset_1 - tid_height - tid_baseline)
+        tid_bg_y2 = max(0, y1 - vertical_offset_1 + tid_baseline)
         cv2.rectangle(
             image,
             (x1, tid_bg_y1),
@@ -732,9 +732,9 @@ def draw_multi_object_tracking_info(
             cid_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness
         )
         
-        # Draw filled background rectangle for CID
-        cid_bg_y1 = y1 - vertical_offset_2 - cid_height - cid_baseline
-        cid_bg_y2 = y1 - vertical_offset_2 + cid_baseline
+        # Draw filled background rectangle for CID with bounds checking
+        cid_bg_y1 = max(0, y1 - vertical_offset_2 - cid_height - cid_baseline)
+        cid_bg_y2 = max(0, y1 - vertical_offset_2 + cid_baseline)
         cv2.rectangle(
             image,
             (x1, cid_bg_y1),
