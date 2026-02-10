@@ -9,7 +9,6 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
-#from node_editor.util import convert_cv_to_dpg
 from node.basenode import Node
 
 def image_process(image, clip_limit, tile_grid_size):
@@ -234,8 +233,8 @@ class Node(Node):
                 destination_tag = connection_info[1] + 'Value'
 
                 input_value = round(float(dpg_get_value(source_tag)), 3)
-                input_value = max([self._min_clip_limit, input_value])
-                input_value = min([self._max_clip_limit, input_value])
+                input_value = max(self._min_clip_limit, input_value)
+                input_value = min(self._max_clip_limit, input_value)
                 dpg_set_value(destination_tag, input_value)
 
             if connection_type == self.TYPE_INT:
@@ -243,8 +242,8 @@ class Node(Node):
                 destination_tag = connection_info[1] + 'Value'
 
                 input_value = int(dpg_get_value(source_tag))
-                input_value = max([self._min_tile_size, input_value])
-                input_value = min([self._max_tile_size, input_value])
+                input_value = max(self._min_tile_size, input_value)
+                input_value = min(self._max_tile_size, input_value)
                 dpg_set_value(destination_tag, input_value)
 
         frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
