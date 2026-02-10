@@ -35,6 +35,7 @@ def test_process_node_imports():
         'node.ProcessNode.node_threshold',
         'node.ProcessNode.node_grayscale',
         'node.ProcessNode.node_equalize_hist',
+        'node.ProcessNode.node_clahe',
     ]
     
     for node_module in process_nodes:
