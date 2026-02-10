@@ -675,43 +675,82 @@ def draw_multi_object_tracking_info(
     vertical_offset_2 = int(12 * (font_scale / 0.5))
     thickness = max(1, int(2 * (font_scale / 0.5)))
     
+    # Thicker bounding box
+    bbox_thickness = 4
+    
     for id, bbox, score, class_id in zip(track_ids, bboxes, scores, class_ids):
         x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
 
         color = get_color(track_id_dict[id])
 
-        # バウンディングボックス
+        # バウンディングボックス - Thicker rectangles
         image = cv2.rectangle(
             image,
             (x1, y1),
             (x2, y2),
             color,
-            thickness=2,
+            thickness=bbox_thickness,
         )
 
-        # トラックID、スコア
-        score = '%.2f' % score
-        text = 'TID:%s(%s)' % (str(int(track_id_dict[id])), str(score))
+        # トラックID、スコア - with filled background
+        score_text = '%.2f' % score
+        tid_text = 'TID:%s(%s)' % (str(int(track_id_dict[id])), str(score_text))
+        
+        # Get text size for TID
+        (tid_width, tid_height), tid_baseline = cv2.getTextSize(
+            tid_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness
+        )
+        
+        # Draw filled background rectangle for TID
+        tid_bg_y1 = y1 - vertical_offset_1 - tid_height - tid_baseline
+        tid_bg_y2 = y1 - vertical_offset_1 + tid_baseline
+        cv2.rectangle(
+            image,
+            (x1, tid_bg_y1),
+            (x1 + tid_width, tid_bg_y2),
+            color,
+            thickness=-1,  # Filled rectangle
+        )
+        
+        # Draw TID text with contrasting color (white)
         image = cv2.putText(
             image,
-            text,
+            tid_text,
             (x1, y1 - vertical_offset_1),
             cv2.FONT_HERSHEY_SIMPLEX,
             font_scale,
-            color,
+            (255, 255, 255),  # White text for visibility
             thickness=thickness,
         )
 
-        # クラスID
+        # クラスID - with filled background
         class_name = get_class_name(class_id, class_names)
-        text = 'CID:%s(%s)' % (str(int(class_id)), class_name)
+        cid_text = 'CID:%s(%s)' % (str(int(class_id)), class_name)
+        
+        # Get text size for CID
+        (cid_width, cid_height), cid_baseline = cv2.getTextSize(
+            cid_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness
+        )
+        
+        # Draw filled background rectangle for CID
+        cid_bg_y1 = y1 - vertical_offset_2 - cid_height - cid_baseline
+        cid_bg_y2 = y1 - vertical_offset_2 + cid_baseline
+        cv2.rectangle(
+            image,
+            (x1, cid_bg_y1),
+            (x1 + cid_width, cid_bg_y2),
+            color,
+            thickness=-1,  # Filled rectangle
+        )
+        
+        # Draw CID text with contrasting color (white)
         image = cv2.putText(
             image,
-            text,
+            cid_text,
             (x1, y1 - vertical_offset_2),
             cv2.FONT_HERSHEY_SIMPLEX,
             font_scale,
-            color,
+            (255, 255, 255),  # White text for visibility
             thickness=thickness,
         )
 
