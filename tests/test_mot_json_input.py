@@ -51,11 +51,20 @@ class TestMOTJSONInput:
                 if not all(key in data for key in required_keys):
                     return False
                 
+                # Check that values are lists/tuples (or dict for class_names)
                 for key in required_keys:
-                    if not isinstance(data[key], (list, tuple)):
-                        return False
+                    if key == 'class_names':
+                        # class_names can be either a dict (mapping class_id -> name) or a list
+                        if not isinstance(data[key], (list, tuple, dict)):
+                            return False
+                    else:
+                        if not isinstance(data[key], (list, tuple)):
+                            return False
                 
-                lengths = [len(data[key]) for key in required_keys]
+                # Check that all lists have the same length (consistency check)
+                # Exclude class_names from length check if it's a dict
+                keys_to_check = [k for k in required_keys if k != 'class_names' or not isinstance(data['class_names'], dict)]
+                lengths = [len(data[key]) for key in keys_to_check]
                 if len(set(lengths)) > 1:
                     return False
                 
@@ -63,14 +72,33 @@ class TestMOTJSONInput:
         
         node = MockMOTNode()
         
-        # Test valid format
-        valid_data = {
+        # Test valid format with list class_names
+        valid_data_list = {
             'bboxes': [[100, 100, 200, 200]],
             'scores': [0.95],
             'class_ids': [0],
             'class_names': ['player1']
         }
-        assert node._is_valid_detection_format(valid_data) is True
+        assert node._is_valid_detection_format(valid_data_list) is True
+        
+        # Test valid format with dict class_names (from object detection)
+        valid_data_dict = {
+            'bboxes': [[100, 100, 200, 200]],
+            'scores': [0.95],
+            'class_ids': [0],
+            'class_names': {0: 'person'}
+        }
+        assert node._is_valid_detection_format(valid_data_dict) is True
+        
+        # Test valid format with extra keys (like score_th from object detection)
+        valid_data_extra_keys = {
+            'bboxes': [[100, 100, 200, 200]],
+            'scores': [0.95],
+            'class_ids': [0],
+            'class_names': {0: 'person'},
+            'score_th': 0.3
+        }
+        assert node._is_valid_detection_format(valid_data_extra_keys) is True
         
         # Test invalid format - missing key
         invalid_data_missing_key = {

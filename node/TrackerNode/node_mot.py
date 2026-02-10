@@ -259,16 +259,24 @@ class Node(Node):
             logger.debug(f"Invalid detection format: missing required keys {missing_keys}. Found keys: {list(data.keys())}")
             return False
         
-        # Check that values are lists (or compatible types)
+        # Check that values are lists/tuples (or dict for class_names)
         for key in required_keys:
-            if not isinstance(data[key], (list, tuple)):
-                logger.debug(f"Invalid detection format: '{key}' must be a list or tuple, got {type(data[key]).__name__}")
-                return False
+            if key == 'class_names':
+                # class_names can be either a dict (mapping class_id -> name) or a list
+                if not isinstance(data[key], (list, tuple, dict)):
+                    logger.debug(f"Invalid detection format: '{key}' must be a list, tuple, or dict, got {type(data[key]).__name__}")
+                    return False
+            else:
+                if not isinstance(data[key], (list, tuple)):
+                    logger.debug(f"Invalid detection format: '{key}' must be a list or tuple, got {type(data[key]).__name__}")
+                    return False
         
         # Check that all lists have the same length (consistency check)
-        lengths = [len(data[key]) for key in required_keys]
+        # Exclude class_names from length check if it's a dict
+        keys_to_check = [k for k in required_keys if k != 'class_names' or not isinstance(data['class_names'], dict)]
+        lengths = [len(data[key]) for key in keys_to_check]
         if len(set(lengths)) > 1:
-            logger.warning(f"Detection format validation failed: inconsistent lengths {dict(zip(required_keys, lengths))}")
+            logger.warning(f"Detection format validation failed: inconsistent lengths {dict(zip(keys_to_check, lengths))}")
             return False
         
         return True
