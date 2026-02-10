@@ -63,7 +63,7 @@ class TestMOTJSONInput:
                 
                 # Check that all lists have the same length (consistency check)
                 # Exclude class_names from length check if it's a dict
-                is_dict_class_names = isinstance(data.get('class_names'), dict)
+                is_dict_class_names = isinstance(data['class_names'], dict)
                 keys_to_check = [k for k in required_keys if not (k == 'class_names' and is_dict_class_names)]
                 lengths = [len(data[key]) for key in keys_to_check]
                 if len(set(lengths)) > 1:
