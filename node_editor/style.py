@@ -6,7 +6,9 @@ PROCESS = [
     "Resize", "Crop", "Zoom", "Grayscale", "ApplyColorMap", "Contrast",
     "Flip", "Brightness", "EqualizeHist", "CLAHE", "GammaCorrection",
     "OmnidirectionalViewer", "Blur", "Canny", "SimpleFilter",
-    "Threshold", "ImageAlphaBlend"
+    "Threshold", "ImageAlphaBlend", "BilateralFilter", "Morphology",
+    "UnsharpMask", "NLMDenoise", "ColorSpace", "AdaptiveThreshold",
+    "KernelSharpen", "IlluminationCorrect"
 ]
 MODEL = [
     "LLIE", "Classification", "PoseEstimation", "ObjectDetection",
