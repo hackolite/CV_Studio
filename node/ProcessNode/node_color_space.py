@@ -24,7 +24,7 @@ def image_process(image, color_space):
         color_space: Target color space (0-4)
     
     Returns:
-        Converted image (always as 3-channel BGR for display)
+        Converted image in target color space
     """
     # Color space conversion map
     conversions = {
@@ -35,25 +35,13 @@ def image_process(image, color_space):
         4: cv2.COLOR_BGR2HLS,  # HLS
     }
     
-    # Reverse conversions for display
-    reverse_conversions = {
-        0: None,
-        1: cv2.COLOR_HSV2BGR,
-        2: cv2.COLOR_YCrCb2BGR,
-        3: cv2.COLOR_LAB2BGR,
-        4: cv2.COLOR_HLS2BGR,
-    }
-    
     if color_space == 0:
         return image
     
     # Convert to target color space
     converted = cv2.cvtColor(image, conversions[color_space])
     
-    # Convert back to BGR for display (preserves the transformed values)
-    output = cv2.cvtColor(converted, reverse_conversions[color_space])
-    
-    return output
+    return converted
 
 
 class FactoryNode:

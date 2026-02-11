@@ -92,8 +92,33 @@ def test_color_space_bgr_passthrough():
     print("✓ BGR pass-through works correctly")
 
 
+def test_color_space_preserves_channels():
+    """Test that color space conversion preserves data without reverse conversion"""
+    # Skip if cv2 or numpy are mocked
+    import sys
+    if hasattr(sys.modules.get('numpy', None), 'MagicMock'):
+        print("⊘ Skipping Color Space channel test - numpy is mocked")
+        return
+    
+    from node.ProcessNode.node_color_space import image_process
+    
+    # Create a test image
+    test_image = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
+    
+    # Convert to HSV
+    result = image_process(test_image.copy(), 1)
+    
+    # Manually convert to HSV to verify
+    expected = cv2.cvtColor(test_image, cv2.COLOR_BGR2HSV)
+    
+    # Results should match (no reverse conversion)
+    assert np.array_equal(result, expected), "Color space should return raw converted data"
+    print("✓ Color space conversion preserves raw data without reverse conversion")
+
+
 if __name__ == '__main__':
     test_color_space_import()
     test_color_space_conversions()
     test_color_space_bgr_passthrough()
+    test_color_space_preserves_channels()
     print("\n✓ All Color Space tests passed!")
