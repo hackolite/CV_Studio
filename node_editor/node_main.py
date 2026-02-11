@@ -25,7 +25,7 @@ logger = get_logger(__name__)
 def _enhance_color_for_selection(color_tuple):
     """
     Enhance a color tuple to make it more prominent for selected state.
-    Increases brightness and saturation while maintaining the color's hue.
+    Increases brightness and saturation while preserving the color relationships.
     
     Args:
         color_tuple: (R, G, B, A) tuple with values 0-255
@@ -35,19 +35,12 @@ def _enhance_color_for_selection(color_tuple):
     """
     r, g, b, a = color_tuple
     
-    # Increase brightness by 20% (but cap at 255)
-    brightness_factor = 1.2
-    r = min(255, int(r * brightness_factor))
-    g = min(255, int(g * brightness_factor))
-    b = min(255, int(b * brightness_factor))
-    
-    # Increase saturation by finding the dominant color and boosting it
-    # This makes colors more vibrant
+    # First, increase saturation on original values to preserve hue
     max_component = max(r, g, b)
     min_component = min(r, g, b)
     
     if max_component > 0 and max_component > min_component:
-        # Calculate saturation boost
+        # Calculate saturation boost (push away from gray/average)
         saturation_boost = 1.15
         avg = (r + g + b) / 3
         
@@ -60,6 +53,12 @@ def _enhance_color_for_selection(color_tuple):
         r = max(0, min(255, r))
         g = max(0, min(255, g))
         b = max(0, min(255, b))
+    
+    # Then apply brightness increase
+    brightness_factor = 1.2
+    r = min(255, int(r * brightness_factor))
+    g = min(255, int(g * brightness_factor))
+    b = min(255, int(b * brightness_factor))
     
     return (r, g, b, a)
 
