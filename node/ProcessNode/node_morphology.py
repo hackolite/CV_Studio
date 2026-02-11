@@ -20,7 +20,7 @@ def image_process(image, morph_type, kernel_size, iterations):
     
     Args:
         image: Input BGR image
-        morph_type: Type of morphological operation (0-5)
+        morph_type: Type of morphological operation (0-6)
         kernel_size: Size of the structuring element (odd number)
         iterations: Number of times to apply the operation
     
