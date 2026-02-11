@@ -22,8 +22,54 @@ dpg.create_context()
 logger = get_logger(__name__)
 
 
+# Constants for node selection color enhancement
+_SELECTION_SATURATION_BOOST = 1.15  # 15% increase in color saturation
+_SELECTION_BRIGHTNESS_BOOST = 1.2   # 20% increase in brightness
+
+
+def _enhance_color_for_selection(color_tuple):
+    """
+    Enhance a color tuple to make it more prominent for selected state.
+    Increases brightness and saturation while preserving the color relationships.
+    
+    Args:
+        color_tuple: (R, G, B, A) tuple with values 0-255
+        
+    Returns:
+        Enhanced (R, G, B, A) tuple
+    """
+    r, g, b, a = color_tuple
+    
+    # First, increase saturation on original values to preserve hue
+    max_component = max(r, g, b)
+    min_component = min(r, g, b)
+    
+    if max_component > 0 and max_component > min_component:
+        # Calculate saturation boost (push away from gray/average)
+        avg = (r + g + b) / 3
+        
+        # Push each component away from average towards its current value
+        r = int(avg + (r - avg) * _SELECTION_SATURATION_BOOST)
+        g = int(avg + (g - avg) * _SELECTION_SATURATION_BOOST)
+        b = int(avg + (b - avg) * _SELECTION_SATURATION_BOOST)
+        
+        # Ensure values stay in valid range
+        r = max(0, min(255, r))
+        g = max(0, min(255, g))
+        b = max(0, min(255, b))
+    
+    # Then apply brightness increase
+    r = min(255, int(r * _SELECTION_BRIGHTNESS_BOOST))
+    g = min(255, int(g * _SELECTION_BRIGHTNESS_BOOST))
+    b = min(255, int(b * _SELECTION_BRIGHTNESS_BOOST))
+    
+    return (r, g, b, a)
+
+
 def node_style(module_name):
     tuple_style = STYLE[module_name]["style"][0]
+    # Create enhanced color for selected state
+    tuple_style_selected = _enhance_color_for_selection(tuple_style)
     # Constant for text color to ensure consistency
     TEXT_COLOR_BLACK = (0, 0, 0, 255)
     
@@ -38,9 +84,10 @@ def node_style(module_name):
                 tuple_style,
                 category=dpg.mvThemeCat_Nodes,
             )
+            # Enhanced color for selected state to make it more prominent
             dpg.add_theme_color(
                 dpg.mvNodeCol_TitleBarSelected,
-                tuple_style,
+                tuple_style_selected,
                 category=dpg.mvThemeCat_Nodes,
             )
             # Texte en noir
