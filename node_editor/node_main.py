@@ -22,6 +22,11 @@ dpg.create_context()
 logger = get_logger(__name__)
 
 
+# Constants for node selection color enhancement
+_SELECTION_SATURATION_BOOST = 1.15  # 15% increase in color saturation
+_SELECTION_BRIGHTNESS_BOOST = 1.2   # 20% increase in brightness
+
+
 def _enhance_color_for_selection(color_tuple):
     """
     Enhance a color tuple to make it more prominent for selected state.
@@ -41,13 +46,12 @@ def _enhance_color_for_selection(color_tuple):
     
     if max_component > 0 and max_component > min_component:
         # Calculate saturation boost (push away from gray/average)
-        saturation_boost = 1.15
         avg = (r + g + b) / 3
         
         # Push each component away from average towards its current value
-        r = int(avg + (r - avg) * saturation_boost)
-        g = int(avg + (g - avg) * saturation_boost)
-        b = int(avg + (b - avg) * saturation_boost)
+        r = int(avg + (r - avg) * _SELECTION_SATURATION_BOOST)
+        g = int(avg + (g - avg) * _SELECTION_SATURATION_BOOST)
+        b = int(avg + (b - avg) * _SELECTION_SATURATION_BOOST)
         
         # Ensure values stay in valid range
         r = max(0, min(255, r))
@@ -55,10 +59,9 @@ def _enhance_color_for_selection(color_tuple):
         b = max(0, min(255, b))
     
     # Then apply brightness increase
-    brightness_factor = 1.2
-    r = min(255, int(r * brightness_factor))
-    g = min(255, int(g * brightness_factor))
-    b = min(255, int(b * brightness_factor))
+    r = min(255, int(r * _SELECTION_BRIGHTNESS_BOOST))
+    g = min(255, int(g * _SELECTION_BRIGHTNESS_BOOST))
+    b = min(255, int(b * _SELECTION_BRIGHTNESS_BOOST))
     
     return (r, g, b, a)
 
