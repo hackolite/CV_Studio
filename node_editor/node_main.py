@@ -22,8 +22,52 @@ dpg.create_context()
 logger = get_logger(__name__)
 
 
+def _enhance_color_for_selection(color_tuple):
+    """
+    Enhance a color tuple to make it more prominent for selected state.
+    Increases brightness and saturation while maintaining the color's hue.
+    
+    Args:
+        color_tuple: (R, G, B, A) tuple with values 0-255
+        
+    Returns:
+        Enhanced (R, G, B, A) tuple
+    """
+    r, g, b, a = color_tuple
+    
+    # Increase brightness by 20% (but cap at 255)
+    brightness_factor = 1.2
+    r = min(255, int(r * brightness_factor))
+    g = min(255, int(g * brightness_factor))
+    b = min(255, int(b * brightness_factor))
+    
+    # Increase saturation by finding the dominant color and boosting it
+    # This makes colors more vibrant
+    max_component = max(r, g, b)
+    min_component = min(r, g, b)
+    
+    if max_component > 0 and max_component > min_component:
+        # Calculate saturation boost
+        saturation_boost = 1.15
+        avg = (r + g + b) / 3
+        
+        # Push each component away from average towards its current value
+        r = int(avg + (r - avg) * saturation_boost)
+        g = int(avg + (g - avg) * saturation_boost)
+        b = int(avg + (b - avg) * saturation_boost)
+        
+        # Ensure values stay in valid range
+        r = max(0, min(255, r))
+        g = max(0, min(255, g))
+        b = max(0, min(255, b))
+    
+    return (r, g, b, a)
+
+
 def node_style(module_name):
     tuple_style = STYLE[module_name]["style"][0]
+    # Create enhanced color for selected state
+    tuple_style_selected = _enhance_color_for_selection(tuple_style)
     # Constant for text color to ensure consistency
     TEXT_COLOR_BLACK = (0, 0, 0, 255)
     
@@ -38,9 +82,10 @@ def node_style(module_name):
                 tuple_style,
                 category=dpg.mvThemeCat_Nodes,
             )
+            # Enhanced color for selected state to make it more prominent
             dpg.add_theme_color(
                 dpg.mvNodeCol_TitleBarSelected,
-                tuple_style,
+                tuple_style_selected,
                 category=dpg.mvThemeCat_Nodes,
             )
             # Texte en noir
