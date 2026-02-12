@@ -27,6 +27,8 @@ class APIHandler(BaseHTTPRequestHandler):
             self.serve_image()
         elif self.path == '/float':
             self.serve_float()
+        elif self.path == '/map':
+            self.serve_map()
         elif self.path == '/status':
             self.serve_status()
         else:
@@ -69,11 +71,56 @@ class APIHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
     
+    def serve_map(self):
+        """Serve map data with latitude/longitude coordinates"""
+        # Generate sample location data around various world cities
+        # This simulates GPS tracking, sensor networks, or IoT devices
+        
+        cities = [
+            {"name": "Paris", "lat": 48.8566, "lon": 2.3522},
+            {"name": "London", "lat": 51.5074, "lon": -0.1278},
+            {"name": "New York", "lat": 40.7128, "lon": -74.0060},
+            {"name": "Tokyo", "lat": 35.6762, "lon": 139.6503},
+            {"name": "Sydney", "lat": -33.8688, "lon": 151.2093},
+            {"name": "San Francisco", "lat": 37.7749, "lon": -122.4194},
+            {"name": "Berlin", "lat": 52.5200, "lon": 13.4050},
+            {"name": "Singapore", "lat": 1.3521, "lon": 103.8198},
+        ]
+        
+        # Randomly select 3-5 cities
+        num_points = random.randint(3, 5)
+        selected_cities = random.sample(cities, num_points)
+        
+        # Add random offset to simulate movement/variation
+        points = []
+        for city in selected_cities:
+            lat_offset = random.uniform(-0.05, 0.05)
+            lon_offset = random.uniform(-0.05, 0.05)
+            points.append({
+                "name": city["name"],
+                "latitude": city["lat"] + lat_offset,
+                "longitude": city["lon"] + lon_offset,
+                "timestamp": time.time()
+            })
+        
+        # Create response in a format compatible with the Map node
+        data = {
+            "points": points,
+            "timestamp": time.time(),
+            "count": len(points)
+        }
+        
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+    
     def serve_status(self):
         """Serve server status"""
         status = {
             'status': 'running',
-            'endpoints': ['/image', '/float', '/status'],
+            'endpoints': ['/image', '/float', '/map', '/status'],
             'timestamp': time.time()
         }
         
@@ -99,6 +146,7 @@ class DummyAPIServer:
         print(f"[API Server] Available endpoints:")
         print(f"  - http://{self.host}:{self.port}/image (GET) - Returns random image")
         print(f"  - http://{self.host}:{self.port}/float (GET) - Returns random float")
+        print(f"  - http://{self.host}:{self.port}/map (GET) - Returns map data with lat/lon")
         print(f"  - http://{self.host}:{self.port}/status (GET) - Returns server status")
         try:
             self.server.serve_forever()
