@@ -277,7 +277,7 @@ class Node(DpgNodeABC):
                     dpg_set_value(tag_node_status_value_name, status_msg)
                     
             except json.JSONDecodeError as e:
-                error_msg = f"JSON parse error: {str(e)[:30]}"
+                error_msg = f"JSON parse error: {str(e)[:60]}"
                 print(f"Map node: {error_msg}")
                 dpg_set_value(tag_node_status_value_name, error_msg)
             except Exception as e:

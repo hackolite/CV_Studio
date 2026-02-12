@@ -144,7 +144,12 @@ class AISStreamHandler(WebSocketConnectionHandler):
             import websockets
             
             self._log("Connecting to AIS server...")
-            self._log(f"URL: {self.url[:50]}...")
+            # Log URL without query parameters to avoid exposing sensitive info
+            url_parts = self.url.split('?')
+            safe_url = url_parts[0]  # Just protocol, domain, and path
+            if len(safe_url) > 50:
+                safe_url = safe_url[:50] + "..."
+            self._log(f"URL: {safe_url}")
             
             async with websockets.connect(self.url) as websocket:
                 self.websocket = websocket
@@ -535,7 +540,7 @@ class WebsocketNode(BaseNode):
                     bounding_box = json.loads(bounding_box_str)
                     self.add_log(f"Bounding box: {len(bounding_box[0])} points")
                 except json.JSONDecodeError as e:
-                    self.add_log(f"Error: Invalid bbox JSON - {str(e)[:30]}")
+                    self.add_log(f"Error: Invalid bounding box JSON - {str(e)[:40]}")
                     dpg_set_value(tag_node_status_value_name, "Fail")
                     dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
                     return
