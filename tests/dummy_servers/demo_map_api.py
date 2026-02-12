@@ -75,7 +75,7 @@ def main():
     print()
     print("This demo shows how to fetch and display map data from the API server.")
     print("The /map endpoint returns JSON data with latitude/longitude coordinates")
-    print("suitable for visualization in the CV_Studio Map node.")
+    print("suitable for visualization in the CV Studio Map node.")
     print()
     
     # Check if requests is available
@@ -121,9 +121,9 @@ def main():
     print("Demo Complete")
     print("=" * 70)
     print()
-    print("To use this data in CV_Studio:")
+    print("To use this data in CV Studio:")
     print("1. Start the API server: python tests/dummy_servers/api_server.py")
-    print("2. Add an API node in CV_Studio (Input menu)")
+    print("2. Add an API node in CV Studio (Input menu)")
     print("3. Configure it to fetch from: http://localhost:8080/map")
     print("4. Add a Map node (Visual menu)")
     print("5. Connect API JSON output → Map JSON input")

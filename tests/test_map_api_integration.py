@@ -133,8 +133,8 @@ class TestMapAPIIntegration(unittest.TestCase):
             "points": [
                 {
                     "name": "Paris",
-                    "latitude": 48.8566 + 0.01234,  # Small offset
-                    "longitude": 2.3522 - 0.00567,
+                    "latitude": 48.8566 + 0.01234,  # Small offset to simulate GPS drift/movement
+                    "longitude": 2.3522 - 0.00567,  # Similar to what real GPS devices report
                     "timestamp": 1234567890.123
                 }
             ],
