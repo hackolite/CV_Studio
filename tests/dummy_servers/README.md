@@ -17,6 +17,7 @@ HTTP server with REST endpoints.
 **Endpoints:**
 - `GET /image` - Returns a random PNG image
 - `GET /float` - Returns a JSON object with a random float value
+- `GET /map` - Returns JSON with latitude/longitude coordinates for map visualization
 - `GET /status` - Returns server status
 
 **Usage:**
@@ -36,9 +37,36 @@ curl http://localhost:8080/float
 # Get image
 curl http://localhost:8080/image --output test.png
 
+# Get map data with lat/lon coordinates
+curl http://localhost:8080/map
+
 # Get status
 curl http://localhost:8080/status
 ```
+
+**Map Endpoint Response Format:**
+```json
+{
+  "points": [
+    {
+      "name": "Paris",
+      "latitude": 48.8566,
+      "longitude": 2.3522,
+      "timestamp": 1234567890.123
+    },
+    {
+      "name": "London",
+      "latitude": 51.5074,
+      "longitude": -0.1278,
+      "timestamp": 1234567890.124
+    }
+  ],
+  "timestamp": 1234567890.125,
+  "count": 2
+}
+```
+
+The `/map` endpoint returns sample location data from various world cities with random variations, simulating GPS tracking, sensor networks, or IoT devices. Each request returns 3-5 randomly selected cities with slight position offsets to simulate movement or measurement variation.
 
 ### 2. WebSocket Server (`websocket_server.py`)
 
@@ -214,9 +242,22 @@ pip install numpy Pillow websockets aiohttp aiortc
 
 These servers can be used to test the input nodes in CV_Studio:
 
-1. **API Node**: Point to `http://localhost:8080/image` or `http://localhost:8080/float`
+1. **API Node**: Point to `http://localhost:8080/image`, `http://localhost:8080/float`, or `http://localhost:8080/map`
 2. **WebSocket Node**: Connect to `ws://localhost:8765`
 3. **WebRTC Node**: Connect to `http://localhost:8081`
+
+### Using Map Data with CV_Studio
+
+To visualize map data in CV_Studio:
+
+1. Start the API server: `python api_server.py`
+2. In CV_Studio, add an **API** node (Input menu)
+3. Configure it to fetch from `http://localhost:8080/map`
+4. Add a **Map** node (Visual menu)
+5. Connect the API node's JSON output to the Map node's JSON input
+6. The Map node will display the location points and allow interactive visualization
+
+The map endpoint returns location data compatible with the Map visualization node, showing random points from various world cities.
 
 ## Architecture
 
@@ -264,10 +305,26 @@ python api_server.py &
 # Test all endpoints
 curl http://localhost:8080/status | jq
 curl http://localhost:8080/float | jq
+curl http://localhost:8080/map | jq
 curl http://localhost:8080/image --output /tmp/test.png
 ```
 
-### Example 2: Stream WebSocket Data
+### Example 2: Map Visualization with Python
+```python
+import requests
+import json
+
+# Fetch map data
+response = requests.get('http://localhost:8080/map')
+data = response.json()
+
+# Display the points
+print(f"Received {data['count']} location points:")
+for point in data['points']:
+    print(f"  - {point['name']}: ({point['latitude']:.4f}, {point['longitude']:.4f})")
+```
+
+### Example 3: Stream WebSocket Data
 ```python
 import asyncio
 import websockets
@@ -284,7 +341,7 @@ async def stream_data():
 asyncio.run(stream_data())
 ```
 
-### Example 3: Launch Everything
+### Example 4: Launch Everything
 ```bash
 # Start all servers and test
 python run_servers.py --test

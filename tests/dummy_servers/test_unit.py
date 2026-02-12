@@ -84,6 +84,7 @@ class TestAPIServerHandlers(unittest.TestCase):
         self.assertTrue(hasattr(APIHandler, 'do_GET'))
         self.assertTrue(hasattr(APIHandler, 'serve_image'))
         self.assertTrue(hasattr(APIHandler, 'serve_float'))
+        self.assertTrue(hasattr(APIHandler, 'serve_map'))
         self.assertTrue(hasattr(APIHandler, 'serve_status'))
 
 
