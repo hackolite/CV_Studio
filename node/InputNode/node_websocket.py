@@ -204,6 +204,12 @@ class FactoryNode:
         node.tag_node_input_bbox_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':InputBBox'
         node.tag_node_input_bbox_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':InputBBoxValue'
         
+        # Status and logs
+        node.tag_node_status_name = node.tag_node_name + ':Status'
+        node.tag_node_status_value_name = node.tag_node_name + ':StatusValue'
+        node.tag_node_logs_name = node.tag_node_name + ':Logs'
+        node.tag_node_logs_value_name = node.tag_node_name + ':LogsValue'
+        
         # Use node.node_tag instead of self.node_tag
         tag_node_name = str(node_id) + ':' + node.node_tag
         tag_node_output01_name = tag_node_name + ':' + node.TYPE_INT + ':Output01'
@@ -269,8 +275,32 @@ class FactoryNode:
         
             # Start button
             with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
-                btn = dpg.add_button(label="Start", tag=tag_start_button, callback=callback, user_data=tag_input_url, width=small_window_w)
+                btn = dpg.add_button(
+                    label="Start", 
+                    tag=tag_start_button, 
+                    callback=WebsocketNode.start_button_callback, 
+                    user_data=(node, node_id),
+                    width=small_window_w
+                )
                 dpg.bind_item_theme(btn, yellow_button_theme)
+            
+            # Status display
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_text(
+                    tag=node.tag_node_status_value_name,
+                    default_value='Not connected',
+                )
+            
+            # Logs zone
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_input_text(
+                    tag=node.tag_node_logs_value_name,
+                    default_value='',
+                    multiline=True,
+                    readonly=True,
+                    width=small_window_w,
+                    height=80,
+                )
                 
             # Outputs
             with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Output):
@@ -323,6 +353,7 @@ class WebsocketNode(BaseNode):
     # Configuration constants
     MAX_BOATS_STORED = 100  # Maximum number of boat entries to keep in memory
     THREAD_SHUTDOWN_TIMEOUT = 2.0  # Timeout in seconds for thread shutdown
+    MAX_ERROR_MESSAGE_LENGTH = 50  # Maximum length for error messages in logs
 
     def __init__(self):
         super().__init__()  # Call parent constructor
@@ -331,6 +362,32 @@ class WebsocketNode(BaseNode):
         self.connection_handler = None
         self.connection_thread = None
         self.boats_data = []
+        self.logs = []  # Store log messages
+    
+    
+    @staticmethod
+    def start_button_callback(sender, app_data, user_data):
+        """Callback when Start button is clicked.
+        
+        Args:
+            sender: Button widget that triggered the callback
+            app_data: Application data (not used)
+            user_data: Tuple of (node_instance, node_id)
+        """
+        node, node_id = user_data
+        
+        # Get values from input fields
+        tag_node_name = str(node_id) + ':' + node.node_tag
+        url_value_tag = tag_node_name + ':' + node.TYPE_TEXT + ':Input01Value'
+        apikey_value_tag = tag_node_name + ':' + node.TYPE_TEXT + ':InputAPIKeyValue'
+        bbox_value_tag = tag_node_name + ':' + node.TYPE_TEXT + ':InputBBoxValue'
+        
+        url = dpg_get_value(url_value_tag)
+        api_key = dpg_get_value(apikey_value_tag)
+        bbox_str = dpg_get_value(bbox_value_tag)
+        
+        # Start connection
+        node.start_connection(node_id, url, api_key, bbox_str)
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
         """Update method called by the processing graph.
@@ -360,6 +417,103 @@ class WebsocketNode(BaseNode):
         }
         
         return {"image": None, "json": json_output, "audio": None}
+
+
+    def add_log(self, message):
+        """Add a log message to the logs list."""
+        timestamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
+        log_entry = f"[{timestamp}] {message}"
+        self.logs.append(log_entry)
+        # Keep only last 10 log entries
+        if len(self.logs) > 10:
+            self.logs = self.logs[-10:]
+    
+    
+    def get_logs_text(self):
+        """Get logs as a single string for display."""
+        return "\n".join(self.logs)
+    
+    
+    def _truncate_error(self, error_msg: str) -> str:
+        """Truncate error message and add ellipsis if needed.
+        
+        Args:
+            error_msg: Error message to truncate
+            
+        Returns:
+            Truncated error message with ellipsis if truncated
+        """
+        if len(error_msg) > self.MAX_ERROR_MESSAGE_LENGTH:
+            return error_msg[:self.MAX_ERROR_MESSAGE_LENGTH] + '...'
+        return error_msg
+    
+    
+    def start_connection(self, node_id, url, api_key, bounding_box_str):
+        """Start the WebSocket connection and update status.
+        
+        Args:
+            node_id: The node ID
+            url: WebSocket URL
+            api_key: API key for authentication
+            bounding_box_str: Bounding box as JSON string
+        """
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        tag_node_status_value_name = tag_node_name + ':StatusValue'
+        tag_node_logs_value_name = tag_node_name + ':LogsValue'
+        
+        self.add_log("Starting connection...")
+        dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
+        
+        try:
+            # Parse bounding box
+            if bounding_box_str:
+                try:
+                    bounding_box = json.loads(bounding_box_str)
+                except json.JSONDecodeError:
+                    self.add_log("Error: Invalid bounding box JSON")
+                    dpg_set_value(tag_node_status_value_name, "Fail")
+                    dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
+                    return
+            else:
+                bounding_box = None
+            
+            # Create connection handler
+            self.connection_handler = AISStreamHandler(
+                url=url,
+                api_key=api_key,
+                bounding_box=bounding_box
+            )
+            
+            # Start connection in a new thread
+            def run_connection():
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(self.connection_handler.connect())
+                    loop.close()
+                    
+                    # Update UI with success status
+                    if self.connection_handler.is_connected:
+                        self.add_log("Connection successful!")
+                        dpg_set_value(tag_node_status_value_name, "Success")
+                        dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
+                except Exception as e:
+                    self.add_log(f"Connection error: {self._truncate_error(str(e))}")
+                    dpg_set_value(tag_node_status_value_name, "Fail")
+                    dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
+            
+            self.connection_thread = threading.Thread(target=run_connection, daemon=True)
+            self.connection_thread.start()
+            
+            # Set initial status - the thread will update it when connection succeeds or fails
+            self.add_log("Connection initiated...")
+            dpg_set_value(tag_node_status_value_name, "Connecting...")
+            dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
+            
+        except Exception as e:
+            self.add_log(f"Error: {self._truncate_error(str(e))}")
+            dpg_set_value(tag_node_status_value_name, "Fail")
+            dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
 
 
     def close(self, node_id):

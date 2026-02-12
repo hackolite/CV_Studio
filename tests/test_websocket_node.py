@@ -84,6 +84,44 @@ def test_websocket_node_new_fields():
     return True
 
 
+def test_websocket_node_status_and_logs():
+    """Test that the websocket node has status and logs management"""
+    from node.InputNode.node_websocket import WebsocketNode
+    
+    node = WebsocketNode()
+    
+    # Verify logs list is initialized
+    assert hasattr(node, 'logs'), "Node should have logs attribute"
+    assert isinstance(node.logs, list), "logs should be a list"
+    
+    # Test add_log method
+    assert callable(node.add_log), "add_log should be callable"
+    node.add_log("Test message 1")
+    assert len(node.logs) > 0, "Logs should contain at least one entry"
+    assert "Test message 1" in node.logs[0], "Log entry should contain the message"
+    
+    # Test get_logs_text method
+    assert callable(node.get_logs_text), "get_logs_text should be callable"
+    logs_text = node.get_logs_text()
+    assert isinstance(logs_text, str), "get_logs_text should return a string"
+    assert "Test message 1" in logs_text, "Logs text should contain the message"
+    
+    # Test that logs are limited to 10 entries
+    for i in range(15):
+        node.add_log(f"Message {i}")
+    assert len(node.logs) <= 10, "Logs should be limited to 10 entries"
+    
+    # Test start_connection method exists
+    assert callable(node.start_connection), "start_connection should be callable"
+    
+    # Test start_button_callback static method exists
+    assert callable(WebsocketNode.start_button_callback), "start_button_callback should be callable"
+    
+    print("✓ Websocket node status and logs functionality verified")
+    return True
+
+
+
 def test_ais_stream_handler_structure():
     """Test that AISStreamHandler has correct structure"""
     from node.InputNode.node_websocket import AISStreamHandler
@@ -238,6 +276,7 @@ if __name__ == "__main__":
         test_websocket_abstraction_import()
         test_websocket_factory_structure()
         test_websocket_node_new_fields()
+        test_websocket_node_status_and_logs()
         test_ais_stream_handler_structure()
         test_ais_subscription_message()
         test_ais_message_parsing()
