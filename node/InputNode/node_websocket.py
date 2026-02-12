@@ -279,7 +279,7 @@ class FactoryNode:
                 btn = dpg.add_button(
                     label="Start", 
                     tag=tag_start_button, 
-                    callback=lambda s, a, u: WebsocketNode.start_button_callback(s, a, u), 
+                    callback=WebsocketNode.start_button_callback, 
                     user_data=(node, node_id),
                     width=small_window_w
                 )
@@ -354,6 +354,7 @@ class WebsocketNode(BaseNode):
     # Configuration constants
     MAX_BOATS_STORED = 100  # Maximum number of boat entries to keep in memory
     THREAD_SHUTDOWN_TIMEOUT = 2.0  # Timeout in seconds for thread shutdown
+    MAX_ERROR_MESSAGE_LENGTH = 50  # Maximum length for error messages in logs
 
     def __init__(self):
         super().__init__()  # Call parent constructor
@@ -477,28 +478,27 @@ class WebsocketNode(BaseNode):
                     asyncio.set_event_loop(loop)
                     loop.run_until_complete(self.connection_handler.connect())
                     loop.close()
+                    
+                    # Update UI with success status
+                    if self.connection_handler.is_connected:
+                        self.add_log("Connection successful!")
+                        dpg_set_value(tag_node_status_value_name, "Success")
+                        dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
                 except Exception as e:
-                    self.add_log(f"Connection error: {str(e)[:50]}")
+                    self.add_log(f"Connection error: {str(e)[:self.MAX_ERROR_MESSAGE_LENGTH]}")
                     dpg_set_value(tag_node_status_value_name, "Fail")
                     dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
             
             self.connection_thread = threading.Thread(target=run_connection, daemon=True)
             self.connection_thread.start()
             
-            # Wait a short time to see if connection succeeds
-            time.sleep(0.5)
-            
-            if self.connection_handler.is_connected:
-                self.add_log("Connection successful!")
-                dpg_set_value(tag_node_status_value_name, "Success")
-            else:
-                self.add_log("Connection initiated...")
-                dpg_set_value(tag_node_status_value_name, "Connecting...")
-            
+            # Set initial status - the thread will update it when connection succeeds or fails
+            self.add_log("Connection initiated...")
+            dpg_set_value(tag_node_status_value_name, "Connecting...")
             dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
             
         except Exception as e:
-            self.add_log(f"Error: {str(e)[:50]}")
+            self.add_log(f"Error: {str(e)[:self.MAX_ERROR_MESSAGE_LENGTH]}")
             dpg_set_value(tag_node_status_value_name, "Fail")
             dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
 
