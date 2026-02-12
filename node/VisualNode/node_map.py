@@ -220,6 +220,10 @@ class Node(DpgNodeABC):
         preview_image = np.zeros((small_window_h, small_window_w, 3), dtype=np.uint8)
         
         if input_value is not None:
+            # Reset the no-data flag since we have data now
+            if hasattr(self, '_no_data_logged'):
+                self._no_data_logged = False
+                
             try:
                 # Parse JSON data
                 if isinstance(input_value, str):
@@ -299,6 +303,7 @@ class Node(DpgNodeABC):
             dpg_set_value(tag_node_output02_value_name, elapsed_time)
 
         return preview_image
+
 
 
 

@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import json
+import time
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 import threading
@@ -25,6 +26,7 @@ class WebSocketConnectionHandler:
         self.message_queue = queue.Queue(maxsize=100)
         self.log_callback = log_callback  # Callback function for logging to UI
         self.message_count = 0  # Track number of messages received
+        self.unparseable_count = 0  # Track unparseable messages
         
     async def connect(self):
         """Connect to the WebSocket server. To be implemented by subclasses."""
@@ -198,9 +200,14 @@ class AISStreamHandler(WebSocketConnectionHandler):
                         if self.message_count % 50 == 0:
                             self._log(f"Queue full, dropping data (received {self.message_count})")
                 else:
-                    # Log when messages can't be parsed
-                    if self.message_count == 0:
+                    # Track unparseable messages
+                    self.unparseable_count += 1
+                    
+                    # Log when messages can't be parsed (first time and every 20th)
+                    if self.unparseable_count == 1:
                         self._log("Server sent data but format unrecognized")
+                    elif self.unparseable_count % 20 == 0:
+                        self._log(f"Still receiving unparseable data ({self.unparseable_count} total)")
                         
         except Exception as e:
             error_msg = f"Error receiving messages: {str(e)}"
@@ -461,7 +468,6 @@ class WebsocketNode(BaseNode):
         
         # Update status text with data count (periodically)
         if hasattr(self, '_last_status_update'):
-            import time
             if time.time() - self._last_status_update > 2.0:  # Update every 2 seconds
                 tag_node_name = str(node_id) + ':' + self.node_tag
                 tag_node_status_value_name = tag_node_name + ':StatusValue'
@@ -472,7 +478,6 @@ class WebsocketNode(BaseNode):
                     dpg_set_value(tag_node_status_value_name, status_msg)
                 self._last_status_update = time.time()
         else:
-            import time
             self._last_status_update = time.time()
         
         return {"image": None, "json": json_output, "audio": None}
