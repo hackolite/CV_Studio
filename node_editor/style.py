@@ -25,7 +25,7 @@ ACTION = []
 VIDEO = ["ImageConcat", "VideoWriter", "ScreenCapture", "DynamicPlay"]
 TRACKING = ["MultiObjectTracking", "ReId"]
 OVERLAY = ["DrawInformation", "PutText"]
-VIZ = ["Heatmap", "ObjChart", "Visual"]
+VIZ = ["Heatmap", "ObjChart", "Visual", "Map"]
 TIMESERIES = ["PositionPrediction"]
 SYSTEM = ["SyncQueue"]
 
