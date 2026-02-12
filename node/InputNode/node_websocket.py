@@ -75,7 +75,7 @@ class FactoryNode:
         
             # Input field for API_KEY
             with dpg.node_attribute(tag=node.tag_node_input_apikey_name, attribute_type=dpg.mvNode_Attr_Static):
-                dpg.add_input_text(tag=node.tag_node_input_apikey_value_name, width=small_window_w, hint="Enter API_KEY", password=True)
+                dpg.add_input_text(tag=node.tag_node_input_apikey_value_name, width=small_window_w, hint="Enter API Key", password=True)
         
             # Input field for message
             with dpg.node_attribute(tag=node.tag_node_input_message_name, attribute_type=dpg.mvNode_Attr_Static):
@@ -123,9 +123,12 @@ class WebsocketNode(BaseNode):
         message_value_tag = tag_node_name + ':' + self.TYPE_TEXT + ':InputMessageValue'
 
         output_value = round((dpg_get_value(output_value_tag)), 3)
-        url_value = dpg_get_value(url_value_tag) if dpg_get_value(url_value_tag) else ""
-        apikey_value = dpg_get_value(apikey_value_tag) if dpg_get_value(apikey_value_tag) else ""
-        message_value = dpg_get_value(message_value_tag) if dpg_get_value(message_value_tag) else ""
+        url_value_raw = dpg_get_value(url_value_tag)
+        url_value = url_value_raw if url_value_raw else ""
+        apikey_value_raw = dpg_get_value(apikey_value_tag)
+        apikey_value = apikey_value_raw if apikey_value_raw else ""
+        message_value_raw = dpg_get_value(message_value_tag)
+        message_value = message_value_raw if message_value_raw else ""
         
         pos = dpg.get_item_pos(tag_node_name)
         setting_dict = {}
