@@ -167,8 +167,19 @@ class TestAPIKeySecurity(unittest.TestCase):
             # Check for required environment variables
             self.assertIn('AIS_STREAM_API_KEY', content)
             self.assertIn('your_api_key_here', content)
-            self.assertNotIn('58462ad27e7ad5bd8004d4948e46015ec75cc5df', content,
-                           "Real API keys should not be in .env.example")
+            
+            # Check that no real API keys are present (simple pattern check)
+            # Real API keys are typically long alphanumeric strings
+            # This is a basic check - for production, use more sophisticated patterns
+            lines = content.split('\n')
+            for line in lines:
+                if '=' in line and not line.strip().startswith('#'):
+                    key, value = line.split('=', 1)
+                    value = value.strip()
+                    # Real API keys shouldn't be in the example
+                    # They're usually longer than 30 characters and alphanumeric
+                    if len(value) > 30 and value.replace('_', '').isalnum():
+                        self.fail(f"Potential real API key found in .env.example: {key}")
 
 
 if __name__ == '__main__':

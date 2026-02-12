@@ -87,11 +87,14 @@ async def main():
             print("Warning: Invalid bounding box in environment variable, using default")
     
     # Command line argument overrides environment variable
-    # Check if api_key came from env (sys.argv would have fewer items)
-    arg_offset = 2 if len(sys.argv) >= 2 and sys.argv[1] != api_key else 1
-    if len(sys.argv) > arg_offset:
+    # If API key came from command line (sys.argv[1]), bounding box is at sys.argv[2]
+    # If API key came from environment, bounding box is at sys.argv[1]
+    api_key_from_cmdline = len(sys.argv) >= 2 and sys.argv[1] == api_key
+    bbox_index = 2 if api_key_from_cmdline else 1
+    
+    if len(sys.argv) > bbox_index:
         try:
-            bounding_box = json.loads(sys.argv[arg_offset])
+            bounding_box = json.loads(sys.argv[bbox_index])
         except json.JSONDecodeError:
             print("Warning: Invalid bounding box JSON in command line, using default")
     
