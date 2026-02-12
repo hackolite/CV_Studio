@@ -42,6 +42,27 @@ The main node class that integrates with CV Studio's node editor.
 
 ## Usage
 
+### Secure API Key Management
+
+For security, it's recommended to store your API key in environment variables rather than hardcoding it:
+
+**Method 1: Using .env file (Recommended)**
+1. Copy `.env.example` to `.env` in the project root
+2. Add your API key to `.env`:
+   ```
+   AIS_STREAM_API_KEY=your_actual_api_key_here
+   ```
+3. The `.env` file is automatically ignored by git for security
+
+**Method 2: Environment Variable**
+```bash
+export AIS_STREAM_API_KEY='your_actual_api_key_here'
+```
+
+**Method 3: Direct Input (Development Only)**
+- Enter the API key directly in the node's API Key field
+- Note: This is less secure as the key may be visible in screenshots/logs
+
 ### Basic Configuration
 
 1. **WebSocket URL**: Enter the AIS stream URL
