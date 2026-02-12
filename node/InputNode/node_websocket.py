@@ -319,6 +319,10 @@ class WebsocketNode(BaseNode):
     }
     """
     _ver = '0.0.2'
+    
+    # Configuration constants
+    MAX_BOATS_STORED = 100  # Maximum number of boat entries to keep in memory
+    THREAD_SHUTDOWN_TIMEOUT = 2.0  # Timeout in seconds for thread shutdown
 
     def __init__(self):
         super().__init__()  # Call parent constructor
@@ -341,9 +345,9 @@ class WebsocketNode(BaseNode):
                     boat_data = self.connection_handler.message_queue.get_nowait()
                     self.boats_data.append(boat_data)
                     
-                    # Keep only last 100 boats to avoid memory issues
-                    if len(self.boats_data) > 100:
-                        self.boats_data = self.boats_data[-100:]
+                    # Keep only last MAX_BOATS_STORED boats to avoid memory issues
+                    if len(self.boats_data) > self.MAX_BOATS_STORED:
+                        self.boats_data = self.boats_data[-self.MAX_BOATS_STORED:]
                         
                 except queue.Empty:
                     break
@@ -363,8 +367,8 @@ class WebsocketNode(BaseNode):
         if self.connection_handler:
             self.connection_handler.is_connected = False
         if self.connection_thread and self.connection_thread.is_alive():
-            # Wait for thread to finish
-            self.connection_thread.join(timeout=2.0)
+            # Wait for thread to finish with configured timeout
+            self.connection_thread.join(timeout=self.THREAD_SHUTDOWN_TIMEOUT)
 
 
     def get_setting_dict(self, node_id):

@@ -3,6 +3,9 @@
 """
 Standalone test for WebSocket abstraction layer.
 Tests the WebSocketConnectionHandler and AISStreamHandler without requiring dearpygui.
+
+Note: These classes are duplicated here to enable testing without the dearpygui dependency.
+In production code, import from node.InputNode.node_websocket instead.
 """
 import json
 import sys
