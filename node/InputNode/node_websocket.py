@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import json
+import time
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 import threading
@@ -18,11 +19,14 @@ from node.basenode import Node as BaseNode
 class WebSocketConnectionHandler:
     """Abstract base class for handling WebSocket connections with different protocols."""
     
-    def __init__(self, url: str, api_key: str = ""):
+    def __init__(self, url: str, api_key: str = "", log_callback=None):
         self.url = url
         self.api_key = api_key
         self.is_connected = False
         self.message_queue = queue.Queue(maxsize=100)
+        self.log_callback = log_callback  # Callback function for logging to UI
+        self.message_count = 0  # Track number of messages received
+        self.unparseable_count = 0  # Track unparseable messages
         
     async def connect(self):
         """Connect to the WebSocket server. To be implemented by subclasses."""
@@ -56,10 +60,17 @@ class AISStreamHandler(WebSocketConnectionHandler):
         )
     """
     
-    def __init__(self, url: str, api_key: str, bounding_box: Optional[List] = None):
-        super().__init__(url, api_key)
+    def __init__(self, url: str, api_key: str, bounding_box: Optional[List] = None, log_callback=None):
+        super().__init__(url, api_key, log_callback)
         self.bounding_box = bounding_box or self._get_default_bounding_box()
         self.websocket = None
+        
+    def _log(self, message: str):
+        """Log a message to UI if callback is available."""
+        if self.log_callback:
+            self.log_callback(message)
+        else:
+            print(message)
         
     def _get_default_bounding_box(self) -> List:
         """Return a default bounding box covering the entire world.
@@ -132,38 +143,80 @@ class AISStreamHandler(WebSocketConnectionHandler):
             # Import websockets only when needed
             import websockets
             
+            self._log("Connecting to AIS server...")
+            # Log URL without query parameters to avoid exposing sensitive info
+            url_parts = self.url.split('?')
+            safe_url = url_parts[0]  # Just protocol, domain, and path
+            if len(safe_url) > 50:
+                safe_url = safe_url[:50] + "..."
+            self._log(f"URL: {safe_url}")
+            
             async with websockets.connect(self.url) as websocket:
                 self.websocket = websocket
                 self.is_connected = True
+                self._log("✓ Connected to server")
                 
                 # Send subscription message
                 subscribe_message = self.get_subscribe_message()
+                self._log("Sending subscription request...")
                 await websocket.send(json.dumps(subscribe_message))
+                self._log("✓ Subscription sent")
                 
                 # Handle incoming messages
+                self._log("Waiting for server response...")
                 await self.handle_messages()
                 
         except ImportError:
+            error_msg = "Error: websockets not installed"
+            self._log(error_msg)
             print("Error: 'websockets' package is not installed. Please run: pip install websockets")
             self.is_connected = False
         except Exception as e:
+            error_msg = f"Connection error: {str(e)}"
+            self._log(error_msg)
             print(f"Error connecting to AIS stream: {e}")
             self.is_connected = False
     
     async def handle_messages(self):
         """Handle incoming AIS messages."""
         if not self.websocket:
+            self._log("Error: No websocket connection")
             return
             
         try:
             async for message in self.websocket:
+                # Log first message received
+                if self.message_count == 0:
+                    self._log("✓ Receiving data from server")
+                
                 boat_data = self.parse_message(message)
                 if boat_data:
+                    self.message_count += 1
+                    
                     # Add to queue if not full
                     if not self.message_queue.full():
                         self.message_queue.put(boat_data)
                         
+                        # Log periodically (every 10 messages)
+                        if self.message_count % 10 == 0:
+                            self._log(f"Received {self.message_count} messages")
+                    else:
+                        # Log when queue is full
+                        if self.message_count % 50 == 0:
+                            self._log(f"Queue full, dropping data (received {self.message_count})")
+                else:
+                    # Track unparseable messages
+                    self.unparseable_count += 1
+                    
+                    # Log when messages can't be parsed (first time and every 20th)
+                    if self.unparseable_count == 1:
+                        self._log("Server sent data but format unrecognized")
+                    elif self.unparseable_count % 20 == 0:
+                        self._log(f"Still receiving unparseable data ({self.unparseable_count} total)")
+                        
         except Exception as e:
+            error_msg = f"Error receiving messages: {str(e)}"
+            self._log(error_msg)
             print(f"Error handling AIS messages: {e}")
             self.is_connected = False
 
@@ -396,11 +449,13 @@ class WebsocketNode(BaseNode):
             Dictionary with image, json, and audio outputs
         """
         # Collect boat data from the queue
+        new_data_count = 0
         if self.connection_handler and self.connection_handler.is_connected:
             while not self.connection_handler.message_queue.empty():
                 try:
                     boat_data = self.connection_handler.message_queue.get_nowait()
                     self.boats_data.append(boat_data)
+                    new_data_count += 1
                     
                     # Keep only last MAX_BOATS_STORED boats to avoid memory issues
                     if len(self.boats_data) > self.MAX_BOATS_STORED:
@@ -415,6 +470,20 @@ class WebsocketNode(BaseNode):
             "count": len(self.boats_data),
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
+        
+        # Update status text with data count (periodically)
+        if hasattr(self, '_last_status_update'):
+            if time.time() - self._last_status_update > 2.0:  # Update every 2 seconds
+                tag_node_name = str(node_id) + ':' + self.node_tag
+                tag_node_status_value_name = tag_node_name + ':StatusValue'
+                if self.connection_handler and self.connection_handler.is_connected:
+                    status_msg = f"Connected: {len(self.boats_data)} boats"
+                    if hasattr(self.connection_handler, 'message_count'):
+                        status_msg += f" ({self.connection_handler.message_count} msgs)"
+                    dpg_set_value(tag_node_status_value_name, status_msg)
+                self._last_status_update = time.time()
+        else:
+            self._last_status_update = time.time()
         
         return {"image": None, "json": json_output, "audio": None}
 
@@ -469,19 +538,37 @@ class WebsocketNode(BaseNode):
             if bounding_box_str:
                 try:
                     bounding_box = json.loads(bounding_box_str)
-                except json.JSONDecodeError:
-                    self.add_log("Error: Invalid bounding box JSON")
+                    self.add_log(f"Bounding box: {len(bounding_box[0])} points")
+                except json.JSONDecodeError as e:
+                    self.add_log(f"Error: Invalid bounding box JSON - {str(e)[:40]}")
                     dpg_set_value(tag_node_status_value_name, "Fail")
                     dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
                     return
             else:
                 bounding_box = None
+                self.add_log("Using default bounding box")
             
-            # Create connection handler
+            # Check if URL and API key are provided
+            if not url:
+                self.add_log("Error: No URL provided")
+                dpg_set_value(tag_node_status_value_name, "Fail")
+                dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
+                return
+                
+            if not api_key:
+                self.add_log("Warning: No API key provided")
+            
+            # Create log callback that updates the UI
+            def log_to_ui(message):
+                self.add_log(message)
+                dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
+            
+            # Create connection handler with log callback
             self.connection_handler = AISStreamHandler(
                 url=url,
                 api_key=api_key,
-                bounding_box=bounding_box
+                bounding_box=bounding_box,
+                log_callback=log_to_ui
             )
             
             # Start connection in a new thread
@@ -492,26 +579,29 @@ class WebsocketNode(BaseNode):
                     loop.run_until_complete(self.connection_handler.connect())
                     loop.close()
                     
-                    # Update UI with success status
+                    # Update UI with final status
                     if self.connection_handler.is_connected:
-                        self.add_log("Connection successful!")
-                        dpg_set_value(tag_node_status_value_name, "Success")
-                        dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
+                        self.add_log("✓ Connection active")
+                        dpg_set_value(tag_node_status_value_name, "Connected")
+                    else:
+                        self.add_log("✗ Connection failed")
+                        dpg_set_value(tag_node_status_value_name, "Failed")
+                    dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
                 except Exception as e:
-                    self.add_log(f"Connection error: {self._truncate_error(str(e))}")
-                    dpg_set_value(tag_node_status_value_name, "Fail")
+                    self.add_log(f"Error: {self._truncate_error(str(e))}")
+                    dpg_set_value(tag_node_status_value_name, "Error")
                     dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
             
             self.connection_thread = threading.Thread(target=run_connection, daemon=True)
             self.connection_thread.start()
             
-            # Set initial status - the thread will update it when connection succeeds or fails
+            # Set initial status
             self.add_log("Connection initiated...")
             dpg_set_value(tag_node_status_value_name, "Connecting...")
             dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
             
         except Exception as e:
-            self.add_log(f"Error: {self._truncate_error(str(e))}")
+            self.add_log(f"Setup error: {self._truncate_error(str(e))}")
             dpg_set_value(tag_node_status_value_name, "Fail")
             dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
 
