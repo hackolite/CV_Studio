@@ -27,6 +27,14 @@ class FactoryNode:
         node.tag_node_input_text_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01'
         node.tag_node_input_text_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01Value'
         
+        # API_KEY input field
+        node.tag_node_input_apikey_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':InputAPIKey'
+        node.tag_node_input_apikey_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':InputAPIKeyValue'
+        
+        # Message input field
+        node.tag_node_input_message_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':InputMessage'
+        node.tag_node_input_message_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':InputMessageValue'
+        
         # Use node.node_tag instead of self.node_tag
         tag_node_name = str(node_id) + ':' + node.node_tag
         tag_node_output01_name = tag_node_name + ':' + node.TYPE_INT + ':Output01'
@@ -65,6 +73,14 @@ class FactoryNode:
             with dpg.node_attribute(tag=node.tag_node_input_text_name, attribute_type=dpg.mvNode_Attr_Static):
                 dpg.add_input_text(tag=node.tag_node_input_text_value_name, width=small_window_w, hint="Enter a URL")
         
+            # Input field for API_KEY
+            with dpg.node_attribute(tag=node.tag_node_input_apikey_name, attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_input_text(tag=node.tag_node_input_apikey_value_name, width=small_window_w, hint="Enter API_KEY", password=True)
+        
+            # Input field for message
+            with dpg.node_attribute(tag=node.tag_node_input_message_name, attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_input_text(tag=node.tag_node_input_message_value_name, width=small_window_w, hint="Enter message", multiline=True)
+        
             # Start button
             with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
                 btn = dpg.add_button(label="Start", tag=tag_start_button, callback=callback, user_data=tag_input_url, width=small_window_w)
@@ -100,21 +116,46 @@ class WebsocketNode(BaseNode):
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
         output_value_tag = tag_node_name + ':' + self.TYPE_INT + ':Output01Value'
+        
+        # Tags for the new input fields
+        url_value_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input01Value'
+        apikey_value_tag = tag_node_name + ':' + self.TYPE_TEXT + ':InputAPIKeyValue'
+        message_value_tag = tag_node_name + ':' + self.TYPE_TEXT + ':InputMessageValue'
 
         output_value = round((dpg_get_value(output_value_tag)), 3)
+        url_value = dpg_get_value(url_value_tag) if dpg_get_value(url_value_tag) else ""
+        apikey_value = dpg_get_value(apikey_value_tag) if dpg_get_value(apikey_value_tag) else ""
+        message_value = dpg_get_value(message_value_tag) if dpg_get_value(message_value_tag) else ""
+        
         pos = dpg.get_item_pos(tag_node_name)
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
         setting_dict[output_value_tag] = output_value
+        setting_dict[url_value_tag] = url_value
+        setting_dict[apikey_value_tag] = apikey_value
+        setting_dict[message_value_tag] = message_value
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = str(node_id) + ':' + self.node_tag
         output_value_tag = tag_node_name + ':' + self.TYPE_INT + ':Output01Value'
+        
+        # Tags for the new input fields
+        url_value_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input01Value'
+        apikey_value_tag = tag_node_name + ':' + self.TYPE_TEXT + ':InputAPIKeyValue'
+        message_value_tag = tag_node_name + ':' + self.TYPE_TEXT + ':InputMessageValue'
 
         output_value = float(setting_dict[output_value_tag])
         dpg_set_value(output_value_tag, output_value)
+        
+        # Set the new input field values if they exist in the setting dict
+        if url_value_tag in setting_dict:
+            dpg_set_value(url_value_tag, setting_dict[url_value_tag])
+        if apikey_value_tag in setting_dict:
+            dpg_set_value(apikey_value_tag, setting_dict[apikey_value_tag])
+        if message_value_tag in setting_dict:
+            dpg_set_value(message_value_tag, setting_dict[message_value_tag])
 
 
 # Test code to verify that the node displays correctly
