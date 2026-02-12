@@ -223,14 +223,25 @@ class Node(DpgNodeABC):
             try:
                 # Parse JSON data
                 if isinstance(input_value, str):
+                    print(f"Map node: Received JSON string (length: {len(input_value)})")
                     data = json.loads(input_value)
                 else:
+                    print(f"Map node: Received JSON object (type: {type(input_value).__name__})")
                     data = input_value
+
+                # Log the structure of received data
+                if isinstance(data, dict):
+                    print(f"Map node: JSON contains keys: {list(data.keys())}")
+                    if 'boats' in data:
+                        print(f"Map node: Found {len(data.get('boats', []))} boats in data")
+                elif isinstance(data, list):
+                    print(f"Map node: JSON is a list with {len(data)} items")
 
                 # Extract points with latitude and longitude
                 points = self._extract_lat_lon_from_json(data)
                 
                 if points:
+                    print(f"Map node: Extracted {len(points)} points with lat/lon")
                     self.point_data = points
                     
                     # Get zoom and size parameters
@@ -242,10 +253,12 @@ class Node(DpgNodeABC):
                     
                     if map_path:
                         self.last_map_path = map_path
-                        status_text = f"Points: {len(points)}"
+                        status_text = f"✓ {len(points)} points mapped"
+                        print(f"Map node: Map generated at {map_path}")
                     else:
                         # Map generation failed (likely folium not installed)
-                        status_text = f"Points: {len(points)} (map gen failed)"
+                        status_text = f"Points: {len(points)} (folium needed)"
+                        print("Map node: Map generation failed (folium not installed)")
                     
                     # Create preview image
                     preview_image = self._create_preview_image(
@@ -255,13 +268,23 @@ class Node(DpgNodeABC):
                     # Update status
                     dpg_set_value(tag_node_status_value_name, status_text)
                 else:
-                    dpg_set_value(tag_node_status_value_name, "No lat/lon found")
+                    status_msg = "No lat/lon in data"
+                    print(f"Map node: {status_msg}")
+                    dpg_set_value(tag_node_status_value_name, status_msg)
                     
+            except json.JSONDecodeError as e:
+                error_msg = f"JSON parse error: {str(e)[:30]}"
+                print(f"Map node: {error_msg}")
+                dpg_set_value(tag_node_status_value_name, error_msg)
             except Exception as e:
-                error_msg = f"Error processing map data during update: {e}"
-                print(error_msg)
-                # Show truncated error in UI (increased to 50 chars for better context)
-                dpg_set_value(tag_node_status_value_name, f"Error: {str(e)[:50]}")
+                error_msg = f"Error: {str(e)[:40]}"
+                print(f"Map node: Error processing data: {e}")
+                dpg_set_value(tag_node_status_value_name, error_msg)
+        else:
+            # No input data
+            if not hasattr(self, '_no_data_logged') or not self._no_data_logged:
+                print("Map node: Waiting for input data...")
+                self._no_data_logged = True
 
         # Convert preview to DPG texture and update
         preview_texture = self.convert_cv_to_dpg(
@@ -276,6 +299,7 @@ class Node(DpgNodeABC):
             dpg_set_value(tag_node_output02_value_name, elapsed_time)
 
         return preview_image
+
 
 
     def _extract_lat_lon_from_json(self, data):
