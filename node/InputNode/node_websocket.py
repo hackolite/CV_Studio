@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import json
-import time
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 import threading
@@ -435,6 +434,20 @@ class WebsocketNode(BaseNode):
         return "\n".join(self.logs)
     
     
+    def _truncate_error(self, error_msg: str) -> str:
+        """Truncate error message and add ellipsis if needed.
+        
+        Args:
+            error_msg: Error message to truncate
+            
+        Returns:
+            Truncated error message with ellipsis if truncated
+        """
+        if len(error_msg) > self.MAX_ERROR_MESSAGE_LENGTH:
+            return error_msg[:self.MAX_ERROR_MESSAGE_LENGTH] + '...'
+        return error_msg
+    
+    
     def start_connection(self, node_id, url, api_key, bounding_box_str):
         """Start the WebSocket connection and update status.
         
@@ -485,7 +498,7 @@ class WebsocketNode(BaseNode):
                         dpg_set_value(tag_node_status_value_name, "Success")
                         dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
                 except Exception as e:
-                    self.add_log(f"Connection error: {str(e)[:self.MAX_ERROR_MESSAGE_LENGTH]}")
+                    self.add_log(f"Connection error: {self._truncate_error(str(e))}")
                     dpg_set_value(tag_node_status_value_name, "Fail")
                     dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
             
@@ -498,7 +511,7 @@ class WebsocketNode(BaseNode):
             dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
             
         except Exception as e:
-            self.add_log(f"Error: {str(e)[:self.MAX_ERROR_MESSAGE_LENGTH]}")
+            self.add_log(f"Error: {self._truncate_error(str(e))}")
             dpg_set_value(tag_node_status_value_name, "Fail")
             dpg_set_value(tag_node_logs_value_name, self.get_logs_text())
 
