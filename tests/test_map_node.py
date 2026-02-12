@@ -16,11 +16,8 @@ from node.VisualNode.node_map import Node as MapNode
 
 def test_map_node_extract_lat_lon():
     """Test extracting latitude and longitude from various JSON structures"""
-    # Create a minimal node instance by mocking the _opencv_setting_dict
-    node = object.__new__(MapNode)
-    node._opencv_setting_dict = {}
-    node.last_map_path = None
-    node.point_data = []
+    # Use factory method for clean test initialization
+    node = MapNode.create_for_testing()
     
     # Test AIS boat data structure
     ais_data = {
@@ -84,11 +81,8 @@ def test_map_node_generate_map():
         print("⚠ Folium not installed, skipping map generation test")
         return
     
-    # Create a minimal node instance
-    node = object.__new__(MapNode)
-    node._opencv_setting_dict = {}
-    node.last_map_path = None
-    node.point_data = []
+    # Use factory method for clean test initialization
+    node = MapNode.create_for_testing()
     
     points = [
         {"lat": 40.7128, "lon": -74.0060, "name": "New York", "info": "123456"},
@@ -110,18 +104,15 @@ def test_map_node_generate_map():
     print(f"✓ Map generation test passed (saved to {map_path})")
     
     # Clean up
-    # os.remove(map_path)
+    os.remove(map_path)
 
 
 def test_map_node_preview_image():
     """Test preview image generation"""
     import numpy as np
     
-    # Create a minimal node instance
-    node = object.__new__(MapNode)
-    node._opencv_setting_dict = {}
-    node.last_map_path = None
-    node.point_data = []
+    # Use factory method for clean test initialization
+    node = MapNode.create_for_testing()
     
     points = [
         {"lat": 40.7128, "lon": -74.0060, "name": "New York", "info": ""},
@@ -143,11 +134,8 @@ def test_map_node_preview_image():
 
 def test_map_node_empty_data():
     """Test handling of empty data"""
-    # Create a minimal node instance
-    node = object.__new__(MapNode)
-    node._opencv_setting_dict = {}
-    node.last_map_path = None
-    node.point_data = []
+    # Use factory method for clean test initialization
+    node = MapNode.create_for_testing()
     
     # Empty dict
     points = node._extract_lat_lon_from_json({})

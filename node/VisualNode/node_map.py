@@ -166,6 +166,16 @@ class Node(DpgNodeABC):
         self.last_map_path = None
         self.point_data = []
         self._opencv_setting_dict = None
+
+
+    @classmethod
+    def create_for_testing(cls):
+        """Factory method for creating node instances in tests"""
+        node = object.__new__(cls)
+        node._opencv_setting_dict = {}
+        node.last_map_path = None
+        node.point_data = []
+        return node
         
 
     @staticmethod
@@ -175,6 +185,9 @@ class Node(DpgNodeABC):
         if node.last_map_path and os.path.exists(node.last_map_path):
             webbrowser.open('file://' + os.path.abspath(node.last_map_path))
         else:
+            # Update status to inform user
+            if hasattr(node, 'tag_node_status_value_name'):
+                dpg_set_value(node.tag_node_status_value_name, "No map generated yet")
             print("No map generated yet")
 
 
@@ -226,7 +239,13 @@ class Node(DpgNodeABC):
                     
                     # Generate map
                     map_path = self._generate_map(points, zoom_level, size_factor)
-                    self.last_map_path = map_path
+                    
+                    if map_path:
+                        self.last_map_path = map_path
+                        status_text = f"Points: {len(points)}"
+                    else:
+                        # Map generation failed (likely folium not installed)
+                        status_text = f"Points: {len(points)} (map gen failed)"
                     
                     # Create preview image
                     preview_image = self._create_preview_image(
@@ -234,14 +253,15 @@ class Node(DpgNodeABC):
                     )
                     
                     # Update status
-                    status_text = f"Points: {len(points)}"
                     dpg_set_value(tag_node_status_value_name, status_text)
                 else:
                     dpg_set_value(tag_node_status_value_name, "No lat/lon found")
                     
             except Exception as e:
-                print(f"Error processing map data: {e}")
-                dpg_set_value(tag_node_status_value_name, f"Error: {str(e)[:30]}")
+                error_msg = f"Error processing map data during update: {e}"
+                print(error_msg)
+                # Show truncated error in UI (increased to 50 chars for better context)
+                dpg_set_value(tag_node_status_value_name, f"Error: {str(e)[:50]}")
 
         # Convert preview to DPG texture and update
         preview_texture = self.convert_cv_to_dpg(
@@ -315,7 +335,7 @@ class Node(DpgNodeABC):
             import folium
             from folium.plugins import MarkerCluster
         except ImportError:
-            print("folium not installed, map generation skipped")
+            print("folium not installed, map generation skipped. Install with: pip install folium")
             return None
 
         if not points:
