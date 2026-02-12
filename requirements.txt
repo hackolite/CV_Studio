@@ -31,4 +31,3 @@ norfair>=2.2.0
 rich>=10.0.0
 streamlink>=6.0.0
 websockets>=11.0.0
-folium>=0.14.0
