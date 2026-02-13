@@ -238,10 +238,11 @@ def configure_spec_file(windowed=False, icon=None):
     
     # Modify console setting for windowed mode
     if windowed:
-        # Use flexible pattern to handle variations in spacing
+        # Use flexible pattern to handle variations in spacing and trailing comma
+        # Matches: console=True, console = True, console=True)
         spec_content = re.sub(
-            r'console\s*=\s*True\s*,',
-            'console=False,',
+            r'console\s*=\s*True\b',
+            'console=False',
             spec_content
         )
         print_info("Console: Hidden (windowed mode)")
@@ -252,10 +253,11 @@ def configure_spec_file(windowed=False, icon=None):
     if icon:
         icon_path = Path(icon)
         if icon_path.exists():
-            # Use flexible pattern to handle variations in spacing
+            # Use flexible pattern to handle variations in spacing and trailing comma
+            # Matches: icon=None, icon = None, icon=None)
             spec_content = re.sub(
-                r"icon\s*=\s*None\s*,",
-                f"icon='{icon}',",
+                r"icon\s*=\s*None\b",
+                f"icon='{icon}'",
                 spec_content
             )
             print_info(f"Icon: {icon}")
