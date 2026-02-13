@@ -145,7 +145,38 @@ The script automatically:
 
 📖 **Full guide:** See [BUILD_WINDOWS_SCRIPT.md](BUILD_WINDOWS_SCRIPT.md) for detailed instructions and troubleshooting
 
-#### 🔧 Option C: Manual Build on Your Windows Machine
+#### ⚡ Option C: Unified Build System (NEW - CROSS-PLATFORM)
+
+**The modern, clean way to build CV_Studio!** Works on Windows, Linux, and macOS.
+
+```bash
+# Clone repository
+git clone https://github.com/hackolite/CV_Studio.git
+cd CV_Studio
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Build executable (GPU support)
+python build_unified.py --clean
+
+# Or build for CPU-only (no CUDA required)
+python build_unified.py --clean --cpu
+```
+
+**Features:**
+- ✅ Cross-platform (Windows/Linux/macOS)
+- ✅ Clean, colored output
+- ✅ CPU/GPU build modes
+- ✅ Comprehensive error handling
+- ✅ Single command builds
+- ✅ CI/CD friendly
+
+**Quick Reference:**
+- 📖 [BUILD_QUICKREF.md](BUILD_QUICKREF.md) - One-page cheat sheet
+- 📚 [BUILD_GUIDE.md](BUILD_GUIDE.md) - Comprehensive guide
+
+#### 🔧 Option D: Manual Build on Your Windows Machine (Legacy)
 
 #### 📋 Prérequis / Prerequisites
 
