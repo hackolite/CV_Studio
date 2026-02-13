@@ -72,7 +72,7 @@ def check_requirements(skip_package_check=False):
     Returns:
         bool: True if all requirements are satisfied or skipped, False if checks fail
     """
-    print("[1/5] Checking requirements...")
+    print("[1/6] Checking requirements...")
     
     # Check Python version
     if sys.version_info < (3, 7):
@@ -220,7 +220,7 @@ def check_requirements(skip_package_check=False):
 
 def clean_build_directories():
     """Clean previous build artifacts"""
-    print("[2/5] Cleaning build directories...")
+    print("[2/6] Cleaning build directories...")
     
     dirs_to_clean = ['build', 'dist', '__pycache__']
     
@@ -473,7 +473,7 @@ coll = COLLECT(
 
 def modify_spec_file(args):
     """Modify spec file based on command line arguments"""
-    print("[3/5] Configuring build...")
+    print("[3/6] Configuring build...")
     
     spec_file = 'CV_Studio.spec'
     
@@ -526,7 +526,7 @@ def modify_spec_file(args):
 
 def build_executable(args):
     """Run PyInstaller to build the executable"""
-    print("[4/5] Building executable...")
+    print("[4/6] Building executable...")
     print("  This may take several minutes...\n")
     
     spec_file = 'CV_Studio.spec'
@@ -548,9 +548,68 @@ def build_executable(args):
         return False
 
 
+def copy_data_directories():
+    """
+    Copy node and node_editor directories from _internal to dist root.
+    
+    PyInstaller 6.x places data files inside _internal by default.
+    The application and distribution workflow expect these directories
+    at the root of dist/CV_Studio/, so we copy them after the build.
+    
+    Returns:
+        bool: True if copy succeeded and directories exist, False otherwise
+    """
+    print("[5/6] Copying data directories to dist root...")
+    
+    dist_dir = 'dist/CV_Studio'
+    internal_dir = os.path.join(dist_dir, '_internal')
+    
+    # Directories required for the application to function
+    required_dirs = ['node', 'node_editor']
+    
+    # Check if _internal directory exists (PyInstaller 6.x behavior)
+    has_internal = os.path.exists(internal_dir)
+    
+    if has_internal:
+        print(f"  ℹ Found _internal directory (PyInstaller 6.x structure)")
+    else:
+        print(f"  ℹ No _internal directory found (older PyInstaller structure)")
+    
+    for dir_name in required_dirs:
+        src_path = os.path.join(internal_dir, dir_name)
+        dst_path = os.path.join(dist_dir, dir_name)
+        
+        # Check if directory exists in _internal (PyInstaller 6.x)
+        if has_internal and os.path.exists(src_path):
+            if os.path.exists(dst_path):
+                print(f"  - Removing existing {dir_name}/ in dist root")
+                shutil.rmtree(dst_path)
+            
+            print(f"  - Copying {dir_name}/ from _internal to dist root")
+            try:
+                shutil.copytree(src_path, dst_path)
+                print(f"  ✓ {dir_name}/ copied successfully")
+            except Exception as e:
+                print(f"  ✗ Failed to copy {dir_name}/: {e}")
+                return False
+        elif os.path.exists(dst_path):
+            # Directory already exists at dist root (older PyInstaller behavior or manual placement)
+            print(f"  ✓ {dir_name}/ already exists at dist root")
+        else:
+            # Directory not found anywhere - this is an error
+            print(f"  ✗ {dir_name}/ not found in _internal or dist root")
+            print(f"    Checked paths:")
+            print(f"      - {src_path}")
+            print(f"      - {dst_path}")
+            return False
+    
+    print("  ✓ All required directories present\n")
+    return True
+
+
 def create_documentation():
     """Create README for the built executable"""
-    print("[5/5] Creating documentation...")
+    print("[6/6] Creating documentation...")
     
     readme_content = """# CV_Studio - Standalone Executable
 
@@ -719,6 +778,10 @@ def main():
     
     # Build
     if not build_executable(args):
+        sys.exit(1)
+    
+    # Copy data directories from _internal to dist root
+    if not copy_data_directories():
         sys.exit(1)
     
     # Create documentation
