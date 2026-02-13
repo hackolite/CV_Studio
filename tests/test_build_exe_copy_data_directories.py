@@ -10,11 +10,11 @@ the dist root, supporting both PyInstaller 6.x and older behaviors.
 
 import sys
 import os
+import ast
+import re
 import pytest
-import tempfile
 import shutil
 from pathlib import Path
-from unittest.mock import patch
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -27,67 +27,56 @@ def get_project_root():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+@pytest.fixture
+def temp_build_dir(tmp_path, monkeypatch):
+    """Fixture providing a temporary build directory for testing."""
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
+
+
 class TestCopyDataDirectories:
     """Tests for copy_data_directories function."""
     
-    def setup_method(self):
-        """Set up test fixtures."""
-        # Store original directory
-        self.original_dir = os.getcwd()
-        
-        # Create temporary directory for testing
-        self.temp_dir = tempfile.mkdtemp()
-        os.chdir(self.temp_dir)
-        
-    def teardown_method(self):
-        """Clean up test fixtures."""
-        os.chdir(self.original_dir)
-        shutil.rmtree(self.temp_dir)
-    
-    def create_pyinstaller_6x_structure(self):
+    def create_pyinstaller_6x_structure(self, temp_dir):
         """Create PyInstaller 6.x structure with directories in _internal."""
-        dist_dir = os.path.join(self.temp_dir, 'dist', 'CV_Studio')
-        internal_dir = os.path.join(dist_dir, '_internal')
+        dist_dir = temp_dir / 'dist' / 'CV_Studio'
+        internal_dir = dist_dir / '_internal'
         
         # Create structure
-        os.makedirs(internal_dir)
-        os.makedirs(os.path.join(internal_dir, 'node'))
-        os.makedirs(os.path.join(internal_dir, 'node_editor'))
+        internal_dir.mkdir(parents=True)
+        (internal_dir / 'node').mkdir()
+        (internal_dir / 'node_editor').mkdir()
         
         # Create dummy files
-        with open(os.path.join(internal_dir, 'node', '__init__.py'), 'w') as f:
-            f.write('# node package')
-        with open(os.path.join(internal_dir, 'node_editor', '__init__.py'), 'w') as f:
-            f.write('# node_editor package')
+        (internal_dir / 'node' / '__init__.py').write_text('# node package')
+        (internal_dir / 'node_editor' / '__init__.py').write_text('# node_editor package')
             
         return dist_dir
     
-    def create_older_pyinstaller_structure(self):
+    def create_older_pyinstaller_structure(self, temp_dir):
         """Create older PyInstaller structure with directories at dist root."""
-        dist_dir = os.path.join(self.temp_dir, 'dist', 'CV_Studio')
+        dist_dir = temp_dir / 'dist' / 'CV_Studio'
         
         # Create structure (no _internal, directories at root)
-        os.makedirs(dist_dir)
-        os.makedirs(os.path.join(dist_dir, 'node'))
-        os.makedirs(os.path.join(dist_dir, 'node_editor'))
+        dist_dir.mkdir(parents=True)
+        (dist_dir / 'node').mkdir()
+        (dist_dir / 'node_editor').mkdir()
         
         # Create dummy files
-        with open(os.path.join(dist_dir, 'node', '__init__.py'), 'w') as f:
-            f.write('# node package')
-        with open(os.path.join(dist_dir, 'node_editor', '__init__.py'), 'w') as f:
-            f.write('# node_editor package')
+        (dist_dir / 'node' / '__init__.py').write_text('# node package')
+        (dist_dir / 'node_editor' / '__init__.py').write_text('# node_editor package')
             
         return dist_dir
     
-    def test_copy_from_internal_pyinstaller_6x(self):
+    def test_copy_from_internal_pyinstaller_6x(self, temp_build_dir):
         """Test copying directories from _internal (PyInstaller 6.x behavior)."""
-        dist_dir = self.create_pyinstaller_6x_structure()
+        dist_dir = self.create_pyinstaller_6x_structure(temp_build_dir)
         
         # Verify initial state: dirs exist in _internal but not at root
-        assert os.path.exists(os.path.join(dist_dir, '_internal', 'node'))
-        assert os.path.exists(os.path.join(dist_dir, '_internal', 'node_editor'))
-        assert not os.path.exists(os.path.join(dist_dir, 'node'))
-        assert not os.path.exists(os.path.join(dist_dir, 'node_editor'))
+        assert (dist_dir / '_internal' / 'node').exists()
+        assert (dist_dir / '_internal' / 'node_editor').exists()
+        assert not (dist_dir / 'node').exists()
+        assert not (dist_dir / 'node_editor').exists()
         
         # Run function
         result = copy_data_directories()
@@ -96,20 +85,20 @@ class TestCopyDataDirectories:
         assert result is True
         
         # Verify directories were copied to root
-        assert os.path.exists(os.path.join(dist_dir, 'node'))
-        assert os.path.exists(os.path.join(dist_dir, 'node_editor'))
+        assert (dist_dir / 'node').exists()
+        assert (dist_dir / 'node_editor').exists()
         
         # Verify files exist in copied directories
-        assert os.path.exists(os.path.join(dist_dir, 'node', '__init__.py'))
-        assert os.path.exists(os.path.join(dist_dir, 'node_editor', '__init__.py'))
+        assert (dist_dir / 'node' / '__init__.py').exists()
+        assert (dist_dir / 'node_editor' / '__init__.py').exists()
     
-    def test_directories_already_at_root(self):
+    def test_directories_already_at_root(self, temp_build_dir):
         """Test when directories already exist at dist root (older PyInstaller)."""
-        dist_dir = self.create_older_pyinstaller_structure()
+        dist_dir = self.create_older_pyinstaller_structure(temp_build_dir)
         
         # Verify initial state: dirs exist at root
-        assert os.path.exists(os.path.join(dist_dir, 'node'))
-        assert os.path.exists(os.path.join(dist_dir, 'node_editor'))
+        assert (dist_dir / 'node').exists()
+        assert (dist_dir / 'node_editor').exists()
         
         # Run function
         result = copy_data_directories()
@@ -118,13 +107,13 @@ class TestCopyDataDirectories:
         assert result is True
         
         # Verify directories still exist
-        assert os.path.exists(os.path.join(dist_dir, 'node'))
-        assert os.path.exists(os.path.join(dist_dir, 'node_editor'))
+        assert (dist_dir / 'node').exists()
+        assert (dist_dir / 'node_editor').exists()
     
-    def test_missing_directories_fails(self):
+    def test_missing_directories_fails(self, temp_build_dir):
         """Test that function fails when directories are missing."""
-        dist_dir = os.path.join(self.temp_dir, 'dist', 'CV_Studio')
-        os.makedirs(dist_dir)
+        dist_dir = temp_build_dir / 'dist' / 'CV_Studio'
+        dist_dir.mkdir(parents=True)
         
         # Run function without creating the required directories
         result = copy_data_directories()
@@ -132,15 +121,14 @@ class TestCopyDataDirectories:
         # Should fail because directories don't exist
         assert result is False
     
-    def test_overwrites_existing_root_directories(self):
+    def test_overwrites_existing_root_directories(self, temp_build_dir):
         """Test that existing root directories are replaced with _internal copies."""
-        dist_dir = self.create_pyinstaller_6x_structure()
+        dist_dir = self.create_pyinstaller_6x_structure(temp_build_dir)
         
         # Also create directories at root with different content
-        os.makedirs(os.path.join(dist_dir, 'node'))
-        os.makedirs(os.path.join(dist_dir, 'node_editor'))
-        with open(os.path.join(dist_dir, 'node', 'old_file.py'), 'w') as f:
-            f.write('# old file')
+        (dist_dir / 'node').mkdir()
+        (dist_dir / 'node_editor').mkdir()
+        (dist_dir / 'node' / 'old_file.py').write_text('# old file')
         
         # Run function
         result = copy_data_directories()
@@ -149,10 +137,10 @@ class TestCopyDataDirectories:
         assert result is True
         
         # Verify old file is gone (directory was replaced)
-        assert not os.path.exists(os.path.join(dist_dir, 'node', 'old_file.py'))
+        assert not (dist_dir / 'node' / 'old_file.py').exists()
         
         # Verify new file exists
-        assert os.path.exists(os.path.join(dist_dir, 'node', '__init__.py'))
+        assert (dist_dir / 'node' / '__init__.py').exists()
 
 
 def test_copy_data_directories_function_exists():
@@ -162,34 +150,96 @@ def test_copy_data_directories_function_exists():
 
 
 def test_build_exe_step_numbering():
-    """Test that build_exe.py has correct 6-step numbering."""
+    """Test that build_exe.py has consistent step numbering pattern.
+    
+    Verifies that all steps follow the pattern [n/N] where N is the total
+    number of steps and n ranges from 1 to N.
+    """
     build_exe_path = os.path.join(get_project_root(), 'build_exe.py')
     
     with open(build_exe_path, 'r') as f:
         content = f.read()
     
-    # Check for 6-step numbering
-    assert '[1/6]' in content, "Step 1 should be numbered out of 6"
-    assert '[2/6]' in content, "Step 2 should be numbered out of 6"
-    assert '[3/6]' in content, "Step 3 should be numbered out of 6"
-    assert '[4/6]' in content, "Step 4 should be numbered out of 6"
-    assert '[5/6]' in content, "Step 5 should be numbered out of 6"
-    assert '[6/6]' in content, "Step 6 should be numbered out of 6"
+    # Find all step patterns [n/N] and extract the total number
+    step_pattern = re.compile(r'\[(\d+)/(\d+)\]')
+    matches = step_pattern.findall(content)
+    
+    assert len(matches) > 0, "build_exe.py should contain step numbers"
+    
+    # Get the total steps from the first match
+    total_steps = int(matches[0][1])
+    
+    # Verify all step numbers are consistent and sequential
+    step_numbers = set()
+    for step_num, total in matches:
+        assert int(total) == total_steps, \
+            f"All steps should have same total ({total_steps}), but found {total}"
+        step_numbers.add(int(step_num))
+    
+    # Verify we have all steps from 1 to total_steps
+    expected_steps = set(range(1, total_steps + 1))
+    assert step_numbers == expected_steps, \
+        f"Expected steps {expected_steps}, but found {step_numbers}"
 
 
 def test_build_exe_calls_copy_data_directories():
-    """Test that main() in build_exe.py calls copy_data_directories."""
+    """Test that build_exe.py calls copy_data_directories using AST parsing.
+    
+    Uses AST parsing to verify the actual function call exists in code,
+    not just in comments.
+    """
     build_exe_path = os.path.join(get_project_root(), 'build_exe.py')
     
     with open(build_exe_path, 'r') as f:
-        content = f.read()
+        source = f.read()
     
-    # Check that copy_data_directories is called
-    assert 'copy_data_directories()' in content, \
-        "build_exe.py main() should call copy_data_directories()"
+    tree = ast.parse(source)
     
-    # Check that failure is handled
-    assert 'if not copy_data_directories():' in content, \
+    # Find all function calls in the AST
+    function_calls = set()
+    
+    class CallVisitor(ast.NodeVisitor):
+        def visit_Call(self, node):
+            if isinstance(node.func, ast.Name):
+                function_calls.add(node.func.id)
+            self.generic_visit(node)
+    
+    CallVisitor().visit(tree)
+    
+    assert 'copy_data_directories' in function_calls, \
+        "build_exe.py should call copy_data_directories()"
+
+
+def test_build_exe_handles_copy_failure():
+    """Test that build_exe.py handles copy_data_directories failure.
+    
+    Verifies that the return value is checked using AST parsing.
+    """
+    build_exe_path = os.path.join(get_project_root(), 'build_exe.py')
+    
+    with open(build_exe_path, 'r') as f:
+        source = f.read()
+    
+    tree = ast.parse(source)
+    
+    # Look for 'if not copy_data_directories()' pattern
+    class NotCallVisitor(ast.NodeVisitor):
+        def __init__(self):
+            self.found_check = False
+        
+        def visit_If(self, node):
+            # Check for 'if not func()' pattern
+            if isinstance(node.test, ast.UnaryOp) and isinstance(node.test.op, ast.Not):
+                if isinstance(node.test.operand, ast.Call):
+                    if isinstance(node.test.operand.func, ast.Name):
+                        if node.test.operand.func.id == 'copy_data_directories':
+                            self.found_check = True
+            self.generic_visit(node)
+    
+    visitor = NotCallVisitor()
+    visitor.visit(tree)
+    
+    assert visitor.found_check, \
         "build_exe.py should check return value of copy_data_directories()"
 
 
