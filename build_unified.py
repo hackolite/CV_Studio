@@ -46,22 +46,33 @@ import sys
 import shutil
 import subprocess
 import argparse
+import re
 from pathlib import Path
 
 # Increase recursion limit for PyInstaller's module analysis
+# PyInstaller performs deep analysis of Python modules during the build process.
+# Large libraries like Pandas, NumPy, or complex node structures can have deep
+# import hierarchies that exceed Python's default recursion limit (1000).
+# Setting to 5000 prevents "RecursionError: maximum recursion depth exceeded"
+# during the build process. This is a standard practice for PyInstaller builds
+# with complex dependencies.
 sys.setrecursionlimit(5000)
 
 # Terminal colors for better output
 class Colors:
     """ANSI color codes for terminal output"""
+    # Try to enable ANSI colors on Windows 10+
+    colors_enabled = True
+    
     if sys.platform == 'win32':
-        # Enable ANSI colors on Windows 10+
         try:
             import ctypes
             kernel32 = ctypes.windll.kernel32
             kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
-        except:
-            pass
+        except (AttributeError, OSError):
+            # Failed to enable ANSI colors on Windows
+            # Colors will still be output but may not render
+            colors_enabled = False
     
     HEADER = '\033[95m'
     BLUE = '\033[94m'
@@ -227,9 +238,9 @@ def configure_spec_file(windowed=False, icon=None):
     
     # Modify console setting for windowed mode
     if windowed:
-        import re
+        # Use flexible pattern to handle variations in spacing
         spec_content = re.sub(
-            r'console=True,',
+            r'console\s*=\s*True\s*,',
             'console=False,',
             spec_content
         )
@@ -241,9 +252,9 @@ def configure_spec_file(windowed=False, icon=None):
     if icon:
         icon_path = Path(icon)
         if icon_path.exists():
-            import re
+            # Use flexible pattern to handle variations in spacing
             spec_content = re.sub(
-                r"icon=None,",
+                r"icon\s*=\s*None\s*,",
                 f"icon='{icon}',",
                 spec_content
             )
