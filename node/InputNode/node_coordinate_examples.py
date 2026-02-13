@@ -24,11 +24,11 @@ from node.basenode import Node as BaseNode
 COORDINATE_EXAMPLES = {
     "None": [],
     "AISTRACKER": [
-        {"latitude": 48.8566, "longitude": 2.3522, "name": "Vessel Paris", "mmsi": "123456789"},
-        {"latitude": 51.5074, "longitude": -0.1278, "name": "Cargo London", "mmsi": "234567890"},
+        {"latitude": 49.4431, "longitude": 0.1073, "name": "Vessel Le Havre", "mmsi": "123456789"},
+        {"latitude": 51.4545, "longitude": 0.0553, "name": "Cargo Thames", "mmsi": "234567890"},
         {"latitude": 43.2965, "longitude": 5.3698, "name": "Tanker Marseille", "mmsi": "345678901"},
         {"latitude": 41.3851, "longitude": 2.1734, "name": "Ferry Barcelona", "mmsi": "456789012"},
-        {"latitude": 40.4168, "longitude": -3.7038, "name": "Cruise Madrid", "mmsi": "567890123"},
+        {"latitude": 39.4699, "longitude": -0.3763, "name": "Cruise Valencia", "mmsi": "567890123"},
     ],
     "World Cities": [
         {"latitude": 40.7128, "longitude": -74.0060, "name": "New York"},
@@ -44,7 +44,7 @@ COORDINATE_EXAMPLES = {
         {"latitude": 51.2277, "longitude": 4.4074, "name": "Antwerp"},
         {"latitude": 49.4431, "longitude": 0.1073, "name": "Le Havre"},
         {"latitude": 36.1408, "longitude": -5.3536, "name": "Gibraltar"},
-        {"latitude": 43.1242, "longitude": -5.9458, "name": "Gijon"},
+        {"latitude": 43.5453, "longitude": -5.6615, "name": "Gijón"},
     ],
     "Mediterranean Sea": [
         {"latitude": 36.7213, "longitude": -4.4214, "name": "Malaga"},
