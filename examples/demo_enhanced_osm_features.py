@@ -65,13 +65,15 @@ def demo_map_assembly():
     print(f"Tile size: {TILE_SIZE}x{TILE_SIZE} pixels")
     
     # Assemble map
-    map_img, origin_fx, origin_fy = assemble_osm_map(
+    map_img, origin_fx, origin_fy, cache_stats = assemble_osm_map(
         center_lat, center_lon, zoom, tiles_x=3, tiles_y=3
     )
     
     print(f"\nMap assembled:")
     print(f"  Size: {map_img.size[0]}x{map_img.size[1]} pixels")
     print(f"  Origin: ({origin_fx:.4f}, {origin_fy:.4f}) fractional tiles")
+    if cache_stats:
+        print(f"  Cache: {cache_stats['cached']} cached, {cache_stats['downloaded']} downloaded")
     
     # Verify center is at map center
     px, py = lat_lon_to_pixel_on_map(center_lat, center_lon, origin_fx, origin_fy, zoom)
@@ -120,7 +122,7 @@ def demo_multi_point_positioning():
     print(f"Zoom: {zoom}")
     
     # Assemble map
-    map_img, origin_fx, origin_fy = assemble_osm_map(
+    map_img, origin_fx, origin_fy, cache_stats = assemble_osm_map(
         center_lat, center_lon, zoom, tiles_x=4, tiles_y=4
     )
     

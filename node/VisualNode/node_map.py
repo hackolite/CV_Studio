@@ -218,13 +218,14 @@ def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3, progres
         zoom: OSM zoom level (1-19)
         tiles_x: Number of tiles horizontally (default: 3)
         tiles_y: Number of tiles vertically (default: 3)
-        progress_callback: Optional callback function(current, total) for progress updates
+        progress_callback: Optional callback function(current, total, from_cache) for progress updates
     
     Returns:
-        Tuple of (pil_image, origin_fx, origin_fy) where:
+        Tuple of (pil_image, origin_fx, origin_fy, cache_stats) where:
         - pil_image: Assembled map as PIL Image
         - origin_fx: Fractional tile X of top-left corner
         - origin_fy: Fractional tile Y of top-left corner
+        - cache_stats: Dict with 'cached', 'downloaded', 'total' tile counts
     """
     # Calculate fractional tile position of center
     fx, fy = lat_lon_to_tile_float(center_lat, center_lon, zoom)
@@ -253,8 +254,22 @@ def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3, progres
     # Download and paste tiles
     total_tiles = (tiles_y + 1) * (tiles_x + 1)
     current_tile = 0
+    tiles_downloaded_so_far = 0  # Progress counter for downloads
     
     print(f"Map node: Assembling map with {total_tiles} tiles at zoom {zoom}...")
+    
+    # First, check how many tiles need downloading
+    tiles_need_download = 0
+    for row in range(tiles_y + 1):
+        for col in range(tiles_x + 1):
+            z, x, y = zoom, tile_x0 + col, tile_y0 + row
+            cache_path = os.path.join(OSM_CACHE_DIR, f"{z}_{x}_{y}.png")
+            if not os.path.exists(cache_path):
+                tiles_need_download += 1
+    
+    # If all tiles are cached, notify callback to hide progress bar
+    if tiles_need_download == 0 and progress_callback:
+        progress_callback(0, 0, True)  # Signal all cached
     
     for row in range(tiles_y + 1):
         for col in range(tiles_x + 1):
@@ -273,10 +288,12 @@ def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3, progres
                     tiles_from_cache += 1
                 else:
                     tiles_downloaded += 1
+                    tiles_downloaded_so_far += 1
+                    # Only update progress for downloaded tiles to avoid blinking
+                    if progress_callback:
+                        progress_callback(tiles_downloaded_so_far, tiles_need_download, False)
             
             current_tile += 1
-            if progress_callback:
-                progress_callback(current_tile, total_tiles)
     
     # Log cache statistics
     print(f"Map node: Tile cache summary - {tiles_from_cache} from cache, "
@@ -285,7 +302,14 @@ def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3, progres
     # Crop to final size with sub-pixel offset
     final_img = canvas.crop((off_x, off_y, off_x + map_w, off_y + map_h))
     
-    return final_img, origin_fx, origin_fy
+    # Return cache statistics along with the image
+    cache_stats = {
+        'cached': tiles_from_cache,
+        'downloaded': tiles_downloaded,
+        'total': total_tiles
+    }
+    
+    return final_img, origin_fx, origin_fy, cache_stats
 
 
 class FactoryNode:
@@ -450,6 +474,7 @@ class FactoryNode:
                     default_value=0.0,
                     overlay="",
                     width=small_window_w,
+                    show=False,  # Initially hidden, will show only when downloading
                 )
 
             # Status text
@@ -721,13 +746,32 @@ class Node(DpgNodeABC):
                             # Log current parameter values
                             print(f"Map node: Parameters - zoom={zoom_level}, size={size_factor}, pan_x={pan_x}, pan_y={pan_y}, cache={use_cache}")
                             
-                            # HTML map generation removed - only tile-based preview
-                            status_text = f"✓ {len(points)} point(s) displayed"
-                            
                             # Create map visualization image (main display)
-                            preview_image = self._create_preview_image(
+                            preview_image, cache_stats = self._create_preview_image(
                                 points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name
                             )
+                            
+                            # Calculate center coordinates for status display
+                            lats = [p['lat'] for p in points]
+                            lons = [p['lon'] for p in points]
+                            center_lat = sum(lats) / len(lats)
+                            center_lon = sum(lons) / len(lons)
+                            
+                            # Build enhanced status text with more details
+                            status_parts = [f"✓ {len(points)} point(s)"]
+                            status_parts.append(f"Z{zoom_level}")
+                            status_parts.append(f"({center_lat:.4f}, {center_lon:.4f})")
+                            
+                            # Add cache statistics if available
+                            if cache_stats:
+                                if cache_stats['downloaded'] == 0:
+                                    # All tiles from cache
+                                    status_parts.append(f"[{cache_stats['total']} cached]")
+                                else:
+                                    # Some tiles downloaded
+                                    status_parts.append(f"[{cache_stats['cached']}↻ {cache_stats['downloaded']}↓]")
+                            
+                            status_text = " | ".join(status_parts)
                             
                             # Update status
                             dpg_set_value(tag_node_status_value_name, status_text)
@@ -770,13 +814,32 @@ class Node(DpgNodeABC):
                         # Log current parameter values
                         print(f"Map node: Parameters - zoom={zoom_level}, size={size_factor}, pan_x={pan_x}, pan_y={pan_y}, cache={use_cache}")
                         
-                        # HTML map generation removed - only tile-based preview
-                        status_text = f"✓ {len(points)} point(s) displayed"
-                        
                         # Create map visualization image (main display)
-                        preview_image = self._create_preview_image(
+                        preview_image, cache_stats = self._create_preview_image(
                             points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name
                         )
+                        
+                        # Calculate center coordinates for status display
+                        lats = [p['lat'] for p in points]
+                        lons = [p['lon'] for p in points]
+                        center_lat = sum(lats) / len(lats)
+                        center_lon = sum(lons) / len(lons)
+                        
+                        # Build enhanced status text with more details
+                        status_parts = [f"✓ {len(points)} point(s)"]
+                        status_parts.append(f"Z{zoom_level}")
+                        status_parts.append(f"({center_lat:.4f}, {center_lon:.4f})")
+                        
+                        # Add cache statistics if available
+                        if cache_stats:
+                            if cache_stats['downloaded'] == 0:
+                                # All tiles from cache
+                                status_parts.append(f"[{cache_stats['total']} cached]")
+                            else:
+                                # Some tiles downloaded
+                                status_parts.append(f"[{cache_stats['cached']}↻ {cache_stats['downloaded']}↓]")
+                        
+                        status_text = " | ".join(status_parts)
                         
                         # Update status
                         dpg_set_value(tag_node_status_value_name, status_text)
@@ -922,11 +985,11 @@ class Node(DpgNodeABC):
             progress_tag: Optional DearPyGUI tag for progress bar updates
         
         Returns:
-            numpy array in BGR format suitable for OpenCV/DPG
+            Tuple of (numpy array in BGR format, cache_stats dict) or (numpy array, None) for fallbacks
         """
         if not points:
             preview = np.zeros((height, width, 3), dtype=np.uint8)
-            return preview
+            return preview, None
         
         print(f"Map node: Creating preview with zoom={zoom_level}, size={size_factor}")
         
@@ -941,14 +1004,14 @@ class Node(DpgNodeABC):
         # Try contextily rendering as fallback
         if CONTEXTILY_AVAILABLE:
             try:
-                return self._render_with_contextily(points, width, height, zoom_level, size_factor, pan_x, pan_y)
+                return self._render_with_contextily(points, width, height, zoom_level, size_factor, pan_x, pan_y), None
             except Exception as e:
                 print(f"Map node: Error rendering with contextily: {e}")
                 traceback.print_exc()
                 print("Map node: Falling back to matplotlib-only rendering")
         
         # Final fallback to matplotlib rendering without basemap
-        return self._render_with_matplotlib(points, width, height)
+        return self._render_with_matplotlib(points, width, height), None
 
 
     def _render_with_direct_osm_tiles(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0, progress_tag=None):
@@ -972,13 +1035,13 @@ class Node(DpgNodeABC):
             progress_tag: Optional DearPyGUI tag for progress bar updates
         
         Returns:
-            numpy array in BGR format
+            Tuple of (numpy array in BGR format, cache_stats dict)
         """
         if not points:
             # Return empty blue background
             img = np.zeros((height, width, 3), dtype=np.uint8)
             img[:] = (224, 216, 173)  # Light blue-gray
-            return img
+            return img, None
         
         try:
             # Calculate center point from all GPS coordinates
@@ -1005,15 +1068,22 @@ class Node(DpgNodeABC):
             print(f"Map node (direct OSM): Center: ({center_lat:.6f}, {center_lon:.6f})")
             
             # Define progress callback function
-            def update_progress(current, total):
+            def update_progress(current, total, from_cache):
                 if progress_tag and dpg.does_item_exist(progress_tag):
-                    progress = current / total if total > 0 else 0.0
-                    dpg.set_value(progress_tag, progress)
-                    overlay_text = f"Downloading: {current}/{total} tiles"
-                    dpg.configure_item(progress_tag, overlay=overlay_text)
+                    # If from_cache is True, it means all tiles are cached - hide progress bar
+                    if from_cache:
+                        dpg.hide_item(progress_tag)
+                    # Only show progress bar if there are tiles to download
+                    elif total > 0:
+                        progress = current / total
+                        dpg.set_value(progress_tag, progress)
+                        overlay_text = f"Downloading: {current}/{total} tiles"
+                        dpg.configure_item(progress_tag, overlay=overlay_text)
+                        # Make progress bar visible
+                        dpg.show_item(progress_tag)
             
             # Assemble map with sub-pixel accuracy and progress tracking
-            pil_map, origin_fx, origin_fy = assemble_osm_map(
+            pil_map, origin_fx, origin_fy, cache_stats = assemble_osm_map(
                 center_lat, center_lon, zoom_level, tiles_x, tiles_y, update_progress
             )
             
@@ -1089,19 +1159,20 @@ class Node(DpgNodeABC):
             if map_array.shape[1] != width or map_array.shape[0] != height:
                 map_array = cv2.resize(map_array, (width, height), interpolation=cv2.INTER_AREA)
             
-            # Reset progress bar after rendering completes
+            # Reset progress bar after rendering completes and hide it
             if progress_tag and dpg.does_item_exist(progress_tag):
                 dpg.set_value(progress_tag, 0.0)
                 dpg.configure_item(progress_tag, overlay="")
+                dpg.hide_item(progress_tag)
             
             print(f"Map node (direct OSM): Rendered {len(points)} points successfully")
-            return map_array
+            return map_array, cache_stats
             
         except Exception as e:
             print(f"Map node (direct OSM): Error rendering with direct tiles: {e}")
             traceback.print_exc()
             # Fall back to contextily method
-            return self._render_with_contextily(points, width, height, zoom_level, size_factor, pan_x, pan_y)
+            return self._render_with_contextily(points, width, height, zoom_level, size_factor, pan_x, pan_y), None
 
 
     def _render_with_contextily(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0):
