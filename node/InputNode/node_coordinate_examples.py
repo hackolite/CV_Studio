@@ -190,15 +190,22 @@ class GPSMovementSimulator:
         lon_change = (distance_km / (111.0 * math.cos(math.radians(t0['lat'])))) * math.sin(obj['direction'])
         
         # Calculate new position from T0 + movement
-        # Use modulo to keep in reasonable bounds (wrap around)
-        base_lat = self.center_lat
-        base_lon = self.center_lon
         new_lat = t0['lat'] + lat_change
         new_lon = t0['lon'] + lon_change
         
-        # Keep within bounds using modulo
-        obj['lat'] = base_lat + ((new_lat - base_lat) % 0.2) - 0.1
-        obj['lon'] = base_lon + ((new_lon - base_lon) % 0.2) - 0.1
+        # Only apply wrapping if object strays too far from center (>15km)
+        base_lat = self.center_lat
+        base_lon = self.center_lon
+        distance_from_center = math.sqrt((new_lat - base_lat)**2 + (new_lon - base_lon)**2)
+        
+        if distance_from_center > 0.15:  # ~16.5 km from center
+            # Wrap around to keep within bounds
+            obj['lat'] = base_lat + ((new_lat - base_lat) % 0.2) - 0.1
+            obj['lon'] = base_lon + ((new_lon - base_lon) % 0.2) - 0.1
+        else:
+            # No wrapping needed, just use the calculated position
+            obj['lat'] = new_lat
+            obj['lon'] = new_lon
     
     def _update_circular(self, obj, time_elapsed):
         """Update position with circular movement."""
