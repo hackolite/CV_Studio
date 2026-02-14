@@ -258,6 +258,19 @@ def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3, progres
     
     print(f"Map node: Assembling map with {total_tiles} tiles at zoom {zoom}...")
     
+    # First, check how many tiles need downloading
+    tiles_need_download = 0
+    for row in range(tiles_y + 1):
+        for col in range(tiles_x + 1):
+            z, x, y = zoom, tile_x0 + col, tile_y0 + row
+            cache_path = os.path.join(OSM_CACHE_DIR, f"{z}_{x}_{y}.png")
+            if not os.path.exists(cache_path):
+                tiles_need_download += 1
+    
+    # If all tiles are cached, notify callback to hide progress bar
+    if tiles_need_download == 0 and progress_callback:
+        progress_callback(0, 0, True)  # Signal all cached
+    
     for row in range(tiles_y + 1):
         for col in range(tiles_x + 1):
             z, x, y = zoom, tile_x0 + col, tile_y0 + row
@@ -278,7 +291,7 @@ def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3, progres
                     tiles_to_download += 1
                     # Only update progress for downloaded tiles to avoid blinking
                     if progress_callback:
-                        progress_callback(tiles_to_download, total_tiles, False)
+                        progress_callback(tiles_to_download, tiles_need_download, False)
             
             current_tile += 1
     
@@ -1056,17 +1069,17 @@ class Node(DpgNodeABC):
             # Define progress callback function
             def update_progress(current, total, from_cache):
                 if progress_tag and dpg.does_item_exist(progress_tag):
+                    # If from_cache is True, it means all tiles are cached - hide progress bar
+                    if from_cache:
+                        dpg.hide_item(progress_tag)
                     # Only show progress bar if there are tiles to download
-                    if not from_cache and total > 0:
+                    elif total > 0:
                         progress = current / total if total > 0 else 0.0
                         dpg.set_value(progress_tag, progress)
                         overlay_text = f"Downloading: {current}/{total} tiles"
                         dpg.configure_item(progress_tag, overlay=overlay_text)
                         # Make progress bar visible
                         dpg.show_item(progress_tag)
-                    else:
-                        # Hide progress bar when all tiles are cached
-                        dpg.hide_item(progress_tag)
             
             # Assemble map with sub-pixel accuracy and progress tracking
             pil_map, origin_fx, origin_fy, cache_stats = assemble_osm_map(
