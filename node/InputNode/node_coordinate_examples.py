@@ -10,10 +10,14 @@ Examples include:
 - AISTRACKER: Sample boat positions (AIS-like data)
 - World Cities: Major cities around the world
 - European Ports: Maritime port coordinates
+- GPS Movement Simulation: Simulates moving objects with random paths
 - None: No data output
 """
 
 import json
+import random
+import math
+import time
 import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
@@ -57,9 +61,142 @@ COORDINATE_EXAMPLES = {
 }
 
 
+class GPSMovementSimulator:
+    """
+    Simulates GPS movement for various objects.
+    Generates random paths simulating realistic movement patterns.
+    """
+    
+    def __init__(self, num_objects=5, center_lat=48.8566, center_lon=2.3522):
+        """
+        Initialize the GPS movement simulator.
+        
+        Args:
+            num_objects: Number of moving objects to simulate
+            center_lat: Center latitude for the simulation area
+            center_lon: Center longitude for the simulation area
+        """
+        self.num_objects = num_objects
+        self.center_lat = center_lat
+        self.center_lon = center_lon
+        self.objects = []
+        self.start_time = time.time()
+        self._initialize_objects()
+    
+    def _initialize_objects(self):
+        """Initialize objects with random starting positions and velocities."""
+        random.seed(42)  # Use a seed for reproducible "random" movements
+        
+        for i in range(self.num_objects):
+            # Random starting position within ~10km radius
+            radius_km = random.uniform(0.5, 10)
+            angle = random.uniform(0, 2 * math.pi)
+            
+            # Convert km to degrees (approximate)
+            lat_offset = (radius_km / 111.0) * math.cos(angle)
+            lon_offset = (radius_km / (111.0 * math.cos(math.radians(self.center_lat)))) * math.sin(angle)
+            
+            obj = {
+                'id': i,
+                'name': f'Vehicle-{i+1:03d}',
+                'lat': self.center_lat + lat_offset,
+                'lon': self.center_lon + lon_offset,
+                'speed_kmh': random.uniform(20, 80),  # km/h
+                'direction': random.uniform(0, 2 * math.pi),  # radians
+                'pattern': random.choice(['linear', 'circular', 'random_walk']),
+            }
+            self.objects.append(obj)
+    
+    def update_positions(self, time_elapsed=None):
+        """
+        Update positions of all objects based on elapsed time.
+        
+        Args:
+            time_elapsed: Time in seconds since start. If None, uses actual elapsed time.
+        """
+        if time_elapsed is None:
+            time_elapsed = time.time() - self.start_time
+        
+        for obj in self.objects:
+            # Update position based on pattern
+            if obj['pattern'] == 'linear':
+                self._update_linear(obj, time_elapsed)
+            elif obj['pattern'] == 'circular':
+                self._update_circular(obj, time_elapsed)
+            else:  # random_walk
+                self._update_random_walk(obj, time_elapsed)
+    
+    def _update_linear(self, obj, time_elapsed):
+        """Update position with linear movement."""
+        # Distance traveled in km
+        distance_km = (obj['speed_kmh'] / 3600.0) * (time_elapsed % 3600)
+        
+        # Convert to degrees
+        lat_change = (distance_km / 111.0) * math.cos(obj['direction'])
+        lon_change = (distance_km / (111.0 * math.cos(math.radians(obj['lat'])))) * math.sin(obj['direction'])
+        
+        # Update position (modulo to keep in reasonable bounds)
+        base_lat = self.center_lat
+        base_lon = self.center_lon
+        obj['lat'] = base_lat + ((obj['lat'] - base_lat + lat_change) % 0.2) - 0.1
+        obj['lon'] = base_lon + ((obj['lon'] - base_lon + lon_change) % 0.2) - 0.1
+    
+    def _update_circular(self, obj, time_elapsed):
+        """Update position with circular movement."""
+        # Angular velocity (radians per second)
+        angular_velocity = obj['speed_kmh'] / (20.0 * 111.0)  # Assumes ~20km radius
+        
+        angle = angular_velocity * time_elapsed + obj['direction']
+        radius_deg = 0.1  # ~11km radius
+        
+        obj['lat'] = self.center_lat + radius_deg * math.cos(angle)
+        obj['lon'] = self.center_lon + radius_deg * math.sin(angle)
+    
+    def _update_random_walk(self, obj, time_elapsed):
+        """Update position with random walk pattern."""
+        # Change direction slightly at each update
+        obj['direction'] += random.uniform(-0.3, 0.3)
+        
+        # Small movement step
+        step_size = 0.001  # ~111 meters
+        obj['lat'] += step_size * math.cos(obj['direction'])
+        obj['lon'] += step_size * math.sin(obj['direction'])
+        
+        # Keep within bounds
+        max_dist = 0.15
+        dist_from_center = math.sqrt(
+            (obj['lat'] - self.center_lat)**2 + 
+            (obj['lon'] - self.center_lon)**2
+        )
+        if dist_from_center > max_dist:
+            # Turn back toward center
+            obj['direction'] = math.atan2(
+                self.center_lon - obj['lon'],
+                self.center_lat - obj['lat']
+            )
+    
+    def get_coordinates(self):
+        """
+        Get current coordinates of all objects.
+        
+        Returns:
+            List of coordinate dictionaries compatible with Map node
+        """
+        coordinates = []
+        for obj in self.objects:
+            coordinates.append({
+                'latitude': obj['lat'],
+                'longitude': obj['lon'],
+                'name': obj['name'],
+                'info': f"{obj['pattern']} - {obj['speed_kmh']:.1f} km/h"
+            })
+        return coordinates
+
 def get_example_names():
     """Get list of available example names for the dropdown."""
-    return list(COORDINATE_EXAMPLES.keys())
+    # Static examples first, then add GPS simulation
+    static_names = list(COORDINATE_EXAMPLES.keys())
+    return static_names + ["GPS Movement Simulation"]
 
 
 class FactoryNode:
@@ -156,7 +293,7 @@ class FactoryNode:
 
 
 class Node(BaseNode):
-    _ver = '1.0.0'
+    _ver = '1.0.1'
 
     node_label = 'CoordinateExamples'
     node_tag = 'CoordinateExamples'
@@ -164,7 +301,7 @@ class Node(BaseNode):
     _opencv_setting_dict = None
 
     def __init__(self):
-        pass
+        self.gps_simulator = None  # Will be initialized when GPS simulation is selected
     
     @staticmethod
     def on_selection_change(sender, app_data, user_data):
@@ -173,18 +310,22 @@ class Node(BaseNode):
         selected_example = app_data
         
         # Get the coordinates for the selected example
-        coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
-        num_points = len(coordinates)
+        if selected_example == "GPS Movement Simulation":
+            # For GPS simulation, show dynamic message
+            num_points = 5  # Default number
+            status_text = f'Simulating {num_points} moving objects'
+        else:
+            coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
+            num_points = len(coordinates)
+            
+            if num_points > 0:
+                status_text = f'{num_points} points ({selected_example})'
+            else:
+                status_text = 'No data (None selected)'
         
         # Update status text
         tag_node_name = str(node_id) + ':' + node.node_tag
         status_tag = tag_node_name + ':StatusValue'
-        
-        if num_points > 0:
-            status_text = f'{num_points} points ({selected_example})'
-        else:
-            status_text = 'No data (None selected)'
-        
         dpg_set_value(status_tag, status_text)
 
     def update(
@@ -204,18 +345,35 @@ class Node(BaseNode):
         if selected_example is None:
             selected_example = "None"
         
-        # Get the coordinates for the selected example
-        coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
-        
-        # Return coordinates in format compatible with Map node
-        # Map node expects [{"latitude": x, "longitude": y, ...}]
-        # or {"boats": [...]} format
-        if coordinates:
-            # Output as a list of coordinate objects (compatible with Map node)
-            json_output = coordinates
+        # Handle GPS Movement Simulation
+        if selected_example == "GPS Movement Simulation":
+            # Initialize simulator if not already done
+            if self.gps_simulator is None:
+                # Default: Paris, France as center
+                self.gps_simulator = GPSMovementSimulator(
+                    num_objects=5,
+                    center_lat=48.8566,
+                    center_lon=2.3522
+                )
+            
+            # Update positions for current time
+            self.gps_simulator.update_positions()
+            
+            # Get current coordinates
+            json_output = self.gps_simulator.get_coordinates()
         else:
-            # Return empty list when None selected
-            json_output = []
+            # Get static coordinates for the selected example
+            coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
+            
+            # Return coordinates in format compatible with Map node
+            # Map node expects [{"latitude": x, "longitude": y, ...}]
+            # or {"boats": [...]} format
+            if coordinates:
+                # Output as a list of coordinate objects (compatible with Map node)
+                json_output = coordinates
+            else:
+                # Return empty list when None selected
+                json_output = []
         
         return {"image": None, "json": json_output, "audio": None}
 
@@ -250,10 +408,13 @@ class Node(BaseNode):
         dpg_set_value(dropdown_tag, selected_example)
         
         # Update status text
-        coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
-        num_points = len(coordinates)
-        if num_points > 0:
-            status_text = f'{num_points} points ({selected_example})'
+        if selected_example == "GPS Movement Simulation":
+            status_text = 'Simulating 5 moving objects'
         else:
-            status_text = 'No data (None selected)'
+            coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
+            num_points = len(coordinates)
+            if num_points > 0:
+                status_text = f'{num_points} points ({selected_example})'
+            else:
+                status_text = 'No data (None selected)'
         dpg_set_value(status_tag, status_text)
