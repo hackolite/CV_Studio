@@ -29,7 +29,7 @@ def example_ais_boat_data():
         "boats": [
             {
                 "mmsi": "247123456",
-                "ship_name": "Mediterranean Express",
+                "ship_name": "Vessel Alpha",
                 "latitude": 43.2985,
                 "longitude": 5.3708,
                 "speed": 2.5,
@@ -39,7 +39,7 @@ def example_ais_boat_data():
             },
             {
                 "mmsi": "247234567",
-                "ship_name": "Coastal Trader",
+                "ship_name": "Vessel Beta",
                 "latitude": 43.2965,
                 "longitude": 5.3738,
                 "speed": 1.3,
@@ -49,7 +49,7 @@ def example_ais_boat_data():
             },
             {
                 "mmsi": "247345678",
-                "ship_name": "Island Ferry",
+                "ship_name": "Vessel Gamma",
                 "latitude": 43.2935,
                 "longitude": 5.3698,
                 "speed": 0.8,
@@ -84,24 +84,24 @@ def example_ais_boat_data():
 def example_world_cities():
     """Example 2: Major World Cities"""
     print("=" * 60)
-    print("Example 2: Major World Cities")
+    print("Example 2: Clustered Points")
     print("=" * 60)
     
-    # Sample city data (Paris area - within 1 km for detailed view)
+    # Sample point data (Paris area - within 1 km for detailed view)
     cities_data = [
-        {"latitude": 48.8585, "longitude": 2.3522, "name": "New York"},
-        {"latitude": 48.8566, "longitude": 2.3552, "name": "Tokyo"},
-        {"latitude": 48.8546, "longitude": 2.3522, "name": "Sydney"},
-        {"latitude": 48.8566, "longitude": 2.3492, "name": "San Francisco"},
-        {"latitude": 48.8586, "longitude": 2.3492, "name": "Berlin"},
-        {"latitude": 48.8546, "longitude": 2.3492, "name": "Singapore"},
+        {"latitude": 48.8585, "longitude": 2.3522, "name": "Point A"},
+        {"latitude": 48.8566, "longitude": 2.3552, "name": "Point B"},
+        {"latitude": 48.8546, "longitude": 2.3522, "name": "Point C"},
+        {"latitude": 48.8566, "longitude": 2.3492, "name": "Point D"},
+        {"latitude": 48.8586, "longitude": 2.3492, "name": "Point E"},
+        {"latitude": 48.8546, "longitude": 2.3492, "name": "Point F"},
     ]
     
     # Create node and extract points
     node = MapNode.create_for_testing()
     points = node._extract_lat_lon_from_json(cities_data)
     
-    print(f"Extracted {len(points)} city locations:")
+    print(f"Extracted {len(points)} point locations:")
     for point in points:
         print(f"  - {point['name']} at ({point['lat']:.4f}, {point['lon']:.4f})")
     

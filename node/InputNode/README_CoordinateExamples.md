@@ -23,22 +23,22 @@ The Coordinate Examples node provides predefined and simulated GPS coordinate da
 #### AISTRACKER
 Sample vessel positions simulating maritime AIS data:
 - 5 vessels in Port of Marseille area (within 1 km)
-- Includes vessel names and MMSI identifiers
+- Includes vessel names (Vessel Alpha, Beta, Gamma, Delta, Epsilon) and MMSI identifiers
 - All vessels within 567m of each other for detailed visualization
 
 #### World Cities
-Major cities around the world:
-- 6 global metropolises (points clustered in Paris area within 1 km)
+Clustered points for testing:
+- 6 test points (Point A through F) in Paris area (within 1 km)
 - All points within 496m of each other for detailed visualization
 
 #### European Ports
-Major European maritime ports:
-- 6 port locations (clustered in Amsterdam area within 1 km)
+Port zone markers for testing:
+- 6 port zones (Port Zone A through F) in Amsterdam area (within 1 km)
 - All points within 698m of each other for detailed visualization
 
 #### Mediterranean Sea
-Cities and ports along the Mediterranean:
-- 6 locations (clustered in Nice area within 1 km)
+Directional markers for testing:
+- 6 directional points in Nice area (within 1 km)
 - All points within 709m of each other for detailed visualization
 
 ### Dynamic Simulation

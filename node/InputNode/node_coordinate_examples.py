@@ -30,38 +30,39 @@ GPS_SIMULATION_NAME = "GPS Movement Simulation"
 
 # Predefined coordinate examples compatible with Map node format
 # All examples now have points within 1 km for better detail visibility
+# Note: Example names are preserved for compatibility, but coordinates are clustered for detailed visualization
 COORDINATE_EXAMPLES = {
     "None": [],
     "AISTRACKER": [
-        {"latitude": 43.2985, "longitude": 5.3708, "name": "Vessel Le Havre", "mmsi": "123456789"},
-        {"latitude": 43.2965, "longitude": 5.3738, "name": "Cargo Thames", "mmsi": "234567890"},
-        {"latitude": 43.2935, "longitude": 5.3698, "name": "Tanker Marseille", "mmsi": "345678901"},
-        {"latitude": 43.2965, "longitude": 5.3668, "name": "Ferry Barcelona", "mmsi": "456789012"},
-        {"latitude": 43.2965, "longitude": 5.3698, "name": "Cruise Valencia", "mmsi": "567890123"},
+        {"latitude": 43.2985, "longitude": 5.3708, "name": "Vessel Alpha", "mmsi": "123456789"},
+        {"latitude": 43.2965, "longitude": 5.3738, "name": "Vessel Beta", "mmsi": "234567890"},
+        {"latitude": 43.2935, "longitude": 5.3698, "name": "Vessel Gamma", "mmsi": "345678901"},
+        {"latitude": 43.2965, "longitude": 5.3668, "name": "Vessel Delta", "mmsi": "456789012"},
+        {"latitude": 43.2965, "longitude": 5.3698, "name": "Vessel Epsilon", "mmsi": "567890123"},
     ],
     "World Cities": [
-        {"latitude": 48.8585, "longitude": 2.3522, "name": "New York"},
-        {"latitude": 48.8566, "longitude": 2.3552, "name": "Tokyo"},
-        {"latitude": 48.8546, "longitude": 2.3522, "name": "Sydney"},
-        {"latitude": 48.8566, "longitude": 2.3492, "name": "San Francisco"},
-        {"latitude": 48.8586, "longitude": 2.3492, "name": "Berlin"},
-        {"latitude": 48.8546, "longitude": 2.3492, "name": "Singapore"},
+        {"latitude": 48.8585, "longitude": 2.3522, "name": "Point A"},
+        {"latitude": 48.8566, "longitude": 2.3552, "name": "Point B"},
+        {"latitude": 48.8546, "longitude": 2.3522, "name": "Point C"},
+        {"latitude": 48.8566, "longitude": 2.3492, "name": "Point D"},
+        {"latitude": 48.8586, "longitude": 2.3492, "name": "Point E"},
+        {"latitude": 48.8546, "longitude": 2.3492, "name": "Point F"},
     ],
     "European Ports": [
-        {"latitude": 52.3706, "longitude": 4.9041, "name": "Rotterdam"},
-        {"latitude": 52.3676, "longitude": 4.9071, "name": "Hamburg"},
-        {"latitude": 52.3646, "longitude": 4.9041, "name": "Antwerp"},
-        {"latitude": 52.3676, "longitude": 4.9011, "name": "Le Havre"},
-        {"latitude": 52.3706, "longitude": 4.9011, "name": "Gibraltar"},
-        {"latitude": 52.3646, "longitude": 4.9011, "name": "Gijón"},
+        {"latitude": 52.3706, "longitude": 4.9041, "name": "Port Zone A"},
+        {"latitude": 52.3676, "longitude": 4.9071, "name": "Port Zone B"},
+        {"latitude": 52.3646, "longitude": 4.9041, "name": "Port Zone C"},
+        {"latitude": 52.3676, "longitude": 4.9011, "name": "Port Zone D"},
+        {"latitude": 52.3706, "longitude": 4.9011, "name": "Port Zone E"},
+        {"latitude": 52.3646, "longitude": 4.9011, "name": "Port Zone F"},
     ],
     "Mediterranean Sea": [
-        {"latitude": 43.7132, "longitude": 7.2620, "name": "Malaga"},
-        {"latitude": 43.7102, "longitude": 7.2650, "name": "Marseille"},
-        {"latitude": 43.7072, "longitude": 7.2620, "name": "Nice"},
-        {"latitude": 43.7102, "longitude": 7.2590, "name": "Bari"},
-        {"latitude": 43.7132, "longitude": 7.2590, "name": "Malta"},
-        {"latitude": 43.7072, "longitude": 7.2590, "name": "Athens"},
+        {"latitude": 43.7132, "longitude": 7.2620, "name": "Point North"},
+        {"latitude": 43.7102, "longitude": 7.2650, "name": "Point East"},
+        {"latitude": 43.7072, "longitude": 7.2620, "name": "Point Center"},
+        {"latitude": 43.7102, "longitude": 7.2590, "name": "Point West"},
+        {"latitude": 43.7132, "longitude": 7.2590, "name": "Point Northwest"},
+        {"latitude": 43.7072, "longitude": 7.2590, "name": "Point Southwest"},
     ],
 }
 

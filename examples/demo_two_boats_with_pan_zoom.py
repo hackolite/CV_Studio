@@ -9,7 +9,7 @@ This demo demonstrates:
 3. Pan (translation) in all 4 directions: left, right, up, down
 4. OpenStreetMap tile rendering
 
-Boats are positioned within 330m of each other for detailed visualization.
+Boats are positioned within 329m of each other for detailed visualization.
 
 This addresses the requirement:
 "comme exemple, 2 bateaux, au port, avec zoom, dézoom, translation gauche,
@@ -42,7 +42,7 @@ def demo_two_boats_at_port():
         "boats": [
             {
                 "mmsi": "227123456",
-                "ship_name": "Mediterranean Star",
+                "ship_name": "Vessel Alpha",
                 "latitude": 43.2985,
                 "longitude": 5.3708,
                 "speed": 0.0,
@@ -54,7 +54,7 @@ def demo_two_boats_at_port():
             },
             {
                 "mmsi": "227234567",
-                "ship_name": "Provence Express",
+                "ship_name": "Vessel Beta",
                 "latitude": 43.2965,
                 "longitude": 5.3738,
                 "speed": 0.5,
