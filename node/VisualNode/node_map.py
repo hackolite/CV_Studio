@@ -175,12 +175,10 @@ def get_osm_tile(z, x, y, use_cache=True):
     
     # Download tile
     try:
-        import requests
         url = OSM_TILE_URL.format(z=z, x=x, y=y)
         response = requests.get(url, headers=OSM_HEADERS, timeout=8)
         response.raise_for_status()
         
-        from io import BytesIO
         img = Image.open(BytesIO(response.content)).convert("RGBA")
         
         # Save to cache
@@ -978,13 +976,13 @@ class Node(DpgNodeABC):
                 if px < 0 or px >= map_array.shape[1] or py < 0 or py >= map_array.shape[0]:
                     continue
                 
-                # Draw halo (outer glow)
-                cv2.circle(map_array, (px, py), 14, (0, 80, 255), 2, cv2.LINE_AA)
-                cv2.circle(map_array, (px, py), 14, (60, 80, 255), -1, cv2.LINE_AA)
-                # Make halo semi-transparent by blending
+                # Draw halo (outer glow) with semi-transparent blending
                 overlay = map_array.copy()
                 cv2.circle(overlay, (px, py), 14, (180, 120, 80), -1, cv2.LINE_AA)
                 cv2.addWeighted(overlay, 0.3, map_array, 0.7, 0, map_array)
+                
+                # Draw outer ring
+                cv2.circle(map_array, (px, py), 14, (0, 80, 255), 2, cv2.LINE_AA)
                 
                 # Draw main dot
                 cv2.circle(map_array, (px, py), 6, (0, 30, 220), -1, cv2.LINE_AA)

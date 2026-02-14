@@ -208,20 +208,32 @@ def test_zoom_level_scaling():
     lat, lon = 48.8566, 2.3522  # Paris
     
     # Test that tile coordinates scale correctly with zoom
+    zoom_data = {}
     for zoom in [8, 10, 12, 15]:
         fx, fy = lat_lon_to_tile_float(lat, lon, zoom)
+        zoom_data[zoom] = (fx, fy)
         
         # At each zoom level, tile count is 2^zoom in each direction
         max_tiles = 2 ** zoom
         assert 0 <= fx < max_tiles, f"Tile X at zoom {zoom} should be in [0, {max_tiles})"
         assert 0 <= fy < max_tiles, f"Tile Y at zoom {zoom} should be in [0, {max_tiles})"
+    
+    # Verify doubling relationship between consecutive zooms
+    # Between zoom N and zoom N+1, tile coordinates should double
+    for z1, z2 in [(8, 10), (10, 12), (12, 15)]:
+        fx1, fy1 = zoom_data[z1]
+        fx2, fy2 = zoom_data[z2]
         
-        # Higher zoom should give higher tile numbers (for positive lat/lon)
-        if zoom > 8:
-            fx_prev, fy_prev = lat_lon_to_tile_float(lat, lon, zoom - 1)
-            # At higher zoom, tiles are subdivided 2x
-            assert fx > fx_prev * 2 - 1, f"Higher zoom should increase tile X"
-            assert fy > fy_prev * 2 - 1, f"Higher zoom should increase tile Y"
+        zoom_diff = z2 - z1
+        expected_fx = fx1 * (2 ** zoom_diff)
+        expected_fy = fy1 * (2 ** zoom_diff)
+        
+        # Allow small tolerance due to projection non-linearity
+        tolerance = 2 ** zoom_diff  # Scale tolerance with zoom difference
+        assert abs(fx2 - expected_fx) < tolerance, \
+            f"Tile X at zoom {z2} should be ~{expected_fx:.2f}, got {fx2:.2f}"
+        assert abs(fy2 - expected_fy) < tolerance, \
+            f"Tile Y at zoom {z2} should be ~{expected_fy:.2f}, got {fy2:.2f}"
     
     print("✓ Zoom level scaling test passed")
 
