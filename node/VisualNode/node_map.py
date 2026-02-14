@@ -26,11 +26,13 @@ import hashlib
 import math
 import traceback
 from datetime import datetime
+from io import BytesIO
 
 import numpy as np
 import cv2
 from PIL import Image
 import dearpygui.dearpygui as dpg
+import requests
 
 from node_editor.util import dpg_get_value, dpg_set_value
 
@@ -87,6 +89,166 @@ SIMPLIFIED_CONTINENTS = {
         }
     }
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Enhanced OSM Tile Management (inspired by DearPyGui OSM implementation)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# OSM tile configuration
+TILE_SIZE = 256
+OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+OSM_HEADERS = {"User-Agent": "CV_Studio/1.0"}
+OSM_CACHE_DIR = os.path.join(tempfile.gettempdir(), '.osm_cache')
+os.makedirs(OSM_CACHE_DIR, exist_ok=True)
+
+
+def lat_lon_to_tile_float(lat, lon, zoom):
+    """
+    Convert lat/lon to fractional tile coordinates at a given zoom level.
+    
+    This provides sub-pixel accuracy for tile positioning, allowing precise
+    alignment of GPS coordinates on the assembled map.
+    
+    Args:
+        lat: Latitude in degrees
+        lon: Longitude in degrees
+        zoom: OSM zoom level (1-19)
+    
+    Returns:
+        Tuple of (tile_x, tile_y) as floats
+    """
+    n = 2 ** zoom
+    fx = (lon + 180.0) / 360.0 * n
+    fy = (1.0 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2.0 * n
+    return fx, fy
+
+
+def lat_lon_to_pixel_on_map(lat, lon, origin_fx, origin_fy, zoom):
+    """
+    Convert lat/lon to pixel coordinates on an assembled tile map.
+    
+    This uses fractional tile coordinates to achieve sub-pixel accuracy,
+    ensuring GPS points are positioned exactly where they should be.
+    
+    Args:
+        lat: Latitude in degrees
+        lon: Longitude in degrees
+        origin_fx: Fractional tile X coordinate of map's top-left corner
+        origin_fy: Fractional tile Y coordinate of map's top-left corner
+        zoom: OSM zoom level
+    
+    Returns:
+        Tuple of (pixel_x, pixel_y) as floats
+    """
+    fx, fy = lat_lon_to_tile_float(lat, lon, zoom)
+    px = (fx - origin_fx) * TILE_SIZE
+    py = (fy - origin_fy) * TILE_SIZE
+    return px, py
+
+
+def get_osm_tile(z, x, y, use_cache=True):
+    """
+    Download an OSM tile from the server or retrieve from cache.
+    
+    Args:
+        z: Zoom level
+        x: Tile X coordinate
+        y: Tile Y coordinate
+        use_cache: Whether to use cached tiles (default: True)
+    
+    Returns:
+        PIL Image object in RGBA format, or None if download fails
+    """
+    # Check cache first
+    cache_path = os.path.join(OSM_CACHE_DIR, f"{z}_{x}_{y}.png")
+    
+    if use_cache and os.path.exists(cache_path):
+        try:
+            return Image.open(cache_path).convert("RGBA")
+        except Exception as e:
+            print(f"Map node: Cache read error for tile {z}/{x}/{y}: {e}")
+            # Remove corrupted cache file
+            try:
+                os.remove(cache_path)
+            except:
+                pass
+    
+    # Download tile
+    try:
+        import requests
+        url = OSM_TILE_URL.format(z=z, x=x, y=y)
+        response = requests.get(url, headers=OSM_HEADERS, timeout=8)
+        response.raise_for_status()
+        
+        from io import BytesIO
+        img = Image.open(BytesIO(response.content)).convert("RGBA")
+        
+        # Save to cache
+        if use_cache:
+            try:
+                img.save(cache_path)
+            except Exception as e:
+                print(f"Map node: Cache write error for tile {z}/{x}/{y}: {e}")
+        
+        return img
+    except Exception as e:
+        print(f"Map node: Download error for tile {z}/{x}/{y}: {e}")
+        # Return gray fallback tile
+        return Image.new("RGBA", (TILE_SIZE, TILE_SIZE), (180, 180, 180, 255))
+
+
+def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3):
+    """
+    Assemble an OSM map centered exactly on the given coordinates.
+    
+    This function downloads the necessary tiles and assembles them with
+    sub-pixel accuracy to ensure the center point is positioned exactly
+    at the center of the resulting image.
+    
+    Args:
+        center_lat: Latitude of center point
+        center_lon: Longitude of center point
+        zoom: OSM zoom level (1-19)
+        tiles_x: Number of tiles horizontally (default: 3)
+        tiles_y: Number of tiles vertically (default: 3)
+    
+    Returns:
+        Tuple of (pil_image, origin_fx, origin_fy) where:
+        - pil_image: Assembled map as PIL Image
+        - origin_fx: Fractional tile X of top-left corner
+        - origin_fy: Fractional tile Y of top-left corner
+    """
+    # Calculate fractional tile position of center
+    fx, fy = lat_lon_to_tile_float(center_lat, center_lon, zoom)
+    
+    # Calculate origin (top-left corner of grid)
+    origin_fx = fx - tiles_x / 2.0
+    origin_fy = fy - tiles_y / 2.0
+    
+    # Integer tile coordinates for downloading
+    tile_x0 = int(math.floor(origin_fx))
+    tile_y0 = int(math.floor(origin_fy))
+    
+    # Offset within the first tile (sub-pixel positioning)
+    off_x = int((origin_fx - tile_x0) * TILE_SIZE)
+    off_y = int((origin_fy - tile_y0) * TILE_SIZE)
+    
+    # Create larger canvas to accommodate offset
+    map_w = TILE_SIZE * tiles_x
+    map_h = TILE_SIZE * tiles_y
+    canvas = Image.new("RGBA", (map_w + TILE_SIZE, map_h + TILE_SIZE))
+    
+    # Download and paste tiles
+    for row in range(tiles_y + 1):
+        for col in range(tiles_x + 1):
+            tile = get_osm_tile(zoom, tile_x0 + col, tile_y0 + row)
+            if tile:
+                canvas.paste(tile, (col * TILE_SIZE, row * TILE_SIZE))
+    
+    # Crop to final size with sub-pixel offset
+    final_img = canvas.crop((off_x, off_y, off_x + map_w, off_y + map_h))
+    
+    return final_img, origin_fx, origin_fy
 
 
 class FactoryNode:
@@ -690,12 +852,12 @@ class Node(DpgNodeABC):
 
     def _create_preview_image(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0):
         """
-        Create a map visualization image using contextily for OSM tiles.
+        Create a map visualization image using enhanced OSM tile rendering.
         
         This method:
-        1. Uses contextily to download and cache OSM tiles
-        2. Renders GPS points on the map using matplotlib
-        3. Converts the result to a texture for Dear PyGui
+        1. Tries direct OSM tile assembly with sub-pixel accuracy (preferred)
+        2. Falls back to contextily rendering if direct method fails
+        3. Falls back to matplotlib-only rendering if both fail
         
         Args:
             points: List of points with 'lat' and 'lon' keys
@@ -715,7 +877,15 @@ class Node(DpgNodeABC):
         
         print(f"Map node: Creating preview with zoom={zoom_level}, size={size_factor}")
         
-        # Try contextily rendering first
+        # Try direct OSM tile rendering first (enhanced method)
+        try:
+            return self._render_with_direct_osm_tiles(points, width, height, zoom_level, size_factor, pan_x, pan_y)
+        except Exception as e:
+            print(f"Map node: Direct OSM rendering failed: {e}")
+            traceback.print_exc()
+            print("Map node: Falling back to contextily rendering")
+        
+        # Try contextily rendering as fallback
         if CONTEXTILY_AVAILABLE:
             try:
                 return self._render_with_contextily(points, width, height, zoom_level, size_factor, pan_x, pan_y)
@@ -724,8 +894,147 @@ class Node(DpgNodeABC):
                 traceback.print_exc()
                 print("Map node: Falling back to matplotlib-only rendering")
         
-        # Fallback to matplotlib rendering without basemap
+        # Final fallback to matplotlib rendering without basemap
         return self._render_with_matplotlib(points, width, height)
+
+
+    def _render_with_direct_osm_tiles(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0):
+        """
+        Enhanced OSM rendering using direct tile download and assembly.
+        
+        This method provides sub-pixel accurate positioning of GPS points by:
+        1. Calculating the map center from all points
+        2. Assembling OSM tiles with fractional tile positioning
+        3. Converting GPS coordinates to exact pixel positions
+        4. Drawing markers with visual enhancements (halos, shadows)
+        
+        Args:
+            points: List of points with 'lat' and 'lon' keys
+            width: Width of output image in pixels
+            height: Height of output image in pixels
+            zoom_level: OSM tile zoom level (1-18)
+            size_factor: View size factor (0.5-5.0, not used in this method)
+            pan_x: Horizontal pan offset (-1.0 to 1.0)
+            pan_y: Vertical pan offset (-1.0 to 1.0)
+        
+        Returns:
+            numpy array in BGR format
+        """
+        if not points:
+            # Return empty blue background
+            img = np.zeros((height, width, 3), dtype=np.uint8)
+            img[:] = (224, 216, 173)  # Light blue-gray
+            return img
+        
+        try:
+            # Calculate center point from all GPS coordinates
+            lats = [p['lat'] for p in points]
+            lons = [p['lon'] for p in points]
+            center_lat = sum(lats) / len(lats)
+            center_lon = sum(lons) / len(lons)
+            
+            # Apply pan offsets to center
+            # For pan, we shift the center by a fraction of the visible area
+            # Approximate: 0.01 degrees per 0.1 pan unit at zoom 12
+            lat_range = max(lats) - min(lats) if len(set(lats)) > 1 else 0.01
+            lon_range = max(lons) - min(lons) if len(set(lons)) > 1 else 0.01
+            
+            # Apply pan (negative because map moves opposite to pan direction)
+            center_lat -= pan_y * lat_range * 0.5
+            center_lon += pan_x * lon_range * 0.5
+            
+            # Calculate number of tiles needed
+            tiles_x = max(3, (width + TILE_SIZE - 1) // TILE_SIZE)
+            tiles_y = max(3, (height + TILE_SIZE - 1) // TILE_SIZE)
+            
+            print(f"Map node (direct OSM): Assembling {tiles_x}x{tiles_y} tiles at zoom {zoom_level}")
+            print(f"Map node (direct OSM): Center: ({center_lat:.6f}, {center_lon:.6f})")
+            
+            # Assemble map with sub-pixel accuracy
+            pil_map, origin_fx, origin_fy = assemble_osm_map(
+                center_lat, center_lon, zoom_level, tiles_x, tiles_y
+            )
+            
+            # Convert PIL image to numpy array
+            map_array = np.array(pil_map)
+            
+            # Convert RGBA to BGR for OpenCV
+            if map_array.shape[2] == 4:
+                map_array = cv2.cvtColor(map_array, cv2.COLOR_RGBA2BGR)
+            else:
+                map_array = cv2.cvtColor(map_array, cv2.COLOR_RGB2BGR)
+            
+            # Draw GPS points with enhanced markers
+            for point in points:
+                # Calculate exact pixel position
+                px, py = lat_lon_to_pixel_on_map(
+                    point['lat'], point['lon'], 
+                    origin_fx, origin_fy, zoom_level
+                )
+                
+                px, py = int(px), int(py)
+                
+                # Skip points outside the visible area
+                if px < 0 or px >= map_array.shape[1] or py < 0 or py >= map_array.shape[0]:
+                    continue
+                
+                # Draw halo (outer glow)
+                cv2.circle(map_array, (px, py), 14, (0, 80, 255), 2, cv2.LINE_AA)
+                cv2.circle(map_array, (px, py), 14, (60, 80, 255), -1, cv2.LINE_AA)
+                # Make halo semi-transparent by blending
+                overlay = map_array.copy()
+                cv2.circle(overlay, (px, py), 14, (180, 120, 80), -1, cv2.LINE_AA)
+                cv2.addWeighted(overlay, 0.3, map_array, 0.7, 0, map_array)
+                
+                # Draw main dot
+                cv2.circle(map_array, (px, py), 6, (0, 30, 220), -1, cv2.LINE_AA)
+                cv2.circle(map_array, (px, py), 6, (0, 50, 255), 2, cv2.LINE_AA)
+                
+                # Add label for small number of points
+                if len(points) <= 10:
+                    label = point.get('name', 'Point')
+                    # Add text with background
+                    (text_w, text_h), _ = cv2.getTextSize(
+                        label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1
+                    )
+                    text_x = px + 12
+                    text_y = py - 8
+                    
+                    # Ensure text stays within bounds
+                    text_x = max(0, min(text_x, map_array.shape[1] - text_w - 5))
+                    text_y = max(text_h + 5, min(text_y, map_array.shape[0] - 5))
+                    
+                    # Draw background rectangle
+                    cv2.rectangle(
+                        map_array,
+                        (text_x - 2, text_y - text_h - 2),
+                        (text_x + text_w + 2, text_y + 2),
+                        (255, 255, 255), -1
+                    )
+                    cv2.rectangle(
+                        map_array,
+                        (text_x - 2, text_y - text_h - 2),
+                        (text_x + text_w + 2, text_y + 2),
+                        (0, 0, 0), 1
+                    )
+                    # Draw text
+                    cv2.putText(
+                        map_array, label, (text_x, text_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1, cv2.LINE_AA
+                    )
+            
+            # Resize to target dimensions if needed
+            if map_array.shape[1] != width or map_array.shape[0] != height:
+                map_array = cv2.resize(map_array, (width, height), interpolation=cv2.INTER_AREA)
+            
+            print(f"Map node (direct OSM): Rendered {len(points)} points successfully")
+            return map_array
+            
+        except Exception as e:
+            print(f"Map node (direct OSM): Error rendering with direct tiles: {e}")
+            traceback.print_exc()
+            # Fall back to contextily method
+            return self._render_with_contextily(points, width, height, zoom_level, size_factor, pan_x, pan_y)
 
 
     def _render_with_contextily(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0):
