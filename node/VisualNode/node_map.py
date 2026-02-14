@@ -124,6 +124,9 @@ class FactoryNode:
         node.tag_node_cache_value_name = node.tag_node_name + ':UseCacheValue'
         node.tag_node_status_name = node.tag_node_name + ':Status'
         node.tag_node_status_value_name = node.tag_node_name + ':StatusValue'
+        # Pan controls
+        node.tag_node_pan_x_value_name = node.tag_node_name + ':PanXValue'
+        node.tag_node_pan_y_value_name = node.tag_node_name + ':PanYValue'
 
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict['process_width']
@@ -197,6 +200,34 @@ class FactoryNode:
                     clamped=True,
                 )
 
+            # Pan X slider (horizontal translation: left/right)
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_pan_x_value_name,
+                    label="Pan X (Left/Right)",
+                    width=small_window_w - 80,
+                    default_value=0.0,
+                    min_value=-1.0,
+                    max_value=1.0,
+                    clamped=True,
+                )
+
+            # Pan Y slider (vertical translation: up/down)
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_float(
+                    tag=node.tag_node_pan_y_value_name,
+                    label="Pan Y (Up/Down)",
+                    width=small_window_w - 80,
+                    default_value=0.0,
+                    min_value=-1.0,
+                    max_value=1.0,
+                    clamped=True,
+                )
+
             # Cache checkbox
             with dpg.node_attribute(
                     attribute_type=dpg.mvNode_Attr_Static,
@@ -241,6 +272,9 @@ class Node(DpgNodeABC):
         self.cached_tiles = {}
         self.cache_center = None
         self.cache_radius = 2
+        # Pan offset tracking (in meters, Web Mercator)
+        self.pan_offset_x = 0.0
+        self.pan_offset_y = 0.0
 
 
     @staticmethod
@@ -278,7 +312,7 @@ class Node(DpgNodeABC):
         return lat, lon
 
 
-    def _calculate_extent(self, points, zoom_level=None, size_factor=1.0):
+    def _calculate_extent(self, points, zoom_level=None, size_factor=1.0, pan_offset_x=0.0, pan_offset_y=0.0):
         """
         Calculate the bounding box extent in Web Mercator coordinates.
         
@@ -286,6 +320,10 @@ class Node(DpgNodeABC):
             points: List of points with 'lat' and 'lon' keys
             zoom_level: Optional zoom level (not used, kept for compatibility)
             size_factor: Factor to scale the bounding box (default 1.0)
+                        Values < 1.0 zoom in (smaller view area)
+                        Values > 1.0 zoom out (larger view area)
+            pan_offset_x: Horizontal pan offset as fraction of range (-1.0 to 1.0)
+            pan_offset_y: Vertical pan offset as fraction of range (-1.0 to 1.0)
         
         Returns:
             Tuple of (west, south, east, north) in Web Mercator coordinates
@@ -304,7 +342,11 @@ class Node(DpgNodeABC):
         min_x, max_x = min(xs), max(xs)
         min_y, max_y = min(ys), max(ys)
         
-        # Add padding based on size_factor
+        # Calculate center point
+        center_x = (min_x + max_x) / 2
+        center_y = (min_y + max_y) / 2
+        
+        # Get range
         x_range = max_x - min_x
         y_range = max_y - min_y
         
@@ -314,14 +356,30 @@ class Node(DpgNodeABC):
         if y_range < MIN_RANGE_METERS:
             y_range = DEFAULT_RANGE_METERS
         
-        # Apply size factor as padding
-        x_padding = x_range * (size_factor - 1.0) / 2
-        y_padding = y_range * (size_factor - 1.0) / 2
+        # Add base padding (15%)
+        x_range_padded = x_range * (1.0 + MAP_PADDING_FACTOR * 2)
+        y_range_padded = y_range * (1.0 + MAP_PADDING_FACTOR * 2)
         
-        west = min_x - x_padding
-        south = min_y - y_padding
-        east = max_x + x_padding
-        north = max_y + y_padding
+        # Apply size factor: scale the range around center
+        # size_factor < 1.0 = zoom in (smaller range)
+        # size_factor > 1.0 = zoom out (larger range)
+        final_x_range = x_range_padded * size_factor
+        final_y_range = y_range_padded * size_factor
+        
+        # Calculate extent from center
+        west = center_x - final_x_range / 2
+        east = center_x + final_x_range / 2
+        south = center_y - final_y_range / 2
+        north = center_y + final_y_range / 2
+        
+        # Apply pan offsets (as a fraction of the final range)
+        pan_x_meters = pan_offset_x * final_x_range
+        pan_y_meters = pan_offset_y * final_y_range
+        
+        west += pan_x_meters
+        east += pan_x_meters
+        south += pan_y_meters
+        north += pan_y_meters
         
         return (west, south, east, north)
 
@@ -336,6 +394,8 @@ class Node(DpgNodeABC):
         node.cached_tiles = {}
         node.cache_center = None
         node.cache_radius = 2
+        node.pan_offset_x = 0.0
+        node.pan_offset_y = 0.0
         return node
 
 
@@ -355,6 +415,8 @@ class Node(DpgNodeABC):
         tag_node_size_value_name = tag_node_name + ':MapSizeValue'
         tag_node_cache_value_name = tag_node_name + ':UseCacheValue'
         tag_node_status_value_name = tag_node_name + ':StatusValue'
+        tag_node_pan_x_value_name = tag_node_name + ':PanXValue'
+        tag_node_pan_y_value_name = tag_node_name + ':PanYValue'
 
         small_window_w = self._opencv_setting_dict['process_width']
         small_window_h = self._opencv_setting_dict['process_height']
@@ -428,19 +490,25 @@ class Node(DpgNodeABC):
                             print(f"Map node: Extracted {len(points)} points with lat/lon")
                             self.point_data = points
                             
-                            # Get zoom, size, and cache parameters
+                            # Get zoom, size, cache, and pan parameters
                             zoom_level = dpg_get_value(tag_node_zoom_value_name)
                             size_factor = dpg_get_value(tag_node_size_value_name)
                             use_cache = dpg_get_value(tag_node_cache_value_name)
+                            pan_x = dpg_get_value(tag_node_pan_x_value_name)
+                            pan_y = dpg_get_value(tag_node_pan_y_value_name)
                             if use_cache is None:
                                 use_cache = True  # Default to enabled
+                            if pan_x is None:
+                                pan_x = 0.0
+                            if pan_y is None:
+                                pan_y = 0.0
                             
                             # HTML map generation removed - only tile-based preview
                             status_text = f"✓ {len(points)} point(s) displayed"
                             
                             # Create map visualization image (main display)
                             preview_image = self._create_preview_image(
-                                points, small_window_w, small_window_h
+                                points, small_window_w, small_window_h, pan_x, pan_y
                             )
                             
                             # Update status
@@ -468,19 +536,25 @@ class Node(DpgNodeABC):
                         print(f"Map node: Extracted {len(points)} points with lat/lon")
                         self.point_data = points
                         
-                        # Get zoom, size, and cache parameters
+                        # Get zoom, size, cache, and pan parameters
                         zoom_level = dpg_get_value(tag_node_zoom_value_name)
                         size_factor = dpg_get_value(tag_node_size_value_name)
                         use_cache = dpg_get_value(tag_node_cache_value_name)
+                        pan_x = dpg_get_value(tag_node_pan_x_value_name)
+                        pan_y = dpg_get_value(tag_node_pan_y_value_name)
                         if use_cache is None:
                             use_cache = True  # Default to enabled
+                        if pan_x is None:
+                            pan_x = 0.0
+                        if pan_y is None:
+                            pan_y = 0.0
                         
                         # HTML map generation removed - only tile-based preview
                         status_text = f"✓ {len(points)} point(s) displayed"
                         
                         # Create map visualization image (main display)
                         preview_image = self._create_preview_image(
-                            points, small_window_w, small_window_h
+                            points, small_window_w, small_window_h, pan_x, pan_y
                         )
                         
                         # Update status
@@ -607,7 +681,7 @@ class Node(DpgNodeABC):
     #     # This method has been disabled to remove HTML rendering functionality
 
 
-    def _create_preview_image(self, points, width, height):
+    def _create_preview_image(self, points, width, height, pan_x=0.0, pan_y=0.0):
         """
         Create a map visualization image using contextily for OSM tiles.
         
@@ -620,6 +694,8 @@ class Node(DpgNodeABC):
             points: List of points with 'lat' and 'lon' keys
             width: Width of output image in pixels
             height: Height of output image in pixels
+            pan_x: Horizontal pan offset (-1.0 to 1.0)
+            pan_y: Vertical pan offset (-1.0 to 1.0)
         
         Returns:
             numpy array in BGR format suitable for OpenCV/DPG
@@ -631,7 +707,7 @@ class Node(DpgNodeABC):
         # Try contextily rendering first
         if CONTEXTILY_AVAILABLE:
             try:
-                return self._render_with_contextily(points, width, height)
+                return self._render_with_contextily(points, width, height, pan_x, pan_y)
             except Exception as e:
                 print(f"Error rendering with contextily: {e}")
                 print("Falling back to matplotlib-only rendering")
@@ -640,7 +716,7 @@ class Node(DpgNodeABC):
         return self._render_with_matplotlib(points, width, height)
 
 
-    def _render_with_contextily(self, points, width, height):
+    def _render_with_contextily(self, points, width, height, pan_x=0.0, pan_y=0.0):
         """
         Render map using contextily for OSM tiles and matplotlib for points.
         
@@ -654,6 +730,8 @@ class Node(DpgNodeABC):
             points: List of points with 'lat' and 'lon' keys
             width: Width of output image in pixels
             height: Height of output image in pixels
+            pan_x: Horizontal pan offset (-1.0 to 1.0)
+            pan_y: Vertical pan offset (-1.0 to 1.0)
         
         Returns:
             numpy array in BGR format
@@ -670,7 +748,7 @@ class Node(DpgNodeABC):
                 'lon': point['lon']
             })
         
-        # Calculate extent (bounding box) - reuse the _calculate_extent logic
+        # Calculate extent (bounding box) with pan offsets
         xs = [p['x'] for p in mercator_points]
         ys = [p['y'] for p in mercator_points]
         
@@ -691,6 +769,18 @@ class Node(DpgNodeABC):
         max_x += x_range * MAP_PADDING_FACTOR
         min_y -= y_range * MAP_PADDING_FACTOR
         max_y += y_range * MAP_PADDING_FACTOR
+        
+        # Apply pan offsets
+        total_x_range = max_x - min_x
+        total_y_range = max_y - min_y
+        
+        pan_x_meters = pan_x * total_x_range
+        pan_y_meters = pan_y * total_y_range
+        
+        min_x += pan_x_meters
+        max_x += pan_x_meters
+        min_y += pan_y_meters
+        max_y += pan_y_meters
         
         # Create figure
         dpi = 100
@@ -904,11 +994,15 @@ class Node(DpgNodeABC):
         tag_node_zoom_value_name = tag_node_name + ':ZoomValue'
         tag_node_size_value_name = tag_node_name + ':MapSizeValue'
         tag_node_cache_value_name = tag_node_name + ':UseCacheValue'
+        tag_node_pan_x_value_name = tag_node_name + ':PanXValue'
+        tag_node_pan_y_value_name = tag_node_name + ':PanYValue'
         
         return {
             'zoom': dpg_get_value(tag_node_zoom_value_name),
             'size': dpg_get_value(tag_node_size_value_name),
             'cache': dpg_get_value(tag_node_cache_value_name),
+            'pan_x': dpg_get_value(tag_node_pan_x_value_name),
+            'pan_y': dpg_get_value(tag_node_pan_y_value_name),
         }
 
 
@@ -918,6 +1012,8 @@ class Node(DpgNodeABC):
         tag_node_zoom_value_name = tag_node_name + ':ZoomValue'
         tag_node_size_value_name = tag_node_name + ':MapSizeValue'
         tag_node_cache_value_name = tag_node_name + ':UseCacheValue'
+        tag_node_pan_x_value_name = tag_node_name + ':PanXValue'
+        tag_node_pan_y_value_name = tag_node_name + ':PanYValue'
         
         if 'zoom' in setting_dict:
             dpg_set_value(tag_node_zoom_value_name, setting_dict['zoom'])
@@ -925,6 +1021,10 @@ class Node(DpgNodeABC):
             dpg_set_value(tag_node_size_value_name, setting_dict['size'])
         if 'cache' in setting_dict:
             dpg_set_value(tag_node_cache_value_name, setting_dict['cache'])
+        if 'pan_x' in setting_dict:
+            dpg_set_value(tag_node_pan_x_value_name, setting_dict['pan_x'])
+        if 'pan_y' in setting_dict:
+            dpg_set_value(tag_node_pan_y_value_name, setting_dict['pan_y'])
 
 
     def convert_cv_to_dpg(self, image, width, height):
