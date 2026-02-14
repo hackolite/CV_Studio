@@ -1,34 +1,40 @@
 # Map Visualization Node
 
 ## Overview
-The Map node provides interactive map visualization using OpenStreetMap and Leaflet. It extracts latitude/longitude coordinates from JSON data and displays them on an interactive map that opens in your web browser.
+The Map node provides interactive map visualization using OpenStreetMap tiles. It uses **contextily** for efficient tile downloading and caching, **matplotlib** for rendering, and displays GPS coordinates on an interactive map within the Dear PyGui node editor.
+
+## Key Technologies
+- **contextily**: Downloads and caches OpenStreetMap tiles
+- **matplotlib**: Renders maps with GPS points
+- **Pillow**: Image processing
+- **Dear PyGui**: Interactive node-based interface
 
 ## Features
 - **Multiple JSON Format Support**: Automatically extracts latitude/longitude from various JSON structures
-- **Interactive Map**: Opens in browser with full zoom, pan, and marker interaction
-- **Preview Display**: Shows a simple preview of point distribution in the node
-- **Customizable View**: Adjust zoom level and view size with sliders
-- **Marker Clustering**: Automatically clusters nearby markers for better performance with many points
-- **Map Caching**: Optional caching system to speed up repeated map generation with same data
+- **Contextily-based Rendering**: Efficient OSM tile downloading with built-in caching
+- **Real-time Visualization**: Shows GPS points directly in the node editor
+- **Dynamic Updates**: Texture updates automatically when new GPS points are added
+- **Zoom and Auto-scaling**: Automatically adjusts bounding box to fit all points
+- **Local Tile Caching**: contextily handles tile caching for performance
+- **Fallback Rendering**: Uses matplotlib-only rendering when tiles unavailable
 
 ## Inputs
 - **JSON with lat/lon**: JSON data containing latitude and longitude information
 
 ## Outputs
-- **Preview Image**: A simple visualization showing the distribution of points
+- **Map Texture**: Real-time visualization of GPS points on OpenStreetMap tiles displayed in the node
 - **Processing Time**: Time taken to process and generate the map
 
 ## Controls
-- **Zoom Slider** (1-18): Set the initial zoom level for the map
+- **Zoom Slider** (1-18): Set the zoom level for the map (currently informational, auto-zoom is used)
   - Lower values: See more of the world (zoomed out)
   - Higher values: See less area in detail (zoomed in)
 - **View Size Slider** (0.5-5.0): Adjust the bounding box size
   - Values < 1.0: Tighter view around points
   - Values > 1.0: Wider view with more context
-- **Cache Maps Checkbox**: Enable/disable map caching
-  - When enabled: Maps are cached based on coordinates, zoom, and size
-  - When disabled: Fresh map is generated each time
-- **Open Map in Browser Button**: Opens the generated interactive map in your default web browser
+- **Cache Maps Checkbox**: Enable/disable map caching (contextily handles caching internally)
+  - When enabled: Tiles are cached for better performance
+  - When disabled: Fresh tiles may be downloaded
 
 ## Supported JSON Formats
 
@@ -81,79 +87,68 @@ The Map node provides interactive map visualization using OpenStreetMap and Leaf
 3. Add a **Map** node (Visual menu)
 4. Connect CoordinateExamples JSON output to Map JSON input
 5. Enable "Cache Maps" for faster repeated visualization
-6. Adjust zoom (try 12 for city view) and view size as needed
-7. Click "Open Map in Browser" to see moving objects on the map
-8. The simulation continuously updates with new positions
+6. The map will automatically display GPS points with real-time updates
+7. Points are rendered on OpenStreetMap tiles using contextily
 
 ### With WebSocket AIS Data
 1. Add a **WebSocket** node (Input menu)
 2. Configure it for AIS stream (see WebSocket node documentation)
 3. Add a **Map** node (Visual menu)
 4. Connect WebSocket JSON output to Map JSON input
-5. Adjust zoom and view size as needed
-6. Click "Open Map in Browser" to see the interactive map
+5. The map texture updates automatically with new positions
 
 ### With Custom JSON Data
 1. Create or load JSON data with latitude/longitude
 2. Add a **Map** node
 3. Connect your JSON source to the Map input
-4. Configure visualization settings
-5. Open the map in your browser
+4. View the rendered map with GPS points in the node
 
 ## Map Features
 
-The generated HTML map includes:
-- **OpenStreetMap** base layer
-- **Interactive markers** for each point
-- **Marker clustering** for better performance
-- **Tooltips** showing point names on hover
-- **Popups** with detailed information on click
-- **Full zoom/pan controls**
+The generated map visualization includes:
+- **OpenStreetMap** base layer (via contextily)
+- **GPS point markers** rendered on the map
+- **Point labels** showing names (for ≤10 points)
 - **Auto-fit bounds** to show all points
+- **Dynamic texture updates** as new points arrive
+- **Efficient tile caching** via contextily
 
-## Map Caching
+## Tile Caching
 
-The Map node includes an intelligent caching system to improve performance:
+The Map node uses contextily's built-in caching system for optimal performance:
 
 ### How Caching Works
-- **Cache Key Generation**: Creates unique hash based on:
-  - Coordinate positions (first 100 points)
-  - Zoom level
-  - View size factor
-- **Cache Location**: `/tmp/cv_studio_map_cache/` (Linux/Mac) or `%TEMP%\cv_studio_map_cache\` (Windows)
-- **Cache Hit**: If identical parameters are used, cached map is reused instantly
-- **Cache Miss**: New map is generated and cached for future use
+- **Automatic Caching**: contextily automatically caches downloaded tiles
+- **Cache Location**: System-dependent (typically `~/.cache/contextily/`)
+- **Cache Hit**: Tiles are reused from cache when available
+- **Network Fallback**: Downloads tiles as needed when not cached
 
-### When to Use Caching
-- ✅ **Enable caching** when:
-  - Working with static coordinate data
-  - Repeatedly viewing the same area
-  - Testing different workflows with same data
-  - Performance is important
-
-- ❌ **Disable caching** when:
-  - Coordinates are continuously changing (like live GPS tracking)
-  - You want to force regeneration
-  - Debugging map generation issues
+### Performance Benefits
+- ✅ Faster map rendering for repeated views
+- ✅ Reduced network bandwidth usage
+- ✅ Offline viewing of previously cached areas
+- ✅ Automatic cache management
 
 ## Technical Details
 
 ### Dependencies
-- `folium>=0.14.0`: Python library for generating Leaflet maps
+- `contextily>=1.3.0`: OpenStreetMap tile downloading and caching
+- `matplotlib>=3.8`: Map rendering with GPS points
+- `Pillow>=9.0.0`: Image processing
+- `opencv-contrib-python>=4.8`: Image format conversion
 
-### Data Extraction
-The node automatically searches JSON structures for:
-- `latitude`/`longitude` keys
-- `lat`/`lon` keys
-- Nested structures (e.g., AIS `boats` array)
-- Lists of coordinate objects
+### Rendering Pipeline
+1. **Extract Coordinates**: Parse JSON to get lat/lon points
+2. **Convert to Web Mercator**: Transform coordinates to EPSG:3857 projection
+3. **Calculate Extent**: Determine bounding box with auto-scaling
+4. **Render with contextily**: Download OSM tiles and plot GPS points
+5. **Convert to Texture**: Convert matplotlib figure to DPG texture format
+6. **Update Display**: Show texture in node editor
 
-### Output Files
-Maps are saved as HTML files:
-- **With caching enabled**: `/tmp/cv_studio_map_cache/map_<hash>.html`
-- **Without caching**: `/tmp/cv_studio_map_YYYYMMDD_HHMMSS.html` (timestamped)
-
-Files are kept in the temp directory and will be cleaned up by the operating system.
+### Coordinate System
+- **Input**: WGS84 lat/lon (degrees)
+- **Internal**: Web Mercator EPSG:3857 (meters)
+- **Output**: BGR image for OpenCV/DPG
 
 ## Tips
 
@@ -183,22 +178,27 @@ The view size slider allows you to control how much context is shown around your
 - Verify the JSON structure matches one of the supported formats
 - Check the JSON is valid (use a JSON validator if needed)
 
-### Map doesn't open
-- Verify the "Open Map in Browser" button is clicked after data is received
-- Check your default browser is set correctly
-- Look for the map file in your system's temp directory
+### Map shows fallback rendering
+- This is normal when network access is unavailable
+- The node falls back to matplotlib-only rendering
+- GPS points will still be visible with a simple background
 
 ### Preview shows no points
 - Ensure JSON data is being received (check connections)
 - Verify latitude/longitude values are valid numbers
 - Check that coordinates are in decimal degrees format
 
+### Performance issues
+- contextily caching improves performance over time
+- First load may be slower as tiles are downloaded
+- Subsequent loads use cached tiles and are faster
+
 ## Example Workflows
 
 ### Marine Traffic Monitoring
 WebSocket (AIS) → Map
-- Real-time visualization of ship positions
-- Click markers to see ship details
+- Real-time visualization of ship positions in node editor
+- Automatic texture updates as ships move
 
 ### Location Analytics
 CSV/Database → JSON Converter → Map
@@ -208,13 +208,35 @@ CSV/Database → JSON Converter → Map
 ### GPS Tracking
 MQTT/WebSocket → Map
 - Track moving objects in real-time
-- Historical path visualization
+- Dynamic texture updates for live tracking
+
+## Implementation Details
+
+### Contextily Integration
+The node uses contextily for:
+- **Tile Downloading**: Automatic OSM tile fetching
+- **Tile Caching**: Built-in cache management
+- **Basemap Rendering**: Efficient map tile composition
+
+### Matplotlib Rendering
+Matplotlib is used for:
+- **Point Plotting**: GPS point visualization
+- **Coordinate Transformation**: Web Mercator projection
+- **Figure Composition**: Combining tiles and points
+- **Export**: Converting to numpy array for DPG
+
+### Dear PyGui Display
+The rendered map is:
+- **Converted to BGR**: OpenCV format for compatibility
+- **Encoded as Texture**: DPG raw texture format
+- **Updated Dynamically**: Texture refreshes with new data
+- **Displayed in Node**: Shows in node editor canvas
 
 ## Future Enhancements
 Potential features for future versions:
 - Path/trajectory visualization
 - Heatmap overlay
-- Custom marker icons
-- Multiple map tile providers
-- Export map as image
+- Custom marker styles
+- Multiple tile providers
+- Interactive zoom controls
 - Time-based animation

@@ -74,12 +74,9 @@ def test_map_node_extract_lat_lon():
 
 
 def test_map_node_generate_map():
-    """Test map generation with folium"""
-    try:
-        import folium
-    except ImportError:
-        print("⚠ Folium not installed, skipping map generation test")
-        return
+    """Test map generation with contextily"""
+    # This test is updated for contextily-based implementation
+    # The old folium-based _generate_map method has been removed
     
     # Use factory method for clean test initialization
     node = MapNode.create_for_testing()
@@ -89,22 +86,19 @@ def test_map_node_generate_map():
         {"lat": 34.0522, "lon": -118.2437, "name": "Los Angeles", "info": "789012"}
     ]
     
-    map_path = node._generate_map(points, zoom_level=6, size_factor=1.0)
+    # Test that we can create a preview image (which uses contextily)
+    import numpy as np
+    preview = node._create_preview_image(points, 320, 240)
     
-    assert map_path is not None
-    assert os.path.exists(map_path)
-    assert map_path.endswith('.html')
+    assert preview is not None
+    assert isinstance(preview, np.ndarray)
+    assert preview.shape == (240, 320, 3)
+    assert preview.dtype == np.uint8
     
-    # Check file content
-    with open(map_path, 'r') as f:
-        content = f.read()
-        assert 'leaflet' in content.lower()
-        assert 'OpenStreetMap' in content
+    # Check that image is not completely black
+    assert np.any(preview > 0)
     
-    print(f"✓ Map generation test passed (saved to {map_path})")
-    
-    # Clean up
-    os.remove(map_path)
+    print("✓ Map generation test passed (using contextily)")
 
 
 def test_map_node_preview_image():
@@ -152,6 +146,25 @@ def test_map_node_empty_data():
     print("✓ Empty data handling test passed")
 
 
+def test_map_node_coordinate_conversion():
+    """Test Web Mercator coordinate conversion"""
+    # Use factory method for clean test initialization
+    node = MapNode.create_for_testing()
+    
+    # Test New York City
+    lat, lon = 40.7128, -74.0060
+    x, y = node.lat_lon_to_web_mercator(lat, lon)
+    
+    # Convert back
+    lat2, lon2 = node.web_mercator_to_lat_lon(x, y)
+    
+    # Check accuracy (should be within 0.0001 degrees)
+    assert abs(lat - lat2) < 0.0001, f"Latitude conversion error: {lat} != {lat2}"
+    assert abs(lon - lon2) < 0.0001, f"Longitude conversion error: {lon} != {lon2}"
+    
+    print("✓ Coordinate conversion test passed")
+
+
 if __name__ == "__main__":
     print("Testing Map Node...")
     print()
@@ -160,6 +173,7 @@ if __name__ == "__main__":
     test_map_node_generate_map()
     test_map_node_preview_image()
     test_map_node_empty_data()
+    test_map_node_coordinate_conversion()
     
     print()
     print("All tests passed! ✓")
