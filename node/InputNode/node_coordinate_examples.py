@@ -107,7 +107,7 @@ class GPSMovementSimulator:
                 'name': f'Vehicle-{i+1:03d}',
                 'lat': self.center_lat + lat_offset,
                 'lon': self.center_lon + lon_offset,
-                'speed_kmh': random.uniform(20, 80),  # km/h
+                'speed_kmh': 4,  # km/h (walking speed)
                 'direction': random.uniform(0, 2 * math.pi),  # radians
                 'pattern': random.choice(['linear', 'circular', 'random_walk']),
             }
@@ -327,8 +327,8 @@ class Node(BaseNode):
         # Get the coordinates for the selected example
         if selected_example == GPS_SIMULATION_NAME:
             # For GPS simulation, show dynamic message
-            num_points = 5  # Default number
-            status_text = f'Simulating {num_points} moving objects (updates every 1s)'
+            num_points = 1  # Default number
+            status_text = f'Simulating {num_points} moving object (updates every 1s)'
         else:
             coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
             num_points = len(coordinates)
@@ -366,7 +366,7 @@ class Node(BaseNode):
             if self.gps_simulator is None:
                 # Default: Paris, France as center
                 self.gps_simulator = GPSMovementSimulator(
-                    num_objects=5,
+                    num_objects=1,
                     center_lat=48.8566,
                     center_lon=2.3522
                 )
@@ -448,7 +448,7 @@ class Node(BaseNode):
         
         # Update status text
         if selected_example == GPS_SIMULATION_NAME:
-            status_text = 'Simulating 5 moving objects (updates every 1s)'
+            status_text = 'Simulating 1 moving object (updates every 1s)'
         else:
             coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
             num_points = len(coordinates)
