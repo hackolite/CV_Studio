@@ -246,7 +246,13 @@ def plot_spectrogram(location, plotpath=None, binsize=2**10, colormap="jet"):
         colormap: Colormap matplotlib à utiliser
     
     Returns:
-        ims: Matrice du spectrogramme en décibels
+        tuple: (ims, plotpath) where:
+            - ims: Matrice du spectrogramme en décibels
+            - plotpath: Path to the saved spectrogram image (useful when temporary file is created)
+    
+    Note:
+        When plotpath is None, a temporary file is created with delete=False.
+        The caller is responsible for cleaning up the temporary file if needed.
     """
     if wav is None:
         raise ImportError("scipy is required for plot_spectrogram. Install with: pip install scipy")
@@ -296,7 +302,7 @@ def plot_spectrogram(location, plotpath=None, binsize=2**10, colormap="jet"):
     plt.savefig(plotpath, bbox_inches="tight")
     plt.clf()
 
-    return ims
+    return ims, plotpath
 
 
 def create_spectrogram_from_audio(audio_data, sample_rate=44100, binsize=2**10, colormap="jet"):
