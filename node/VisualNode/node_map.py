@@ -418,57 +418,109 @@ class Node(DpgNodeABC):
             try:
                 # Parse JSON data
                 if isinstance(input_value, str):
-                    print(f"Map node: Received JSON string (length: {len(input_value)})")
-                    data = json.loads(input_value)
+                    # Handle empty or whitespace-only strings
+                    if not input_value.strip():
+                        print("Map node: Received empty JSON string")
+                        dpg_set_value(tag_node_status_value_name, "Waiting for data...")
+                        # Skip further processing for empty input
+                    else:
+                        print(f"Map node: Received JSON string (length: {len(input_value)})")
+                        data = json.loads(input_value)
+                        
+                        # Log the structure of received data
+                        if isinstance(data, dict):
+                            print(f"Map node: JSON contains keys: {list(data.keys())}")
+                            if 'boats' in data:
+                                print(f"Map node: Found {len(data.get('boats', []))} boats in data")
+                        elif isinstance(data, list):
+                            print(f"Map node: JSON is a list with {len(data)} items")
+
+                        # Extract points with latitude and longitude
+                        points = self._extract_lat_lon_from_json(data)
+                        
+                        if points:
+                            print(f"Map node: Extracted {len(points)} points with lat/lon")
+                            self.point_data = points
+                            
+                            # Get zoom, size, and cache parameters
+                            zoom_level = dpg_get_value(tag_node_zoom_value_name)
+                            size_factor = dpg_get_value(tag_node_size_value_name)
+                            use_cache = dpg_get_value(tag_node_cache_value_name)
+                            if use_cache is None:
+                                use_cache = True  # Default to enabled
+                            
+                            # Generate HTML map (for optional interactive view in browser)
+                            map_path = self._generate_map(points, zoom_level, size_factor, use_cache)
+                            
+                            if map_path:
+                                self.last_map_path = map_path
+                                status_text = f"✓ {len(points)} point(s) displayed"
+                                print(f"Map node: Interactive HTML map ready at {map_path}")
+                            else:
+                                # Map generation failed (likely folium not installed) - that's ok
+                                status_text = f"✓ {len(points)} point(s) displayed"
+                                print("Map node: Displaying map (HTML not generated - folium needed for interactive view)")
+                            
+                            # Create map visualization image (main display)
+                            preview_image = self._create_preview_image(
+                                points, small_window_w, small_window_h
+                            )
+                            
+                            # Update status
+                            dpg_set_value(tag_node_status_value_name, status_text)
+                        else:
+                            status_msg = "No lat/lon in data"
+                            print(f"Map node: {status_msg}")
+                            dpg_set_value(tag_node_status_value_name, status_msg)
                 else:
                     print(f"Map node: Received JSON object (type: {type(input_value).__name__})")
                     data = input_value
 
-                # Log the structure of received data
-                if isinstance(data, dict):
-                    print(f"Map node: JSON contains keys: {list(data.keys())}")
-                    if 'boats' in data:
-                        print(f"Map node: Found {len(data.get('boats', []))} boats in data")
-                elif isinstance(data, list):
-                    print(f"Map node: JSON is a list with {len(data)} items")
+                    # Log the structure of received data
+                    if isinstance(data, dict):
+                        print(f"Map node: JSON contains keys: {list(data.keys())}")
+                        if 'boats' in data:
+                            print(f"Map node: Found {len(data.get('boats', []))} boats in data")
+                    elif isinstance(data, list):
+                        print(f"Map node: JSON is a list with {len(data)} items")
 
-                # Extract points with latitude and longitude
-                points = self._extract_lat_lon_from_json(data)
-                
-                if points:
-                    print(f"Map node: Extracted {len(points)} points with lat/lon")
-                    self.point_data = points
+                    # Extract points with latitude and longitude
+                    points = self._extract_lat_lon_from_json(data)
                     
-                    # Get zoom, size, and cache parameters
-                    zoom_level = dpg_get_value(tag_node_zoom_value_name)
-                    size_factor = dpg_get_value(tag_node_size_value_name)
-                    use_cache = dpg_get_value(tag_node_cache_value_name)
-                    if use_cache is None:
-                        use_cache = True  # Default to enabled
-                    
-                    # Generate HTML map (for optional interactive view in browser)
-                    map_path = self._generate_map(points, zoom_level, size_factor, use_cache)
-                    
-                    if map_path:
-                        self.last_map_path = map_path
-                        status_text = f"✓ {len(points)} point(s) displayed"
-                        print(f"Map node: Interactive HTML map ready at {map_path}")
+                    if points:
+                        print(f"Map node: Extracted {len(points)} points with lat/lon")
+                        self.point_data = points
+                        
+                        # Get zoom, size, and cache parameters
+                        zoom_level = dpg_get_value(tag_node_zoom_value_name)
+                        size_factor = dpg_get_value(tag_node_size_value_name)
+                        use_cache = dpg_get_value(tag_node_cache_value_name)
+                        if use_cache is None:
+                            use_cache = True  # Default to enabled
+                        
+                        # Generate HTML map (for optional interactive view in browser)
+                        map_path = self._generate_map(points, zoom_level, size_factor, use_cache)
+                        
+                        if map_path:
+                            self.last_map_path = map_path
+                            status_text = f"✓ {len(points)} point(s) displayed"
+                            print(f"Map node: Interactive HTML map ready at {map_path}")
+                        else:
+                            # Map generation failed (likely folium not installed) - that's ok
+                            status_text = f"✓ {len(points)} point(s) displayed"
+                            print("Map node: Displaying map (HTML not generated - folium needed for interactive view)")
+                        
+                        # Create map visualization image (main display)
+                        preview_image = self._create_preview_image(
+                            points, small_window_w, small_window_h
+                        )
+                        
+                        # Update status
+                        dpg_set_value(tag_node_status_value_name, status_text)
                     else:
-                        # Map generation failed (likely folium not installed) - that's ok
-                        status_text = f"✓ {len(points)} point(s) displayed"
-                        print("Map node: Displaying map (HTML not generated - folium needed for interactive view)")
-                    
-                    # Create map visualization image (main display)
-                    preview_image = self._create_preview_image(
-                        points, small_window_w, small_window_h
-                    )
-                    
-                    # Update status
-                    dpg_set_value(tag_node_status_value_name, status_text)
-                else:
-                    status_msg = "No lat/lon in data"
-                    print(f"Map node: {status_msg}")
-                    dpg_set_value(tag_node_status_value_name, status_msg)
+                        status_msg = "No lat/lon in data"
+                        print(f"Map node: {status_msg}")
+                        dpg_set_value(tag_node_status_value_name, status_msg)
                     
             except json.JSONDecodeError as e:
                 error_msg = f"JSON parse error: {str(e)[:60]}"
@@ -496,7 +548,7 @@ class Node(DpgNodeABC):
             elapsed_time = (time.perf_counter() - start_time) * 1000
             dpg_set_value(tag_node_output02_value_name, elapsed_time)
 
-        return preview_image
+        return {"image": preview_image, "json": None, "audio": None}
 
 
 
