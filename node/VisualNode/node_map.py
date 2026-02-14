@@ -17,6 +17,12 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node as BaseNode
 
+# Import matplotlib for map rendering
+import matplotlib
+matplotlib.use('Agg')  # Use non-GUI backend
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+
 
 # Cache directory for map tiles and generated maps
 CACHE_DIR = os.path.join(tempfile.gettempdir(), 'cv_studio_map_cache')
@@ -152,13 +158,13 @@ class FactoryNode:
                     default_value='No data',
                 )
 
-            # Open map button
+            # Open map button (optional - for interactive HTML view)
             with dpg.node_attribute(
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_button(
                     tag=node.tag_node_open_button_name,
-                    label="Open Map in Browser",
+                    label="Open Interactive HTML",
                     callback=lambda s, a, u: Node.open_map_callback(s, a, u),
                     user_data=node,
                     width=small_window_w - 20,
@@ -274,19 +280,19 @@ class Node(DpgNodeABC):
                     if use_cache is None:
                         use_cache = True  # Default to enabled
                     
-                    # Generate map
+                    # Generate HTML map (for optional interactive view in browser)
                     map_path = self._generate_map(points, zoom_level, size_factor, use_cache)
                     
                     if map_path:
                         self.last_map_path = map_path
-                        status_text = f"✓ {len(points)} points mapped"
-                        print(f"Map node: Map generated at {map_path}")
+                        status_text = f"✓ {len(points)} point(s) displayed"
+                        print(f"Map node: Interactive HTML map ready at {map_path}")
                     else:
-                        # Map generation failed (likely folium not installed)
-                        status_text = f"Points: {len(points)} (folium needed)"
-                        print("Map node: Map generation failed (folium not installed)")
+                        # Map generation failed (likely folium not installed) - that's ok
+                        status_text = f"✓ {len(points)} point(s) displayed"
+                        print("Map node: Displaying map (HTML not generated - folium needed for interactive view)")
                     
-                    # Create preview image
+                    # Create map visualization image (main display)
                     preview_image = self._create_preview_image(
                         points, small_window_w, small_window_h
                     )
@@ -484,10 +490,9 @@ class Node(DpgNodeABC):
 
 
     def _create_preview_image(self, points, width, height):
-        """Create a simple preview image showing point distribution"""
-        preview = np.zeros((height, width, 3), dtype=np.uint8)
-        
+        """Create a map visualization image with matplotlib showing point distribution"""
         if not points:
+            preview = np.zeros((height, width, 3), dtype=np.uint8)
             return preview
         
         # Get bounds
@@ -502,44 +507,114 @@ class Node(DpgNodeABC):
         lon_range = max_lon - min_lon
         
         if lat_range == 0:
-            lat_range = 1
+            lat_range = 0.1  # Small default range for single point
         if lon_range == 0:
-            lon_range = 1
+            lon_range = 0.1
         
-        padding = 0.1
-        min_lat -= lat_range * padding
-        max_lat += lat_range * padding
-        min_lon -= lon_range * padding
-        max_lon += lon_range * padding
-        lat_range = max_lat - min_lat
-        lon_range = max_lon - min_lon
+        padding = 0.15
+        plot_min_lat = min_lat - lat_range * padding
+        plot_max_lat = max_lat + lat_range * padding
+        plot_min_lon = min_lon - lon_range * padding
+        plot_max_lon = max_lon + lon_range * padding
         
-        # Draw background (ocean blue)
-        preview[:] = (120, 60, 20)  # BGR
+        # Create figure with matplotlib
+        dpi = 100
+        fig_width = width / dpi
+        fig_height = height / dpi
         
-        # Draw grid
-        for i in range(5):
-            y = int(height * i / 4)
-            cv2.line(preview, (0, y), (width, y), (80, 40, 10), 1)
-            x = int(width * i / 4)
-            cv2.line(preview, (x, 0), (x, height), (80, 40, 10), 1)
+        fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=dpi)
         
-        # Draw points
+        # Set background color (light blue for water)
+        ax.set_facecolor('#ADD8E6')
+        fig.patch.set_facecolor('#E0F2F7')
+        
+        # Draw grid lines (representing latitude/longitude grid)
+        ax.grid(True, linestyle='--', linewidth=0.5, color='#888888', alpha=0.3)
+        
+        # Draw a simple coastline approximation (rectangular land masses)
+        # This is a simplified representation - for actual coastlines, use cartopy or basemap
+        self._draw_simplified_map_features(ax, plot_min_lon, plot_max_lon, plot_min_lat, plot_max_lat)
+        
+        # Plot points
         for point in points:
-            # Normalize coordinates
-            x = int((point['lon'] - min_lon) / lon_range * (width - 20) + 10)
-            y = int((1 - (point['lat'] - min_lat) / lat_range) * (height - 20) + 10)
+            ax.plot(point['lon'], point['lat'], 'ro', markersize=8, 
+                   markeredgecolor='darkred', markeredgewidth=1.5, 
+                   markerfacecolor='yellow', zorder=5)
             
-            # Draw point
-            cv2.circle(preview, (x, y), 3, (0, 255, 255), -1)  # Yellow
-            cv2.circle(preview, (x, y), 4, (0, 0, 255), 1)  # Red border
+            # Add label for points if not too many
+            if len(points) <= 10:
+                ax.annotate(point['name'], 
+                           (point['lon'], point['lat']),
+                           xytext=(5, 5), textcoords='offset points',
+                           fontsize=7, color='black',
+                           bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
         
-        # Add text overlay
-        text = f"{len(points)} points"
-        cv2.putText(preview, text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 
-                   0.5, (255, 255, 255), 1, cv2.LINE_AA)
+        # Set axis limits
+        ax.set_xlim(plot_min_lon, plot_max_lon)
+        ax.set_ylim(plot_min_lat, plot_max_lat)
         
-        return preview
+        # Labels
+        ax.set_xlabel('Longitude', fontsize=8)
+        ax.set_ylabel('Latitude', fontsize=8)
+        ax.set_title(f'Map View - {len(points)} point(s)', fontsize=10, pad=10)
+        
+        # Set aspect ratio to maintain geographic proportions
+        # Use cos(mean_lat) to approximate the aspect ratio
+        mean_lat = (min_lat + max_lat) / 2
+        aspect_ratio = 1.0 / np.cos(np.radians(mean_lat))
+        ax.set_aspect(aspect_ratio)
+        
+        # Tight layout to minimize margins
+        plt.tight_layout(pad=0.5)
+        
+        # Render to image using FigureCanvasAgg
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        
+        # Convert to numpy array
+        image = np.asarray(canvas.buffer_rgba())[:, :, :3]
+        
+        # Convert RGB to BGR for OpenCV
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        
+        # Clean up
+        plt.close(fig)
+        
+        return image
+    
+    def _draw_simplified_map_features(self, ax, min_lon, max_lon, min_lat, max_lat):
+        """Draw simplified map features (land approximation)"""
+        # This is a very simplified representation
+        # For actual geographic features, use cartopy or basemap
+        
+        # Draw some simple land-like polygons based on coordinate ranges
+        # This gives a more "map-like" appearance
+        
+        # Determine if we're looking at a specific region
+        lon_center = (min_lon + max_lon) / 2
+        lat_center = (min_lat + max_lat) / 2
+        
+        # European region approximation
+        if -15 < lon_center < 40 and 35 < lat_center < 70:
+            # Simple Europe outline
+            europe_lons = [-10, 15, 30, 30, 15, 0, -10, -10]
+            europe_lats = [35, 35, 40, 60, 70, 65, 50, 35]
+            ax.fill(europe_lons, europe_lats, color='#90EE90', alpha=0.3, zorder=1)
+        
+        # North America approximation
+        elif -130 < lon_center < -60 and 25 < lat_center < 50:
+            na_lons = [-125, -125, -70, -70, -125]
+            na_lats = [25, 50, 50, 25, 25]
+            ax.fill(na_lons, na_lats, color='#90EE90', alpha=0.3, zorder=1)
+        
+        # Asia approximation
+        elif 60 < lon_center < 140 and 20 < lat_center < 50:
+            asia_lons = [60, 140, 140, 100, 60, 60]
+            asia_lats = [20, 20, 50, 50, 40, 20]
+            ax.fill(asia_lons, asia_lats, color='#90EE90', alpha=0.3, zorder=1)
+        
+        # For other regions or zoomed views, just show water background
+        # The grid and colors will still give a map-like appearance
 
 
     def close(self, node_id: int):
