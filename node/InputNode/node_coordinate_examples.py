@@ -402,6 +402,16 @@ class Node(BaseNode):
                 # Return empty list when None selected
                 json_output = []
         
+        # Log generated JSON for debugging
+        print(f"CoordinateExamples node: Sending {len(json_output) if isinstance(json_output, list) else 0} coordinates")
+        if json_output and isinstance(json_output, list) and len(json_output) > 0:
+            try:
+                import json as json_module
+                json_str = json_module.dumps(json_output[0], indent=2)
+                print(f"CoordinateExamples node: First coordinate:\n{json_str}")
+            except Exception as e:
+                print(f"CoordinateExamples node: Could not serialize first coordinate: {e}")
+        
         return {"image": None, "json": json_output, "audio": None}
 
     def close(self, node_id):

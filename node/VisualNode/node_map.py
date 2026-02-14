@@ -404,8 +404,35 @@ class Node(DpgNodeABC):
         if use_pref_counter:
             start_time = time.perf_counter()
 
-        # Get input JSON data
-        input_value = dpg_get_value(tag_node_input01_value_name)
+        # Find connected source for JSON data
+        connection_info_src = ''
+        for connection_info in connection_list:
+            connection_type = connection_info[0].split(':')[2]
+            if connection_type == self.TYPE_JSON:
+                connection_info_src = connection_info[0]
+                connection_info_src = connection_info_src.split(':')[:2]
+                connection_info_src = ':'.join(connection_info_src)
+                break
+        
+        # Get input JSON data from node_result_dict (correct approach)
+        input_value = node_result_dict.get(connection_info_src, None)
+        
+        # Log received data for debugging
+        if connection_info_src:
+            if input_value is not None:
+                print(f"Map node: Received data from {connection_info_src}")
+                print(f"Map node: Data type: {type(input_value).__name__}")
+                if isinstance(input_value, (list, dict)):
+                    try:
+                        import json as json_module
+                        json_str = json_module.dumps(input_value, indent=2)
+                        print(f"Map node: JSON data (first 500 chars):\n{json_str[:500]}")
+                    except Exception as e:
+                        print(f"Map node: Could not serialize data: {e}")
+                elif isinstance(input_value, str):
+                    print(f"Map node: String data (length {len(input_value)}): {input_value[:100]}")
+            else:
+                print(f"Map node: No data received from {connection_info_src}")
         
         # Initialize output image
         preview_image = np.zeros((small_window_h, small_window_w, 3), dtype=np.uint8)
