@@ -9,6 +9,7 @@ The Map node provides interactive map visualization using OpenStreetMap and Leaf
 - **Preview Display**: Shows a simple preview of point distribution in the node
 - **Customizable View**: Adjust zoom level and view size with sliders
 - **Marker Clustering**: Automatically clusters nearby markers for better performance with many points
+- **Map Caching**: Optional caching system to speed up repeated map generation with same data
 
 ## Inputs
 - **JSON with lat/lon**: JSON data containing latitude and longitude information
@@ -24,6 +25,9 @@ The Map node provides interactive map visualization using OpenStreetMap and Leaf
 - **View Size Slider** (0.5-5.0): Adjust the bounding box size
   - Values < 1.0: Tighter view around points
   - Values > 1.0: Wider view with more context
+- **Cache Maps Checkbox**: Enable/disable map caching
+  - When enabled: Maps are cached based on coordinates, zoom, and size
+  - When disabled: Fresh map is generated each time
 - **Open Map in Browser Button**: Opens the generated interactive map in your default web browser
 
 ## Supported JSON Formats
@@ -71,6 +75,16 @@ The Map node provides interactive map visualization using OpenStreetMap and Leaf
 
 ## Usage Example
 
+### With GPS Movement Simulation
+1. Add a **CoordinateExamples** node (Input menu)
+2. Select "GPS Movement Simulation" from the dropdown
+3. Add a **Map** node (Visual menu)
+4. Connect CoordinateExamples JSON output to Map JSON input
+5. Enable "Cache Maps" for faster repeated visualization
+6. Adjust zoom (try 12 for city view) and view size as needed
+7. Click "Open Map in Browser" to see moving objects on the map
+8. The simulation continuously updates with new positions
+
 ### With WebSocket AIS Data
 1. Add a **WebSocket** node (Input menu)
 2. Configure it for AIS stream (see WebSocket node documentation)
@@ -97,6 +111,31 @@ The generated HTML map includes:
 - **Full zoom/pan controls**
 - **Auto-fit bounds** to show all points
 
+## Map Caching
+
+The Map node includes an intelligent caching system to improve performance:
+
+### How Caching Works
+- **Cache Key Generation**: Creates unique hash based on:
+  - Coordinate positions (first 100 points)
+  - Zoom level
+  - View size factor
+- **Cache Location**: `/tmp/cv_studio_map_cache/` (Linux/Mac) or `%TEMP%\cv_studio_map_cache\` (Windows)
+- **Cache Hit**: If identical parameters are used, cached map is reused instantly
+- **Cache Miss**: New map is generated and cached for future use
+
+### When to Use Caching
+- ✅ **Enable caching** when:
+  - Working with static coordinate data
+  - Repeatedly viewing the same area
+  - Testing different workflows with same data
+  - Performance is important
+
+- ❌ **Disable caching** when:
+  - Coordinates are continuously changing (like live GPS tracking)
+  - You want to force regeneration
+  - Debugging map generation issues
+
 ## Technical Details
 
 ### Dependencies
@@ -110,9 +149,9 @@ The node automatically searches JSON structures for:
 - Lists of coordinate objects
 
 ### Output Files
-Maps are saved as temporary HTML files in:
-- **Linux/Mac**: `/tmp/cv_studio_map_YYYYMMDD_HHMMSS.html`
-- **Windows**: `%TEMP%\cv_studio_map_YYYYMMDD_HHMMSS.html`
+Maps are saved as HTML files:
+- **With caching enabled**: `/tmp/cv_studio_map_cache/map_<hash>.html`
+- **Without caching**: `/tmp/cv_studio_map_YYYYMMDD_HHMMSS.html` (timestamped)
 
 Files are kept in the temp directory and will be cleaned up by the operating system.
 
