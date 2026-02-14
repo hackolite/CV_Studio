@@ -812,18 +812,30 @@ class Node(DpgNodeABC):
         # Add OSM basemap using contextily
         # Use zoom='auto' to let contextily determine optimal zoom level
         # crs='EPSG:3857' specifies Web Mercator projection
+        basemap_loaded = False
         try:
             ctx.add_basemap(ax, crs='EPSG:3857', source=ctx.providers.OpenStreetMap.Mapnik,
                           zoom='auto', attribution=None)
+            basemap_loaded = True
+            print("✓ OpenStreetMap tiles loaded successfully")
         except Exception as e:
-            print(f"Warning: Could not add basemap: {e}")
+            print(f"⚠ Warning: Could not load OpenStreetMap tiles: {e}")
+            print("  Using fallback: light blue background without tiles")
             # Continue without basemap - points will still be visible
             ax.set_facecolor('#ADD8E6')  # Light blue background
         
-        # Remove axis labels for cleaner look (optional)
+        # Hide axes completely - we don't want to show x,y coordinates (Web Mercator values)
+        # The map tiles provide the geographic context, not numeric coordinates
         ax.set_xlabel('')
         ax.set_ylabel('')
-        ax.set_title(f'Map View - {len(points)} point(s)', fontsize=10, pad=10)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        
+        # Set title with status indicator
+        title_text = f'Map View - {len(points)} point(s)'
+        if not basemap_loaded:
+            title_text += ' (no tiles)'
+        ax.set_title(title_text, fontsize=10, pad=10)
         
         # Tight layout
         plt.tight_layout(pad=0.5)
@@ -908,9 +920,12 @@ class Node(DpgNodeABC):
         ax.set_xlim(plot_min_lon, plot_max_lon)
         ax.set_ylim(plot_min_lat, plot_max_lat)
         
-        # Labels
-        ax.set_xlabel('Longitude', fontsize=8)
-        ax.set_ylabel('Latitude', fontsize=8)
+        # Hide coordinate tick values for cleaner map display
+        # The fallback map shows simplified geographic features instead of precise coordinates
+        ax.set_xlabel('')
+        ax.set_ylabel('')
+        ax.set_xticks([])
+        ax.set_yticks([])
         ax.set_title(f'Map View - {len(points)} point(s)', fontsize=10, pad=10)
         
         # Set aspect ratio to maintain geographic proportions
