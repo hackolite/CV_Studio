@@ -106,7 +106,6 @@ class FactoryNode:
                     items=['MP4', 'AVI', 'MKV'],
                     default_value='MP4',
                     width=small_window_w,
-                    label='Format',
                 )
 
             with dpg.node_attribute(
