@@ -22,24 +22,24 @@ The Coordinate Examples node provides predefined and simulated GPS coordinate da
 
 #### AISTRACKER
 Sample vessel positions simulating maritime AIS data:
-- 5 vessels in European waters
+- 5 vessels in Port of Marseille area (within 1 km)
 - Includes vessel names and MMSI identifiers
-- Locations: Le Havre, Thames, Marseille, Barcelona, Valencia
+- All vessels within 567m of each other for detailed visualization
 
 #### World Cities
 Major cities around the world:
-- 6 global metropolises
-- Locations: New York, Tokyo, Sydney, San Francisco, Berlin, Singapore
+- 6 global metropolises (points clustered in Paris area within 1 km)
+- All points within 496m of each other for detailed visualization
 
 #### European Ports
 Major European maritime ports:
-- 6 port locations
-- Locations: Rotterdam, Hamburg, Antwerp, Le Havre, Gibraltar, Gijón
+- 6 port locations (clustered in Amsterdam area within 1 km)
+- All points within 698m of each other for detailed visualization
 
 #### Mediterranean Sea
 Cities and ports along the Mediterranean:
-- 6 locations
-- Locations: Malaga, Marseille, Nice, Bari, Malta, Athens
+- 6 locations (clustered in Nice area within 1 km)
+- All points within 709m of each other for detailed visualization
 
 ### Dynamic Simulation
 
@@ -191,10 +191,17 @@ All examples output JSON in this format:
 
 ## Coordinate Accuracy
 
-Static examples use real-world coordinates from:
-- Official port locations
-- City center coordinates
-- Maritime navigation data
+All static examples use coordinates clustered within 1 km for detailed visualization:
+- AISTRACKER: Port of Marseille area (max distance: 567m)
+- World Cities: Paris area (max distance: 496m)
+- European Ports: Amsterdam area (max distance: 698m)
+- Mediterranean Sea: Nice area (max distance: 709m)
+
+This close proximity allows for:
+- Detailed street-level map visualization
+- Better testing of zoom and pan features
+- Clear visibility of individual markers
+- Realistic urban-scale scenarios
 
 GPS simulation provides realistic but not exact coordinates for:
 - Testing purposes

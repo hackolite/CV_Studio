@@ -9,6 +9,8 @@ This demo demonstrates:
 3. Pan (translation) in all 4 directions: left, right, up, down
 4. OpenStreetMap tile rendering
 
+Boats are positioned within 330m of each other for detailed visualization.
+
 This addresses the requirement:
 "comme exemple, 2 bateaux, au port, avec zoom, dézoom, translation gauche,
 droite, translation haut, bas. vérifie que la gestion openstreetmap est ok."

@@ -5,6 +5,8 @@ Example demonstrating the Map visualization node with sample data
 
 This script shows how to use the Map node to visualize geographic data
 from different sources like AIS boat data, city locations, etc.
+
+All examples use coordinates within 1 km for detailed visualization.
 """
 import json
 import sys
