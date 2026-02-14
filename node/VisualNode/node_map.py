@@ -474,6 +474,7 @@ class FactoryNode:
                     default_value=0.0,
                     overlay="",
                     width=small_window_w,
+                    show=False,  # Initially hidden, will show only when downloading
                 )
 
             # Status text
