@@ -195,7 +195,7 @@ def get_osm_tile(z, x, y, use_cache=True):
         return Image.new("RGBA", (TILE_SIZE, TILE_SIZE), (180, 180, 180, 255))
 
 
-def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3):
+def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3, progress_callback=None):
     """
     Assemble an OSM map centered exactly on the given coordinates.
     
@@ -209,6 +209,7 @@ def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3):
         zoom: OSM zoom level (1-19)
         tiles_x: Number of tiles horizontally (default: 3)
         tiles_y: Number of tiles vertically (default: 3)
+        progress_callback: Optional callback function(current, total) for progress updates
     
     Returns:
         Tuple of (pil_image, origin_fx, origin_fy) where:
@@ -237,11 +238,16 @@ def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3):
     canvas = Image.new("RGBA", (map_w + TILE_SIZE, map_h + TILE_SIZE))
     
     # Download and paste tiles
+    total_tiles = (tiles_y + 1) * (tiles_x + 1)
+    current_tile = 0
     for row in range(tiles_y + 1):
         for col in range(tiles_x + 1):
             tile = get_osm_tile(zoom, tile_x0 + col, tile_y0 + row)
             if tile:
                 canvas.paste(tile, (col * TILE_SIZE, row * TILE_SIZE))
+            current_tile += 1
+            if progress_callback:
+                progress_callback(current_tile, total_tiles)
     
     # Crop to final size with sub-pixel offset
     final_img = canvas.crop((off_x, off_y, off_x + map_w, off_y + map_h))
@@ -288,6 +294,8 @@ class FactoryNode:
         # Pan controls
         node.tag_node_pan_x_value_name = node.tag_node_name + ':PanXValue'
         node.tag_node_pan_y_value_name = node.tag_node_name + ':PanYValue'
+        # Download progress bar
+        node.tag_node_progress_name = node.tag_node_name + ':Progress'
 
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict['process_width']
@@ -339,8 +347,8 @@ class FactoryNode:
             ):
                 dpg.add_slider_int(
                     tag=node.tag_node_zoom_value_name,
-                    label="Zoom",
-                    width=small_window_w - 80,
+                    label="",
+                    width=small_window_w,
                     default_value=10,
                     min_value=1,
                     max_value=18,
@@ -353,8 +361,8 @@ class FactoryNode:
             ):
                 dpg.add_slider_float(
                     tag=node.tag_node_size_value_name,
-                    label="View Size",
-                    width=small_window_w - 80,
+                    label="",
+                    width=small_window_w,
                     default_value=1.0,
                     min_value=0.5,
                     max_value=5.0,
@@ -367,8 +375,8 @@ class FactoryNode:
             ):
                 dpg.add_slider_float(
                     tag=node.tag_node_pan_x_value_name,
-                    label="Pan X (Left/Right)",
-                    width=small_window_w - 80,
+                    label="",
+                    width=small_window_w,
                     default_value=0.0,
                     min_value=-1.0,
                     max_value=1.0,
@@ -381,8 +389,8 @@ class FactoryNode:
             ):
                 dpg.add_slider_float(
                     tag=node.tag_node_pan_y_value_name,
-                    label="Pan Y (Up/Down)",
-                    width=small_window_w - 80,
+                    label="",
+                    width=small_window_w,
                     default_value=0.0,
                     min_value=-1.0,
                     max_value=1.0,
@@ -397,6 +405,18 @@ class FactoryNode:
                     tag=node.tag_node_cache_value_name,
                     label="Cache Maps",
                     default_value=True,
+                )
+
+            # Download progress bar
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_progress_bar(
+                    label="Download Progress",
+                    tag=node.tag_node_progress_name,
+                    default_value=0.0,
+                    overlay="",
+                    width=small_window_w,
                 )
 
             # Status text
@@ -578,6 +598,7 @@ class Node(DpgNodeABC):
         tag_node_status_value_name = tag_node_name + ':StatusValue'
         tag_node_pan_x_value_name = tag_node_name + ':PanXValue'
         tag_node_pan_y_value_name = tag_node_name + ':PanYValue'
+        tag_node_progress_name = tag_node_name + ':Progress'
 
         small_window_w = self._opencv_setting_dict['process_width']
         small_window_h = self._opencv_setting_dict['process_height']
@@ -672,7 +693,7 @@ class Node(DpgNodeABC):
                             
                             # Create map visualization image (main display)
                             preview_image = self._create_preview_image(
-                                points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y
+                                points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name
                             )
                             
                             # Update status
@@ -721,7 +742,7 @@ class Node(DpgNodeABC):
                         
                         # Create map visualization image (main display)
                         preview_image = self._create_preview_image(
-                            points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y
+                            points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name
                         )
                         
                         # Update status
@@ -848,7 +869,7 @@ class Node(DpgNodeABC):
     #     # This method has been disabled to remove HTML rendering functionality
 
 
-    def _create_preview_image(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0):
+    def _create_preview_image(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0, progress_tag=None):
         """
         Create a map visualization image using enhanced OSM tile rendering.
         
@@ -865,6 +886,7 @@ class Node(DpgNodeABC):
             size_factor: View size factor (0.5-5.0)
             pan_x: Horizontal pan offset (-1.0 to 1.0)
             pan_y: Vertical pan offset (-1.0 to 1.0)
+            progress_tag: Optional DearPyGUI tag for progress bar updates
         
         Returns:
             numpy array in BGR format suitable for OpenCV/DPG
@@ -877,7 +899,7 @@ class Node(DpgNodeABC):
         
         # Try direct OSM tile rendering first (enhanced method)
         try:
-            return self._render_with_direct_osm_tiles(points, width, height, zoom_level, size_factor, pan_x, pan_y)
+            return self._render_with_direct_osm_tiles(points, width, height, zoom_level, size_factor, pan_x, pan_y, progress_tag)
         except Exception as e:
             print(f"Map node: Direct OSM rendering failed: {e}")
             traceback.print_exc()
@@ -896,7 +918,7 @@ class Node(DpgNodeABC):
         return self._render_with_matplotlib(points, width, height)
 
 
-    def _render_with_direct_osm_tiles(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0):
+    def _render_with_direct_osm_tiles(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0, progress_tag=None):
         """
         Enhanced OSM rendering using direct tile download and assembly.
         
@@ -914,6 +936,7 @@ class Node(DpgNodeABC):
             size_factor: View size factor (0.5-5.0, not used in this method)
             pan_x: Horizontal pan offset (-1.0 to 1.0)
             pan_y: Vertical pan offset (-1.0 to 1.0)
+            progress_tag: Optional DearPyGUI tag for progress bar updates
         
         Returns:
             numpy array in BGR format
@@ -948,9 +971,17 @@ class Node(DpgNodeABC):
             print(f"Map node (direct OSM): Assembling {tiles_x}x{tiles_y} tiles at zoom {zoom_level}")
             print(f"Map node (direct OSM): Center: ({center_lat:.6f}, {center_lon:.6f})")
             
-            # Assemble map with sub-pixel accuracy
+            # Define progress callback function
+            def update_progress(current, total):
+                if progress_tag and dpg.does_item_exist(progress_tag):
+                    progress = current / total if total > 0 else 0.0
+                    dpg.set_value(progress_tag, progress)
+                    overlay_text = f"Downloading: {current}/{total} tiles"
+                    dpg.configure_item(progress_tag, overlay=overlay_text)
+            
+            # Assemble map with sub-pixel accuracy and progress tracking
             pil_map, origin_fx, origin_fy = assemble_osm_map(
-                center_lat, center_lon, zoom_level, tiles_x, tiles_y
+                center_lat, center_lon, zoom_level, tiles_x, tiles_y, update_progress
             )
             
             # Convert PIL image to numpy array
@@ -1024,6 +1055,11 @@ class Node(DpgNodeABC):
             # Resize to target dimensions if needed
             if map_array.shape[1] != width or map_array.shape[0] != height:
                 map_array = cv2.resize(map_array, (width, height), interpolation=cv2.INTER_AREA)
+            
+            # Reset progress bar after rendering completes
+            if progress_tag and dpg.does_item_exist(progress_tag):
+                dpg.set_value(progress_tag, 0.0)
+                dpg.configure_item(progress_tag, overlay="")
             
             print(f"Map node (direct OSM): Rendered {len(points)} points successfully")
             return map_array
