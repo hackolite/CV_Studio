@@ -306,11 +306,36 @@ def test_node_initialization():
     print("✓ Node initialization test passed")
 
 
+def test_initial_coordinates_available():
+    """Test that initial coordinates are available immediately after initialization"""
+    
+    node = MockNode()
+    
+    # Initialize the GPS simulator
+    node.gps_simulator = GPSMovementSimulator(num_objects=5)
+    node.last_update_time = time.time()
+    # Get initial coordinates immediately (simulating the actual node behavior)
+    node.last_coordinates = node.gps_simulator.get_coordinates()
+    
+    # Verify coordinates are available right away
+    assert len(node.last_coordinates) == 5, "Should have 5 initial coordinates"
+    
+    # Verify each coordinate has the required fields
+    for coord in node.last_coordinates:
+        assert 'latitude' in coord
+        assert 'longitude' in coord
+        assert 'name' in coord
+        assert 'info' in coord
+    
+    print("✓ Initial coordinates available test passed")
+
+
 if __name__ == "__main__":
     print("Testing Coordinate Examples Node Timer Functionality...")
     print()
     
     test_node_initialization()
+    test_initial_coordinates_available()
     test_gps_update_interval()
     test_gps_updates_after_one_second()
     test_multiple_one_second_intervals()

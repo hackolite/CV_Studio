@@ -369,7 +369,8 @@ class Node(BaseNode):
                     center_lon=2.3522
                 )
                 self.last_update_time = time.time()
-                self.last_coordinates = []
+                # Get initial coordinates immediately so first call has data
+                self.last_coordinates = self.gps_simulator.get_coordinates()
             
             # Check if enough time has elapsed for an update (1 second interval)
             current_time = time.time()
