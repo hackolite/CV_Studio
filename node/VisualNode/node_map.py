@@ -23,14 +23,13 @@ import json
 import os
 import tempfile
 import hashlib
+import math
 from datetime import datetime
 
-import cv2
 import numpy as np
-import dearpygui.dearpygui as dpg
+import cv2
 from PIL import Image
-import io
-import math
+import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
 
@@ -55,6 +54,11 @@ except ImportError:
 # contextily has its own caching mechanism, but we create this for compatibility
 CACHE_DIR = os.path.join(tempfile.gettempdir(), 'cv_studio_map_cache')
 os.makedirs(CACHE_DIR, exist_ok=True)
+
+# Map rendering constants
+MIN_RANGE_METERS = 1000      # Minimum range for single points (1 km)
+DEFAULT_RANGE_METERS = 10000  # Default range when min is needed (10 km)
+MAP_PADDING_FACTOR = 0.15     # Padding around bounding box (15%)
 
 # Simplified continental outlines for map context visualization
 # These are rough approximations to give geographic context in the map view
@@ -304,11 +308,11 @@ class Node(DpgNodeABC):
         x_range = max_x - min_x
         y_range = max_y - min_y
         
-        # Ensure minimum range for single points
-        if x_range < 1000:  # Less than 1km
-            x_range = 10000  # Use 10km as minimum range
-        if y_range < 1000:
-            y_range = 10000
+        # Ensure minimum range for single points or very close points
+        if x_range < MIN_RANGE_METERS:  # Less than 1km
+            x_range = DEFAULT_RANGE_METERS  # Use 10km as minimum range
+        if y_range < MIN_RANGE_METERS:
+            y_range = DEFAULT_RANGE_METERS
         
         # Apply size factor as padding
         x_padding = x_range * (size_factor - 1.0) / 2
@@ -666,28 +670,27 @@ class Node(DpgNodeABC):
                 'lon': point['lon']
             })
         
-        # Calculate extent (bounding box)
+        # Calculate extent (bounding box) - reuse the _calculate_extent logic
         xs = [p['x'] for p in mercator_points]
         ys = [p['y'] for p in mercator_points]
         
         min_x, max_x = min(xs), max(xs)
         min_y, max_y = min(ys), max(ys)
         
-        # Add padding
+        # Add padding using the same logic as _calculate_extent
         x_range = max_x - min_x
         y_range = max_y - min_y
         
-        # Ensure minimum range for single points
-        if x_range < 1000:  # Less than 1km
-            x_range = 10000  # Use 10km as minimum
-        if y_range < 1000:
-            y_range = 10000
+        # Ensure minimum range for single points or very close points
+        if x_range < MIN_RANGE_METERS:
+            x_range = DEFAULT_RANGE_METERS
+        if y_range < MIN_RANGE_METERS:
+            y_range = DEFAULT_RANGE_METERS
         
-        padding = 0.15
-        min_x -= x_range * padding
-        max_x += x_range * padding
-        min_y -= y_range * padding
-        max_y += y_range * padding
+        min_x -= x_range * MAP_PADDING_FACTOR
+        max_x += x_range * MAP_PADDING_FACTOR
+        min_y -= y_range * MAP_PADDING_FACTOR
+        max_y += y_range * MAP_PADDING_FACTOR
         
         # Create figure
         dpi = 100
