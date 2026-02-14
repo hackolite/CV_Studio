@@ -275,6 +275,8 @@ class Node(DpgNodeABC):
                         tile_array = cv2.cvtColor(tile_array, cv2.COLOR_GRAY2BGR)
                     elif len(tile_array.shape) == 3 and tile_array.shape[2] == 4:  # RGBA
                         tile_array = cv2.cvtColor(tile_array, cv2.COLOR_RGBA2BGR)
+                    elif len(tile_array.shape) == 3 and tile_array.shape[2] == 3:  # RGB
+                        tile_array = cv2.cvtColor(tile_array, cv2.COLOR_RGB2BGR)
                     return tile_array
             except Exception as e:
                 print(f"Error loading cached tile {x},{y},{zoom}: {e}")
@@ -301,6 +303,8 @@ class Node(DpgNodeABC):
                 tile_array = cv2.cvtColor(tile_array, cv2.COLOR_GRAY2BGR)
             elif len(tile_array.shape) == 3 and tile_array.shape[2] == 4:  # RGBA
                 tile_array = cv2.cvtColor(tile_array, cv2.COLOR_RGBA2BGR)
+            elif len(tile_array.shape) == 3 and tile_array.shape[2] == 3:  # RGB
+                tile_array = cv2.cvtColor(tile_array, cv2.COLOR_RGB2BGR)
             
             return tile_array
             
