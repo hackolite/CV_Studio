@@ -28,6 +28,33 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 CACHE_DIR = os.path.join(tempfile.gettempdir(), 'cv_studio_map_cache')
 os.makedirs(CACHE_DIR, exist_ok=True)
 
+# Simplified continental outlines for map context visualization
+# These are rough approximations to give geographic context in the map view
+# Format: {region_name: (longitude_coords, latitude_coords)}
+SIMPLIFIED_CONTINENTS = {
+    'europe': {
+        'bounds': {'lon': (-15, 40), 'lat': (35, 70)},
+        'outline': {
+            'lon': [-10, 15, 30, 30, 15, 0, -10, -10],
+            'lat': [35, 35, 40, 60, 70, 65, 50, 35]
+        }
+    },
+    'north_america': {
+        'bounds': {'lon': (-130, -60), 'lat': (25, 50)},
+        'outline': {
+            'lon': [-125, -125, -70, -70, -125],
+            'lat': [25, 50, 50, 25, 25]
+        }
+    },
+    'asia': {
+        'bounds': {'lon': (60, 140), 'lat': (20, 50)},
+        'outline': {
+            'lon': [60, 140, 140, 100, 60, 60],
+            'lat': [20, 20, 50, 50, 40, 20]
+        }
+    }
+}
+
 
 class FactoryNode:
     node_label = 'Map'
@@ -560,8 +587,12 @@ class Node(DpgNodeABC):
         
         # Set aspect ratio to maintain geographic proportions
         # Use cos(mean_lat) to approximate the aspect ratio
+        # Clamp mean_lat to avoid division by zero at poles
         mean_lat = (min_lat + max_lat) / 2
+        mean_lat = np.clip(mean_lat, -85, 85)  # Avoid extreme polar regions
         aspect_ratio = 1.0 / np.cos(np.radians(mean_lat))
+        # Clamp aspect ratio to reasonable range
+        aspect_ratio = np.clip(aspect_ratio, 0.1, 10.0)
         ax.set_aspect(aspect_ratio)
         
         # Tight layout to minimize margins
@@ -583,35 +614,30 @@ class Node(DpgNodeABC):
         return image
     
     def _draw_simplified_map_features(self, ax, min_lon, max_lon, min_lat, max_lat):
-        """Draw simplified map features (land approximation)"""
-        # This is a very simplified representation
-        # For actual geographic features, use cartopy or basemap
+        """Draw simplified map features (land approximation)
         
-        # Draw some simple land-like polygons based on coordinate ranges
-        # This gives a more "map-like" appearance
-        
+        Uses predefined continental outlines to provide geographic context.
+        These are rough approximations - for precise coastlines, use cartopy or basemap.
+        """
         # Determine if we're looking at a specific region
         lon_center = (min_lon + max_lon) / 2
         lat_center = (min_lat + max_lat) / 2
         
-        # European region approximation
-        if -15 < lon_center < 40 and 35 < lat_center < 70:
-            # Simple Europe outline
-            europe_lons = [-10, 15, 30, 30, 15, 0, -10, -10]
-            europe_lats = [35, 35, 40, 60, 70, 65, 50, 35]
-            ax.fill(europe_lons, europe_lats, color='#90EE90', alpha=0.3, zorder=1)
-        
-        # North America approximation
-        elif -130 < lon_center < -60 and 25 < lat_center < 50:
-            na_lons = [-125, -125, -70, -70, -125]
-            na_lats = [25, 50, 50, 25, 25]
-            ax.fill(na_lons, na_lats, color='#90EE90', alpha=0.3, zorder=1)
-        
-        # Asia approximation
-        elif 60 < lon_center < 140 and 20 < lat_center < 50:
-            asia_lons = [60, 140, 140, 100, 60, 60]
-            asia_lats = [20, 20, 50, 50, 40, 20]
-            ax.fill(asia_lons, asia_lats, color='#90EE90', alpha=0.3, zorder=1)
+        # Check each continent and draw if we're viewing that region
+        for continent_name, continent_data in SIMPLIFIED_CONTINENTS.items():
+            bounds = continent_data['bounds']
+            lon_bounds = bounds['lon']
+            lat_bounds = bounds['lat']
+            
+            # Check if view center falls within this continent's bounds
+            if (lon_bounds[0] < lon_center < lon_bounds[1] and 
+                lat_bounds[0] < lat_center < lat_bounds[1]):
+                # Draw the continent outline
+                outline = continent_data['outline']
+                ax.fill(outline['lon'], outline['lat'], 
+                       color='#90EE90', alpha=0.3, zorder=1,
+                       label=f'{continent_name.title()} (approx)')
+                break  # Only draw one continent to avoid clutter
         
         # For other regions or zoomed views, just show water background
         # The grid and colors will still give a map-like appearance
