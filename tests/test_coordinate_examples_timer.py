@@ -161,8 +161,8 @@ def test_gps_update_interval():
     node.last_update_time = time.time()
     node.last_coordinates = node.gps_simulator.get_coordinates()
     
-    # Get initial coordinates
-    initial_coords = node.last_coordinates.copy()
+    # Get initial coordinates (deep copy)
+    initial_coords = [coord.copy() for coord in node.last_coordinates]
     
     # Simulate rapid updates (like the main loop running at 100 Hz)
     # The coordinates should NOT change for the first second
@@ -182,8 +182,15 @@ def test_gps_update_interval():
             node.last_coordinates = node.gps_simulator.get_coordinates()
             node.last_update_time = current_time
         
-        # Check if coordinates have changed
-        if node.last_coordinates == initial_coords:
+        # Check if coordinates have changed (deep comparison)
+        coords_unchanged = True
+        for j, (initial, current) in enumerate(zip(initial_coords, node.last_coordinates)):
+            if (initial['latitude'] != current['latitude'] or 
+                initial['longitude'] != current['longitude']):
+                coords_unchanged = False
+                break
+        
+        if coords_unchanged:
             updates_without_change += 1
     
     elapsed_time = time.time() - start_time
@@ -194,7 +201,13 @@ def test_gps_update_interval():
     
     # If we ran for less than 1 second, coordinates should not have changed
     if elapsed_time < 1.0:
-        assert node.last_coordinates == initial_coords, "Coordinates should not change before 1 second"
+        coords_unchanged = True
+        for initial, current in zip(initial_coords, node.last_coordinates):
+            if (initial['latitude'] != current['latitude'] or 
+                initial['longitude'] != current['longitude']):
+                coords_unchanged = False
+                break
+        assert coords_unchanged, "Coordinates should not change before 1 second"
     
     print(f"✓ GPS update interval test passed ({updates_without_change}/50 updates without change)")
 

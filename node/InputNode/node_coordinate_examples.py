@@ -24,6 +24,10 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.basenode import Node as BaseNode
 
 
+# GPS Movement Simulation name constant
+GPS_SIMULATION_NAME = "GPS Movement Simulation"
+
+
 # Predefined coordinate examples compatible with Map node format
 COORDINATE_EXAMPLES = {
     "None": [],
@@ -196,7 +200,7 @@ def get_example_names():
     """Get list of available example names for the dropdown."""
     # Static examples first, then add GPS simulation
     static_names = list(COORDINATE_EXAMPLES.keys())
-    return static_names + ["GPS Movement Simulation"]
+    return static_names + [GPS_SIMULATION_NAME]
 
 
 class FactoryNode:
@@ -313,13 +317,13 @@ class Node(BaseNode):
         selected_example = app_data
         
         # Reset GPS simulator when switching away from GPS simulation
-        if selected_example != "GPS Movement Simulation" and hasattr(node, 'gps_simulator'):
+        if selected_example != GPS_SIMULATION_NAME and hasattr(node, 'gps_simulator'):
             node.gps_simulator = None
             node.last_update_time = None
             node.last_coordinates = []
         
         # Get the coordinates for the selected example
-        if selected_example == "GPS Movement Simulation":
+        if selected_example == GPS_SIMULATION_NAME:
             # For GPS simulation, show dynamic message
             num_points = 5  # Default number
             status_text = f'Simulating {num_points} moving objects (updates every 1s)'
@@ -355,7 +359,7 @@ class Node(BaseNode):
             selected_example = "None"
         
         # Handle GPS Movement Simulation
-        if selected_example == "GPS Movement Simulation":
+        if selected_example == GPS_SIMULATION_NAME:
             # Initialize simulator if not already done
             if self.gps_simulator is None:
                 # Default: Paris, France as center
@@ -430,7 +434,7 @@ class Node(BaseNode):
         dpg_set_value(dropdown_tag, selected_example)
         
         # Update status text
-        if selected_example == "GPS Movement Simulation":
+        if selected_example == GPS_SIMULATION_NAME:
             status_text = 'Simulating 5 moving objects (updates every 1s)'
         else:
             coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
