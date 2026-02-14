@@ -127,9 +127,9 @@ print("  Using fallback: light blue background without tiles")
 
 #### Enhanced Error Handling:
 ```python
+# traceback is imported at module level
 except Exception as e:
     print(f"Map node: Error rendering with contextily: {e}")
-    import traceback
     traceback.print_exc()
     print("Map node: Falling back to matplotlib-only rendering")
 ```

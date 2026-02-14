@@ -787,7 +787,10 @@ class Node(DpgNodeABC):
             y_range = DEFAULT_RANGE_METERS
             print(f"Map node: Y range too small, using default: {DEFAULT_RANGE_METERS}m")
         
-        # Apply size factor (inverse relationship: smaller factor = zoom in = smaller range)
+        # Apply size factor (direct multiplication: smaller factor = smaller range = zoom in)
+        # size_factor < 1.0 = zoom in (smaller range)
+        # size_factor = 1.0 = normal view
+        # size_factor > 1.0 = zoom out (larger range)
         x_range = x_range * size_factor
         y_range = y_range * size_factor
         print(f"Map node: Range after size_factor ({size_factor}): X={x_range:.2f}m, Y={y_range:.2f}m")
