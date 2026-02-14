@@ -114,14 +114,18 @@ def calculate_distance_km(lat1, lon1, lat2, lon2):
 
 
 def test_t0_recording():
-    """Test T0 recording."""
+    """Test T0 recording.
+    
+    Note: get_t0_positions() returns a dict mapping object ID to T0 position.
+    We access it with t0_positions[0] where 0 is the object ID.
+    """
     print("\n=== Test: T0 Recording ===")
     
     sim = GPSMovementSimulator(num_objects=1, center_lat=48.8566, center_lon=2.3522)
     t0_positions = sim.get_t0_positions()
     
     assert len(t0_positions) == 1
-    t0 = t0_positions[0]
+    t0 = t0_positions[0]  # Access by object ID (0)
     assert 'lat' in t0 and 'lon' in t0 and 'time' in t0
     
     obj = sim.objects[0]

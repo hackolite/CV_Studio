@@ -161,8 +161,9 @@ class GPSMovementSimulator:
             else:  # random_walk
                 self._update_random_walk(obj, time_elapsed)
             
-            # Log position update at specific intervals (every 10 seconds)
-            if time_elapsed > 0 and int(time_elapsed) % 10 == 0:
+            # Log position update at specific intervals (approximately every 10 seconds)
+            # Use modulo with tolerance since time_elapsed is a float
+            if time_elapsed > 0 and (int(time_elapsed) % 10 == 0 and time_elapsed - int(time_elapsed) < 0.5):
                 t0 = self.t0_positions.get(obj['id'])
                 if t0:
                     print(f"GPS Simulator: Object {obj['id']} T{int(time_elapsed)} position - "
@@ -263,7 +264,8 @@ class GPSMovementSimulator:
         Get initial (T0) positions of all objects.
         
         Returns:
-            Dictionary mapping object ID to T0 position data
+            Dictionary mapping object ID (int) to T0 position data.
+            Example: {0: {'lat': 48.8566, 'lon': 2.3522, 'time': 1708123456.789}}
         """
         return self.t0_positions.copy()
 

@@ -269,10 +269,12 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
         cleanup()
-        exit(1)
+        import sys
+        sys.exit(1)
     except Exception as e:
         print(f"\n✗ Unexpected error: {e}")
         import traceback
         traceback.print_exc()
         cleanup()
-        exit(1)
+        import sys
+        sys.exit(1)
