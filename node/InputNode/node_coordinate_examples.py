@@ -71,6 +71,9 @@ class GPSMovementSimulator:
     """
     Simulates GPS movement for various objects.
     Generates random paths simulating realistic movement patterns.
+    
+    This simulator records position at T0 (initial time) and calculates
+    subsequent positions at T1, T2, etc. based on walking speed (4 km/h).
     """
     
     def __init__(self, num_objects=5, center_lat=48.8566, center_lon=2.3522):
@@ -87,10 +90,14 @@ class GPSMovementSimulator:
         self.center_lon = center_lon
         self.objects = []
         self.start_time = time.time()
+        self.t0_positions = {}  # Store initial positions (T0) for each object
         self._initialize_objects()
     
     def _initialize_objects(self):
-        """Initialize objects with random starting positions and velocities."""
+        """Initialize objects with random starting positions and velocities.
+        
+        Records T0 (initial position) for each object for reference.
+        """
         random.seed(42)  # Use a seed for reproducible "random" movements
         
         for i in range(self.num_objects):
@@ -102,20 +109,38 @@ class GPSMovementSimulator:
             lat_offset = (radius_km / 111.0) * math.cos(angle)
             lon_offset = (radius_km / (111.0 * math.cos(math.radians(self.center_lat)))) * math.sin(angle)
             
+            # Calculate initial position (T0)
+            initial_lat = self.center_lat + lat_offset
+            initial_lon = self.center_lon + lon_offset
+            
             obj = {
                 'id': i,
                 'name': f'Vehicle-{i+1:03d}',
-                'lat': self.center_lat + lat_offset,
-                'lon': self.center_lon + lon_offset,
+                'lat': initial_lat,
+                'lon': initial_lon,
                 'speed_kmh': 4,  # km/h (walking speed)
                 'direction': random.uniform(0, 2 * math.pi),  # radians
                 'pattern': random.choice(['linear', 'circular', 'random_walk']),
             }
             self.objects.append(obj)
+            
+            # Record T0 position for reference
+            self.t0_positions[i] = {
+                'lat': initial_lat,
+                'lon': initial_lon,
+                'time': self.start_time
+            }
+            
+            # Log T0 position
+            print(f"GPS Simulator: Object {i} T0 position recorded - "
+                  f"lat={initial_lat:.6f}, lon={initial_lon:.6f} at t={0:.1f}s")
     
     def update_positions(self, time_elapsed=None):
         """
         Update positions of all objects based on elapsed time.
+        
+        Calculates new position (T1, T2, ...) from initial position (T0)
+        based on walking speed of 4 km/h.
         
         Args:
             time_elapsed: Time in seconds since start. If None, uses actual elapsed time.
@@ -124,28 +149,64 @@ class GPSMovementSimulator:
             time_elapsed = time.time() - self.start_time
         
         for obj in self.objects:
+            # Calculate distance traveled from T0 at 4 km/h
+            # Distance = speed * time
+            distance_km = (obj['speed_kmh'] / 3600.0) * time_elapsed
+            
             # Update position based on pattern
             if obj['pattern'] == 'linear':
-                self._update_linear(obj, time_elapsed)
+                self._update_linear(obj, time_elapsed, distance_km)
             elif obj['pattern'] == 'circular':
                 self._update_circular(obj, time_elapsed)
             else:  # random_walk
                 self._update_random_walk(obj, time_elapsed)
+            
+            # Log position update at specific intervals (approximately every 10 seconds)
+            # Use modulo with tolerance since time_elapsed is a float
+            if time_elapsed > 0 and (int(time_elapsed) % 10 == 0 and time_elapsed - int(time_elapsed) < 0.5):
+                t0 = self.t0_positions.get(obj['id'])
+                if t0:
+                    print(f"GPS Simulator: Object {obj['id']} T{int(time_elapsed)} position - "
+                          f"lat={obj['lat']:.6f}, lon={obj['lon']:.6f}, "
+                          f"distance from T0={distance_km:.3f}km")
     
-    def _update_linear(self, obj, time_elapsed):
-        """Update position with linear movement."""
-        # Distance traveled in km
-        distance_km = (obj['speed_kmh'] / 3600.0) * (time_elapsed % 3600)
+    def _update_linear(self, obj, time_elapsed, distance_km):
+        """Update position with linear movement.
         
-        # Convert to degrees
+        Calculates position at time T based on T0 position and walking speed.
+        
+        Args:
+            obj: Object dictionary
+            time_elapsed: Time in seconds since T0
+            distance_km: Distance traveled in km at 4 km/h
+        """
+        # Get T0 position
+        t0 = self.t0_positions.get(obj['id'])
+        if not t0:
+            # Fallback if T0 not recorded (shouldn't happen)
+            t0 = {'lat': obj['lat'], 'lon': obj['lon']}
+        
+        # Convert distance to degrees based on direction
         lat_change = (distance_km / 111.0) * math.cos(obj['direction'])
-        lon_change = (distance_km / (111.0 * math.cos(math.radians(obj['lat'])))) * math.sin(obj['direction'])
+        lon_change = (distance_km / (111.0 * math.cos(math.radians(t0['lat'])))) * math.sin(obj['direction'])
         
-        # Update position (modulo to keep in reasonable bounds)
+        # Calculate new position from T0 + movement
+        new_lat = t0['lat'] + lat_change
+        new_lon = t0['lon'] + lon_change
+        
+        # Only apply wrapping if object strays too far from center (>15km)
         base_lat = self.center_lat
         base_lon = self.center_lon
-        obj['lat'] = base_lat + ((obj['lat'] - base_lat + lat_change) % 0.2) - 0.1
-        obj['lon'] = base_lon + ((obj['lon'] - base_lon + lon_change) % 0.2) - 0.1
+        distance_from_center = math.sqrt((new_lat - base_lat)**2 + (new_lon - base_lon)**2)
+        
+        if distance_from_center > 0.15:  # ~16.5 km from center
+            # Wrap around to keep within bounds
+            obj['lat'] = base_lat + ((new_lat - base_lat) % 0.2) - 0.1
+            obj['lon'] = base_lon + ((new_lon - base_lon) % 0.2) - 0.1
+        else:
+            # No wrapping needed, just use the calculated position
+            obj['lat'] = new_lat
+            obj['lon'] = new_lon
     
     def _update_circular(self, obj, time_elapsed):
         """Update position with circular movement."""
@@ -197,6 +258,16 @@ class GPSMovementSimulator:
                 'info': f"{obj['pattern']} - {obj['speed_kmh']:.1f} km/h"
             })
         return coordinates
+    
+    def get_t0_positions(self):
+        """
+        Get initial (T0) positions of all objects.
+        
+        Returns:
+            Dictionary mapping object ID (int) to T0 position data.
+            Example: {0: {'lat': 48.8566, 'lon': 2.3522, 'time': 1708123456.789}}
+        """
+        return self.t0_positions.copy()
 
 def get_example_names():
     """Get list of available example names for the dropdown."""

@@ -150,6 +150,9 @@ def get_osm_tile(z, x, y, use_cache=True):
     """
     Download an OSM tile from the server or retrieve from cache.
     
+    This function implements a tile download logic that avoids downloading
+    tiles every time by using a local cache.
+    
     Args:
         z: Zoom level
         x: Tile X coordinate
@@ -164,7 +167,9 @@ def get_osm_tile(z, x, y, use_cache=True):
     
     if use_cache and os.path.exists(cache_path):
         try:
-            return Image.open(cache_path).convert("RGBA")
+            img = Image.open(cache_path).convert("RGBA")
+            print(f"Map node: Tile {z}/{x}/{y} loaded from cache (no download needed)")
+            return img
         except Exception as e:
             print(f"Map node: Cache read error for tile {z}/{x}/{y}: {e}")
             # Remove corrupted cache file
@@ -176,6 +181,7 @@ def get_osm_tile(z, x, y, use_cache=True):
     # Download tile
     try:
         url = OSM_TILE_URL.format(z=z, x=x, y=y)
+        print(f"Map node: Downloading tile {z}/{x}/{y} from OSM server...")
         response = requests.get(url, headers=OSM_HEADERS, timeout=8)
         response.raise_for_status()
         
@@ -185,6 +191,7 @@ def get_osm_tile(z, x, y, use_cache=True):
         if use_cache:
             try:
                 img.save(cache_path)
+                print(f"Map node: Tile {z}/{x}/{y} saved to cache for future use")
             except Exception as e:
                 print(f"Map node: Cache write error for tile {z}/{x}/{y}: {e}")
         
@@ -202,6 +209,8 @@ def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3, progres
     This function downloads the necessary tiles and assembles them with
     sub-pixel accuracy to ensure the center point is positioned exactly
     at the center of the resulting image.
+    
+    Implements tile download logic with caching to avoid downloading tiles every time.
     
     Args:
         center_lat: Latitude of center point
@@ -237,17 +246,41 @@ def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3, progres
     map_h = TILE_SIZE * tiles_y
     canvas = Image.new("RGBA", (map_w + TILE_SIZE, map_h + TILE_SIZE))
     
+    # Track cache statistics
+    tiles_from_cache = 0
+    tiles_downloaded = 0
+    
     # Download and paste tiles
     total_tiles = (tiles_y + 1) * (tiles_x + 1)
     current_tile = 0
+    
+    print(f"Map node: Assembling map with {total_tiles} tiles at zoom {zoom}...")
+    
     for row in range(tiles_y + 1):
         for col in range(tiles_x + 1):
-            tile = get_osm_tile(zoom, tile_x0 + col, tile_y0 + row)
+            z, x, y = zoom, tile_x0 + col, tile_y0 + row
+            cache_path = os.path.join(OSM_CACHE_DIR, f"{z}_{x}_{y}.png")
+            
+            # Check if tile was already cached before calling get_osm_tile
+            was_cached = os.path.exists(cache_path)
+            
+            tile = get_osm_tile(z, x, y)
             if tile:
                 canvas.paste(tile, (col * TILE_SIZE, row * TILE_SIZE))
+                
+                # Update statistics
+                if was_cached:
+                    tiles_from_cache += 1
+                else:
+                    tiles_downloaded += 1
+            
             current_tile += 1
             if progress_callback:
                 progress_callback(current_tile, total_tiles)
+    
+    # Log cache statistics
+    print(f"Map node: Tile cache summary - {tiles_from_cache} from cache, "
+          f"{tiles_downloaded} downloaded, {total_tiles} total")
     
     # Crop to final size with sub-pixel offset
     final_img = canvas.crop((off_x, off_y, off_x + map_w, off_y + map_h))
