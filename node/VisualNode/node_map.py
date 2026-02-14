@@ -4,7 +4,6 @@ import time
 import json
 import os
 import tempfile
-import webbrowser
 import hashlib
 from datetime import datetime
 
@@ -105,7 +104,6 @@ class FactoryNode:
         node.tag_node_size_value_name = node.tag_node_name + ':MapSizeValue'
         node.tag_node_cache_name = node.tag_node_name + ':UseCache'
         node.tag_node_cache_value_name = node.tag_node_name + ':UseCacheValue'
-        node.tag_node_open_button_name = node.tag_node_name + ':OpenMap'
         node.tag_node_status_name = node.tag_node_name + ':Status'
         node.tag_node_status_value_name = node.tag_node_name + ':StatusValue'
 
@@ -200,18 +198,6 @@ class FactoryNode:
                     default_value='No data',
                 )
 
-            # Open map button (optional - for interactive HTML view)
-            with dpg.node_attribute(
-                    attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_button(
-                    tag=node.tag_node_open_button_name,
-                    label="Open Interactive HTML",
-                    callback=lambda s, a, u: Node.open_map_callback(s, a, u),
-                    user_data=node,
-                    width=small_window_w - 20,
-                )
-
         return node
 
 
@@ -283,7 +269,13 @@ class Node(DpgNodeABC):
         if os.path.exists(cache_path):
             try:
                 with Image.open(cache_path) as img:
-                    return np.array(img)
+                    tile_array = np.array(img)
+                    # Ensure tile is 3-channel
+                    if len(tile_array.shape) == 2:  # Grayscale
+                        tile_array = cv2.cvtColor(tile_array, cv2.COLOR_GRAY2RGB)
+                    elif len(tile_array.shape) == 3 and tile_array.shape[2] == 4:  # RGBA
+                        tile_array = tile_array[:, :, :3]  # Remove alpha channel
+                    return tile_array
             except Exception as e:
                 print(f"Error loading cached tile {x},{y},{zoom}: {e}")
                 # If cache is corrupted, delete and re-download
@@ -302,7 +294,15 @@ class Node(DpgNodeABC):
             
             # Load and return as numpy array
             img = Image.open(io.BytesIO(response.content))
-            return np.array(img)
+            tile_array = np.array(img)
+            
+            # Ensure tile is 3-channel (BGR)
+            if len(tile_array.shape) == 2:  # Grayscale
+                tile_array = cv2.cvtColor(tile_array, cv2.COLOR_GRAY2RGB)
+            elif len(tile_array.shape) == 3 and tile_array.shape[2] == 4:  # RGBA
+                tile_array = tile_array[:, :, :3]  # Remove alpha channel
+            
+            return tile_array
             
         except requests.RequestException as e:
             print(f"Network error downloading tile {x},{y},{zoom}: {e}")
@@ -365,19 +365,6 @@ class Node(DpgNodeABC):
         node.cache_center = None
         node.cache_radius = 2
         return node
-        
-
-    @staticmethod
-    def open_map_callback(sender, app_data, user_data):
-        """Open the generated map in the default browser"""
-        node = user_data
-        if node.last_map_path and os.path.exists(node.last_map_path):
-            webbrowser.open('file://' + os.path.abspath(node.last_map_path))
-        else:
-            # Update status to inform user
-            if hasattr(node, 'tag_node_status_value_name'):
-                dpg_set_value(node.tag_node_status_value_name, "No map generated yet")
-            print("No map generated yet")
 
 
     def update(
@@ -476,17 +463,8 @@ class Node(DpgNodeABC):
                             if use_cache is None:
                                 use_cache = True  # Default to enabled
                             
-                            # Generate HTML map (for optional interactive view in browser)
-                            map_path = self._generate_map(points, zoom_level, size_factor, use_cache)
-                            
-                            if map_path:
-                                self.last_map_path = map_path
-                                status_text = f"✓ {len(points)} point(s) displayed"
-                                print(f"Map node: Interactive HTML map ready at {map_path}")
-                            else:
-                                # Map generation failed (likely folium not installed) - that's ok
-                                status_text = f"✓ {len(points)} point(s) displayed"
-                                print("Map node: Displaying map (HTML not generated - folium needed for interactive view)")
+                            # HTML map generation removed - only tile-based preview
+                            status_text = f"✓ {len(points)} point(s) displayed"
                             
                             # Create map visualization image (main display)
                             preview_image = self._create_preview_image(
@@ -525,17 +503,8 @@ class Node(DpgNodeABC):
                         if use_cache is None:
                             use_cache = True  # Default to enabled
                         
-                        # Generate HTML map (for optional interactive view in browser)
-                        map_path = self._generate_map(points, zoom_level, size_factor, use_cache)
-                        
-                        if map_path:
-                            self.last_map_path = map_path
-                            status_text = f"✓ {len(points)} point(s) displayed"
-                            print(f"Map node: Interactive HTML map ready at {map_path}")
-                        else:
-                            # Map generation failed (likely folium not installed) - that's ok
-                            status_text = f"✓ {len(points)} point(s) displayed"
-                            print("Map node: Displaying map (HTML not generated - folium needed for interactive view)")
+                        # HTML map generation removed - only tile-based preview
+                        status_text = f"✓ {len(points)} point(s) displayed"
                         
                         # Create map visualization image (main display)
                         preview_image = self._create_preview_image(
@@ -660,78 +629,10 @@ class Node(DpgNodeABC):
         
         return cache_key
 
-
-    def _generate_map(self, points, zoom_level, size_factor, use_cache=True):
-        """Generate an HTML map with Leaflet using folium with optional caching"""
-        try:
-            import folium
-            from folium.plugins import MarkerCluster
-        except ImportError:
-            print("folium not installed, map generation skipped. Install with: pip install folium")
-            return None
-
-        if not points:
-            return None
-
-        # Generate cache key based on points, zoom, and size
-        if use_cache:
-            cache_key = self._generate_cache_key(points, zoom_level, size_factor)
-            cached_path = os.path.join(CACHE_DIR, f"map_{cache_key}.html")
-            
-            # Check if cached map exists
-            if os.path.exists(cached_path):
-                print(f"Map node: Using cached map from {cached_path}")
-                return cached_path
-
-        # Calculate center and bounds
-        lats = [p['lat'] for p in points]
-        lons = [p['lon'] for p in points]
-        
-        center_lat = sum(lats) / len(lats)
-        center_lon = sum(lons) / len(lons)
-        
-        # Calculate bounds with size factor
-        lat_range = (max(lats) - min(lats)) * size_factor
-        lon_range = (max(lons) - min(lons)) * size_factor
-        
-        # Create map with tile caching
-        m = folium.Map(
-            location=[center_lat, center_lon],
-            zoom_start=zoom_level,
-            tiles='OpenStreetMap',
-            attr='OpenStreetMap'
-        )
-        
-        # Add marker cluster for better performance with many points
-        marker_cluster = MarkerCluster().add_to(m)
-        
-        # Add markers for each point
-        for point in points:
-            folium.Marker(
-                location=[point['lat'], point['lon']],
-                popup=f"{point['name']}<br>{point['info']}",
-                tooltip=point['name']
-            ).add_to(marker_cluster)
-        
-        # Fit bounds to show all points
-        if len(points) > 1:
-            sw = [min(lats) - lat_range * 0.1, min(lons) - lon_range * 0.1]
-            ne = [max(lats) + lat_range * 0.1, max(lons) + lon_range * 0.1]
-            m.fit_bounds([sw, ne])
-        
-        # Save to appropriate location (cache or temp)
-        if use_cache:
-            map_path = cached_path
-            print(f"Map node: Caching map to {map_path}")
-        else:
-            temp_dir = tempfile.gettempdir()
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            map_path = os.path.join(temp_dir, f"cv_studio_map_{timestamp}.html")
-            print(f"Map node: Saving map to temp {map_path}")
-        
-        m.save(map_path)
-        
-        return map_path
+    # HTML map generation disabled - functionality removed
+    # def _generate_map(self, points, zoom_level, size_factor, use_cache=True):
+    #     """Generate an HTML map with Leaflet using folium with optional caching"""
+    #     # This method has been disabled to remove HTML rendering functionality
 
 
     def _create_preview_image(self, points, width, height):
@@ -833,11 +734,21 @@ class Node(DpgNodeABC):
                     continue
                 
                 if tile is not None and np.any(tile > 0):
+                    # Validate tile shape before processing
+                    if len(tile.shape) < 2 or tile.shape[0] == 0 or tile.shape[1] == 0:
+                        print(f"Invalid tile shape: {tile.shape}, skipping")
+                        continue
+                    
                     # Convert RGB to BGR for OpenCV
-                    if tile.shape[2] == 4:  # RGBA
+                    if len(tile.shape) == 3 and tile.shape[2] == 4:  # RGBA
                         tile = cv2.cvtColor(tile, cv2.COLOR_RGBA2BGR)
-                    elif tile.shape[2] == 3:  # RGB
+                    elif len(tile.shape) == 3 and tile.shape[2] == 3:  # RGB
                         tile = cv2.cvtColor(tile, cv2.COLOR_RGB2BGR)
+                    elif len(tile.shape) == 2:  # Grayscale
+                        tile = cv2.cvtColor(tile, cv2.COLOR_GRAY2BGR)
+                    else:
+                        print(f"Unexpected tile shape: {tile.shape}, skipping")
+                        continue
                     
                     # Place tile on canvas
                     y_start = j * OSM_TILE_SIZE
