@@ -7,7 +7,6 @@ This module provides utilities for applying colormaps to 2D spectrogram arrays,
 converting them to colored RGB images for better visualization and event detection.
 """
 
-import os
 import tempfile
 import cv2
 import numpy as np
@@ -248,11 +247,11 @@ def plot_spectrogram(location, plotpath=None, binsize=2**10, colormap="jet"):
     Returns:
         tuple: (ims, plotpath) where:
             - ims: Matrice du spectrogramme en décibels
-            - plotpath: Path to the saved spectrogram image (useful when temporary file is created)
+            - plotpath: Chemin vers l'image du spectrogramme sauvegardée
     
     Note:
-        When plotpath is None, a temporary file is created with delete=False.
-        The caller is responsible for cleaning up the temporary file if needed.
+        Quand plotpath est None, un fichier temporaire est créé avec delete=False.
+        L'appelant est responsable du nettoyage du fichier temporaire si nécessaire.
     """
     if wav is None:
         raise ImportError("scipy is required for plot_spectrogram. Install with: pip install scipy")
