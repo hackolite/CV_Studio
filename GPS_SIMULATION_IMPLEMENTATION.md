@@ -27,7 +27,9 @@ This implementation adds GPS coordinate movement simulation and map caching feat
 #### Integration
 - Added "GPS Movement Simulation" option to dropdown menu
 - Outputs standard JSON format compatible with Map node
-- Updates positions in real-time during each node update
+- **Updates positions every 1 second** (not on every frame)
+- Implements timer to ensure GPS coordinates are sent at 1-second intervals
+- Main loop runs at ~100 Hz but GPS updates are throttled to 1 Hz
 
 ### 2. Map Caching System (Map Node)
 
@@ -96,8 +98,11 @@ This implementation adds GPS coordinate movement simulation and map caching feat
 1. **node/InputNode/node_coordinate_examples.py**
    - Added GPSMovementSimulator class (~200 lines)
    - Updated Node class to handle simulation
+   - **Added 1-second timer for GPS updates**
+   - Added `last_update_time`, `update_interval`, and `last_coordinates` attributes
+   - Modified `update()` method to check elapsed time before updating
    - Modified callbacks for simulation status
-   - Version: 1.0.0 → 1.0.1
+   - Version: 1.0.0 → 1.0.1 → 1.0.2
 
 2. **node/VisualNode/node_map.py**
    - Added cache imports (hashlib)
@@ -112,6 +117,8 @@ This implementation adds GPS coordinate movement simulation and map caching feat
 - `tests/test_gps_movement_simulation.py`
 - `tests/test_map_caching.py`
 - `tests/test_gps_map_integration.py`
+- `tests/test_coordinate_examples_timer.py` (validates 1-second update interval)
+- `tests/demo_coordinate_streaming.py` (demonstrates streaming behavior)
 
 ### Statistics
 - Files modified: 2
@@ -123,17 +130,19 @@ This implementation adds GPS coordinate movement simulation and map caching feat
 ## Features Delivered
 
 ### ✅ Required Features (from problem statement)
-1. ✅ Send random GPS coordinates simulating movement
+1. ✅ Send GPS coordinates simulating movement **every second** (1-second interval)
 2. ✅ Visualize points on map using OpenStreetMap
-3. ✅ Implement map caching system
+3. ✅ Process coordinates in Map node
+4. ✅ Implement map caching system
 
 ### ✅ Additional Features
 1. ✅ Multiple movement patterns (linear, circular, random walk)
 2. ✅ Reproducible simulations (seeded random)
-3. ✅ Comprehensive documentation
-4. ✅ Complete test coverage
-5. ✅ Cache control UI
-6. ✅ Multiple static coordinate examples
+3. ✅ **Timer-based updates ensuring 1-second interval**
+4. ✅ Comprehensive documentation
+5. ✅ Complete test coverage (including timer tests)
+6. ✅ Cache control UI
+7. ✅ Multiple static coordinate examples
 
 ## Usage Example
 
@@ -146,11 +155,12 @@ This implementation adds GPS coordinate movement simulation and map caching feat
 5. Enable "Cache Maps" checkbox
 6. Set Zoom to 12 (city level)
 7. Click "Open Map in Browser"
-8. Watch moving objects on OpenStreetMap
+8. Watch moving objects update every 1 second on OpenStreetMap
 ```
 
 ### Performance
 - **GPS Simulation**: < 1ms per update
+- **Update Frequency**: Exactly 1 second intervals (1 Hz)
 - **Map Generation**: 
   - Without cache: ~100-500ms (depends on folium)
   - With cache hit: < 1ms (instant)
