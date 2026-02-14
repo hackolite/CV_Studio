@@ -22,38 +22,38 @@ def example_ais_boat_data():
     print("Example 1: AIS Boat Data")
     print("=" * 60)
     
-    # Sample AIS data from Mediterranean Sea
+    # Sample AIS data from Port of Marseille (boats within 1 km for detailed view)
     ais_data = {
         "boats": [
             {
                 "mmsi": "247123456",
                 "ship_name": "Mediterranean Express",
-                "latitude": 36.7213,
-                "longitude": 3.0875,
-                "speed": 18.5,
+                "latitude": 43.2985,
+                "longitude": 5.3708,
+                "speed": 2.5,
                 "course": 45.0,
                 "ship_type": "Cargo",
-                "destination": "Barcelona"
+                "destination": "Marseille"
             },
             {
                 "mmsi": "247234567",
                 "ship_name": "Coastal Trader",
-                "latitude": 37.9838,
-                "longitude": 23.7275,
-                "speed": 12.3,
+                "latitude": 43.2965,
+                "longitude": 5.3738,
+                "speed": 1.3,
                 "course": 180.0,
                 "ship_type": "Tanker",
-                "destination": "Athens"
+                "destination": "Marseille"
             },
             {
                 "mmsi": "247345678",
                 "ship_name": "Island Ferry",
-                "latitude": 38.1157,
-                "longitude": 13.3615,
-                "speed": 8.0,
+                "latitude": 43.2935,
+                "longitude": 5.3698,
+                "speed": 0.8,
                 "course": 270.0,
                 "ship_type": "Passenger",
-                "destination": "Palermo"
+                "destination": "Marseille"
             }
         ],
         "count": 3,
@@ -68,8 +68,8 @@ def example_ais_boat_data():
     for point in points:
         print(f"  - {point['name']} at ({point['lat']:.4f}, {point['lon']:.4f})")
     
-    # Generate map
-    map_path = node._generate_map(points, zoom_level=6, size_factor=1.2)
+    # Generate map with higher zoom for detailed view
+    map_path = node._generate_map(points, zoom_level=15, size_factor=1.2)
     if map_path:
         print(f"\n✓ Map generated: {map_path}")
         print("  Open this file in your browser to see the interactive map!")
@@ -85,16 +85,14 @@ def example_world_cities():
     print("Example 2: Major World Cities")
     print("=" * 60)
     
-    # Sample city data
+    # Sample city data (Paris area - within 1 km for detailed view)
     cities_data = [
-        {"latitude": 40.7128, "longitude": -74.0060, "name": "New York"},
-        {"latitude": 51.5074, "longitude": -0.1278, "name": "London"},
-        {"latitude": 48.8566, "longitude": 2.3522, "name": "Paris"},
-        {"latitude": 35.6762, "longitude": 139.6503, "name": "Tokyo"},
-        {"latitude": -33.8688, "longitude": 151.2093, "name": "Sydney"},
-        {"latitude": 19.4326, "longitude": -99.1332, "name": "Mexico City"},
-        {"latitude": -23.5505, "longitude": -46.6333, "name": "São Paulo"},
-        {"latitude": 55.7558, "longitude": 37.6173, "name": "Moscow"},
+        {"latitude": 48.8585, "longitude": 2.3522, "name": "New York"},
+        {"latitude": 48.8566, "longitude": 2.3552, "name": "Tokyo"},
+        {"latitude": 48.8546, "longitude": 2.3522, "name": "Sydney"},
+        {"latitude": 48.8566, "longitude": 2.3492, "name": "San Francisco"},
+        {"latitude": 48.8586, "longitude": 2.3492, "name": "Berlin"},
+        {"latitude": 48.8546, "longitude": 2.3492, "name": "Singapore"},
     ]
     
     # Create node and extract points
@@ -105,8 +103,8 @@ def example_world_cities():
     for point in points:
         print(f"  - {point['name']} at ({point['lat']:.4f}, {point['lon']:.4f})")
     
-    # Generate map with lower zoom to see the world
-    map_path = node._generate_map(points, zoom_level=2, size_factor=1.0)
+    # Generate map with higher zoom to see details in this small area
+    map_path = node._generate_map(points, zoom_level=15, size_factor=1.0)
     if map_path:
         print(f"\n✓ Map generated: {map_path}")
         print("  Open this file in your browser to see the interactive map!")
@@ -122,13 +120,13 @@ def example_gps_track():
     print("Example 3: GPS Track (Hiking Trail)")
     print("=" * 60)
     
-    # Sample GPS track (hiking trail in Alps)
+    # Sample GPS track (hiking trail in Alps - within 500m for detailed view)
     gps_track = [
         {"lat": 45.8326, "lon": 6.8652, "name": "Trailhead"},
-        {"lat": 45.8342, "lon": 6.8668, "name": "Point 1"},
-        {"lat": 45.8358, "lon": 6.8685, "name": "Point 2"},
-        {"lat": 45.8375, "lon": 6.8701, "name": "Point 3"},
-        {"lat": 45.8391, "lon": 6.8718, "name": "Summit"},
+        {"lat": 45.8334, "lon": 6.8660, "name": "Point 1"},
+        {"lat": 45.8342, "lon": 6.8668, "name": "Point 2"},
+        {"lat": 45.8350, "lon": 6.8676, "name": "Point 3"},
+        {"lat": 45.8358, "lon": 6.8684, "name": "Summit"},
     ]
     
     # Create node and extract points
@@ -139,8 +137,8 @@ def example_gps_track():
     for point in points:
         print(f"  - {point['name']} at ({point['lat']:.4f}, {point['lon']:.4f})")
     
-    # Generate map with high zoom for detailed view
-    map_path = node._generate_map(points, zoom_level=14, size_factor=1.0)
+    # Generate map with high zoom for very detailed view
+    map_path = node._generate_map(points, zoom_level=16, size_factor=1.0)
     if map_path:
         print(f"\n✓ Map generated: {map_path}")
         print("  Open this file in your browser to see the interactive map!")

@@ -35,14 +35,14 @@ def demo_two_boats_at_port():
     # Create map node
     node = MapNode.create_for_testing()
     
-    # Example: 2 boats at Port of Marseille
+    # Example: 2 boats at Port of Marseille (within 500m for detailed view)
     boats_data = {
         "boats": [
             {
                 "mmsi": "227123456",
                 "ship_name": "Mediterranean Star",
-                "latitude": 43.2965,
-                "longitude": 5.3698,
+                "latitude": 43.2985,
+                "longitude": 5.3708,
                 "speed": 0.0,
                 "course": 0.0,
                 "ship_type": "Cargo",
@@ -53,8 +53,8 @@ def demo_two_boats_at_port():
             {
                 "mmsi": "227234567",
                 "ship_name": "Provence Express",
-                "latitude": 43.3015,
-                "longitude": 5.3745,
+                "latitude": 43.2965,
+                "longitude": 5.3738,
                 "speed": 0.5,
                 "course": 45.0,
                 "ship_type": "Ferry",
