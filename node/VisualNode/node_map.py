@@ -254,7 +254,7 @@ def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3, progres
     # Download and paste tiles
     total_tiles = (tiles_y + 1) * (tiles_x + 1)
     current_tile = 0
-    tiles_to_download = 0
+    tiles_downloaded_so_far = 0  # Progress counter for downloads
     
     print(f"Map node: Assembling map with {total_tiles} tiles at zoom {zoom}...")
     
@@ -288,10 +288,10 @@ def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3, progres
                     tiles_from_cache += 1
                 else:
                     tiles_downloaded += 1
-                    tiles_to_download += 1
+                    tiles_downloaded_so_far += 1
                     # Only update progress for downloaded tiles to avoid blinking
                     if progress_callback:
-                        progress_callback(tiles_to_download, tiles_need_download, False)
+                        progress_callback(tiles_downloaded_so_far, tiles_need_download, False)
             
             current_tile += 1
     
@@ -1075,7 +1075,7 @@ class Node(DpgNodeABC):
                         dpg.hide_item(progress_tag)
                     # Only show progress bar if there are tiles to download
                     elif total > 0:
-                        progress = current / total if total > 0 else 0.0
+                        progress = current / total
                         dpg.set_value(progress_tag, progress)
                         overlay_text = f"Downloading: {current}/{total} tiles"
                         dpg.configure_item(progress_tag, overlay=overlay_text)
