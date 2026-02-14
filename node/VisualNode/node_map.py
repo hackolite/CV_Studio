@@ -40,6 +40,9 @@ OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 # User-Agent header for OSM tile requests (required by OSM tile usage policy)
 OSM_USER_AGENT = "CV_Studio/1.0"
 
+# OSM tile size (standard 256x256 pixels)
+OSM_TILE_SIZE = 256
+
 # Simplified continental outlines for map context visualization
 # These are rough approximations to give geographic context in the map view
 # Format: {region_name: (longitude_coords, latitude_coords)}
@@ -254,6 +257,19 @@ class Node(DpgNodeABC):
         return lat, lon
 
 
+    @staticmethod
+    def lat_lon_to_tile_frac(lat, lon, zoom):
+        """
+        Convert latitude/longitude to fractional tile coordinates.
+        Returns the exact fractional tile position for precise pixel calculations.
+        """
+        lat_rad = math.radians(lat)
+        n = 2.0 ** zoom
+        x_tile = (lon + 180.0) / 360.0 * n
+        y_tile = (1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n
+        return x_tile, y_tile
+
+
     def _get_tile_cache_path(self, x, y, zoom):
         """Get the file path for a cached tile"""
         return os.path.join(OSM_TILE_CACHE_DIR, f"{zoom}_{x}_{y}.png")
@@ -288,10 +304,14 @@ class Node(DpgNodeABC):
             img = Image.open(io.BytesIO(response.content))
             return np.array(img)
             
-        except Exception as e:
-            print(f"Error downloading tile {x},{y},{zoom}: {e}")
+        except requests.RequestException as e:
+            print(f"Network error downloading tile {x},{y},{zoom}: {e}")
             # Return a blank tile on error
-            return np.zeros((256, 256, 3), dtype=np.uint8)
+            return np.zeros((OSM_TILE_SIZE, OSM_TILE_SIZE, 3), dtype=np.uint8)
+        except Exception as e:
+            print(f"Unexpected error downloading tile {x},{y},{zoom}: {e}")
+            # Return a blank tile on error
+            return np.zeros((OSM_TILE_SIZE, OSM_TILE_SIZE, 3), dtype=np.uint8)
 
 
     def _cache_osm_tiles_around_point(self, lat, lon, zoom, radius=2):
@@ -311,13 +331,15 @@ class Node(DpgNodeABC):
         
         # Cache tiles in a square around the center
         cached_count = 0
+        max_tile_coord = 2 ** zoom  # Calculate once to avoid redundant exponential calculations
+        
         for dx in range(-radius, radius + 1):
             for dy in range(-radius, radius + 1):
                 x = center_x + dx
                 y = center_y + dy
                 
                 # Skip invalid tiles
-                if x < 0 or y < 0 or x >= 2**zoom or y >= 2**zoom:
+                if x < 0 or y < 0 or x >= max_tile_coord or y >= max_tile_coord:
                     continue
                 
                 tile_data = self._download_tile(x, y, zoom)
@@ -706,13 +728,12 @@ class Node(DpgNodeABC):
         center_x, center_y = self.lat_lon_to_tile(center_lat, center_lon, zoom)
         
         # Calculate how many tiles we need to fill the preview
-        tile_size = 256
-        tiles_x = math.ceil(width / tile_size) + 2
-        tiles_y = math.ceil(height / tile_size) + 2
+        tiles_x = math.ceil(width / OSM_TILE_SIZE) + 2
+        tiles_y = math.ceil(height / OSM_TILE_SIZE) + 2
         
         # Create canvas for compositing tiles
-        canvas_width = tiles_x * tile_size
-        canvas_height = tiles_y * tile_size
+        canvas_width = tiles_x * OSM_TILE_SIZE
+        canvas_height = tiles_y * OSM_TILE_SIZE
         canvas = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
         
         # Composite tiles onto canvas
@@ -740,10 +761,10 @@ class Node(DpgNodeABC):
                         tile = cv2.cvtColor(tile, cv2.COLOR_RGB2BGR)
                     
                     # Place tile on canvas
-                    y_start = j * tile_size
-                    y_end = y_start + tile_size
-                    x_start = i * tile_size
-                    x_end = x_start + tile_size
+                    y_start = j * OSM_TILE_SIZE
+                    y_end = y_start + OSM_TILE_SIZE
+                    x_start = i * OSM_TILE_SIZE
+                    x_end = x_start + OSM_TILE_SIZE
                     canvas[y_start:y_end, x_start:x_end] = tile
                     tiles_rendered += 1
         
@@ -752,17 +773,15 @@ class Node(DpgNodeABC):
             print("No valid OSM tiles rendered, using matplotlib fallback")
             return None
         
-        # Calculate pixel offset for center point within the center tile
-        # Get the fractional part of tile coordinates
-        center_x_frac = (center_lon + 180.0) / 360.0 * (2.0 ** zoom)
-        center_y_frac = (1.0 - math.asinh(math.tan(math.radians(center_lat))) / math.pi) / 2.0 * (2.0 ** zoom)
+        # Calculate pixel offset for center point using fractional tile coordinates
+        center_x_frac, center_y_frac = self.lat_lon_to_tile_frac(center_lat, center_lon, zoom)
         
-        pixel_offset_x = int((center_x_frac - center_x) * tile_size)
-        pixel_offset_y = int((center_y_frac - center_y) * tile_size)
+        pixel_offset_x = int((center_x_frac - center_x) * OSM_TILE_SIZE)
+        pixel_offset_y = int((center_y_frac - center_y) * OSM_TILE_SIZE)
         
         # Calculate crop region to center the view
-        canvas_center_x = (tiles_x * tile_size) // 2 + pixel_offset_x
-        canvas_center_y = (tiles_y * tile_size) // 2 + pixel_offset_y
+        canvas_center_x = (tiles_x * OSM_TILE_SIZE) // 2 + pixel_offset_x
+        canvas_center_y = (tiles_y * OSM_TILE_SIZE) // 2 + pixel_offset_y
         
         crop_x1 = max(0, canvas_center_x - width // 2)
         crop_y1 = max(0, canvas_center_y - height // 2)
@@ -778,19 +797,12 @@ class Node(DpgNodeABC):
         
         # Draw markers for each point
         for point in points:
-            # Convert lat/lon to pixel coordinates on the preview
-            point_x_tile, point_y_tile = self.lat_lon_to_tile(point['lat'], point['lon'], zoom)
+            # Use fractional tile coordinates for precise positioning
+            point_x_frac, point_y_frac = self.lat_lon_to_tile_frac(point['lat'], point['lon'], zoom)
             
             # Calculate pixel position relative to canvas center
-            pixel_x = canvas_center_x + (point_x_tile - center_x) * tile_size
-            pixel_y = canvas_center_y + (point_y_tile - center_y) * tile_size
-            
-            # Adjust for fractional tile position
-            point_x_frac = (point['lon'] + 180.0) / 360.0 * (2.0 ** zoom)
-            point_y_frac = (1.0 - math.asinh(math.tan(math.radians(point['lat']))) / math.pi) / 2.0 * (2.0 ** zoom)
-            
-            pixel_x = canvas_center_x + int((point_x_frac - center_x_frac) * tile_size)
-            pixel_y = canvas_center_y + int((point_y_frac - center_y_frac) * tile_size)
+            pixel_x = canvas_center_x + int((point_x_frac - center_x_frac) * OSM_TILE_SIZE)
+            pixel_y = canvas_center_y + int((point_y_frac - center_y_frac) * OSM_TILE_SIZE)
             
             # Convert to preview coordinates
             preview_x = pixel_x - crop_x1
