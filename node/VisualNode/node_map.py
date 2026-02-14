@@ -339,6 +339,9 @@ class Node(DpgNodeABC):
         node._opencv_setting_dict = {}
         node.last_map_path = None
         node.point_data = []
+        node.cached_tiles = {}
+        node.cache_center = None
+        node.cache_radius = 2
         return node
         
 
@@ -692,7 +695,12 @@ class Node(DpgNodeABC):
             self.cache_center[2] != zoom or
             abs(self.cache_center[0] - center_lat) > 0.1 or
             abs(self.cache_center[1] - center_lon) > 0.1):
-            self._cache_osm_tiles_around_point(center_lat, center_lon, zoom, radius=3)
+            cached_count = self._cache_osm_tiles_around_point(center_lat, center_lon, zoom, radius=3)
+            
+            # If we couldn't cache any tiles, return None to fallback to matplotlib
+            if cached_count == 0:
+                print("No OSM tiles available (network error or offline), using matplotlib fallback")
+                return None
         
         # Get center tile coordinates
         center_x, center_y = self.lat_lon_to_tile(center_lat, center_lon, zoom)
@@ -711,6 +719,7 @@ class Node(DpgNodeABC):
         start_tile_x = center_x - tiles_x // 2
         start_tile_y = center_y - tiles_y // 2
         
+        tiles_rendered = 0
         for i in range(tiles_x):
             for j in range(tiles_y):
                 tile_x = start_tile_x + i
@@ -720,12 +729,10 @@ class Node(DpgNodeABC):
                 if (tile_x, tile_y, zoom) in self.cached_tiles:
                     tile = self.cached_tiles[(tile_x, tile_y, zoom)]
                 else:
-                    # Try to download if not in cache
-                    tile = self._download_tile(tile_x, tile_y, zoom)
-                    if tile is not None:
-                        self.cached_tiles[(tile_x, tile_y, zoom)] = tile
+                    # Don't try to download again if we're offline
+                    continue
                 
-                if tile is not None:
+                if tile is not None and np.any(tile > 0):
                     # Convert RGB to BGR for OpenCV
                     if tile.shape[2] == 4:  # RGBA
                         tile = cv2.cvtColor(tile, cv2.COLOR_RGBA2BGR)
@@ -738,6 +745,12 @@ class Node(DpgNodeABC):
                     x_start = i * tile_size
                     x_end = x_start + tile_size
                     canvas[y_start:y_end, x_start:x_end] = tile
+                    tiles_rendered += 1
+        
+        # If no tiles were rendered, fallback to matplotlib
+        if tiles_rendered == 0:
+            print("No valid OSM tiles rendered, using matplotlib fallback")
+            return None
         
         # Calculate pixel offset for center point within the center tile
         # Get the fractional part of tile coordinates
