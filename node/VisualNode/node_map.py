@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 import webbrowser
+import hashlib
 from datetime import datetime
 
 import cv2
@@ -15,6 +16,11 @@ from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
 from node.basenode import Node as BaseNode
+
+
+# Cache directory for map tiles and generated maps
+CACHE_DIR = os.path.join(tempfile.gettempdir(), 'cv_studio_map_cache')
+os.makedirs(CACHE_DIR, exist_ok=True)
 
 
 class FactoryNode:
@@ -49,6 +55,8 @@ class FactoryNode:
         node.tag_node_zoom_value_name = node.tag_node_name + ':ZoomValue'
         node.tag_node_size_name = node.tag_node_name + ':MapSize'
         node.tag_node_size_value_name = node.tag_node_name + ':MapSizeValue'
+        node.tag_node_cache_name = node.tag_node_name + ':UseCache'
+        node.tag_node_cache_value_name = node.tag_node_name + ':UseCacheValue'
         node.tag_node_open_button_name = node.tag_node_name + ':OpenMap'
         node.tag_node_status_name = node.tag_node_name + ':Status'
         node.tag_node_status_value_name = node.tag_node_name + ':StatusValue'
@@ -123,6 +131,16 @@ class FactoryNode:
                     min_value=0.5,
                     max_value=5.0,
                     clamped=True,
+                )
+
+            # Cache checkbox
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_checkbox(
+                    tag=node.tag_node_cache_value_name,
+                    label="Cache Maps",
+                    default_value=True,
                 )
 
             # Status text
@@ -204,6 +222,7 @@ class Node(DpgNodeABC):
         tag_node_output02_value_name = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
         tag_node_zoom_value_name = tag_node_name + ':ZoomValue'
         tag_node_size_value_name = tag_node_name + ':MapSizeValue'
+        tag_node_cache_value_name = tag_node_name + ':UseCacheValue'
         tag_node_status_value_name = tag_node_name + ':StatusValue'
 
         small_window_w = self._opencv_setting_dict['process_width']
@@ -248,12 +267,15 @@ class Node(DpgNodeABC):
                     print(f"Map node: Extracted {len(points)} points with lat/lon")
                     self.point_data = points
                     
-                    # Get zoom and size parameters
+                    # Get zoom, size, and cache parameters
                     zoom_level = dpg_get_value(tag_node_zoom_value_name)
                     size_factor = dpg_get_value(tag_node_size_value_name)
+                    use_cache = dpg_get_value(tag_node_cache_value_name)
+                    if use_cache is None:
+                        use_cache = True  # Default to enabled
                     
                     # Generate map
-                    map_path = self._generate_map(points, zoom_level, size_factor)
+                    map_path = self._generate_map(points, zoom_level, size_factor, use_cache)
                     
                     if map_path:
                         self.last_map_path = map_path
@@ -358,8 +380,38 @@ class Node(DpgNodeABC):
         return points
 
 
-    def _generate_map(self, points, zoom_level, size_factor):
-        """Generate an HTML map with Leaflet using folium"""
+    def _generate_cache_key(self, points, zoom_level, size_factor):
+        """
+        Generate a cache key based on map parameters.
+        
+        Args:
+            points: List of coordinate points
+            zoom_level: Map zoom level
+            size_factor: View size factor
+            
+        Returns:
+            Hash string to use as cache key
+        """
+        # Create a string representation of key parameters
+        # Sort points to ensure consistent ordering
+        sorted_points = sorted(points, key=lambda p: (p['lat'], p['lon']))
+        
+        # Build key from essential data
+        key_data = {
+            'points': [(p['lat'], p['lon']) for p in sorted_points[:100]],  # Limit to first 100 points
+            'zoom': zoom_level,
+            'size': round(size_factor, 2),
+        }
+        
+        # Generate hash
+        key_str = json.dumps(key_data, sort_keys=True)
+        cache_key = hashlib.md5(key_str.encode()).hexdigest()
+        
+        return cache_key
+
+
+    def _generate_map(self, points, zoom_level, size_factor, use_cache=True):
+        """Generate an HTML map with Leaflet using folium with optional caching"""
         try:
             import folium
             from folium.plugins import MarkerCluster
@@ -369,6 +421,16 @@ class Node(DpgNodeABC):
 
         if not points:
             return None
+
+        # Generate cache key based on points, zoom, and size
+        if use_cache:
+            cache_key = self._generate_cache_key(points, zoom_level, size_factor)
+            cached_path = os.path.join(CACHE_DIR, f"map_{cache_key}.html")
+            
+            # Check if cached map exists
+            if os.path.exists(cached_path):
+                print(f"Map node: Using cached map from {cached_path}")
+                return cached_path
 
         # Calculate center and bounds
         lats = [p['lat'] for p in points]
@@ -381,11 +443,12 @@ class Node(DpgNodeABC):
         lat_range = (max(lats) - min(lats)) * size_factor
         lon_range = (max(lons) - min(lons)) * size_factor
         
-        # Create map
+        # Create map with tile caching
         m = folium.Map(
             location=[center_lat, center_lon],
             zoom_start=zoom_level,
-            tiles='OpenStreetMap'
+            tiles='OpenStreetMap',
+            attr='OpenStreetMap'
         )
         
         # Add marker cluster for better performance with many points
@@ -405,10 +468,16 @@ class Node(DpgNodeABC):
             ne = [max(lats) + lat_range * 0.1, max(lons) + lon_range * 0.1]
             m.fit_bounds([sw, ne])
         
-        # Save to temp file
-        temp_dir = tempfile.gettempdir()
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        map_path = os.path.join(temp_dir, f"cv_studio_map_{timestamp}.html")
+        # Save to appropriate location (cache or temp)
+        if use_cache:
+            map_path = cached_path
+            print(f"Map node: Caching map to {map_path}")
+        else:
+            temp_dir = tempfile.gettempdir()
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            map_path = os.path.join(temp_dir, f"cv_studio_map_{timestamp}.html")
+            print(f"Map node: Saving map to temp {map_path}")
+        
         m.save(map_path)
         
         return map_path
@@ -495,10 +564,12 @@ class Node(DpgNodeABC):
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_zoom_value_name = tag_node_name + ':ZoomValue'
         tag_node_size_value_name = tag_node_name + ':MapSizeValue'
+        tag_node_cache_value_name = tag_node_name + ':UseCacheValue'
         
         return {
             'zoom': dpg_get_value(tag_node_zoom_value_name),
             'size': dpg_get_value(tag_node_size_value_name),
+            'cache': dpg_get_value(tag_node_cache_value_name),
         }
 
 
@@ -507,11 +578,14 @@ class Node(DpgNodeABC):
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_zoom_value_name = tag_node_name + ':ZoomValue'
         tag_node_size_value_name = tag_node_name + ':MapSizeValue'
+        tag_node_cache_value_name = tag_node_name + ':UseCacheValue'
         
         if 'zoom' in setting_dict:
             dpg_set_value(tag_node_zoom_value_name, setting_dict['zoom'])
         if 'size' in setting_dict:
             dpg_set_value(tag_node_size_value_name, setting_dict['size'])
+        if 'cache' in setting_dict:
+            dpg_set_value(tag_node_cache_value_name, setting_dict['cache'])
 
 
     def convert_cv_to_dpg(self, image, width, height):
