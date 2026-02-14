@@ -1121,39 +1121,6 @@ class Node(DpgNodeABC):
                 # Draw main dot
                 cv2.circle(map_array, (px, py), 6, (0, 30, 220), -1, cv2.LINE_AA)
                 cv2.circle(map_array, (px, py), 6, (0, 50, 255), 2, cv2.LINE_AA)
-                
-                # Add label for small number of points
-                if len(points) <= 10:
-                    label = point.get('name', 'Point')
-                    # Add text with background
-                    (text_w, text_h), _ = cv2.getTextSize(
-                        label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1
-                    )
-                    text_x = px + 12
-                    text_y = py - 8
-                    
-                    # Ensure text stays within bounds
-                    text_x = max(0, min(text_x, map_array.shape[1] - text_w - 5))
-                    text_y = max(text_h + 5, min(text_y, map_array.shape[0] - 5))
-                    
-                    # Draw background rectangle
-                    cv2.rectangle(
-                        map_array,
-                        (text_x - 2, text_y - text_h - 2),
-                        (text_x + text_w + 2, text_y + 2),
-                        (255, 255, 255), -1
-                    )
-                    cv2.rectangle(
-                        map_array,
-                        (text_x - 2, text_y - text_h - 2),
-                        (text_x + text_w + 2, text_y + 2),
-                        (0, 0, 0), 1
-                    )
-                    # Draw text
-                    cv2.putText(
-                        map_array, label, (text_x, text_y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1, cv2.LINE_AA
-                    )
             
             # Resize to target dimensions if needed
             if map_array.shape[1] != width or map_array.shape[0] != height:
@@ -1264,7 +1231,7 @@ class Node(DpgNodeABC):
         print(f"Map node: After pan ({pan_x}, {pan_y}): X: [{min_x:.2f}, {max_x:.2f}], Y: [{min_y:.2f}, {max_y:.2f}]")
         
         # Create figure
-        dpi = 100
+        dpi = 150
         fig_width = width / dpi
         fig_height = height / dpi
         
@@ -1277,15 +1244,6 @@ class Node(DpgNodeABC):
                    color='red', markersize=10, 
                    markeredgecolor='darkred', markeredgewidth=2,
                    markerfacecolor='yellow', zorder=5)
-            
-            # Add labels for small number of points
-            if len(mercator_points) <= 10:
-                ax.annotate(point['name'],
-                           (point['x'], point['y']),
-                           xytext=(5, 5), textcoords='offset points',
-                           fontsize=8, color='black', weight='bold',
-                           bbox=dict(boxstyle='round,pad=0.3', 
-                                   facecolor='white', alpha=0.8, edgecolor='black'))
         
         # Set axis limits
         ax.set_xlim(min_x, max_x)
@@ -1377,7 +1335,7 @@ class Node(DpgNodeABC):
         plot_max_lon = max_lon + lon_range * padding
         
         # Create figure with matplotlib
-        dpi = 100
+        dpi = 150
         fig_width = width / dpi
         fig_height = height / dpi
         
@@ -1399,14 +1357,6 @@ class Node(DpgNodeABC):
             ax.plot(point['lon'], point['lat'], 'ro', markersize=8, 
                    markeredgecolor='darkred', markeredgewidth=1.5, 
                    markerfacecolor='yellow', zorder=5)
-            
-            # Add label for points if not too many
-            if len(points) <= 10:
-                ax.annotate(point['name'], 
-                           (point['lon'], point['lat']),
-                           xytext=(5, 5), textcoords='offset points',
-                           fontsize=7, color='black',
-                           bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
         
         # Set axis limits
         ax.set_xlim(plot_min_lon, plot_max_lon)
