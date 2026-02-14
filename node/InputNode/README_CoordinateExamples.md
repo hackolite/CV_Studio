@@ -44,23 +44,23 @@ Directional markers for testing:
 ### Dynamic Simulation
 
 #### GPS Movement Simulation
-Real-time simulation of 5 moving objects with realistic movement patterns:
+Real-time simulation of a single moving object with realistic movement patterns:
 
 **Movement Patterns**:
-- **Linear**: Objects move in straight lines at constant speed
-- **Circular**: Objects follow circular paths
-- **Random Walk**: Objects move with changing directions, staying within bounds
+- **Linear**: Object moves in straight line at constant speed
+- **Circular**: Object follows circular path
+- **Random Walk**: Object moves with changing directions, staying within bounds
 
 **Parameters**:
 - Center: Paris, France (48.8566°N, 2.3522°E)
-- Number of objects: 5 vehicles
-- Speed range: 20-80 km/h
+- Number of objects: 1 vehicle
+- Speed: 4 km/h (walking speed)
 - Update frequency: Real-time with each node update
 
 **Features**:
 - Reproducible movements (uses seeded random generator)
-- Objects stay within ~15km of center point
-- Each object has unique name and pattern
+- Object stays within ~15km of center point
+- Each movement has unique pattern
 - Continuous position updates
 
 ## Usage Examples
@@ -94,13 +94,7 @@ All examples output JSON in this format:
     "latitude": 48.8566,
     "longitude": 2.3522,
     "name": "Vehicle-001",
-    "info": "linear - 45.5 km/h"
-  },
-  {
-    "latitude": 48.8570,
-    "longitude": 2.3530,
-    "name": "Vehicle-002",
-    "info": "circular - 60.2 km/h"
+    "info": "linear - 4.0 km/h"
   }
 ]
 ```

@@ -18,9 +18,9 @@ This implementation adds GPS coordinate movement simulation and map caching feat
 3. **Random Walk**: Objects move with random direction changes
 
 #### Key Parameters
-- **Number of objects**: 5 vehicles
+- **Number of objects**: 1 vehicle
 - **Center location**: Paris, France (48.8566°N, 2.3522°E)
-- **Speed range**: 20-80 km/h
+- **Speed**: 4 km/h (walking speed)
 - **Movement area**: ~15km radius
 - **Reproducibility**: Uses seed value (42) for consistent results
 
@@ -164,7 +164,7 @@ This implementation adds GPS coordinate movement simulation and map caching feat
 - **Map Generation**: 
   - Without cache: ~100-500ms (depends on folium)
   - With cache hit: < 1ms (instant)
-- **Memory**: Minimal (< 1MB for 5 objects)
+- **Memory**: Minimal (< 1MB for 1 object)
 
 ## Technical Highlights
 
