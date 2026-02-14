@@ -9,6 +9,8 @@ This demo demonstrates:
 3. Pan (translation) in all 4 directions: left, right, up, down
 4. OpenStreetMap tile rendering
 
+Boats are positioned within 329m of each other for detailed visualization.
+
 This addresses the requirement:
 "comme exemple, 2 bateaux, au port, avec zoom, dézoom, translation gauche,
 droite, translation haut, bas. vérifie que la gestion openstreetmap est ok."
@@ -35,14 +37,14 @@ def demo_two_boats_at_port():
     # Create map node
     node = MapNode.create_for_testing()
     
-    # Example: 2 boats at Port of Marseille
+    # Example: 2 boats at Port of Marseille (within 500m for detailed view)
     boats_data = {
         "boats": [
             {
                 "mmsi": "227123456",
-                "ship_name": "Mediterranean Star",
-                "latitude": 43.2965,
-                "longitude": 5.3698,
+                "ship_name": "Vessel Alpha",
+                "latitude": 43.2985,
+                "longitude": 5.3708,
                 "speed": 0.0,
                 "course": 0.0,
                 "ship_type": "Cargo",
@@ -52,9 +54,9 @@ def demo_two_boats_at_port():
             },
             {
                 "mmsi": "227234567",
-                "ship_name": "Provence Express",
-                "latitude": 43.3015,
-                "longitude": 5.3745,
+                "ship_name": "Vessel Beta",
+                "latitude": 43.2965,
+                "longitude": 5.3738,
                 "speed": 0.5,
                 "course": 45.0,
                 "ship_type": "Ferry",
