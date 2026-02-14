@@ -24,6 +24,7 @@ import os
 import tempfile
 import hashlib
 import math
+import traceback
 from datetime import datetime
 
 import numpy as np
@@ -503,12 +504,15 @@ class Node(DpgNodeABC):
                             if pan_y is None:
                                 pan_y = 0.0
                             
+                            # Log current parameter values
+                            print(f"Map node: Parameters - zoom={zoom_level}, size={size_factor}, pan_x={pan_x}, pan_y={pan_y}, cache={use_cache}")
+                            
                             # HTML map generation removed - only tile-based preview
                             status_text = f"✓ {len(points)} point(s) displayed"
                             
                             # Create map visualization image (main display)
                             preview_image = self._create_preview_image(
-                                points, small_window_w, small_window_h, pan_x, pan_y
+                                points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y
                             )
                             
                             # Update status
@@ -549,12 +553,15 @@ class Node(DpgNodeABC):
                         if pan_y is None:
                             pan_y = 0.0
                         
+                        # Log current parameter values
+                        print(f"Map node: Parameters - zoom={zoom_level}, size={size_factor}, pan_x={pan_x}, pan_y={pan_y}, cache={use_cache}")
+                        
                         # HTML map generation removed - only tile-based preview
                         status_text = f"✓ {len(points)} point(s) displayed"
                         
                         # Create map visualization image (main display)
                         preview_image = self._create_preview_image(
-                            points, small_window_w, small_window_h, pan_x, pan_y
+                            points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y
                         )
                         
                         # Update status
@@ -681,7 +688,7 @@ class Node(DpgNodeABC):
     #     # This method has been disabled to remove HTML rendering functionality
 
 
-    def _create_preview_image(self, points, width, height, pan_x=0.0, pan_y=0.0):
+    def _create_preview_image(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0):
         """
         Create a map visualization image using contextily for OSM tiles.
         
@@ -694,6 +701,8 @@ class Node(DpgNodeABC):
             points: List of points with 'lat' and 'lon' keys
             width: Width of output image in pixels
             height: Height of output image in pixels
+            zoom_level: OSM tile zoom level (1-18)
+            size_factor: View size factor (0.5-5.0)
             pan_x: Horizontal pan offset (-1.0 to 1.0)
             pan_y: Vertical pan offset (-1.0 to 1.0)
         
@@ -704,19 +713,22 @@ class Node(DpgNodeABC):
             preview = np.zeros((height, width, 3), dtype=np.uint8)
             return preview
         
+        print(f"Map node: Creating preview with zoom={zoom_level}, size={size_factor}")
+        
         # Try contextily rendering first
         if CONTEXTILY_AVAILABLE:
             try:
-                return self._render_with_contextily(points, width, height, pan_x, pan_y)
+                return self._render_with_contextily(points, width, height, zoom_level, size_factor, pan_x, pan_y)
             except Exception as e:
-                print(f"Error rendering with contextily: {e}")
-                print("Falling back to matplotlib-only rendering")
+                print(f"Map node: Error rendering with contextily: {e}")
+                traceback.print_exc()
+                print("Map node: Falling back to matplotlib-only rendering")
         
         # Fallback to matplotlib rendering without basemap
         return self._render_with_matplotlib(points, width, height)
 
 
-    def _render_with_contextily(self, points, width, height, pan_x=0.0, pan_y=0.0):
+    def _render_with_contextily(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0):
         """
         Render map using contextily for OSM tiles and matplotlib for points.
         
@@ -730,12 +742,16 @@ class Node(DpgNodeABC):
             points: List of points with 'lat' and 'lon' keys
             width: Width of output image in pixels
             height: Height of output image in pixels
+            zoom_level: OSM tile zoom level (1-18)
+            size_factor: View size factor (0.5-5.0)
             pan_x: Horizontal pan offset (-1.0 to 1.0)
             pan_y: Vertical pan offset (-1.0 to 1.0)
         
         Returns:
             numpy array in BGR format
         """
+        print(f"Map node: _render_with_contextily called with zoom={zoom_level}, size={size_factor}, pan=({pan_x}, {pan_y})")
+        
         # Convert points to Web Mercator coordinates
         mercator_points = []
         for point in points:
@@ -748,12 +764,16 @@ class Node(DpgNodeABC):
                 'lon': point['lon']
             })
         
-        # Calculate extent (bounding box) with pan offsets
+        print(f"Map node: Converted {len(mercator_points)} points to Web Mercator")
+        
+        # Calculate extent (bounding box) with size_factor and pan offsets
         xs = [p['x'] for p in mercator_points]
         ys = [p['y'] for p in mercator_points]
         
         min_x, max_x = min(xs), max(xs)
         min_y, max_y = min(ys), max(ys)
+        
+        print(f"Map node: Initial bounds - X: [{min_x:.2f}, {max_x:.2f}], Y: [{min_y:.2f}, {max_y:.2f}]")
         
         # Add padding using the same logic as _calculate_extent
         x_range = max_x - min_x
@@ -762,13 +782,25 @@ class Node(DpgNodeABC):
         # Ensure minimum range for single points or very close points
         if x_range < MIN_RANGE_METERS:
             x_range = DEFAULT_RANGE_METERS
+            print(f"Map node: X range too small, using default: {DEFAULT_RANGE_METERS}m")
         if y_range < MIN_RANGE_METERS:
             y_range = DEFAULT_RANGE_METERS
+            print(f"Map node: Y range too small, using default: {DEFAULT_RANGE_METERS}m")
+        
+        # Apply size factor (direct multiplication: smaller factor = smaller range = zoom in)
+        # size_factor < 1.0 = zoom in (smaller range)
+        # size_factor = 1.0 = normal view
+        # size_factor > 1.0 = zoom out (larger range)
+        x_range = x_range * size_factor
+        y_range = y_range * size_factor
+        print(f"Map node: Range after size_factor ({size_factor}): X={x_range:.2f}m, Y={y_range:.2f}m")
         
         min_x -= x_range * MAP_PADDING_FACTOR
         max_x += x_range * MAP_PADDING_FACTOR
         min_y -= y_range * MAP_PADDING_FACTOR
         max_y += y_range * MAP_PADDING_FACTOR
+        
+        print(f"Map node: After padding ({MAP_PADDING_FACTOR}): X: [{min_x:.2f}, {max_x:.2f}], Y: [{min_y:.2f}, {max_y:.2f}]")
         
         # Apply pan offsets
         total_x_range = max_x - min_x
@@ -782,12 +814,15 @@ class Node(DpgNodeABC):
         min_y += pan_y_meters
         max_y += pan_y_meters
         
+        print(f"Map node: After pan ({pan_x}, {pan_y}): X: [{min_x:.2f}, {max_x:.2f}], Y: [{min_y:.2f}, {max_y:.2f}]")
+        
         # Create figure
         dpi = 100
         fig_width = width / dpi
         fig_height = height / dpi
         
         fig, ax = plt.subplots(figsize=(fig_width, fig_height), dpi=dpi)
+        print(f"Map node: Created figure {fig_width}x{fig_height} inches at {dpi} DPI")
         
         # Plot points in Web Mercator coordinates
         for point in mercator_points:
@@ -815,16 +850,22 @@ class Node(DpgNodeABC):
         fig.patch.set_facecolor('#E0F2F7')  # Light blue background for figure
         
         # Add OSM basemap using contextily
-        # Use zoom='auto' to let contextily determine optimal zoom level
-        # crs='EPSG:3857' specifies Web Mercator projection
+        # Use the zoom_level parameter from the slider
         basemap_loaded = False
         try:
+            print(f"Map node: Attempting to load OSM tiles with zoom={zoom_level}")
+            print(f"Map node: Using provider: {ctx.providers.OpenStreetMap.Mapnik}")
+            print(f"Map node: CRS: EPSG:3857 (Web Mercator)")
+            
             ctx.add_basemap(ax, crs='EPSG:3857', source=ctx.providers.OpenStreetMap.Mapnik,
-                          zoom='auto', attribution=None)
+                          zoom=zoom_level, attribution=None)
             basemap_loaded = True
-            print("✓ OpenStreetMap tiles loaded successfully")
+            print("✓ Map node: OpenStreetMap tiles loaded successfully")
         except Exception as e:
-            print(f"⚠ Warning: Could not load OpenStreetMap tiles: {e}")
+            print(f"⚠ Map node: Could not load OpenStreetMap tiles")
+            print(f"  Error type: {type(e).__name__}")
+            print(f"  Error message: {e}")
+            traceback.print_exc()
             print("  Using fallback: light blue background without tiles")
             # Background already set above - points will still be visible
         
