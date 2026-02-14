@@ -7,8 +7,11 @@ This module provides utilities for applying colormaps to 2D spectrogram arrays,
 converting them to colored RGB images for better visualization and event detection.
 """
 
+import os
 import cv2
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # Use non-GUI backend to prevent display
 import matplotlib.cm as cm
 from matplotlib import pyplot as plt
 from numpy.lib import stride_tricks
@@ -237,7 +240,7 @@ def plot_spectrogram(location, plotpath=None, binsize=2**10, colormap="jet"):
     
     Args:
         location: Chemin du fichier audio (.wav)
-        plotpath: Chemin de sauvegarde de l'image (si None, affiche à l'écran)
+        plotpath: Chemin de sauvegarde de l'image (si None, utilise un fichier temporaire)
         binsize: Taille de la fenêtre FFT (par défaut 1024)
         colormap: Colormap matplotlib à utiliser
     
@@ -282,11 +285,14 @@ def plot_spectrogram(location, plotpath=None, binsize=2**10, colormap="jet"):
     ylocs = np.int16(np.round(np.linspace(0, freqbins-1, 10)))
     plt.yticks(ylocs, ["%.02f" % freq[i] for i in ylocs])
 
-    if plotpath:
-        plt.savefig(plotpath, bbox_inches="tight")
-    else:
-        plt.show()
+    # Always save to a file instead of displaying
+    if plotpath is None:
+        # Use a temporary file if no path is provided
+        import tempfile
+        fd, plotpath = tempfile.mkstemp(suffix='.png', prefix='spectrogram_')
+        os.close(fd)  # Close file descriptor, we'll use the path
     
+    plt.savefig(plotpath, bbox_inches="tight")
     plt.clf()
 
     return ims
