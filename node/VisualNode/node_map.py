@@ -24,6 +24,7 @@ import os
 import tempfile
 import hashlib
 import math
+import traceback
 from datetime import datetime
 
 import numpy as np
@@ -720,7 +721,6 @@ class Node(DpgNodeABC):
                 return self._render_with_contextily(points, width, height, zoom_level, size_factor, pan_x, pan_y)
             except Exception as e:
                 print(f"Map node: Error rendering with contextily: {e}")
-                import traceback
                 traceback.print_exc()
                 print("Map node: Falling back to matplotlib-only rendering")
         
@@ -862,7 +862,6 @@ class Node(DpgNodeABC):
             print(f"⚠ Map node: Could not load OpenStreetMap tiles")
             print(f"  Error type: {type(e).__name__}")
             print(f"  Error message: {e}")
-            import traceback
             traceback.print_exc()
             print("  Using fallback: light blue background without tiles")
             # Background already set above - points will still be visible
