@@ -270,11 +270,11 @@ class Node(DpgNodeABC):
             try:
                 with Image.open(cache_path) as img:
                     tile_array = np.array(img)
-                    # Ensure tile is 3-channel BGR
+                    # Ensure tile is in 3-channel BGR format
                     if len(tile_array.shape) == 2:  # Grayscale
                         tile_array = cv2.cvtColor(tile_array, cv2.COLOR_GRAY2BGR)
                     elif len(tile_array.shape) == 3 and tile_array.shape[2] == 4:  # RGBA
-                        tile_array = tile_array[:, :, :3]  # Remove alpha channel
+                        tile_array = cv2.cvtColor(tile_array, cv2.COLOR_RGBA2BGR)
                     return tile_array
             except Exception as e:
                 print(f"Error loading cached tile {x},{y},{zoom}: {e}")
@@ -296,11 +296,11 @@ class Node(DpgNodeABC):
             img = Image.open(io.BytesIO(response.content))
             tile_array = np.array(img)
             
-            # Ensure tile is 3-channel BGR
+            # Ensure tile is in 3-channel BGR format
             if len(tile_array.shape) == 2:  # Grayscale
                 tile_array = cv2.cvtColor(tile_array, cv2.COLOR_GRAY2BGR)
             elif len(tile_array.shape) == 3 and tile_array.shape[2] == 4:  # RGBA
-                tile_array = tile_array[:, :, :3]  # Remove alpha channel
+                tile_array = cv2.cvtColor(tile_array, cv2.COLOR_RGBA2BGR)
             
             return tile_array
             
