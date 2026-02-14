@@ -809,6 +809,11 @@ class Node(DpgNodeABC):
         ax.set_xlim(min_x, max_x)
         ax.set_ylim(min_y, max_y)
         
+        # Set background colors BEFORE attempting to load tiles
+        # This ensures a proper background is visible whether tiles load or not
+        ax.set_facecolor('#ADD8E6')  # Light blue background for axes
+        fig.patch.set_facecolor('#E0F2F7')  # Light blue background for figure
+        
         # Add OSM basemap using contextily
         # Use zoom='auto' to let contextily determine optimal zoom level
         # crs='EPSG:3857' specifies Web Mercator projection
@@ -821,8 +826,7 @@ class Node(DpgNodeABC):
         except Exception as e:
             print(f"⚠ Warning: Could not load OpenStreetMap tiles: {e}")
             print("  Using fallback: light blue background without tiles")
-            # Continue without basemap - points will still be visible
-            ax.set_facecolor('#ADD8E6')  # Light blue background
+            # Background already set above - points will still be visible
         
         # Hide axes completely - we don't want to show x,y coordinates (Web Mercator values)
         # The map tiles provide the geographic context, not numeric coordinates
