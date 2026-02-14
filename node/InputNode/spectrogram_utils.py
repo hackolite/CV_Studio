@@ -8,6 +8,7 @@ converting them to colored RGB images for better visualization and event detecti
 """
 
 import os
+import tempfile
 import cv2
 import numpy as np
 import matplotlib
@@ -288,9 +289,9 @@ def plot_spectrogram(location, plotpath=None, binsize=2**10, colormap="jet"):
     # Always save to a file instead of displaying
     if plotpath is None:
         # Use a temporary file if no path is provided
-        import tempfile
-        fd, plotpath = tempfile.mkstemp(suffix='.png', prefix='spectrogram_')
-        os.close(fd)  # Close file descriptor, we'll use the path
+        temp_file = tempfile.NamedTemporaryFile(suffix='.png', prefix='spectrogram_', delete=False)
+        plotpath = temp_file.name
+        temp_file.close()
     
     plt.savefig(plotpath, bbox_inches="tight")
     plt.clf()
