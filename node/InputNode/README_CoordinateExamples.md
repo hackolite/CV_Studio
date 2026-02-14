@@ -60,7 +60,7 @@ Real-time simulation of a single moving object with realistic movement patterns:
 **Features**:
 - Reproducible movements (uses seeded random generator)
 - Object stays within ~15km of center point
-- Each movement has unique pattern
+- Movement follows a randomly selected pattern (linear, circular, or random walk)
 - Continuous position updates
 
 ## Usage Examples
