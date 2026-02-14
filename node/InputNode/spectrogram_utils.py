@@ -251,7 +251,9 @@ def plot_spectrogram(location, plotpath=None, binsize=2**10, colormap="jet"):
     
     Note:
         Quand plotpath est None, un fichier temporaire est créé avec delete=False.
-        L'appelant est responsable du nettoyage du fichier temporaire si nécessaire.
+        Dans ce cas, l'appelant reçoit le chemin du fichier temporaire dans le tuple
+        de retour et est responsable de son nettoyage. Si plotpath est fourni par 
+        l'appelant, aucun nettoyage n'est nécessaire de la part de cette fonction.
     """
     if wav is None:
         raise ImportError("scipy is required for plot_spectrogram. Install with: pip install scipy")
