@@ -120,7 +120,7 @@ def test_assemble_osm_map():
     zoom = 10
     tiles_x, tiles_y = 3, 3
     
-    map_img, origin_fx, origin_fy = assemble_osm_map(
+    map_img, origin_fx, origin_fy, cache_stats = assemble_osm_map(
         center_lat, center_lon, zoom, tiles_x, tiles_y
     )
     
@@ -133,6 +133,12 @@ def test_assemble_osm_map():
     # Verify origin is a fractional tile position
     assert isinstance(origin_fx, float), "Origin FX should be float"
     assert isinstance(origin_fy, float), "Origin FY should be float"
+    
+    # Verify cache stats
+    assert cache_stats is not None, "Cache stats should be returned"
+    assert 'cached' in cache_stats, "Cache stats should have 'cached' key"
+    assert 'downloaded' in cache_stats, "Cache stats should have 'downloaded' key"
+    assert 'total' in cache_stats, "Cache stats should have 'total' key"
     
     # Verify center point is approximately in the middle of the map
     center_fx, center_fy = lat_lon_to_tile_float(center_lat, center_lon, zoom)
