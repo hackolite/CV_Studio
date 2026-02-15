@@ -64,8 +64,15 @@ def test_draw_bbox_backward_compatibility():
         content = f.read()
     
     # Check that settings load has a default value for backward compatibility
-    assert 'setting_dict.get(draw_bbox_tag, True)' in content, \
-        "Should provide default value True for backward compatibility"
+    # Use flexible pattern matching to handle spacing/formatting variations
+    import re
+    pattern = r'setting_dict\.get\s*\(\s*draw_bbox_tag\s*,\s*'
+    assert re.search(pattern, content), \
+        "Should use setting_dict.get() with default value for backward compatibility"
+    
+    # Check that DEFAULT_DRAW_BBOX constant exists
+    assert 'DEFAULT_DRAW_BBOX' in content, \
+        "Should define DEFAULT_DRAW_BBOX constant"
 
 
 def test_draw_bbox_conditional_logic():

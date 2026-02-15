@@ -266,6 +266,9 @@ class Node(Node):
     _max_val = 1.0
 
     _opencv_setting_dict = None
+    
+    # Default value for draw bounding boxes checkbox
+    DEFAULT_DRAW_BBOX = True
 
 
     # Chemin de base pour les modèles
@@ -535,7 +538,7 @@ class Node(Node):
                 # Get the draw bounding boxes checkbox state
                 draw_bbox = dpg_get_value(self.tag_node_draw_bbox_value_name)
                 if draw_bbox is None:
-                    draw_bbox = True  # Default to True if not found
+                    draw_bbox = self.DEFAULT_DRAW_BBOX
 
                 if frame is not None:
                     if draw_bbox:
@@ -586,7 +589,7 @@ class Node(Node):
         
         draw_bbox = dpg_get_value(draw_bbox_tag)
         if draw_bbox is None:
-            draw_bbox = True
+            draw_bbox = self.DEFAULT_DRAW_BBOX
 
         pos = dpg.get_item_pos(self.tag_node_name)
 
@@ -610,7 +613,7 @@ class Node(Node):
         model_name = setting_dict[input_value02_tag]
         score_th = setting_dict[input_value03_tag]
         rejected_classes = setting_dict.get(rejected_classes_tag, "")
-        draw_bbox = setting_dict.get(draw_bbox_tag, True)  # Default to True for backward compatibility
+        draw_bbox = setting_dict.get(draw_bbox_tag, self.DEFAULT_DRAW_BBOX)
 
         dpg_set_value(self.tag_node_input_text_value_name, model_name)
         dpg_set_value(self.tag_node_input_float_value_name, score_th)
