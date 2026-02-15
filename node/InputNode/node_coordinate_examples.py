@@ -19,7 +19,6 @@ import random
 import math
 import time
 import dearpygui.dearpygui as dpg
-import requests
 
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.basenode import Node as BaseNode
@@ -27,9 +26,6 @@ from node.basenode import Node as BaseNode
 
 # GPS Movement Simulation name constant
 GPS_SIMULATION_NAME = "GPS Movement Simulation"
-
-# Roissy Airport Planes name constant
-ROISSY_PLANES_NAME = "Roissy Airport Planes"
 
 
 # Predefined coordinate examples compatible with Map node format
@@ -274,150 +270,11 @@ class GPSMovementSimulator:
         return self.t0_positions.copy()
 
 
-class RoissyPlanesTracker:
-    """
-    Tracks planes approaching Roissy-Charles de Gaulle Airport using OpenSky Network API.
-    Detects planes that are approaching for landing based on altitude, speed, and vertical rate.
-    """
-    
-    # Zone Roissy-Charles de Gaulle Airport (CDG)
-    LAMIN = 48.90  # Minimum latitude
-    LAMAX = 49.10  # Maximum latitude
-    LOMIN = 2.35   # Minimum longitude
-    LOMAX = 2.75   # Maximum longitude
-    
-    URL = "https://opensky-network.org/api/states/all"
-    
-    def __init__(self):
-        """Initialize the Roissy planes tracker."""
-        self.last_fetch_time = 0
-        self.fetch_interval = 20  # Fetch every 20 seconds to avoid rate limiting
-        self.cached_planes = []
-    
-    def get_planes(self):
-        """
-        Fetch planes in the Roissy airport area from OpenSky Network API.
-        
-        Returns:
-            List of plane state vectors from the API
-        """
-        params = {
-            "lamin": self.LAMIN,
-            "lamax": self.LAMAX,
-            "lomin": self.LOMIN,
-            "lomax": self.LOMAX
-        }
-        
-        try:
-            r = requests.get(self.URL, params=params, timeout=10)
-            
-            if r.status_code != 200:
-                print(f"RoissyPlanesTracker: API returned status {r.status_code}")
-                return []
-            
-            data = r.json()
-            return data.get("states", [])
-        
-        except requests.exceptions.Timeout:
-            print("RoissyPlanesTracker: Request timeout")
-            return []
-        except requests.exceptions.RequestException as e:
-            print(f"RoissyPlanesTracker: Request error: {e}")
-            return []
-        except Exception as e:
-            print(f"RoissyPlanesTracker: Error fetching planes: {e}")
-            return []
-    
-    def detect_landing(self, planes):
-        """
-        Detect planes that are approaching for landing.
-        
-        Criteria:
-        - Altitude < 1500 meters
-        - Speed < 300 km/h
-        - Vertical rate < -1 m/s (descending)
-        
-        Args:
-            planes: List of plane state vectors from OpenSky API
-        
-        Returns:
-            List of dictionaries with approaching plane information
-        """
-        approaching = []
-        
-        for p in planes:
-            callsign = p[1]
-            lat = p[6]
-            lon = p[5]
-            alt = p[7]       # meters
-            speed = p[9]     # m/s
-            vertical = p[11]  # m/s (descent)
-            
-            if not lat or not lon:
-                continue
-            
-            # Skip if essential data is missing
-            if speed is None or alt is None or vertical is None:
-                continue
-            
-            speed_kmh = speed * 3.6
-            
-            # Approach criteria
-            if (
-                alt < 1500 and
-                speed_kmh < 300 and
-                vertical < -1
-            ):
-                approaching.append({
-                    "callsign": callsign.strip() if callsign else "Unknown",
-                    "alt": int(alt),
-                    "speed": int(speed_kmh),
-                    "vertical": round(vertical, 1),
-                    "lat": lat,
-                    "lon": lon
-                })
-        
-        return approaching
-    
-    def get_coordinates(self):
-        """
-        Get current coordinates of approaching planes.
-        Fetches fresh data from API if enough time has elapsed.
-        
-        Returns:
-            List of coordinate dictionaries compatible with Map node
-        """
-        current_time = time.time()
-        
-        # Check if we need to fetch fresh data
-        if current_time - self.last_fetch_time >= self.fetch_interval:
-            print(f"RoissyPlanesTracker: Fetching planes from OpenSky API...")
-            planes = self.get_planes()
-            approaching = self.detect_landing(planes)
-            
-            # Convert to coordinate format
-            coordinates = []
-            for p in approaching:
-                coordinates.append({
-                    'latitude': p['lat'],
-                    'longitude': p['lon'],
-                    'name': f"✈️ {p['callsign']}",
-                    'info': f"Alt: {p['alt']}m, Speed: {p['speed']}km/h, Descent: {p['vertical']}m/s"
-                })
-            
-            self.cached_planes = coordinates
-            self.last_fetch_time = current_time
-            
-            print(f"RoissyPlanesTracker: Found {len(coordinates)} approaching planes")
-        
-        return self.cached_planes
-
-
 def get_example_names():
     """Get list of available example names for the dropdown."""
-    # Static examples first, then add GPS simulation and Roissy planes
+    # Static examples first, then add GPS simulation
     static_names = list(COORDINATE_EXAMPLES.keys())
-    return static_names + [GPS_SIMULATION_NAME, ROISSY_PLANES_NAME]
+    return static_names + [GPS_SIMULATION_NAME]
 
 
 class FactoryNode:
@@ -523,7 +380,6 @@ class Node(BaseNode):
 
     def __init__(self):
         self.gps_simulator = None  # Will be initialized when GPS simulation is selected
-        self.roissy_tracker = None  # Will be initialized when Roissy planes is selected
         self.last_update_time = None  # Track last GPS update time
         self.update_interval = 1.0  # Update GPS positions every 1 second
         self.last_coordinates = []  # Cache last generated coordinates
@@ -540,18 +396,11 @@ class Node(BaseNode):
             node.last_update_time = None
             node.last_coordinates = []
         
-        # Reset Roissy tracker when switching away from Roissy planes
-        if selected_example != ROISSY_PLANES_NAME and hasattr(node, 'roissy_tracker'):
-            node.roissy_tracker = None
-        
         # Get the coordinates for the selected example
         if selected_example == GPS_SIMULATION_NAME:
             # For GPS simulation, show dynamic message
             num_points = 1  # Default number
             status_text = f'Simulating {num_points} moving object (updates every 1s)'
-        elif selected_example == ROISSY_PLANES_NAME:
-            # For Roissy planes, show dynamic message
-            status_text = 'Tracking planes near Roissy Airport (updates every 20s)'
         else:
             coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
             num_points = len(coordinates)
@@ -613,15 +462,6 @@ class Node(BaseNode):
             
             # Return the last generated coordinates (updated every second)
             json_output = self.last_coordinates
-        
-        # Handle Roissy Airport Planes
-        elif selected_example == ROISSY_PLANES_NAME:
-            # Initialize tracker if not already done
-            if self.roissy_tracker is None:
-                self.roissy_tracker = RoissyPlanesTracker()
-            
-            # Get current approaching planes (tracker manages its own refresh interval)
-            json_output = self.roissy_tracker.get_coordinates()
         
         else:
             # Get static coordinates for the selected example
