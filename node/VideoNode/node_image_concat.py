@@ -392,18 +392,9 @@ class Node(Node):
             # Count IMAGE type slots for display grid
             image_slot_count = len(image_slot_indices)
             
-            # Determine grid size based on IMAGE slot count
-            # Grid layout mapping: 1→1x1, 2→1x2(centered), 3-4→2x2, 5-6→2x3, 7-9→3x3
-            # This list maps slot count to display grid size
-            display_num_list = [1, 2, 4, 4, 6, 6, 9, 9, 9]
-            if 0 < image_slot_count <= len(display_num_list):
-                grid_size = display_num_list[image_slot_count - 1]
-            elif image_slot_count > len(display_num_list):
-                # For more than 9 slots, use the maximum 9-slot grid
-                grid_size = display_num_list[-1]
-            else:
-                # image_slot_count is 0 or negative
-                grid_size = 0
+            # Display exactly the number of connected IMAGE slots (no padding with black frames)
+            # Maximum of 9 slots to prevent excessive grid sizes
+            grid_size = min(image_slot_count, 9) if image_slot_count > 0 else 0
             
             # Only process the first grid_size IMAGE slots
             slots_to_process = image_slot_indices[:grid_size] if grid_size > 0 else []
@@ -430,11 +421,6 @@ class Node(Node):
                 else:
                     # Add black frame for IMAGE slots with no data
                     frame_dict[output_index] = copy.deepcopy(black_image)
-            
-            # Fill remaining grid positions with black frames
-            for index in range(grid_size):
-                if frame_dict.get(index, None) is None:
-                    frame_dict[index] = copy.deepcopy(black_image)
 
             if not frame_exist_flag:
                 frame_dict = None
