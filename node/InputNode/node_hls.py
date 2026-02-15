@@ -103,7 +103,7 @@ class FactoryNode:
             ):
                 dpg.add_input_text(
                     tag=node.tag_node_input01_value_name,
-                    label='HLS URL (.m3u8)',
+                    label='',
                     width=node.small_window_w - 30,
                 )
 
