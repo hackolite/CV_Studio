@@ -765,7 +765,7 @@ class Node(Node):
                 # For other dtypes, clip to valid uint8 range
                 image = np.clip(image, 0, 255).astype(np.uint8)
         
-        resize_image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
+        resize_image = cv2.resize(image, (width, height), interpolation=cv2.INTER_LANCZOS4)
         
         # Check if image has alpha channel
         if len(resize_image.shape) == 3 and resize_image.shape[2] == 4:

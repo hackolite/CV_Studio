@@ -224,7 +224,7 @@ class OverlayImageNode(Node):
                 width = int(height * aspect_ratio)
             
             # Resize the overlay
-            overlay = cv2.resize(overlay, (width, height), interpolation=cv2.INTER_AREA)
+            overlay = cv2.resize(overlay, (width, height), interpolation=cv2.INTER_LANCZOS4)
         
         overlay_h, overlay_w = overlay.shape[:2]
         master_h, master_w = output_image.shape[:2]

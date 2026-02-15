@@ -271,7 +271,7 @@ class StatNode(Node):
                 # Redimensionner si nécessaire
                 height, width = frame.shape[:2]
                 frame = cv2.cvtColor(frame, cv2.COLOR_RGB2RGBA)
-                frame = cv2.resize(frame, (small_window_w, small_window_h), interpolation=cv2.INTER_AREA)
+                frame = cv2.resize(frame, (small_window_w, small_window_h), interpolation=cv2.INTER_LANCZOS4)
                 #frame = frame.flatten() / 255.0
 
                 # Mettre à jour la texture dans DearPyGui
