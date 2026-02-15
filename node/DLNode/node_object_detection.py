@@ -75,6 +75,10 @@ class FactoryNode:
         # Tag for rejected classes input field
         node.tag_node_rejected_classes_name = node.tag_node_name + ':RejectedClasses'
         node.tag_node_rejected_classes_value_name = node.tag_node_name + ':RejectedClassesValue'
+        
+        # Tag for draw bounding boxes checkbox
+        node.tag_node_draw_bbox_name = node.tag_node_name + ':DrawBBox'
+        node.tag_node_draw_bbox_value_name = node.tag_node_name + ':DrawBBoxValue'
 
         # Callback to update rejected classes dropdown when model changes
         def on_model_change(sender, app_data, user_data):
@@ -211,6 +215,17 @@ class FactoryNode:
                     items=class_items,
                     width=small_window_w - 80,
                     default_value="",
+                )
+            
+            # Draw bounding boxes checkbox
+            with dpg.node_attribute(
+                    tag=node.tag_node_draw_bbox_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_checkbox(
+                    tag=node.tag_node_draw_bbox_value_name,
+                    label="Draw Bounding Boxes",
+                    default_value=True,
                 )
 
             if use_pref_counter:
@@ -374,6 +389,7 @@ class Node(Node):
                 tag_node_output_image = self.tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
                 self.tag_provider_select_value_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
                 self.tag_node_rejected_classes_value_name = self.tag_node_name + ':RejectedClassesValue'
+                self.tag_node_draw_bbox_value_name = self.tag_node_name + ':DrawBBoxValue'
 
                 small_window_w = self._opencv_setting_dict['process_width']
                 small_window_h = self._opencv_setting_dict['process_height']
@@ -516,17 +532,26 @@ class Node(Node):
                     dpg_set_value(self.tag_node_output_result,
                                   str(elapsed_time).zfill(4) + 'ms')
 
+                # Get the draw bounding boxes checkbox state
+                draw_bbox = dpg_get_value(self.tag_node_draw_bbox_value_name)
+                if draw_bbox is None:
+                    draw_bbox = True  # Default to True if not found
 
                 if frame is not None:
-                    debug_frame = copy.deepcopy(frame)
-                    debug_frame = self.draw_object_detection_info(
-                        debug_frame,
-                        score_th,
-                        bboxes,
-                        scores,
-                        class_ids,
-                        class_name_dict,
-                    )
+                    if draw_bbox:
+                        # Draw bounding boxes on a copy of the frame
+                        debug_frame = copy.deepcopy(frame)
+                        debug_frame = self.draw_object_detection_info(
+                            debug_frame,
+                            score_th,
+                            bboxes,
+                            scores,
+                            class_ids,
+                            class_name_dict,
+                        )
+                    else:
+                        # Send original frame without bounding boxes
+                        debug_frame = frame
                     texture = self.convert_cv_to_dpg(
                         debug_frame,
                         small_window_w,
@@ -550,6 +575,7 @@ class Node(Node):
         input_value02_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         input_value03_tag = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
         rejected_classes_tag = self.tag_node_name + ':RejectedClassesValue'
+        draw_bbox_tag = self.tag_node_name + ':DrawBBoxValue'
 
 
         model_name = dpg_get_value(input_value02_tag)
@@ -557,6 +583,10 @@ class Node(Node):
         score_th = round(float(dpg_get_value(input_value03_tag)), 3)
         
         rejected_classes = dpg_get_value(rejected_classes_tag) if dpg_get_value(rejected_classes_tag) else ""
+        
+        draw_bbox = dpg_get_value(draw_bbox_tag)
+        if draw_bbox is None:
+            draw_bbox = True
 
         pos = dpg.get_item_pos(self.tag_node_name)
 
@@ -566,6 +596,7 @@ class Node(Node):
         setting_dict[input_value02_tag] = model_name
         setting_dict[input_value03_tag] = score_th
         setting_dict[rejected_classes_tag] = rejected_classes
+        setting_dict[draw_bbox_tag] = draw_bbox
 
         return setting_dict
 
@@ -574,10 +605,12 @@ class Node(Node):
         input_value02_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         input_value03_tag = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
         rejected_classes_tag = self.tag_node_name + ':RejectedClassesValue'
+        draw_bbox_tag = self.tag_node_name + ':DrawBBoxValue'
 
         model_name = setting_dict[input_value02_tag]
         score_th = setting_dict[input_value03_tag]
         rejected_classes = setting_dict.get(rejected_classes_tag, "")
+        draw_bbox = setting_dict.get(draw_bbox_tag, True)  # Default to True for backward compatibility
 
         dpg_set_value(self.tag_node_input_text_value_name, model_name)
         dpg_set_value(self.tag_node_input_float_value_name, score_th)
@@ -597,6 +630,12 @@ class Node(Node):
                 dpg_set_value(rejected_classes_tag, rejected_classes)
             except:
                 pass  # Ignore if the UI element doesn't exist yet
+        
+        # Set draw bounding boxes checkbox
+        try:
+            dpg_set_value(draw_bbox_tag, draw_bbox)
+        except:
+            pass  # Ignore if the UI element doesn't exist yet
 
 
 
