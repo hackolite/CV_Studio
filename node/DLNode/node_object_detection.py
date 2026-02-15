@@ -540,12 +540,30 @@ class Node(Node):
                 if draw_bbox is None:
                     draw_bbox = self.DEFAULT_DRAW_BBOX
 
+                # Separate displayed image from output image
+                # Display image: ALWAYS show bounding boxes for visualization
+                # Output image: Respect checkbox setting (for video saving vs tracking)
+                display_frame = None
+                output_frame = None
+                
                 if frame is not None:
+                    # Display image: ALWAYS draw bounding boxes (for user feedback)
+                    display_frame = copy.deepcopy(frame)
+                    display_frame = self.draw_object_detection_info(
+                        display_frame,
+                        score_th,
+                        bboxes,
+                        scores,
+                        class_ids,
+                        class_name_dict,
+                    )
+                    
+                    # Output image: Respect checkbox setting
                     if draw_bbox:
-                        # Draw bounding boxes on a copy of the frame
-                        debug_frame = copy.deepcopy(frame)
-                        debug_frame = self.draw_object_detection_info(
-                            debug_frame,
+                        # When checked: send frame WITH bounding boxes (for video recording)
+                        output_frame = copy.deepcopy(frame)
+                        output_frame = self.draw_object_detection_info(
+                            output_frame,
                             score_th,
                             bboxes,
                             scores,
@@ -553,16 +571,18 @@ class Node(Node):
                             class_name_dict,
                         )
                     else:
-                        # Send original frame without bounding boxes
-                        debug_frame = frame
+                        # When unchecked: send clean frame (for tracking)
+                        output_frame = frame
+                    
+                    # Update UI texture with display frame (always has bboxes)
                     texture = self.convert_cv_to_dpg(
-                        debug_frame,
+                        display_frame,
                         small_window_w,
                         small_window_h,
                     )
                     dpg_set_value(tag_node_output_image, texture)
 
-                data["image"] = debug_frame if debug_frame is not None else frame
+                data["image"] = output_frame if output_frame is not None else frame
                 data["json"] = result
                 data["audio"] = None
                 return data
