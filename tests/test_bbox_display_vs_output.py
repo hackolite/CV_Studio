@@ -29,44 +29,42 @@ def test_separate_display_and_output_frames():
         content = f.read()
     
     # Check for separate display_frame and output_frame variables
-    assert 'display_frame = None' in content, "Should initialize display_frame variable"
-    assert 'output_frame = None' in content, "Should initialize output_frame variable"
+    # Use more flexible patterns that work with various formatting
+    import re
+    assert re.search(r'display_frame\s*=\s*None', content), \
+        "Should initialize display_frame variable"
+    assert re.search(r'output_frame\s*=\s*None', content), \
+        "Should initialize output_frame variable"
     
     # Check that display frame ALWAYS gets bounding boxes
-    assert 'display_frame = copy.deepcopy(frame)' in content, \
+    assert re.search(r'display_frame\s*=\s*copy\.deepcopy\s*\(\s*frame\s*\)', content), \
         "Display frame should be created with deepcopy"
-    assert 'display_frame = self.draw_object_detection_info(' in content, \
+    assert re.search(r'display_frame\s*=\s*self\.draw_object_detection_info\s*\(', content), \
         "Display frame should always have bounding boxes drawn"
     
     # Check that output frame respects checkbox setting
-    assert 'if draw_bbox:' in content, "Should check draw_bbox for output frame"
-    assert 'output_frame = copy.deepcopy(frame)' in content, \
+    assert re.search(r'if\s+draw_bbox\s*:', content), \
+        "Should check draw_bbox for output frame"
+    assert re.search(r'output_frame\s*=\s*copy\.deepcopy\s*\(\s*frame\s*\)', content), \
         "Output frame with bboxes should use deepcopy"
-    assert 'output_frame = self.draw_object_detection_info(' in content, \
+    assert re.search(r'output_frame\s*=\s*self\.draw_object_detection_info\s*\(', content), \
         "Output frame should draw bboxes when checkbox is checked"
     
-    # Check the else clause for unchecked state
-    lines = content.split('\n')
-    found_else_with_clean_frame = False
-    for i, line in enumerate(lines):
-        if 'else:' in line:
-            # Check next few lines for clean frame assignment
-            for j in range(i, min(i + 5, len(lines))):
-                if 'output_frame = frame' in lines[j] and 'copy.deepcopy' not in lines[j]:
-                    found_else_with_clean_frame = True
-                    break
-    
-    assert found_else_with_clean_frame, \
+    # Check the else clause for unchecked state - more resilient pattern
+    # Look for pattern: else: ... output_frame = frame (without deepcopy)
+    else_pattern = r'else\s*:\s*(?:[^\n]*\n){0,3}[^\n]*output_frame\s*=\s*frame\s*(?!\s*=)'
+    assert re.search(else_pattern, content, re.MULTILINE), \
         "Should send clean frame (output_frame = frame) when checkbox unchecked"
     
     # Check that UI uses display_frame (always has bboxes)
-    import re
+    # More complete regex that handles multiline function calls
     texture_pattern = r'texture\s*=\s*self\.convert_cv_to_dpg\s*\(\s*display_frame'
-    assert re.search(texture_pattern, content), \
+    assert re.search(texture_pattern, content, re.MULTILINE | re.DOTALL), \
         "UI texture should use display_frame (always has bboxes)"
     
     # Check that data output uses output_frame
-    assert 'data["image"] = output_frame' in content, \
+    data_pattern = r'data\s*\[\s*["\']image["\']\s*\]\s*=\s*output_frame'
+    assert re.search(data_pattern, content), \
         "Data output should use output_frame (respects checkbox)"
     
     print("✅ All checks passed!")
