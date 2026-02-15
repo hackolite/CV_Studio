@@ -136,8 +136,9 @@ def check_requirements(skip_package_check=False):
             missing_packages.append(package_name)
             print(f"  ✗ {package_name}")
         except (OSError, RuntimeError) as e:
-            # Catch common runtime exceptions (e.g., OSError for DLL loading errors, RuntimeError)
-            # This is common with onnxruntime when C++ runtime dependencies are missing
+            # Catch runtime exceptions when importing
+            # OSError: Common for DLL loading errors (missing C++ runtime dependencies)
+            # RuntimeError: Can occur when package dependencies are incompatible
             missing_packages.append(package_name)
             print(f"  ✗ {package_name} (failed to import: {type(e).__name__})")
             if package_name == 'onnxruntime':
@@ -214,7 +215,7 @@ def check_requirements(skip_package_check=False):
                                 print(f"    Download from: https://aka.ms/vs/17/release/vc_redist.x64.exe")
                     
                     if still_missing:
-                        print(f"WARNING: Some packages are still missing or failed to import: {', '.join(still_missing)}")
+                        print(f"WARNING: The following packages could not be imported: {', '.join(still_missing)}")
                         print("You may need to install them manually or check for installation errors.")
                         if 'onnxruntime' in still_missing:
                             print("\nFor onnxruntime issues:")
