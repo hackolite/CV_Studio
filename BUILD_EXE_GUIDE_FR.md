@@ -291,6 +291,42 @@ python build_exe.py --clean --skip-package-check
 - mediapipe
 - Et beaucoup d'autres...
 
+### Problème : Erreur d'importation onnxruntime à la ligne 26 (DLL load failed)
+
+Si vous rencontrez une erreur comme celle-ci lors de l'exécution de `python build_exe.py --clean` :
+
+```
+File "C:\Users\...\site-packages\onnxruntime\__init__.py", line 26 in <module>
+ImportError: DLL load failed while importing onnxruntime_pybind11_state
+```
+
+Cela indique qu'onnxruntime ne peut pas charger ses dépendances d'exécution C++ requises.
+
+**Cause principale** : onnxruntime nécessite l'installation de Visual C++ Redistributable sur Windows. Sans cela, le package est installé mais ne peut pas charger ses fichiers DLL natifs.
+
+**Solution 1 : Installer Visual C++ Redistributable (Recommandé)**
+
+1. Téléchargez le Visual C++ Redistributable de Microsoft :
+   - [VC++ Redistributable x64 (2015-2022)](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+   - Il s'agit du package Microsoft Visual C++ 2015-2022 Redistributable
+   - Compatible avec Visual Studio 2015, 2017, 2019 et 2022
+2. Exécutez l'installateur
+3. Redémarrez votre terminal/invite de commande
+4. Essayez de relancer la construction :
+   ```bash
+   python build_exe.py --clean
+   ```
+
+**Solution 2 : Utiliser le flag skip-package-check**
+
+Si vous êtes certain que tous les packages sont correctement installés (par exemple, dans un environnement CI/CD), vous pouvez ignorer la vérification des packages :
+
+```bash
+python build_exe.py --clean --skip-package-check
+```
+
+**Note** : Cette erreur est spécifique à Windows. Sur Linux/macOS, onnxruntime fonctionne généralement sans dépendances supplémentaires.
+
 ### Problème : Erreur "module not found" dans l'exe
 
 Ajouter le module manquant dans `CV_Studio.spec` :

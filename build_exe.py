@@ -45,6 +45,9 @@ import shutil
 import subprocess
 import argparse
 
+# Constants
+VCPP_REDISTRIBUTABLE_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+
 # Ensure UTF-8 encoding for Windows console output
 if sys.platform == 'win32':
     import io
@@ -135,12 +138,33 @@ def check_requirements(skip_package_check=False):
         except ImportError:
             missing_packages.append(package_name)
             print(f"  ✗ {package_name}")
+        except (OSError, RuntimeError) as e:
+            # Catch runtime exceptions when importing
+            # OSError: Common for DLL loading errors (missing C++ runtime dependencies)
+            # RuntimeError: Can occur when package dependencies are incompatible
+            missing_packages.append(package_name)
+            print(f"  ✗ {package_name} (failed to import: {type(e).__name__})")
     
     if missing_packages:
         print(f"\nWARNING: Missing {len(missing_packages)} package(s):")
         for pkg in missing_packages:
             print(f"  - {pkg}")
         print()
+        
+        # Special handling for onnxruntime errors
+        if 'onnxruntime' in missing_packages:
+            print("INFO: ONNXRUNTIME TROUBLESHOOTING:")
+            print("  onnxruntime requires Visual C++ Redistributable on Windows.")
+            print("  If you see errors like 'DLL load failed' or import errors:")
+            print()
+            print("  Solution 1: Install Visual C++ Redistributable")
+            print(f"    Download: {VCPP_REDISTRIBUTABLE_URL}")
+            print("    Run the installer and restart your terminal")
+            print()
+            print("  Solution 2: Use --skip-package-check flag")
+            print("    python build_exe.py --skip-package-check")
+            print("    (Only if you're sure dependencies are installed)")
+            print()
         
         # Check if running in non-interactive environment (CI/CD)
         if not sys.stdin.isatty():
@@ -182,10 +206,24 @@ def check_requirements(skip_package_check=False):
                             __import__(import_name)
                         except ImportError:
                             still_missing.append(package_name)
+                        except (OSError, RuntimeError) as e:
+                            # Handle common runtime exceptions (e.g., DLL loading errors)
+                            still_missing.append(package_name)
+                            if package_name == 'onnxruntime':
+                                print(f"INFO: {package_name} installed but has runtime error: {type(e).__name__}")
+                                print(f"  This is usually due to missing Visual C++ Redistributable")
+                                print(f"  Download from: {VCPP_REDISTRIBUTABLE_URL}")
                     
                     if still_missing:
-                        print(f"WARNING: Some packages still missing: {', '.join(still_missing)}")
+                        print(f"WARNING: Missing {len(still_missing)} package(s):")
+                        for pkg in still_missing:
+                            print(f"  - {pkg}")
                         print("You may need to install them manually or check for installation errors.")
+                        if 'onnxruntime' in still_missing:
+                            print("\nFor onnxruntime issues:")
+                            print("  1. Install Visual C++ Redistributable (see link above)")
+                            print("  2. Restart your terminal/command prompt")
+                            print("  3. Try running the build again")
                         response = input("\nContinue anyway? (y/N): ")
                         if response.lower() != 'y':
                             return False
@@ -211,7 +249,12 @@ def check_requirements(skip_package_check=False):
             print("\nERROR: Cannot read input (non-interactive environment)")
             print("\nTo fix this issue:")
             print("  1. Install dependencies: pip install -r requirements.txt")
-            print("  2. Or use: python build_exe.py --skip-package-check")
+            if 'onnxruntime' in missing_packages:
+                print("  2. For onnxruntime: Install Visual C++ Redistributable")
+                print(f"     {VCPP_REDISTRIBUTABLE_URL}")
+                print("  3. Or use: python build_exe.py --skip-package-check")
+            else:
+                print("  2. Or use: python build_exe.py --skip-package-check")
             return False
     
     print()
