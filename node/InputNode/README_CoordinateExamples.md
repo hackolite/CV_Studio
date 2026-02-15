@@ -63,6 +63,38 @@ Real-time simulation of a single moving object with realistic movement patterns:
 - Movement follows a randomly selected pattern (linear, circular, or random walk)
 - Continuous position updates
 
+#### Roissy Airport Planes
+Real-time tracking of planes approaching Roissy-Charles de Gaulle Airport (CDG) using OpenSky Network API:
+
+**Coverage Area**:
+- Latitude: 48.90°N to 49.10°N
+- Longitude: 2.35°E to 2.75°E
+- Area: ~20km x 20km around CDG airport
+
+**Approach Detection Criteria**:
+- Altitude: < 1,500 meters (4,920 feet)
+- Speed: < 300 km/h (162 knots)
+- Vertical rate: < -1 m/s (descending)
+
+**Parameters**:
+- Update frequency: Every 20 seconds (to respect API rate limits)
+- Data source: OpenSky Network public API
+- Real-time flight data
+
+**Output Information**:
+- Callsign: Aircraft identification
+- Position: Latitude and longitude
+- Altitude: Height in meters
+- Speed: Ground speed in km/h
+- Vertical rate: Climb/descent rate in m/s
+
+**Features**:
+- Live aircraft tracking
+- Automatic approach detection
+- No API key required (public endpoint)
+- Cached data between updates
+- Network error handling
+
 ## Usage Examples
 
 ### Basic Visualization
@@ -78,6 +110,14 @@ Real-time simulation of a single moving object with realistic movement patterns:
     → [Map: Zoom=12, Cache=On] 
     → Browser
 ```
+
+### Roissy Airport Planes
+```
+[CoordinateExamples: "Roissy Airport Planes"]
+    → [Map: Zoom=11, Cache=Off]
+    → Browser
+```
+Note: Requires internet connection to OpenSky Network API.
 
 ### Comparing Different Regions
 ```
@@ -177,6 +217,14 @@ All examples output JSON in this format:
 - **View Size**: Set to 1.5-2.0 to see movement area
 - **Caching**: Disable cache for simulation (coordinates change continuously)
 - **Update Rate**: The simulation updates every time the node processes
+
+### For Roissy Airport Planes
+- **Zoom Level**: Use 10-12 for airport area view
+- **View Size**: Set to 1.5-2.0 to see approach paths
+- **Caching**: Keep cache disabled for real-time updates
+- **Update Frequency**: Data refreshes every 20 seconds
+- **Internet Required**: Needs active connection to OpenSky Network API
+- **Rate Limiting**: API respects 20-second intervals to avoid rate limits
 
 ### Performance
 - Static examples are instant (no computation)
