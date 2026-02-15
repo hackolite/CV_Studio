@@ -290,6 +290,40 @@ python build_exe.py --clean --skip-package-check
 - mediapipe
 - And many others...
 
+### Problem: onnxruntime import error at line 26 (DLL load failed)
+
+If you encounter an error like this when running `python build_exe.py --clean`:
+
+```
+File "C:\Users\...\site-packages\onnxruntime\__init__.py", line 26 in <module>
+ImportError: DLL load failed while importing onnxruntime_pybind11_state
+```
+
+This indicates that onnxruntime cannot load its required C++ runtime dependencies.
+
+**Root Cause**: onnxruntime requires the Visual C++ Redistributable to be installed on Windows. Without it, the package is installed but cannot load its native DLL files.
+
+**Solution 1: Install Visual C++ Redistributable (Recommended)**
+
+1. Download the Visual C++ Redistributable from Microsoft:
+   - [VC++ Redistributable x64](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+2. Run the installer
+3. Restart your terminal/command prompt
+4. Try running the build again:
+   ```bash
+   python build_exe.py --clean
+   ```
+
+**Solution 2: Use the skip-package-check flag**
+
+If you're certain all packages are installed correctly (e.g., in a CI/CD environment), you can skip the package check:
+
+```bash
+python build_exe.py --clean --skip-package-check
+```
+
+**Note**: This error is specific to Windows. On Linux/macOS, onnxruntime typically works without additional dependencies.
+
 ### Problem: "module not found" error in exe
 
 Add the missing module in `CV_Studio.spec`:
