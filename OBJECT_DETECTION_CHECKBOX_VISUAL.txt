@@ -1,0 +1,231 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║          OBJECT DETECTION DRAW BOUNDING BOXES FEATURE                        ║
+║                           Implementation Complete ✅                         ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ REQUIREMENT                                                                  │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ "object detection node send image with object detection bounding box        │
+│  when square filled, else, send without, tracking draw tracking bounding    │
+│  box as before."                                                             │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ IMPLEMENTATION SUMMARY                                                       │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ ✅ Added "Draw Bounding Boxes" checkbox to Object Detection node            │
+│ ✅ Checkbox controls whether bounding boxes are drawn on output image       │
+│ ✅ When CHECKED: sends image WITH bounding boxes (default behavior)         │
+│ ✅ When UNCHECKED: sends image WITHOUT bounding boxes (clean image)         │
+│ ✅ JSON output always contains detection data (independent of checkbox)     │
+│ ✅ Settings persistence for checkbox state                                  │
+│ ✅ Backward compatible (defaults to checked)                                │
+│ ✅ Tracking node unchanged (continues to draw tracking boxes as before)     │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ OBJECT DETECTION NODE UI - BEFORE AND AFTER                                 │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ BEFORE:                          AFTER:                                     │
+│ ┌─────────────────────┐          ┌─────────────────────┐                   │
+│ │ ObjectDetection     │          │ ObjectDetection     │                   │
+│ ├─────────────────────┤          ├─────────────────────┤                   │
+│ │ ◉ Image             │          │ ◉ Image             │                   │
+│ │                     │          │                     │                   │
+│ │ Model: [YOLOX▼]     │          │ Model: [YOLOX▼]     │                   │
+│ │ Score: [━●━━] 0.3   │          │ Score: [━●━━] 0.3   │                   │
+│ │ Reject: [     ▼]    │          │ Reject: [     ▼]    │                   │
+│ │                     │          │ ☑ Draw Bounding... │ ← NEW!             │
+│ │                     │          │                     │                   │
+│ │ ○ Image             │          │ ○ Image             │                   │
+│ │ ○ JSON              │          │ ○ JSON              │                   │
+│ └─────────────────────┘          └─────────────────────┘                   │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ OUTPUT BEHAVIOR                                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ CHECKBOX CHECKED (☑):            CHECKBOX UNCHECKED (☐):                    │
+│                                                                              │
+│ ┌─────────────────────┐          ┌─────────────────────┐                   │
+│ │   ┏━━━━━━━━━┓       │          │                     │                   │
+│ │   ┃ Person  ┃       │          │                     │                   │
+│ │   ┃ 0.95    ┃       │          │   Original Image    │                   │
+│ │   ┗━━━━━━━━━┛       │          │   (No Annotations)  │                   │
+│ │                     │          │                     │                   │
+│ └─────────────────────┘          └─────────────────────┘                   │
+│                                                                              │
+│ Image: With Bounding Boxes       Image: Clean (Original)                   │
+│ JSON:  {bboxes: [...],           JSON:  {bboxes: [...],                    │
+│         scores: [...],                   scores: [...],                    │
+│         class_ids: [...]}                class_ids: [...]}                 │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ TRACKING NODE BEHAVIOR (UNCHANGED)                                          │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ The Multi-Object Tracking (MOT) node continues to work exactly as before:  │
+│                                                                              │
+│ ✓ Receives detection data via JSON input                                   │
+│ ✓ Draws its OWN tracking bounding boxes (with TID labels)                  │
+│ ✓ Outputs image with tracking visualizations                               │
+│ ✓ Independent of Object Detection's Draw Bounding Boxes checkbox           │
+│                                                                              │
+│ Example Pipeline:                                                           │
+│ ┌──────────────┐       ┌──────────────┐       ┌──────────────┐            │
+│ │  Object Det  │──────►│   Tracking   │──────►│    Output    │            │
+│ │ ☐ Draw BBox  │ JSON  │ (Draws TID)  │ Image │              │            │
+│ └──────────────┘       └──────────────┘       └──────────────┘            │
+│                                                                              │
+│ Result: Clean image from OD → Tracking draws its boxes → Final output      │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ USE CASES                                                                    │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ 1. Clean Video Recording                                                    │
+│    ├─ Uncheck "Draw Bounding Boxes" on Object Detection                    │
+│    ├─ Connect OD → Tracking → Video Recorder                               │
+│    ├─ Tracking still receives detection data but works with clean image    │
+│    └─ Result: Clean video with tracking overlays only                      │
+│                                                                              │
+│ 2. Debugging Detections                                                     │
+│    ├─ Keep checkbox checked (default)                                      │
+│    ├─ View output to see what detector found                               │
+│    └─ Easy verification of detection accuracy                              │
+│                                                                              │
+│ 3. Dual Output Pipeline                                                     │
+│    ├─ Split OD output to two branches                                      │
+│    ├─ Branch 1: With bboxes for monitoring                                 │
+│    ├─ Branch 2: Without bboxes for clean recording                         │
+│    └─ Same detection data, different visualizations                        │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ CODE CHANGES                                                                 │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ File: node/DLNode/node_object_detection.py                                  │
+│                                                                              │
+│ 1. Added checkbox UI element:                                               │
+│    - Tag: DrawBBoxValue                                                     │
+│    - Label: "Draw Bounding Boxes"                                           │
+│    - Default: True (checked)                                                │
+│    - Constant: DEFAULT_DRAW_BBOX = True                                     │
+│                                                                              │
+│ 2. Modified update() method:                                                │
+│    ```python                                                                │
+│    draw_bbox = dpg_get_value(self.tag_node_draw_bbox_value_name)           │
+│    if draw_bbox is None:                                                    │
+│        draw_bbox = self.DEFAULT_DRAW_BBOX                                   │
+│                                                                              │
+│    if frame is not None:                                                    │
+│        if draw_bbox:                                                        │
+│            debug_frame = copy.deepcopy(frame)                               │
+│            debug_frame = self.draw_object_detection_info(...)               │
+│        else:                                                                │
+│            debug_frame = frame  # Send original                             │
+│    ```                                                                       │
+│                                                                              │
+│ 3. Settings persistence:                                                    │
+│    - get_setting_dict(): Saves checkbox state                              │
+│    - set_setting_dict(): Loads checkbox state with default                 │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ TESTING                                                                      │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ File: tests/test_object_detection_draw_bbox_checkbox.py                     │
+│                                                                              │
+│ ✅ test_object_detection_has_draw_bbox_checkbox()                           │
+│    - Verifies checkbox UI elements exist                                    │
+│    - Checks tag definitions                                                 │
+│    - Validates conditional drawing logic                                    │
+│                                                                              │
+│ ✅ test_draw_bbox_default_value()                                           │
+│    - Confirms default is True (checked)                                     │
+│                                                                              │
+│ ✅ test_draw_bbox_backward_compatibility()                                  │
+│    - Verifies DEFAULT_DRAW_BBOX constant usage                             │
+│    - Uses flexible regex patterns for robustness                            │
+│                                                                              │
+│ ✅ test_draw_bbox_conditional_logic()                                       │
+│    - Validates if/else structure                                            │
+│    - Checks frame copying vs. original usage                                │
+│                                                                              │
+│ ✅ test_json_output_independence()                                          │
+│    - Ensures JSON always generated regardless of checkbox                   │
+│    - Confirms data availability for downstream nodes                        │
+│                                                                              │
+│ All tests passed! ✅                                                         │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ QUALITY CHECKS                                                               │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ ✅ Code Review:      0 issues (addressed all feedback)                      │
+│ ✅ Security (CodeQL): 0 vulnerabilities                                      │
+│ ✅ Python Syntax:    Valid                                                   │
+│ ✅ Tests:            All pass                                                │
+│ ✅ Documentation:    Complete                                                │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ BACKWARD COMPATIBILITY                                                       │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ ✅ Existing workflows require NO changes                                    │
+│ ✅ Checkbox defaults to CHECKED (existing behavior)                         │
+│ ✅ Settings files auto-upgraded with backward-compatible defaults           │
+│ ✅ All existing functionality preserved                                     │
+│ ✅ No breaking changes                                                       │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ FILES MODIFIED/CREATED                                                       │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ 📝 node/DLNode/node_object_detection.py           Core implementation       │
+│ 📝 tests/test_object_detection_draw_bbox_checkbox.py  Comprehensive tests   │
+│ 📝 OBJECT_DETECTION_DRAW_BBOX_FEATURE.md          Documentation             │
+│ 📝 OBJECT_DETECTION_CHECKBOX_VISUAL.txt           This summary              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ REQUIREMENTS CHECKLIST                                                       │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ ✅ Object Detection sends image WITH bounding boxes when checkbox filled    │
+│ ✅ Object Detection sends image WITHOUT bounding boxes when checkbox empty  │
+│ ✅ Tracking continues to draw tracking bounding boxes as before             │
+│ ✅ JSON detection data always available regardless of visual state          │
+│ ✅ Settings persistence for user preference                                 │
+│ ✅ Backward compatible with existing workflows                              │
+│ ✅ Comprehensive tests                                                       │
+│ ✅ Security validated (CodeQL)                                              │
+│ ✅ Documentation complete                                                    │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                     IMPLEMENTATION STATUS: COMPLETE ✅                       ║
+║                      Security Summary: 0 vulnerabilities                     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
