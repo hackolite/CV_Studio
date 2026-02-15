@@ -738,7 +738,7 @@ class Node(DpgNodeABC):
                                 points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name
                             )
                         else:
-                            print(f"Map node: No lat/lon in data")
+                            print("Map node: No lat/lon in data")
                 else:
                     print(f"Map node: Received JSON object (type: {type(input_value).__name__})")
                     data = input_value
@@ -779,7 +779,7 @@ class Node(DpgNodeABC):
                             points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name
                         )
                     else:
-                        print(f"Map node: No lat/lon in data")
+                        print("Map node: No lat/lon in data")
                     
             except json.JSONDecodeError as e:
                 error_msg = f"JSON parse error: {str(e)[:60]}"
