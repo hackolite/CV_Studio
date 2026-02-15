@@ -519,6 +519,7 @@ class Node(Node):
                 else:
                     # Use the input frame (may have detection boxes if connected from object detection)
                     debug_frame = copy.deepcopy(frame)
+                    logger.debug("Using input frame for visualization (may include pre-drawn detection boxes)")
                 
                 track_ids = result.get('track_ids', [])
                 t_bboxes = result.get('bboxes', [])
