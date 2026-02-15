@@ -139,7 +139,7 @@ def check_requirements(skip_package_check=False):
             # Catch other exceptions (e.g., OSError, DLL loading errors)
             # This is common with onnxruntime when C++ runtime dependencies are missing
             missing_packages.append(package_name)
-            print(f"  ✗ {package_name} (import error: {type(e).__name__})")
+            print(f"  ✗ {package_name} (failed to import: {type(e).__name__})")
             if package_name == 'onnxruntime':
                 print(f"     Note: onnxruntime requires Visual C++ Redistributable on Windows")
                 print(f"     Download from: https://aka.ms/vs/17/release/vc_redist.x64.exe")
@@ -214,7 +214,7 @@ def check_requirements(skip_package_check=False):
                                 print(f"    Download from: https://aka.ms/vs/17/release/vc_redist.x64.exe")
                     
                     if still_missing:
-                        print(f"WARNING: Some packages still missing or have errors: {', '.join(still_missing)}")
+                        print(f"WARNING: Some packages still missing or contain errors: {', '.join(still_missing)}")
                         print("You may need to install them manually or check for installation errors.")
                         if 'onnxruntime' in still_missing:
                             print("\nFor onnxruntime issues:")
