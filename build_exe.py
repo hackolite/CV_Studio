@@ -155,7 +155,7 @@ def check_requirements(skip_package_check=False):
         if 'onnxruntime' in missing_packages:
             print("INFO: ONNXRUNTIME TROUBLESHOOTING:")
             print("  onnxruntime requires Visual C++ Redistributable on Windows.")
-            print("  If you see errors like 'DLL load failed' or import errors at line 26:")
+            print("  If you see errors like 'DLL load failed' or import errors:")
             print()
             print("  Solution 1: Install Visual C++ Redistributable")
             print(f"    Download: {VCPP_REDISTRIBUTABLE_URL}")
