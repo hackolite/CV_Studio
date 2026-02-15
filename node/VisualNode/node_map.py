@@ -1080,7 +1080,7 @@ class Node(DpgNodeABC):
             
             # Resize to target dimensions if needed
             if map_array.shape[1] != width or map_array.shape[0] != height:
-                map_array = cv2.resize(map_array, (width, height), interpolation=cv2.INTER_AREA)
+                map_array = cv2.resize(map_array, (width, height), interpolation=cv2.INTER_LANCZOS4)
             
             # Reset progress bar after rendering completes and hide it
             if progress_tag and dpg.does_item_exist(progress_tag):
@@ -1442,7 +1442,7 @@ class Node(DpgNodeABC):
 
     def convert_cv_to_dpg(self, image, width, height):
         """Convert OpenCV image to DearPyGUI texture format"""
-        resize_image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
+        resize_image = cv2.resize(image, (width, height), interpolation=cv2.INTER_LANCZOS4)
         data = np.flip(resize_image, 2)
         data = data.ravel()
         data = np.asarray(data, dtype=np.float32)
