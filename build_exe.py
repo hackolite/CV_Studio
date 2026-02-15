@@ -135,8 +135,8 @@ def check_requirements(skip_package_check=False):
         except ImportError:
             missing_packages.append(package_name)
             print(f"  ✗ {package_name}")
-        except Exception as e:
-            # Catch other exceptions (e.g., OSError, DLL loading errors)
+        except (OSError, RuntimeError, AttributeError) as e:
+            # Catch common runtime exceptions (e.g., OSError for DLL loading errors)
             # This is common with onnxruntime when C++ runtime dependencies are missing
             missing_packages.append(package_name)
             print(f"  ✗ {package_name} (failed to import: {type(e).__name__})")
@@ -205,8 +205,8 @@ def check_requirements(skip_package_check=False):
                             __import__(import_name)
                         except ImportError:
                             still_missing.append(package_name)
-                        except Exception as e:
-                            # Handle non-ImportError exceptions (e.g., DLL loading errors)
+                        except (OSError, RuntimeError, AttributeError) as e:
+                            # Handle common runtime exceptions (e.g., DLL loading errors)
                             still_missing.append(package_name)
                             if package_name == 'onnxruntime':
                                 print(f"  ℹ {package_name} installed but has runtime error: {type(e).__name__}")
