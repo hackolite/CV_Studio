@@ -70,6 +70,9 @@ class FactoryNode:
         
         # Tag for enable/disable tracking checkbox
         node.tag_node_enable_checkbox_name = node.tag_node_name + ':EnableCheckbox'
+        
+        # Tag for tracking-only visualization checkbox
+        node.tag_node_tracking_only_viz_name = node.tag_node_name + ':TrackingOnlyViz'
 
 
         node._opencv_setting_dict = opencv_setting_dict
@@ -179,6 +182,18 @@ class FactoryNode:
                     tag=node.tag_node_enable_checkbox_name,
                     label="Enable Tracking",
                     default_value=True,
+                    callback=None,
+                )
+            
+            # Tracking-only visualization checkbox
+            with dpg.node_attribute(
+                    tag=node.tag_node_tracking_only_viz_name + ':Attribute',
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_checkbox(
+                    tag=node.tag_node_tracking_only_viz_name,
+                    label="Tracking Boxes Only",
+                    default_value=False,
                     callback=None,
                 )
 
@@ -296,6 +311,7 @@ class Node(Node):
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         confidence_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':ConfThreshValue'
         enable_checkbox_tag = tag_node_name + ':EnableCheckbox'
+        tracking_only_viz_tag = tag_node_name + ':TrackingOnlyViz'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
@@ -487,10 +503,23 @@ class Node(Node):
         # Only send data if tracking is enabled AND there are bboxes to display
         has_displayable_bboxes = tracking_enabled and bool(result) and len(result.get('bboxes', [])) > 0
         
+        # Get the tracking-only visualization setting
+        tracking_only_viz = dpg_get_value(tracking_only_viz_tag)
+        if tracking_only_viz is None:
+            tracking_only_viz = False  # Default to showing input frame
+        
         if frame is not None:
             if has_displayable_bboxes:
-
-                debug_frame = copy.deepcopy(frame)
+                # Choose the base frame for visualization
+                if tracking_only_viz:
+                    # Create a clean black frame to show only tracking boxes
+                    # Use the same dimensions as the input frame
+                    debug_frame = np.zeros_like(frame)
+                    logger.debug("Using clean frame for tracking-only visualization")
+                else:
+                    # Use the input frame (may have detection boxes if connected from object detection)
+                    debug_frame = copy.deepcopy(frame)
+                
                 track_ids = result.get('track_ids', [])
                 t_bboxes = result.get('bboxes', [])
                 t_scores = result.get('scores', [])
@@ -545,6 +574,7 @@ class Node(Node):
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         confidence_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':ConfThreshValue'
         enable_checkbox_tag = tag_node_name + ':EnableCheckbox'
+        tracking_only_viz_tag = tag_node_name + ':TrackingOnlyViz'
 
         # 選択モデル
         model_name = dpg_get_value(input_value02_tag)
@@ -556,6 +586,11 @@ class Node(Node):
         enable_checkbox = dpg_get_value(enable_checkbox_tag)
         if enable_checkbox is None:
             enable_checkbox = True
+        
+        # Get tracking-only visualization checkbox value
+        tracking_only_viz = dpg_get_value(tracking_only_viz_tag)
+        if tracking_only_viz is None:
+            tracking_only_viz = False
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -565,6 +600,7 @@ class Node(Node):
         setting_dict[input_value02_tag] = model_name
         setting_dict[confidence_threshold_tag] = confidence_threshold
         setting_dict[enable_checkbox_tag] = enable_checkbox
+        setting_dict[tracking_only_viz_tag] = tracking_only_viz
 
         return setting_dict
 
@@ -573,6 +609,7 @@ class Node(Node):
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         confidence_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':ConfThreshValue'
         enable_checkbox_tag = tag_node_name + ':EnableCheckbox'
+        tracking_only_viz_tag = tag_node_name + ':TrackingOnlyViz'
 
         model_name = setting_dict[input_value02_tag]
 
@@ -585,3 +622,7 @@ class Node(Node):
         # Set enable checkbox with default value for backward compatibility
         enable_checkbox_value = setting_dict.get(enable_checkbox_tag, True)
         dpg_set_value(enable_checkbox_tag, enable_checkbox_value)
+        
+        # Set tracking-only visualization checkbox with default value for backward compatibility
+        tracking_only_viz_value = setting_dict.get(tracking_only_viz_tag, False)
+        dpg_set_value(tracking_only_viz_tag, tracking_only_viz_value)
