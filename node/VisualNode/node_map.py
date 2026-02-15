@@ -751,30 +751,8 @@ class Node(DpgNodeABC):
                                 points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name
                             )
                             
-                            # Calculate center coordinates for status display
-                            lats = [p['lat'] for p in points]
-                            lons = [p['lon'] for p in points]
-                            center_lat = sum(lats) / len(lats)
-                            center_lon = sum(lons) / len(lons)
-                            
-                            # Build enhanced status text with more details
-                            status_parts = [f"✓ {len(points)} point(s)"]
-                            status_parts.append(f"Z{zoom_level}")
-                            status_parts.append(f"({center_lat:.4f}, {center_lon:.4f})")
-                            
-                            # Add cache statistics if available
-                            if cache_stats:
-                                if cache_stats['downloaded'] == 0:
-                                    # All tiles from cache
-                                    status_parts.append(f"[{cache_stats['total']} cached]")
-                                else:
-                                    # Some tiles downloaded
-                                    status_parts.append(f"[{cache_stats['cached']}↻ {cache_stats['downloaded']}↓]")
-                            
-                            status_text = " | ".join(status_parts)
-                            
-                            # Update status
-                            dpg_set_value(tag_node_status_value_name, status_text)
+                            # Update status with empty text (labels removed as requested)
+                            dpg_set_value(tag_node_status_value_name, "")
                         else:
                             status_msg = "No lat/lon in data"
                             print(f"Map node: {status_msg}")
@@ -819,30 +797,8 @@ class Node(DpgNodeABC):
                             points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name
                         )
                         
-                        # Calculate center coordinates for status display
-                        lats = [p['lat'] for p in points]
-                        lons = [p['lon'] for p in points]
-                        center_lat = sum(lats) / len(lats)
-                        center_lon = sum(lons) / len(lons)
-                        
-                        # Build enhanced status text with more details
-                        status_parts = [f"✓ {len(points)} point(s)"]
-                        status_parts.append(f"Z{zoom_level}")
-                        status_parts.append(f"({center_lat:.4f}, {center_lon:.4f})")
-                        
-                        # Add cache statistics if available
-                        if cache_stats:
-                            if cache_stats['downloaded'] == 0:
-                                # All tiles from cache
-                                status_parts.append(f"[{cache_stats['total']} cached]")
-                            else:
-                                # Some tiles downloaded
-                                status_parts.append(f"[{cache_stats['cached']}↻ {cache_stats['downloaded']}↓]")
-                        
-                        status_text = " | ".join(status_parts)
-                        
-                        # Update status
-                        dpg_set_value(tag_node_status_value_name, status_text)
+                        # Update status with empty text (labels removed as requested)
+                        dpg_set_value(tag_node_status_value_name, "")
                     else:
                         status_msg = "No lat/lon in data"
                         print(f"Map node: {status_msg}")
