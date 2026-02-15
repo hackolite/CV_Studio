@@ -306,7 +306,9 @@ This indicates that onnxruntime cannot load its required C++ runtime dependencie
 **Solution 1: Install Visual C++ Redistributable (Recommended)**
 
 1. Download the Visual C++ Redistributable from Microsoft:
-   - [VC++ Redistributable x64](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+   - [VC++ Redistributable x64 (2015-2022)](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+   - This is the Microsoft Visual C++ 2015-2022 Redistributable package
+   - Compatible with Visual Studio 2015, 2017, 2019, and 2022
 2. Run the installer
 3. Restart your terminal/command prompt
 4. Try running the build again:

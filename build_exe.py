@@ -153,7 +153,7 @@ def check_requirements(skip_package_check=False):
         
         # Special handling for onnxruntime errors
         if 'onnxruntime' in missing_packages:
-            print("ℹ ONNXRUNTIME TROUBLESHOOTING:")
+            print("INFO: ONNXRUNTIME TROUBLESHOOTING:")
             print("  onnxruntime requires Visual C++ Redistributable on Windows.")
             print("  If you see errors like 'DLL load failed' or import errors at line 26:")
             print()
@@ -210,7 +210,7 @@ def check_requirements(skip_package_check=False):
                             # Handle common runtime exceptions (e.g., DLL loading errors)
                             still_missing.append(package_name)
                             if package_name == 'onnxruntime':
-                                print(f"  ℹ {package_name} installed but has runtime error: {type(e).__name__}")
+                                print(f"  INFO: {package_name} installed but has runtime error: {type(e).__name__}")
                                 print(f"    This is usually due to missing Visual C++ Redistributable")
                                 print(f"    Download from: https://aka.ms/vs/17/release/vc_redist.x64.exe")
                     

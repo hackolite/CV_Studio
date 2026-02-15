@@ -307,7 +307,9 @@ Cela indique qu'onnxruntime ne peut pas charger ses dépendances d'exécution C+
 **Solution 1 : Installer Visual C++ Redistributable (Recommandé)**
 
 1. Téléchargez le Visual C++ Redistributable de Microsoft :
-   - [VC++ Redistributable x64](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+   - [VC++ Redistributable x64 (2015-2022)](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+   - Il s'agit du package Microsoft Visual C++ 2015-2022 Redistributable
+   - Compatible avec Visual Studio 2015, 2017, 2019 et 2022
 2. Exécutez l'installateur
 3. Redémarrez votre terminal/invite de commande
 4. Essayez de relancer la construction :
