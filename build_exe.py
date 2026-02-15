@@ -210,12 +210,14 @@ def check_requirements(skip_package_check=False):
                             # Handle common runtime exceptions (e.g., DLL loading errors)
                             still_missing.append(package_name)
                             if package_name == 'onnxruntime':
-                                print(f"  INFO: {package_name} installed but has runtime error: {type(e).__name__}")
-                                print(f"    This is usually due to missing Visual C++ Redistributable")
-                                print(f"    Download from: {VCPP_REDISTRIBUTABLE_URL}")
+                                print(f"INFO: {package_name} installed but has runtime error: {type(e).__name__}")
+                                print(f"  This is usually due to missing Visual C++ Redistributable")
+                                print(f"  Download from: {VCPP_REDISTRIBUTABLE_URL}")
                     
                     if still_missing:
-                        print(f"WARNING: The following packages could not be imported: {', '.join(still_missing)}")
+                        print(f"WARNING: Missing {len(still_missing)} package(s):")
+                        for pkg in still_missing:
+                            print(f"  - {pkg}")
                         print("You may need to install them manually or check for installation errors.")
                         if 'onnxruntime' in still_missing:
                             print("\nFor onnxruntime issues:")
