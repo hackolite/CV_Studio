@@ -1,6 +1,6 @@
 INPUT = [
     "WebCam", "YoutubeLive",
-    "Video", "YouTubeInput", "RTSP", "VideoSetFramePos"
+    "Video", "YouTubeInput", "RTSP", "HLS", "VideoSetFramePos"
 ]
 PROCESS = [
     "Resize", "Crop", "Zoom", "Grayscale", "ApplyColorMap", "Contrast",
