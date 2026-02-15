@@ -95,8 +95,10 @@ SIMPLIFIED_CONTINENTS = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 # OSM tile configuration
-TILE_SIZE = 256
-OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+# Using @2x (Retina) tiles for significantly higher quality and resolution
+# @2x tiles are 512x512 pixels instead of standard 256x256, providing sharper detail
+TILE_SIZE = 512
+OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}@2x.png"
 OSM_HEADERS = {"User-Agent": "CV_Studio/1.0"}
 OSM_CACHE_DIR = os.path.join(tempfile.gettempdir(), '.osm_cache')
 os.makedirs(OSM_CACHE_DIR, exist_ok=True)
