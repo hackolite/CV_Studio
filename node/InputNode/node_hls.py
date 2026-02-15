@@ -232,11 +232,10 @@ class HlsNode(Node):
         image_queue = None
         if hls_url != '':
             if use_mp:
-                # multiprocessing
                 if hls_url in self._image_queue:
                     image_queue = self._image_queue[hls_url]
             else:
-                # multiprocessing
+                # single-threaded
                 if hls_url in self._hls_capture:
                     hls_capture = self._hls_capture[hls_url]
 
@@ -247,13 +246,12 @@ class HlsNode(Node):
 
         frame = None
         if use_mp:
-            # multiprocessing
             if image_queue is not None:
                 num = image_queue.qsize()
                 if num > 0:
                     frame = image_queue.get()
         else:
-            # multiprocessing
+            # single-threaded
             if hls_capture is not None:
                 ret, frame = hls_capture.read()
                 if not ret:
@@ -278,10 +276,8 @@ class HlsNode(Node):
         return {"image": frame, "json": None, "audio": None}
 
     def close(self, node_id):
-        # multiprocessing
         use_mp = self._opencv_setting_dict.get('use_multiprocessing_hls', False)
         if use_mp:
-            # multiprocessing
             for hls_url in self._process.keys():
                 self._request[hls_url].value = 0
                 if self._process[hls_url].is_alive():
@@ -316,16 +312,13 @@ class HlsNode(Node):
 
         label = dpg.get_item_label(tag_node_button_value_name)
 
-        # HLS URL
         hls_url = dpg_get_value(input_value01_tag)
 
-        # multiprocessing
         use_mp = self._opencv_setting_dict.get('use_multiprocessing_hls', False)
 
         if label == self._start_label:
             if hls_url != '':
                 if use_mp:
-                    # multiprocessing
                     if not (hls_url in self._process):
                         self._image_queue[hls_url] = mp.Queue(maxsize=1)
                         self._request[hls_url] = mp.Value('i', 1)
@@ -336,7 +329,7 @@ class HlsNode(Node):
                         )
                         self._process[hls_url].start()
                 else:
-                    # multiprocessing
+                    # single-threaded
                     if not (hls_url in self._hls_capture):
                         hls_capture = cv2.VideoCapture(hls_url)
                         self._hls_capture[hls_url] = hls_capture
@@ -345,7 +338,6 @@ class HlsNode(Node):
         elif label == self._stop_label:
             if hls_url != '':
                 if use_mp:
-                    # multiprocessing
                     if hls_url in self._request:
                         self._request[hls_url].value = 0
                         if self._process[hls_url].is_alive():
@@ -354,7 +346,7 @@ class HlsNode(Node):
                         self._request.pop(hls_url)
                         self._process.pop(hls_url)
                 else:
-                    # multiprocessing
+                    # single-threaded
                     if hls_url in self._hls_capture:
                         self._hls_capture[hls_url].release()
                         self._hls_capture.pop(hls_url)
