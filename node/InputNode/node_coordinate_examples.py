@@ -356,13 +356,17 @@ class RoissyPlanesTracker:
             if not lat or not lon:
                 continue
             
-            speed_kmh = speed * 3.6 if speed else 0
+            # Skip if essential data is missing
+            if speed is None or alt is None or vertical is None:
+                continue
+            
+            speed_kmh = speed * 3.6
             
             # Approach criteria
             if (
-                alt and alt < 1500 and
+                alt < 1500 and
                 speed_kmh < 300 and
-                vertical and vertical < -1
+                vertical < -1
             ):
                 approaching.append({
                     "callsign": callsign.strip() if callsign else "Unknown",
