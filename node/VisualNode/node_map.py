@@ -346,8 +346,6 @@ class FactoryNode:
         node.tag_node_size_value_name = node.tag_node_name + ':MapSizeValue'
         node.tag_node_cache_name = node.tag_node_name + ':UseCache'
         node.tag_node_cache_value_name = node.tag_node_name + ':UseCacheValue'
-        node.tag_node_status_name = node.tag_node_name + ':Status'
-        node.tag_node_status_value_name = node.tag_node_name + ':StatusValue'
         # Pan controls
         node.tag_node_pan_x_value_name = node.tag_node_name + ':PanXValue'
         node.tag_node_pan_y_value_name = node.tag_node_name + ':PanYValue'
@@ -475,15 +473,6 @@ class FactoryNode:
                     overlay="",
                     width=small_window_w,
                     show=False,  # Initially hidden, will show only when downloading
-                )
-
-            # Status text
-            with dpg.node_attribute(
-                    attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_text(
-                    tag=node.tag_node_status_value_name,
-                    default_value='No data',
                 )
 
         return node
@@ -653,7 +642,6 @@ class Node(DpgNodeABC):
         tag_node_zoom_value_name = tag_node_name + ':ZoomValue'
         tag_node_size_value_name = tag_node_name + ':MapSizeValue'
         tag_node_cache_value_name = tag_node_name + ':UseCacheValue'
-        tag_node_status_value_name = tag_node_name + ':StatusValue'
         tag_node_pan_x_value_name = tag_node_name + ':PanXValue'
         tag_node_pan_y_value_name = tag_node_name + ':PanYValue'
         tag_node_progress_name = tag_node_name + ':Progress'
@@ -709,7 +697,6 @@ class Node(DpgNodeABC):
                     # Handle empty or whitespace-only strings
                     if not input_value.strip():
                         print("Map node: Received empty JSON string")
-                        dpg_set_value(tag_node_status_value_name, "Waiting for data...")
                         # Skip further processing for empty input
                     else:
                         print(f"Map node: Received JSON string (length: {len(input_value)})")
@@ -750,35 +737,8 @@ class Node(DpgNodeABC):
                             preview_image, cache_stats = self._create_preview_image(
                                 points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name
                             )
-                            
-                            # Calculate center coordinates for status display
-                            lats = [p['lat'] for p in points]
-                            lons = [p['lon'] for p in points]
-                            center_lat = sum(lats) / len(lats)
-                            center_lon = sum(lons) / len(lons)
-                            
-                            # Build enhanced status text with more details
-                            status_parts = [f"✓ {len(points)} point(s)"]
-                            status_parts.append(f"Z{zoom_level}")
-                            status_parts.append(f"({center_lat:.4f}, {center_lon:.4f})")
-                            
-                            # Add cache statistics if available
-                            if cache_stats:
-                                if cache_stats['downloaded'] == 0:
-                                    # All tiles from cache
-                                    status_parts.append(f"[{cache_stats['total']} cached]")
-                                else:
-                                    # Some tiles downloaded
-                                    status_parts.append(f"[{cache_stats['cached']}↻ {cache_stats['downloaded']}↓]")
-                            
-                            status_text = " | ".join(status_parts)
-                            
-                            # Update status
-                            dpg_set_value(tag_node_status_value_name, status_text)
                         else:
-                            status_msg = "No lat/lon in data"
-                            print(f"Map node: {status_msg}")
-                            dpg_set_value(tag_node_status_value_name, status_msg)
+                            print(f"Map node: No lat/lon in data")
                 else:
                     print(f"Map node: Received JSON object (type: {type(input_value).__name__})")
                     data = input_value
@@ -818,44 +778,15 @@ class Node(DpgNodeABC):
                         preview_image, cache_stats = self._create_preview_image(
                             points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name
                         )
-                        
-                        # Calculate center coordinates for status display
-                        lats = [p['lat'] for p in points]
-                        lons = [p['lon'] for p in points]
-                        center_lat = sum(lats) / len(lats)
-                        center_lon = sum(lons) / len(lons)
-                        
-                        # Build enhanced status text with more details
-                        status_parts = [f"✓ {len(points)} point(s)"]
-                        status_parts.append(f"Z{zoom_level}")
-                        status_parts.append(f"({center_lat:.4f}, {center_lon:.4f})")
-                        
-                        # Add cache statistics if available
-                        if cache_stats:
-                            if cache_stats['downloaded'] == 0:
-                                # All tiles from cache
-                                status_parts.append(f"[{cache_stats['total']} cached]")
-                            else:
-                                # Some tiles downloaded
-                                status_parts.append(f"[{cache_stats['cached']}↻ {cache_stats['downloaded']}↓]")
-                        
-                        status_text = " | ".join(status_parts)
-                        
-                        # Update status
-                        dpg_set_value(tag_node_status_value_name, status_text)
                     else:
-                        status_msg = "No lat/lon in data"
-                        print(f"Map node: {status_msg}")
-                        dpg_set_value(tag_node_status_value_name, status_msg)
+                        print(f"Map node: No lat/lon in data")
                     
             except json.JSONDecodeError as e:
                 error_msg = f"JSON parse error: {str(e)[:60]}"
                 print(f"Map node: {error_msg}")
-                dpg_set_value(tag_node_status_value_name, error_msg)
             except Exception as e:
                 error_msg = f"Error: {str(e)[:40]}"
                 print(f"Map node: Error processing data: {e}")
-                dpg_set_value(tag_node_status_value_name, error_msg)
         else:
             # No input data
             if not hasattr(self, '_no_data_logged') or not self._no_data_logged:
