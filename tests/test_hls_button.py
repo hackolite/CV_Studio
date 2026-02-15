@@ -12,6 +12,10 @@ import os
 # Add the parent directory to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+# TYPE_TEXT constant value from Node class in basenode.py
+# This is the value of Node.TYPE_TEXT = "TEXT"
+TYPE_TEXT = "TEXT"
+
 def test_tag_parsing():
     """Test that tag parsing works correctly"""
     # Simulate the user_data that would be passed to the button callback
@@ -24,8 +28,6 @@ def test_tag_parsing():
     assert tag_node_name == "123:HLS", f"Expected '123:HLS', got '{tag_node_name}'"
     
     # Construct the button tag
-    # Note: TYPE_TEXT should match Node.TYPE_TEXT from basenode.py
-    TYPE_TEXT = "TEXT"
     tag_node_button_value_name = tag_node_name + ':' + TYPE_TEXT + ':ButtonValue'
     
     # Verify the button tag is correct
@@ -41,8 +43,6 @@ def test_tag_parsing_with_different_node_id():
         ("abc:HLS", "abc:HLS", "abc:HLS:TEXT:ButtonValue"),
     ]
     
-    # Note: TYPE_TEXT should match Node.TYPE_TEXT from basenode.py
-    TYPE_TEXT = "TEXT"
     for user_data, expected_node_name, expected_button_tag in test_cases:
         tag_node_name = user_data
         assert tag_node_name == expected_node_name, \
@@ -57,7 +57,6 @@ def test_input_tag_construction():
     """Test that input value tag is constructed correctly"""
     node_id = 123
     node_tag = "HLS"
-    TYPE_TEXT = "TEXT"
     
     tag_node_name = str(node_id) + ':' + node_tag
     input_value01_tag = tag_node_name + ':' + TYPE_TEXT + ':Input01Value'
