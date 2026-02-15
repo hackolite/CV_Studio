@@ -1187,7 +1187,7 @@ class Node(DpgNodeABC):
         print(f"Map node: After pan ({pan_x}, {pan_y}): X: [{min_x:.2f}, {max_x:.2f}], Y: [{min_y:.2f}, {max_y:.2f}]")
         
         # Create figure
-        dpi = 150
+        dpi = 600
         fig_width = width / dpi
         fig_height = height / dpi
         
@@ -1291,7 +1291,7 @@ class Node(DpgNodeABC):
         plot_max_lon = max_lon + lon_range * padding
         
         # Create figure with matplotlib
-        dpi = 150
+        dpi = 600
         fig_width = width / dpi
         fig_height = height / dpi
         
