@@ -203,9 +203,12 @@ def check_requirements(skip_package_check=False):
                     for package_name, import_name in required_packages.items():
                         try:
                             __import__(import_name)
-                        except (ImportError, Exception) as e:
+                        except ImportError:
                             still_missing.append(package_name)
-                            if package_name == 'onnxruntime' and not isinstance(e, ImportError):
+                        except Exception as e:
+                            # Handle non-ImportError exceptions (e.g., DLL loading errors)
+                            still_missing.append(package_name)
+                            if package_name == 'onnxruntime':
                                 print(f"  ℹ {package_name} installed but has runtime error: {type(e).__name__}")
                                 print(f"    This is usually due to missing Visual C++ Redistributable")
                                 print(f"    Download from: https://aka.ms/vs/17/release/vc_redist.x64.exe")
@@ -246,7 +249,9 @@ def check_requirements(skip_package_check=False):
             if 'onnxruntime' in missing_packages:
                 print("  2. For onnxruntime: Install Visual C++ Redistributable")
                 print("     https://aka.ms/vs/17/release/vc_redist.x64.exe")
-            print("  3. Or use: python build_exe.py --skip-package-check")
+                print("  3. Or use: python build_exe.py --skip-package-check")
+            else:
+                print("  2. Or use: python build_exe.py --skip-package-check")
             return False
     
     print()
