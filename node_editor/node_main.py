@@ -406,6 +406,13 @@ class DpgNodeEditor(object):
                 # Disable mouse wheel zoom on the node editor by intercepting the event
                 dpg.add_mouse_wheel_handler(callback=self._callback_disable_zoom)
             self.window = window
+        
+        # Set global reference for SaveWorkflow node
+        try:
+            from node.SystemNode.node_save_workflow import set_node_editor_instance
+            set_node_editor_instance(self)
+        except ImportError:
+            pass  # SaveWorkflow node not available
 
     def get_node_list(self):
         return self._node_list
