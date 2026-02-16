@@ -60,6 +60,9 @@ class Node:
     TYPE_JSON = "JSON"
     INPUT = "INPUT"
     OUTPUT = "OUTPUT"
+    
+    # Default value for display checkbox
+    DEFAULT_DISPLAY_ENABLED = True
 
     def __init__(self, node_id=1, connection_dict=None, opencv_setting_dict=None):
         self.id = self.generate_id()
@@ -139,7 +142,7 @@ class Node:
             # If checkbox exists and is unchecked, don't display
             if display_enabled is not None and not display_enabled:
                 return False
-        except:
+        except Exception:
             # If checkbox doesn't exist, assume display is enabled
             pass
         

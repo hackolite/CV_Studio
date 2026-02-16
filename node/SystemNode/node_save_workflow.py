@@ -127,7 +127,7 @@ class Node(Node):
             
         except Exception as e:
             logger.error(f'Error saving workflow: {e}', exc_info=True)
-            dpg_set_value(status_tag, f'Error: {str(e)[:30]}')
+            dpg_set_value(status_tag, f'Error: {str(e)[:50]}')
 
     def update(
         self,

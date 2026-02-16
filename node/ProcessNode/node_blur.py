@@ -277,7 +277,7 @@ class Node(Node):
         enable_value = dpg_get_value(enable_checkbox_tag)
         display_value = dpg_get_value(display_checkbox_tag)
         if display_value is None:
-            display_value = True  # Default to True
+            display_value = self.DEFAULT_DISPLAY_ENABLED
 
         pos = dpg.get_item_pos(tag_node_name)
 

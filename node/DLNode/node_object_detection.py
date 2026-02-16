@@ -630,7 +630,7 @@ class Node(Node):
         
         display_value = dpg_get_value(display_checkbox_tag)
         if display_value is None:
-            display_value = True  # Default to True
+            display_value = self.DEFAULT_DISPLAY_ENABLED
 
         pos = dpg.get_item_pos(self.tag_node_name)
 
@@ -657,7 +657,7 @@ class Node(Node):
         score_th = setting_dict[input_value03_tag]
         rejected_classes = setting_dict.get(rejected_classes_tag, "")
         draw_bbox = setting_dict.get(draw_bbox_tag, self.DEFAULT_DRAW_BBOX)
-        display_value = setting_dict.get(display_checkbox_tag, True)
+        display_value = setting_dict.get(display_checkbox_tag, self.DEFAULT_DISPLAY_ENABLED)
 
         dpg_set_value(self.tag_node_input_text_value_name, model_name)
         dpg_set_value(self.tag_node_input_float_value_name, score_th)
@@ -681,13 +681,13 @@ class Node(Node):
         # Set draw bounding boxes checkbox
         try:
             dpg_set_value(draw_bbox_tag, draw_bbox)
-        except:
+        except Exception:
             pass  # Ignore if the UI element doesn't exist yet
         
         # Set display checkbox
         try:
             dpg_set_value(display_checkbox_tag, display_value)
-        except:
+        except Exception:
             pass  # Ignore if the UI element doesn't exist yet
 
 
