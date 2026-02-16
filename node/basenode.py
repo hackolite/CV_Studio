@@ -12,6 +12,22 @@ import uuid
 import cv2
 
 
+# Global display mode flag
+# When False (daemon mode), nodes should skip display rendering
+_DISPLAY_MODE_ENABLED = True
+
+
+def set_display_mode(enabled):
+    """Set global display mode (True for UI mode, False for daemon mode)"""
+    global _DISPLAY_MODE_ENABLED
+    _DISPLAY_MODE_ENABLED = enabled
+
+
+def is_display_enabled():
+    """Check if display mode is globally enabled"""
+    return _DISPLAY_MODE_ENABLED
+
+
 class DataType:
     TYPE_BOOLEAN = "BOOLEAN"
     TYPE_TEXT = "TEXT"
@@ -98,6 +114,36 @@ class Node:
         texture_data = np.true_divide(data, 255.0)
 
         return texture_data
+
+    def should_update_display(self, node_id):
+        """
+        Check if this node should update its display.
+        Returns True if:
+        1. Global display mode is enabled (not daemon mode), AND
+        2. Node's display checkbox is checked (if it has one)
+        
+        This method should be called before updating DearPyGUI textures to optimize CPU in daemon mode.
+        """
+        # If global display is disabled (daemon mode), never update display
+        if not is_display_enabled():
+            return False
+        
+        # Check for node-specific display checkbox
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        display_checkbox_tag = tag_node_name + ':DisplayCheckboxValue'
+        
+        # Try to get the display checkbox value
+        try:
+            from node_editor.util import dpg_get_value
+            display_enabled = dpg_get_value(display_checkbox_tag)
+            # If checkbox exists and is unchecked, don't display
+            if display_enabled is not None and not display_enabled:
+                return False
+        except:
+            # If checkbox doesn't exist, assume display is enabled
+            pass
+        
+        return True
 
     def get_input_frame(self, connection_list, node_image_dict, node_audio_dict=None):
         """

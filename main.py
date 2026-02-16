@@ -84,6 +84,16 @@ def get_args():
     )
     parser.add_argument("--unuse_async_draw", action="store_true")
     parser.add_argument("--use_debug_print", action="store_true")
+    parser.add_argument(
+        "--daemon",
+        action="store_true",
+        help="Run in daemon mode without displaying UI (optimizes CPU by disabling all display updates)"
+    )
+    parser.add_argument(
+        "--workflow",
+        type=str,
+        help="Path to workflow JSON file to load in daemon mode"
+    )
     args = parser.parse_args()
     return args
 
@@ -229,14 +239,25 @@ def main():
     setting = args.setting
     unuse_async_draw = args.unuse_async_draw
     use_debug_print = args.use_debug_print
+    daemon_mode = args.daemon
+    workflow_path = args.workflow
 
     # Setup logging based on debug flag
     log_level = "DEBUG" if use_debug_print else "INFO"
     setup_logging(level=getattr(__import__("logging"), log_level))
 
     logger.info("=" * 60)
-    logger.info("CV_STUDIO Starting")
+    if daemon_mode:
+        logger.info("CV_STUDIO Starting in DAEMON MODE (no UI)")
+    else:
+        logger.info("CV_STUDIO Starting")
     logger.info("=" * 60)
+    
+    # Set global display mode based on daemon flag
+    if daemon_mode:
+        from node.basenode import set_display_mode
+        set_display_mode(False)
+        logger.info("Display mode DISABLED for CPU optimization")
     
     # Initialize timestamped buffer system
     logger.info("Initializing timestamped buffer system")
@@ -337,7 +358,11 @@ def main():
         }
     )
 
-    dpg.show_viewport(maximized=True)
+    # In daemon mode, don't show the viewport
+    if not daemon_mode:
+        dpg.show_viewport(maximized=True)
+    else:
+        logger.info("Skipping viewport display (daemon mode)")
 
     current_path = os.path.dirname(os.path.abspath(__file__))
 
@@ -350,12 +375,33 @@ def main():
         node_dir=current_path + "/node",
     )
 
+    # Load workflow in daemon mode if specified
+    if daemon_mode and workflow_path:
+        if os.path.exists(workflow_path):
+            logger.info(f"Loading workflow from: {workflow_path}")
+            node_editor._callback_file_import(None, {
+                "file_name": os.path.basename(workflow_path),
+                "file_path_name": workflow_path
+            })
+        else:
+            logger.error(f"Workflow file not found: {workflow_path}")
+            logger.error("Exiting daemon mode")
+            return
+
     logger.info("Starting main event loop")
     if not unuse_async_draw:
         logger.info("Async draw is enabled")
         event_loop = asyncio.get_event_loop()
         event_loop.run_in_executor(None, async_main, node_editor, queue_manager)
-        dpg.start_dearpygui()
+        
+        # In daemon mode, run without showing UI but still process DearPyGUI frames
+        if daemon_mode:
+            logger.info("Running in daemon mode (headless)")
+            while dpg.is_dearpygui_running():
+                dpg.render_dearpygui_frame()
+                time.sleep(0.01)  # Small sleep to prevent CPU hogging
+        else:
+            dpg.start_dearpygui()
 
     else:
         logger.info("Async draw is disabled")
