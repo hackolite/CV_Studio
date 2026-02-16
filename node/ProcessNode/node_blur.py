@@ -48,6 +48,8 @@ class FactoryNode:
         node.tag_node_input_enable_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':InputEnableValue'
         node.tag_node_enable_checkbox_name = node.tag_node_name + ':EnableCheckbox'
         node.tag_node_enable_checkbox_value_name = node.tag_node_name + ':EnableCheckboxValue'
+        node.tag_node_display_checkbox_name = node.tag_node_name + ':DisplayCheckbox'
+        node.tag_node_display_checkbox_value_name = node.tag_node_name + ':DisplayCheckboxValue'
         node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
         node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
         node.tag_node_output02_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
@@ -112,6 +114,17 @@ class FactoryNode:
                 dpg.add_checkbox(
                     tag=node.tag_node_enable_checkbox_value_name,
                     label='Enable processing',
+                    default_value=True,
+                )
+
+            # Display checkbox (default True) - for CPU optimization
+            with dpg.node_attribute(
+                    tag=node.tag_node_display_checkbox_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_checkbox(
+                    tag=node.tag_node_display_checkbox_value_name,
+                    label='Display',
                     default_value=True,
                 )
 
@@ -240,7 +253,8 @@ class Node(Node):
                           str(elapsed_time).zfill(4) + 'ms')
 
 
-        if frame is not None:
+        # Only update display if display is enabled (for CPU optimization)
+        if frame is not None and self.should_update_display(node_id):
             texture = self.convert_cv_to_dpg(
                 frame,
                 small_window_w,
@@ -257,9 +271,13 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = tag_node_name + ':' + self.TYPE_INT + ':Input02Value'
         enable_checkbox_tag = tag_node_name + ':EnableCheckboxValue'
+        display_checkbox_tag = tag_node_name + ':DisplayCheckboxValue'
 
         kernel_size = dpg_get_value(input_value02_tag)
         enable_value = dpg_get_value(enable_checkbox_tag)
+        display_value = dpg_get_value(display_checkbox_tag)
+        if display_value is None:
+            display_value = True  # Default to True
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -268,6 +286,7 @@ class Node(Node):
         setting_dict['pos'] = pos
         setting_dict[input_value02_tag] = kernel_size
         setting_dict[enable_checkbox_tag] = enable_value
+        setting_dict[display_checkbox_tag] = display_value
 
         return setting_dict
 
@@ -275,6 +294,7 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = tag_node_name + ':' + self.TYPE_INT + ':Input02Value'
         enable_checkbox_tag = tag_node_name + ':EnableCheckboxValue'
+        display_checkbox_tag = tag_node_name + ':DisplayCheckboxValue'
 
         kernel_size = int(setting_dict[input_value02_tag])
         dpg_set_value(input_value02_tag, kernel_size)
@@ -282,3 +302,7 @@ class Node(Node):
         if enable_checkbox_tag in setting_dict:
             enable_value = setting_dict[enable_checkbox_tag]
             dpg_set_value(enable_checkbox_tag, enable_value)
+        
+        if display_checkbox_tag in setting_dict:
+            display_value = setting_dict[display_checkbox_tag]
+            dpg_set_value(display_checkbox_tag, display_value)
