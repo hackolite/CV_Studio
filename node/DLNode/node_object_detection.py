@@ -79,6 +79,10 @@ class FactoryNode:
         # Tag for draw bounding boxes checkbox
         node.tag_node_draw_bbox_name = node.tag_node_name + ':DrawBBox'
         node.tag_node_draw_bbox_value_name = node.tag_node_name + ':DrawBBoxValue'
+        
+        # Tag for display checkbox
+        node.tag_node_display_checkbox_name = node.tag_node_name + ':DisplayCheckbox'
+        node.tag_node_display_checkbox_value_name = node.tag_node_name + ':DisplayCheckboxValue'
 
         # Callback to update rejected classes dropdown when model changes
         def on_model_change(sender, app_data, user_data):
@@ -225,6 +229,17 @@ class FactoryNode:
                 dpg.add_checkbox(
                     tag=node.tag_node_draw_bbox_value_name,
                     label="Draw Bounding Boxes",
+                    default_value=True,
+                )
+            
+            # Display checkbox (for CPU optimization in daemon mode)
+            with dpg.node_attribute(
+                    tag=node.tag_node_display_checkbox_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_checkbox(
+                    tag=node.tag_node_display_checkbox_value_name,
+                    label="Display",
                     default_value=True,
                 )
 
@@ -574,13 +589,14 @@ class Node(Node):
                         # When unchecked: send clean frame (for tracking)
                         output_frame = frame
                     
-                    # Update UI texture with display frame (always has bboxes)
-                    texture = self.convert_cv_to_dpg(
-                        display_frame,
-                        small_window_w,
-                        small_window_h,
-                    )
-                    dpg_set_value(tag_node_output_image, texture)
+                    # Update UI texture with display frame (only if display is enabled)
+                    if self.should_update_display(node_id):
+                        texture = self.convert_cv_to_dpg(
+                            display_frame,
+                            small_window_w,
+                            small_window_h,
+                        )
+                        dpg_set_value(tag_node_output_image, texture)
 
                 data["image"] = output_frame if output_frame is not None else frame
                 data["json"] = result
@@ -599,6 +615,7 @@ class Node(Node):
         input_value03_tag = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
         rejected_classes_tag = self.tag_node_name + ':RejectedClassesValue'
         draw_bbox_tag = self.tag_node_name + ':DrawBBoxValue'
+        display_checkbox_tag = self.tag_node_name + ':DisplayCheckboxValue'
 
 
         model_name = dpg_get_value(input_value02_tag)
@@ -610,6 +627,10 @@ class Node(Node):
         draw_bbox = dpg_get_value(draw_bbox_tag)
         if draw_bbox is None:
             draw_bbox = self.DEFAULT_DRAW_BBOX
+        
+        display_value = dpg_get_value(display_checkbox_tag)
+        if display_value is None:
+            display_value = True  # Default to True
 
         pos = dpg.get_item_pos(self.tag_node_name)
 
@@ -620,6 +641,7 @@ class Node(Node):
         setting_dict[input_value03_tag] = score_th
         setting_dict[rejected_classes_tag] = rejected_classes
         setting_dict[draw_bbox_tag] = draw_bbox
+        setting_dict[display_checkbox_tag] = display_value
 
         return setting_dict
 
@@ -629,11 +651,13 @@ class Node(Node):
         input_value03_tag = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
         rejected_classes_tag = self.tag_node_name + ':RejectedClassesValue'
         draw_bbox_tag = self.tag_node_name + ':DrawBBoxValue'
+        display_checkbox_tag = self.tag_node_name + ':DisplayCheckboxValue'
 
         model_name = setting_dict[input_value02_tag]
         score_th = setting_dict[input_value03_tag]
         rejected_classes = setting_dict.get(rejected_classes_tag, "")
         draw_bbox = setting_dict.get(draw_bbox_tag, self.DEFAULT_DRAW_BBOX)
+        display_value = setting_dict.get(display_checkbox_tag, True)
 
         dpg_set_value(self.tag_node_input_text_value_name, model_name)
         dpg_set_value(self.tag_node_input_float_value_name, score_th)
@@ -657,6 +681,12 @@ class Node(Node):
         # Set draw bounding boxes checkbox
         try:
             dpg_set_value(draw_bbox_tag, draw_bbox)
+        except:
+            pass  # Ignore if the UI element doesn't exist yet
+        
+        # Set display checkbox
+        try:
+            dpg_set_value(display_checkbox_tag, display_value)
         except:
             pass  # Ignore if the UI element doesn't exist yet
 
