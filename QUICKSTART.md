@@ -119,7 +119,6 @@ cat .env
 
 For more details, see:
 - `SECURE_API_KEY_GUIDE.md` - Comprehensive security guide
-- `IMPLEMENTATION_SUMMARY.md` - Technical implementation details
 - `node/InputNode/README_Websocket_AIS.md` - WebSocket node documentation
 
 ## Questions?
