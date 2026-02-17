@@ -1,0 +1,7 @@
+Defaulting to user installation because normal site-packages is not writeable
+Collecting dearpygui
+  Downloading dearpygui-2.2-cp312-cp312-manylinux1_x86_64.whl.metadata (13 kB)
+Downloading dearpygui-2.2-cp312-cp312-manylinux1_x86_64.whl (2.6 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.6/2.6 MB 37.2 MB/s eta 0:00:00
+Installing collected packages: dearpygui
+Successfully installed dearpygui-2.2
