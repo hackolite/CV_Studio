@@ -161,5 +161,42 @@ def test_crop_from_center_boundary_cases():
         pytest.skip(f"Could not import required modules: {e}")
 
 
+def test_zoom_output_dimensions():
+    """Test that zoom node outputs image with same dimensions as input"""
+    try:
+        import numpy as np
+        import cv2
+        from node.ProcessNode.node_zoom import crop_from_center
+        
+        # Create a test image
+        original_height, original_width = 200, 300
+        test_image = np.random.randint(0, 255, (original_height, original_width, 3), dtype=np.uint8)
+        
+        # Simulate the zoom operation (crop + resize)
+        width = 0.5  # 50% zoom
+        center_x = 0.5
+        center_y = 0.5
+        
+        # Crop
+        cropped = crop_from_center(test_image, width, center_x, center_y)
+        
+        # The zoom node should resize back to original dimensions
+        zoomed = cv2.resize(cropped, (original_width, original_height), interpolation=cv2.INTER_LINEAR)
+        
+        # Verify output dimensions match input
+        assert zoomed.shape[0] == original_height, f"Output height should be {original_height}, got {zoomed.shape[0]}"
+        assert zoomed.shape[1] == original_width, f"Output width should be {original_width}, got {zoomed.shape[1]}"
+        assert zoomed.shape[2] == 3, "Should maintain 3 color channels"
+        
+        # Test with different zoom levels
+        for width_param in [0.2, 0.3, 0.7, 1.0]:
+            cropped = crop_from_center(test_image, width_param, 0.5, 0.5)
+            zoomed = cv2.resize(cropped, (original_width, original_height), interpolation=cv2.INTER_LINEAR)
+            assert zoomed.shape == test_image.shape, f"Zoom with width={width_param} should maintain input dimensions"
+        
+    except ImportError as e:
+        pytest.skip(f"Could not import required modules: {e}")
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

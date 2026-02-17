@@ -312,6 +312,10 @@ class Node(Node):
 
         frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
 
+        # Store original frame dimensions for resizing after crop
+        original_height, original_width = None, None
+        if frame is not None:
+            original_height, original_width = frame.shape[0], frame.shape[1]
 
         width = float(dpg_get_value(input_value02_tag))
         center_x = float(dpg_get_value(input_value03_tag))
@@ -323,7 +327,10 @@ class Node(Node):
 
         # Only process if enabled, otherwise pass-through
         if frame is not None and enable_processing:
+            # Crop to the region of interest
             frame = crop_from_center(frame, width, center_x, center_y)
+            # Resize back to original dimensions to create zoom effect
+            frame = cv2.resize(frame, (original_width, original_height), interpolation=cv2.INTER_LINEAR)
 
 
         if frame is not None and use_pref_counter:
