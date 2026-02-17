@@ -173,7 +173,7 @@ def test_zoom_output_dimensions():
         test_image = np.random.randint(0, 255, (original_height, original_width, 3), dtype=np.uint8)
         
         # Simulate the zoom operation (crop + resize)
-        width = 0.5  # 50% zoom
+        width = 0.5  # 50% crop width = 2x magnification
         center_x = 0.5
         center_y = 0.5
         
