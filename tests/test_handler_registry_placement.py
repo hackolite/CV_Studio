@@ -16,6 +16,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 class TestHandlerRegistryPlacement(unittest.TestCase):
     """Test that verifies the handler_registry is properly placed"""
     
+    # Expected indentation for handler_registry inside window context
+    EXPECTED_INDENTATION = 12  # 3 levels deep (class, __init__, window)
+    
     def test_handler_registry_in_node_main(self):
         """Verify handler_registry code structure in node_main.py"""
         node_main_path = os.path.join(
@@ -38,9 +41,17 @@ class TestHandlerRegistryPlacement(unittest.TestCase):
             "Handler registry should not be outside window context (old comment should be removed)"
         )
         
-        # Check that handler_registry comes BEFORE self.window = window
-        window_assignment_idx = content.find('self.window = window')
-        handler_registry_idx = content.find('with dpg.handler_registry():')
+        # Find the __init__ method context to search within
+        init_start = content.find('def __init__(')
+        self.assertGreater(init_start, 0, "__init__ method should exist")
+        
+        # Find next method after __init__ to limit search scope
+        next_method = content.find('\n    def ', init_start + 1)
+        init_context = content[init_start:next_method] if next_method > 0 else content[init_start:]
+        
+        # Check that handler_registry comes BEFORE self.window = window within __init__
+        window_assignment_idx = init_context.find('self.window = window')
+        handler_registry_idx = init_context.find('with dpg.handler_registry():')
         
         self.assertGreater(
             window_assignment_idx,
@@ -49,22 +60,23 @@ class TestHandlerRegistryPlacement(unittest.TestCase):
         )
         
         # Verify the handler_registry is created with proper indentation
-        # (12 spaces = inside window, 8 spaces = outside window)
-        lines = content.split('\n')
+        lines = init_context.split('\n')
         handler_registry_line = None
-        for i, line in enumerate(lines):
-            if 'with dpg.handler_registry():' in line:
+        for line in lines:
+            # Match actual code, not comments or strings
+            stripped = line.lstrip()
+            if stripped.startswith('with dpg.handler_registry():'):
                 handler_registry_line = line
                 break
         
-        self.assertIsNotNone(handler_registry_line, "handler_registry line should exist")
+        self.assertIsNotNone(handler_registry_line, "handler_registry line should exist in __init__")
         
-        # Count leading spaces (should be 12 for inside window context)
+        # Count leading spaces (should be EXPECTED_INDENTATION for inside window context)
         leading_spaces = len(handler_registry_line) - len(handler_registry_line.lstrip())
         self.assertEqual(
             leading_spaces,
-            12,
-            f"handler_registry should have 12 spaces (inside window), got {leading_spaces}"
+            self.EXPECTED_INDENTATION,
+            f"handler_registry should have {self.EXPECTED_INDENTATION} spaces (inside window), got {leading_spaces}"
         )
     
     def test_handler_registry_comment_updated(self):
