@@ -45,7 +45,7 @@ setup(
     python_requires=">=3.7, <4",
     install_requires=[
         "numpy>=1.21.6", "Cython==0.29.36", "opencv-python>=4.5.5.64",
-        "onnxruntime>=1.16.0", "dearpygui>=1.6.2", "mediapipe>=0.8.10",
+        "onnxruntime>=1.16.0", "dearpygui-nodezoomfork>=2.1.0", "mediapipe>=0.8.10",
         "protobuf>=3.20.0,<4", "filterpy>=1.4.5", "pyserial>=3.5"
     ],
     classifiers=[

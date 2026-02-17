@@ -103,7 +103,7 @@ def check_requirements(skip_package_check=False):
     # Check required packages
     # Map of package names to their import names
     required_packages = {
-        'dearpygui': 'dearpygui',
+        'dearpygui-nodezoomfork': 'dearpygui',
         'opencv-contrib-python': 'cv2',
         'onnxruntime': 'onnxruntime',
         'numpy': 'numpy',
