@@ -396,16 +396,18 @@ class DpgNodeEditor(object):
                             show=False,
                         ),
                     )
+            
+            # Create handler registry inside window to allow node_editor to receive mouse wheel zoom events
+            # DearPyGui 2.0+ node editors have built-in mouse wheel zoom that works when handlers
+            # are scoped to the window rather than being global
+            with dpg.handler_registry():
+                dpg.add_mouse_click_handler(callback=self._callback_save_last_pos)
+                dpg.add_key_press_handler(
+                    dpg.mvKey_Delete,
+                    callback=self._callback_mv_key_del,
+                )
+            
             self.window = window
-
-        # Move handler_registry outside window context to allow node_editor to receive mouse wheel events
-        # This enables the built-in mouse wheel zoom functionality in DearPyGui 2.0+ node editors
-        with dpg.handler_registry():
-            dpg.add_mouse_click_handler(callback=self._callback_save_last_pos)
-            dpg.add_key_press_handler(
-                dpg.mvKey_Delete,
-                callback=self._callback_mv_key_del,
-            )
 
     def get_node_list(self):
         return self._node_list
