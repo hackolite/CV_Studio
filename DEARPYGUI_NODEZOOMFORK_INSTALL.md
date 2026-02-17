@@ -1,83 +1,47 @@
-# DearPyGui NodeZoomFork Installation Guide
+# DearPyGui Installation Guide
 
-CV_Studio now uses `dearpygui-nodezoomfork` instead of the standard `dearpygui` package. This fork adds zoom functionality for node editors.
+CV_Studio uses the standard `dearpygui` package (version 2.0+) which includes built-in zoom functionality for node editors.
 
 ## Installation
 
-### macOS ARM64 (Apple Silicon)
-
-The package is available on PyPI with pre-built wheels:
+The standard DearPyGui package is available on PyPI with pre-built wheels for all major platforms:
 
 ```bash
-pip install dearpygui-nodezoomfork>=2.1.0
+pip install dearpygui>=2.0.0
 ```
 
-### Other Platforms (Linux, Windows, macOS Intel)
-
-The PyPI package currently only provides pre-built wheels for macOS ARM64. For other platforms, you have two options:
-
-#### Option 1: Install from GitHub Source (Requires Build Tools)
-
-Prerequisites:
-- CMake (>= 3.15)
-- C++ compiler (GCC, Clang, or MSVC)
-- Git
+This package is included in the main `requirements.txt` file and will be installed automatically when you run:
 
 ```bash
-# Install build dependencies
-pip install setuptools wheel
-
-# Clone and install from source
-git clone https://github.com/Maltergate/DearPyGui.git
-cd DearPyGui
-git submodule update --init --recursive
-pip install .
+pip install -r requirements.txt
 ```
 
-#### Option 2: Use Standard DearPyGui (Fallback)
+## Platform Support
 
-If you encounter issues with the fork, you can temporarily use the standard DearPyGui package:
+DearPyGui 2.0+ provides pre-built wheels for:
+- **Windows** (x64)
+- **Linux** (x64)
+- **macOS** (Intel and Apple Silicon)
 
-```bash
-pip install dearpygui>=2.0
-```
+No compilation or build tools are required for installation on these platforms.
 
-Note: This will not include the node zoom functionality.
+## Zoom Functionality
 
-## Platform-Specific Notes
-
-### Linux
-Make sure you have the required system libraries:
-```bash
-# Ubuntu/Debian
-sudo apt-get install build-essential cmake libgl1-mesa-dev libglu1-mesa-dev
-
-# Fedora/RHEL
-sudo dnf install gcc-c++ cmake mesa-libGL-devel mesa-libGLU-devel
-```
-
-### Windows
-- Install Visual Studio 2019 or newer with C++ development tools
-- Install CMake from https://cmake.org/download/
-
-### macOS Intel
-- Install Xcode Command Line Tools: `xcode-select --install`
-- Install CMake via Homebrew: `brew install cmake`
+DearPyGui 2.0+ includes built-in zoom functionality for node editors and plots through the following functions:
+- `set_axis_zoom_constraints()` - Set zoom constraints for plot axes
+- `reset_axis_zoom_constraints()` - Reset zoom constraints to defaults
+- Mouse wheel zoom support in node editors
 
 ## Troubleshooting
 
 If you encounter installation issues:
 
-1. Ensure all build tools are properly installed
-2. Try updating pip: `pip install --upgrade pip setuptools wheel`
-3. Check the [DearPyGui fork repository](https://github.com/Maltergate/DearPyGui) for latest updates
-4. Open an issue in the CV_Studio repository with your platform details and error message
+1. Update pip: `pip install --upgrade pip setuptools wheel`
+2. Check your Python version (Python 3.7+ is required)
+3. Try installing DearPyGui separately: `pip install dearpygui>=2.0.0`
+4. Check the [official DearPyGui repository](https://github.com/hoffstadt/DearPyGui) for known issues
+5. Open an issue in the CV_Studio repository with your platform details and error message
 
-## Why This Fork?
+## Previous NodeZoomFork
 
-The `dearpygui-nodezoomfork` adds zoom functionality to node editors, which improves usability when working with large node graphs in CV_Studio.
-
-According to the fork's README:
-> "This fork offers zoom in nodes until this is implemented in upstream package. Then this package will be deleted."
-
-Once the zoom feature is merged into the main DearPyGui package, we will migrate back to the official package.
+**Note:** CV_Studio previously used `dearpygui-nodezoomfork`, a fork that added zoom functionality. Since DearPyGui 2.0+ now includes this functionality in the main package, we have migrated back to the official DearPyGui package for better stability and compatibility.

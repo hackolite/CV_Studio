@@ -27,8 +27,8 @@ IMPORT_TO_PACKAGE = {
     'numpy': 'numpy',
     'cv2': 'opencv-contrib-python',
     'onnxruntime': 'onnxruntime',
-    'dearpygui': 'dearpygui-nodezoomfork',
-    'dpg': 'dearpygui-nodezoomfork',
+    'dearpygui': 'dearpygui',
+    'dpg': 'dearpygui',
     'mediapipe': 'mediapipe',
     'google': 'mediapipe',
     'protobuf': 'protobuf',
@@ -233,7 +233,7 @@ def main():
         print(f"  Found {len(build_packages)} packages checked in build_exe.py")
         
         # Check for critical packages
-        critical = ['pyserial', 'pymongo', 'Pillow', 'dearpygui-nodezoomfork', 'numpy']
+        critical = ['pyserial', 'pymongo', 'Pillow', 'dearpygui', 'numpy']
         missing_critical = [p for p in critical if p not in build_packages]
         
         if missing_critical:

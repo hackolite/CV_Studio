@@ -34,7 +34,7 @@ CV Studio is an advanced node-based image processing application that allows you
 Python          3.7 or later
 opencv-python   4.5.5.64 or later
 onnxruntime     1.16.0 or later
-dearpygui       1.11.0 or later
+dearpygui       2.0.0 or later
 mediapipe       0.8.10 or later  ※ Required for MediaPipe nodes
 protobuf        3.20.0 or later  ※ Required for MediaPipe nodes
 filterpy        1.4.5 or later   ※ Required for MOT (Multi-Object Tracking) nodes
