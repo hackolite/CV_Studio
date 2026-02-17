@@ -2,6 +2,8 @@
 # require numpy to be available during their build process.
 # Keep numpy at the top of this file to ensure proper installation order.
 numpy>=1.21.0
+openvino-dev 
+nncf
 opencv-contrib-python>=4.8.1.78
 onnxruntime>=1.16.0
 dearpygui>=2.0.0
