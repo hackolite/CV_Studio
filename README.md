@@ -378,17 +378,33 @@ Drag from an output terminal to an input terminal to create connections. Only co
 
 <img src="https://user-images.githubusercontent.com/37477845/172030403-ec4f0a89-22d5-4467-9b11-c8e595e65997.gif" loading="lazy" width="60%">
 
-#### 3. Delete a Node
+#### 3. Zoom and Navigate
+Use the **mouse wheel** to zoom in and out of the node editor canvas (range: 10% to 500%). The current zoom level is displayed in the menu bar. Use the **View menu** for precise zoom controls.
+
+<details>
+<summary>🔍 Zoom Controls</summary>
+
+- **Mouse Wheel Up/Down**: Zoom in/out by 10% per scroll
+- **View → Zoom In**: Zoom in by 10%
+- **View → Zoom Out**: Zoom out by 10%
+- **View → Reset Zoom**: Return to 100%
+- **Zoom Range**: 0.1x (10%) to 5.0x (500%)
+
+For more details, see [Node Editor Zoom Controls](docs/NODE_EDITOR_ZOOM_CONTROLS.md).
+
+</details>
+
+#### 4. Delete a Node
 Select the node and press the **Delete** key.
 
 <img src="https://user-images.githubusercontent.com/37477845/172030418-201d7df5-1984-4fa7-8e47-9264c5dcb6cf.gif" loading="lazy" width="60%">
 
-#### 4. Export Your Graph
+#### 5. Export Your Graph
 Save your processing pipeline as a JSON file via the **Export** menu option.
 
 <img src="https://user-images.githubusercontent.com/37477845/172030429-9c6c453c-b8b0-4ccf-b36e-eb666c2d919f.gif" loading="lazy" width="60%">
 
-#### 5. Import a Graph
+#### 6. Import a Graph
 Load a previously saved processing pipeline from a JSON file.
 
 <img src="https://user-images.githubusercontent.com/37477845/172030433-8a07b702-9ba4-43e7-9f2f-f0885f472c44.gif" loading="lazy" width="60%">
