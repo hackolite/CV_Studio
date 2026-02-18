@@ -250,6 +250,7 @@ class DpgNodeEditor(object):
         self._max_zoom = 5.0
         self._zoom_in_factor = 1.1  # Zoom in by 10%
         self._zoom_out_factor = 0.9  # Zoom out by 10%
+        self._widget_original_sizes = {}  # Cache for original widget sizes
 
         self._node_factory_list = {}  # NodeFactorylist (objects), factory list
         self._node_instances_list = {}  # NodeInstanceList (objects), instances list
@@ -741,6 +742,9 @@ class DpgNodeEditor(object):
                 )
 
                 dpg.delete_item(item_id)
+                
+                # Clean up zoom cache for deleted node widgets
+                self._cleanup_widget_cache(node_id_name)
 
         if len(dpg.get_selected_links(self._node_editor_tag)) > 0:
             self._node_link_list.remove(
@@ -857,10 +861,6 @@ class DpgNodeEditor(object):
         Scale a single widget based on current zoom level.
         Uses cached original sizes to maintain consistent scaling.
         """
-        # Initialize cache for original widget sizes if not exists
-        if not hasattr(self, '_widget_original_sizes'):
-            self._widget_original_sizes = {}
-        
         widget_type = dpg.get_item_type(widget_tag)
         
         # Get or cache original size
@@ -898,3 +898,23 @@ class DpgNodeEditor(object):
             # Some widgets don't support width/height configuration
             if self._use_debug_print:
                 logger.debug(f"Could not scale widget {widget_tag}: {e}")
+    
+    def _cleanup_widget_cache(self, node_tag):
+        """
+        Clean up widget size cache for a deleted node.
+        Removes all cached widget sizes for widgets that belonged to the node.
+        """
+        # Create a list of widget tags to remove (can't modify dict during iteration)
+        widgets_to_remove = []
+        
+        for widget_tag in list(self._widget_original_sizes.keys()):
+            # Check if widget no longer exists (was part of deleted node)
+            if not dpg.does_item_exist(widget_tag):
+                widgets_to_remove.append(widget_tag)
+        
+        # Remove cached entries for non-existent widgets
+        for widget_tag in widgets_to_remove:
+            del self._widget_original_sizes[widget_tag]
+        
+        if self._use_debug_print and widgets_to_remove:
+            logger.debug(f"Cleaned up {len(widgets_to_remove)} cached widget sizes for deleted node")
