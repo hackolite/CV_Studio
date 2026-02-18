@@ -29,6 +29,14 @@ def test_buzzer_node_structure():
     assert factory.node_tag == "Buzzer", "Factory tag should be 'Buzzer'"
     assert factory.node_label == "Buzzer", "Factory label should be 'Buzzer'"
     
+    # Verify sound types are defined
+    assert hasattr(BuzzerNode, 'SOUND_TYPES'), "BuzzerNode should have SOUND_TYPES"
+    assert len(BuzzerNode.SOUND_TYPES) >= 5, "Should have at least 5 sound types"
+    assert "Airplane Seatbelt Chime" in BuzzerNode.SOUND_TYPES, "Should include airplane seatbelt chime"
+    print(f"  Sound types available: {len(BuzzerNode.SOUND_TYPES)}")
+    for sound_type in BuzzerNode.SOUND_TYPES:
+        print(f"    - {sound_type}")
+    
     # Verify methods exist
     assert hasattr(node, 'update'), "Node should have 'update' method"
     assert hasattr(node, 'close'), "Node should have 'close' method"
@@ -52,20 +60,23 @@ def test_buzzer_sound_generation():
     
     node = BuzzerNode()
     
-    # Test sound generation with default duration
-    audio, samplerate = node._generate_buzz_sound(duration=1.0)
+    # Test all sound types
+    for sound_type in BuzzerNode.SOUND_TYPES:
+        print(f"  Testing sound type: {sound_type}")
+        audio, samplerate = node._generate_buzz_sound(duration=1.0, sound_type=sound_type)
+        
+        # Verify audio properties
+        assert isinstance(audio, np.ndarray), f"Audio should be numpy array for {sound_type}"
+        assert samplerate == 44100, f"Sample rate should be 44100 for {sound_type}"
+        assert len(audio) == int(samplerate * 1.0), f"Audio length should match duration for {sound_type}"
+        assert audio.dtype == np.float64, f"Audio should be float64 for {sound_type}"
+        assert np.max(np.abs(audio)) <= 1.0, f"Audio amplitude should be normalized for {sound_type}"
     
-    print("✓ Sound generation successful")
+    print("✓ Sound generation successful for all types")
     print(f"  Sample rate: {samplerate}")
     print(f"  Audio array length: {len(audio)}")
     print(f"  Expected length: {int(samplerate * 1.0)}")
-    
-    # Verify audio properties
-    assert isinstance(audio, np.ndarray), "Audio should be numpy array"
-    assert samplerate == 44100, "Sample rate should be 44100"
-    assert len(audio) == int(samplerate * 1.0), "Audio length should match duration"
-    assert audio.dtype == np.float64, "Audio should be float64"
-    assert np.max(np.abs(audio)) <= 1.0, "Audio amplitude should be normalized"
+    print(f"  Tested {len(BuzzerNode.SOUND_TYPES)} sound types")
     
     print("✓ Audio properties verified")
     
