@@ -138,7 +138,8 @@ class BuzzerNode(BaseNode):
         "Airplane Seatbelt Chime",
         "Gentle Beep",
         "Soft Chime",
-        "Ambient Tone"
+        "Ambient Tone",
+        "Smooth Chime"
     ]
 
     def __init__(self):
@@ -254,6 +255,52 @@ class BuzzerNode(BaseNode):
             if len(audio) > 2 * fade_samples:
                 audio[:fade_samples] *= np.linspace(0, 1, fade_samples)
                 audio[-fade_samples:] *= np.linspace(1, 0, fade_samples)
+        
+        elif sound_type == "Smooth Chime":
+            # Smooth two-tone chime with exponential decay (D and B notes)
+            fs = samplerate
+            
+            def get_note(freq, note_duration=1.0):
+                t_note = np.linspace(0, note_duration, int(fs * note_duration), False)
+                # Pure sine wave
+                note = np.sin(2 * np.pi * freq * t_note)
+                
+                # Exponential decay envelope
+                envelope = np.exp(-3.0 * np.linspace(0, 1, len(t_note)))
+                return note * envelope
+            
+            # Generate the two notes (D and B)
+            ding = get_note(587.33)  # D note
+            dong = get_note(493.88)  # B note
+            
+            # Very short silence between notes
+            pause = np.zeros(int(fs * 0.12))
+            
+            # Assemble the signal
+            signal = np.concatenate([ding, pause, dong])
+            
+            # Add general fading
+            fade_in_duration = int(0.05 * fs)  # 50ms fade in
+            fade_out_duration = int(0.3 * fs)  # 300ms fade out
+            
+            # Apply Fade-in
+            if len(signal) > fade_in_duration:
+                fade_in = np.linspace(0, 1, fade_in_duration)
+                signal[:fade_in_duration] *= fade_in
+            
+            # Apply Fade-out
+            if len(signal) > fade_out_duration:
+                fade_out = np.linspace(1, 0, fade_out_duration)
+                signal[-fade_out_duration:] *= fade_out
+            
+            # Adjust to requested duration
+            if len(signal) < len(t):
+                # Pad with silence if signal is shorter than requested duration
+                audio = np.zeros(len(t))
+                audio[:len(signal)] = signal
+            else:
+                # Truncate if signal is longer than requested duration
+                audio = signal[:len(t)]
                 
         else:  # "Default Buzzer"
             # Original modulated frequency sweep
