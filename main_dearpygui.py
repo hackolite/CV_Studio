@@ -1,13 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""
-PySide6-based main application for CV Studio.
-This is a proof-of-concept showing how the main application would look with PySide6.
-"""
 import sys
 import os
 
-# Add the current directory to Python path
+# Add the current directory to Python path to allow imports from src package
+# This is necessary when running main.py directly without installing the package
 if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__))
     if current_dir not in sys.path:
@@ -21,24 +18,17 @@ from collections import OrderedDict
 import time
 import multiprocessing
 import cv2
-
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QGraphicsView, QGraphicsScene,
-    QMenuBar, QMenu, QFileDialog, QWidget, QVBoxLayout, QMessageBox
-)
-from PySide6.QtCore import Qt, QTimer, QThread, Signal
-from PySide6.QtGui import QAction, QColor
+import dearpygui.dearpygui as dpg
 
 from src.utils.logging import setup_logging, get_logger
 from src.utils.gpu_utils import log_gpu_info
 
+from node_editor.util import check_camera_connection
+from node_editor.node_main import DpgNodeEditor
+
 # Import timestamped queue system
 from node.timestamped_queue import NodeDataQueueManager
 from node.queue_adapter import QueueBackedDict
-
-# Import the PySide6 node editor
-from node_editor.pyside6_node_editor import PySide6NodeEditor
-from node.node_factory import NodeFactory
 
 # Setup logging
 logger = get_logger(__name__)
@@ -47,6 +37,16 @@ logger = get_logger(__name__)
 def get_resource_path(relative_path):
     """
     Get the absolute path to a resource, works for both development and frozen mode.
+
+    When running as a script, returns the path relative to the script directory.
+    When running as a PyInstaller executable (.exe), returns the path relative to
+    the temporary directory where PyInstaller extracts files (sys._MEIPASS).
+
+    Args:
+        relative_path (str): Relative path to the resource (e.g., 'assets/image.png')
+
+    Returns:
+        str: Absolute path to the resource
     """
     try:
         # PyInstaller creates a temp folder and stores path in _MEIPASS
@@ -57,8 +57,11 @@ def get_resource_path(relative_path):
         base_path = os.path.dirname(os.path.abspath(__file__))
         frozen = False
 
+    # Normalize path separators for cross-platform compatibility
+    # This handles cases where relative_path uses forward slashes on Windows
     resource_path = os.path.normpath(os.path.join(base_path, relative_path))
     
+    # Debug logging to help troubleshoot path issues
     logger.debug(
         f"Resource path resolution:\n"
         f"  Frozen mode: {frozen}\n"
@@ -71,257 +74,9 @@ def get_resource_path(relative_path):
     return resource_path
 
 
-
-
-
-class CVStudioMainWindow(QMainWindow):
-    """Main window for CV Studio with PySide6"""
-    
-    def __init__(self, opencv_setting_dict, menu_dict, node_dir, queue_manager):
-        super().__init__()
-        
-        self.opencv_setting_dict = opencv_setting_dict
-        self.menu_dict = menu_dict
-        self.node_dir = node_dir
-        self.queue_manager = queue_manager
-        
-        # Node editor data structures
-        self.node_id = 0
-        self.node_factory_list = {}
-        self.node_instances_list = {}
-        self.node_list = []
-        self.node_link_list = []
-        self.node_connection_dict = OrderedDict()
-        
-        self.terminate_flag = False
-        
-        # Initialize node factories
-        self.init_node_factories()
-        
-        self.init_ui()
-        
-    def init_node_factories(self):
-        """Initialize node factories from node directory"""
-        logger.info("Initializing node factories...")
-        
-        for menu_label, node_type in self.menu_dict.items():
-            node_path = os.path.join(self.node_dir, node_type)
-            if os.path.exists(node_path):
-                try:
-                    # Get all node_*.py files
-                    node_files = [f for f in os.listdir(node_path) if f.startswith('node_') and f.endswith('.py')]
-                    logger.info(f"Found {len(node_files)} nodes in {node_type}")
-                    
-                    for node_file in node_files:
-                        module_name = node_file[:-3]  # Remove .py extension
-                        try:
-                            # Import the node module
-                            module = __import__(f"node.{node_type}.{module_name}", fromlist=[module_name])
-                            
-                            # Create node factory if the module has a Node class
-                            if hasattr(module, 'Node'):
-                                factory = NodeFactory(module, node_type)
-                                factory_key = f"{node_type}/{module_name}"
-                                self.node_factory_list[factory_key] = factory
-                                logger.debug(f"Registered node factory: {factory_key}")
-                        except Exception as e:
-                            logger.warning(f"Failed to import {node_type}/{module_name}: {e}")
-                except Exception as e:
-                    logger.error(f"Error loading nodes from {node_type}: {e}")
-        
-        logger.info(f"Initialized {len(self.node_factory_list)} node factories")
-    
-    def init_ui(self):
-        """Initialize the user interface"""
-        self.setWindowTitle("CV_STUDIO (PySide6)")
-        
-        # Set window size from settings
-        width = self.opencv_setting_dict.get('editor_width', 1280)
-        height = self.opencv_setting_dict.get('editor_height', 720)
-        self.resize(width, height)
-        
-        # Create central widget with node editor
-        self.node_editor = PySide6NodeEditor()
-        self.setCentralWidget(self.node_editor)
-        
-        # Connect signals
-        self.node_editor.node_created.connect(self.on_node_created)
-        self.node_editor.connection_created.connect(self.on_connection_created)
-        
-        # Create menu bar
-        self.create_menu_bar()
-        
-    def create_menu_bar(self):
-        """Create the menu bar"""
-        menubar = self.menuBar()
-        
-        # File menu
-        file_menu = menubar.addMenu('File')
-        
-        export_action = QAction('Export', self)
-        export_action.triggered.connect(self.export_graph)
-        file_menu.addAction(export_action)
-        
-        import_action = QAction('Import', self)
-        import_action.triggered.connect(self.import_graph)
-        file_menu.addAction(import_action)
-        
-        # View menu
-        view_menu = menubar.addMenu('View')
-        
-        zoom_in_action = QAction('Zoom In (+10%)', self)
-        zoom_in_action.triggered.connect(self.zoom_in)
-        view_menu.addAction(zoom_in_action)
-        
-        zoom_out_action = QAction('Zoom Out (-10%)', self)
-        zoom_out_action.triggered.connect(self.zoom_out)
-        view_menu.addAction(zoom_out_action)
-        
-        zoom_reset_action = QAction('Reset Zoom (100%)', self)
-        zoom_reset_action.triggered.connect(self.zoom_reset)
-        view_menu.addAction(zoom_reset_action)
-        
-        # Add node menus
-        for menu_label, node_type in self.menu_dict.items():
-            node_menu = menubar.addMenu(menu_label)
-            
-            # Add actions for each node type
-            for factory_key, factory in self.node_factory_list.items():
-                if factory_key.startswith(node_type + "/"):
-                    node_name = factory_key.split("/")[1].replace("node_", "").replace("_", " ").title()
-                    action = QAction(node_name, self)
-                    action.triggered.connect(lambda checked=False, fk=factory_key: self.create_node(fk))
-                    node_menu.addAction(action)
-            
-    def create_node(self, factory_key):
-        """Create a new node instance"""
-        if factory_key not in self.node_factory_list:
-            logger.error(f"Node factory not found: {factory_key}")
-            return
-            
-        factory = self.node_factory_list[factory_key]
-        node_name = factory_key.split("/")[1].replace("node_", "").replace("_", " ").title()
-        
-        # Create node instance
-        self.node_id += 1
-        node_tag = f"{factory_key}_{self.node_id}"
-        
-        try:
-            # Get color for node type
-            node_type = factory_key.split("/")[0]
-            color = self.get_node_color(node_type)
-            
-            # Add graphics node to editor
-            graphics_node = self.node_editor.add_node(
-                None,  # We'll set the node instance later
-                node_name,
-                pos=None,  # Will be placed at center
-                color=color
-            )
-            
-            # Add sockets based on node type (placeholder - should be based on actual node definition)
-            graphics_node.add_input_socket("Input")
-            graphics_node.add_output_socket("Output")
-            
-            # Store node instance
-            self.node_instances_list[node_tag] = graphics_node
-            
-            logger.info(f"Created node: {node_name} ({node_tag})")
-            
-        except Exception as e:
-            logger.error(f"Error creating node {factory_key}: {e}")
-            QMessageBox.critical(self, "Error", f"Failed to create node: {e}")
-    
-    def get_node_color(self, node_type):
-        """Get color for a node type"""
-        colors = {
-            "InputNode": QColor(100, 150, 255),
-            "ProcessNode": QColor(150, 100, 255),
-            "DLNode": QColor(255, 150, 100),
-            "AudioProcessNode": QColor(100, 255, 150),
-            "AudioModelNode": QColor(150, 255, 100),
-            "StatsNode": QColor(255, 255, 100),
-            "TimeseriesNode": QColor(255, 200, 100),
-            "TriggerNode": QColor(200, 100, 255),
-            "RouterNode": QColor(100, 200, 255),
-            "ActionNode": QColor(255, 100, 200),
-            "OverlayNode": QColor(200, 255, 100),
-            "TrackerNode": QColor(100, 255, 200),
-            "VisualNode": QColor(255, 100, 150),
-            "VideoNode": QColor(150, 255, 200),
-            "SystemNode": QColor(200, 150, 255),
-        }
-        return colors.get(node_type, QColor(100, 100, 100))
-    
-    def on_node_created(self, graphics_node):
-        """Handle node creation"""
-        logger.debug(f"Node created event: {graphics_node.title}")
-        
-    def on_connection_created(self, source_socket, dest_socket):
-        """Handle connection creation"""
-        logger.debug(f"Connection created: {source_socket.node.title} -> {dest_socket.node.title}")
-    
-    def export_graph(self):
-        """Export the node graph to JSON"""
-        filename, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export Graph",
-            "",
-            "JSON Files (*.json)"
-        )
-        if filename:
-            try:
-                graph_data = self.node_editor.export_graph()
-                with open(filename, 'w') as f:
-                    json.dump(graph_data, f, indent=2)
-                logger.info(f"Graph exported to {filename}")
-                QMessageBox.information(self, "Success", f"Graph exported to {filename}")
-            except Exception as e:
-                logger.error(f"Error exporting graph: {e}")
-                QMessageBox.critical(self, "Error", f"Failed to export graph: {e}")
-            
-    def import_graph(self):
-        """Import a node graph from JSON"""
-        filename, _ = QFileDialog.getOpenFileName(
-            self,
-            "Import Graph",
-            "",
-            "JSON Files (*.json)"
-        )
-        if filename:
-            try:
-                with open(filename, 'r') as f:
-                    graph_data = json.load(f)
-                self.node_editor.import_graph(graph_data)
-                logger.info(f"Graph imported from {filename}")
-                QMessageBox.information(self, "Success", f"Graph imported from {filename}")
-            except Exception as e:
-                logger.error(f"Error importing graph: {e}")
-                QMessageBox.critical(self, "Error", f"Failed to import graph: {e}")
-            
-    def zoom_in(self):
-        """Zoom in the view"""
-        self.node_editor.scale(1.1, 1.1)
-        
-    def zoom_out(self):
-        """Zoom out the view"""
-        self.node_editor.scale(0.9, 0.9)
-        
-    def zoom_reset(self):
-        """Reset zoom to 100%"""
-        self.node_editor.resetTransform()
-        
-    def get_terminate_flag(self):
-        """Check if termination flag is set"""
-        return self.terminate_flag
-        
-    def set_terminate_flag(self):
-        """Set the termination flag"""
-        self.terminate_flag = True
-
-
 def get_args():
     parser = argparse.ArgumentParser()
+
     parser.add_argument(
         "--setting",
         type=str,
@@ -331,6 +86,142 @@ def get_args():
     parser.add_argument("--use_debug_print", action="store_true")
     args = parser.parse_args()
     return args
+
+
+def async_main(node_editor, queue_manager):
+    # Create queue-backed dictionaries for backward compatibility
+    node_image_dict = QueueBackedDict(queue_manager, "image")
+    node_result_dict = QueueBackedDict(queue_manager, "json")
+    node_audio_dict = QueueBackedDict(queue_manager, "audio")
+    
+    logger.info("Async main loop started with timestamped queue system")
+    
+    while not node_editor.get_terminate_flag():
+        update_node_info(
+            node_editor, node_image_dict, node_result_dict, node_audio_dict
+        )
+        # Small sleep to prevent CPU hogging and keep UI responsive
+        # Note: This function runs in a thread executor (not asyncio coroutine),
+        # so time.sleep() is appropriate here to yield CPU to other threads
+        # Increased to 10ms to ensure UI remains responsive during video playback
+        time.sleep(0.01)  # 10ms sleep to yield CPU and keep UI responsive
+
+
+def update_node_info(
+    node_editor,
+    node_image_dict,
+    node_result_dict,
+    node_audio_dict,
+    mode_async=True,
+):
+    editor_width = dpg.get_viewport_client_width()
+    editor_height = dpg.get_viewport_client_height()
+
+    try:
+        dpg.set_item_pos(node_editor.window, [0, 0])
+        dpg.set_item_width(node_editor.window, dpg.get_viewport_client_width())
+        dpg.set_item_height(node_editor.window, dpg.get_viewport_client_height())
+    except Exception as e:
+        logger.error(f"Failed to set node editor window properties: {e}")
+
+    node_list = node_editor.get_node_list()
+
+    sorted_node_connection_dict = node_editor.get_sorted_node_connection()
+
+    for node_id_name in node_list:
+        if node_id_name not in node_image_dict:
+            node_image_dict[node_id_name] = None
+
+        node_id, _ = node_id_name.split(":")
+        connection_list = sorted_node_connection_dict.get(node_id_name, [])
+        node_instance = node_editor.get_node_instances(node_id_name)
+        logger.debug(
+            f"Processing node {node_id_name} with connections: {connection_list}"
+        )
+        if mode_async:
+            try:
+                data = node_instance.update(
+                    node_id,
+                    connection_list,
+                    node_image_dict,
+                    node_result_dict,
+                    node_audio_dict,
+                )
+            except Exception as e:
+                logger.error(f"Error updating node {node_id_name}: {e}", exc_info=True)
+                # sys.exit()
+        else:
+            data = node_instance.update(
+                node_id,
+                connection_list,
+                node_image_dict,
+                node_result_dict,
+                node_audio_dict,
+            )
+
+        try:
+            # Determine if this is an input node or a processing node
+            # Input nodes have no IMAGE/AUDIO/JSON input connections
+            # Processing nodes have at least one IMAGE/AUDIO/JSON input connection
+            has_data_input = False
+            source_timestamp = None
+            
+            for connection_info in connection_list:
+                # Validate connection_info structure before accessing
+                if not connection_info or len(connection_info) < 2:
+                    continue
+                
+                connection_parts = connection_info[0].split(":")
+                if len(connection_parts) < 3:
+                    continue
+                    
+                connection_type = connection_parts[2]
+                if connection_type in ["IMAGE", "AUDIO", "JSON"]:
+                    has_data_input = True
+                    # Get the timestamp from the source node
+                    source_node_id = ":".join(connection_parts[:2])
+                    
+                    # Try to get timestamp based on connection type
+                    if connection_type == "IMAGE":
+                        source_timestamp = node_image_dict.get_timestamp(source_node_id)
+                    elif connection_type == "AUDIO":
+                        source_timestamp = node_audio_dict.get_timestamp(source_node_id)
+                    elif connection_type == "JSON":
+                        source_timestamp = node_result_dict.get_timestamp(source_node_id)
+                    
+                    # Use the first data connection's timestamp
+                    if source_timestamp is not None:
+                        break
+            
+            # Check if the node provided an explicit timestamp (e.g., FPS-based timestamp from Video node)
+            # This allows input nodes to specify timestamps based on their internal timing (FPS, audio chunks, etc.)
+            node_provided_timestamp = data.get("timestamp", None) if isinstance(data, dict) else None
+            
+            # Store data with appropriate timestamp
+            # Priority:
+            # 1. For processing nodes: preserve source timestamp from connected input
+            # 2. For input nodes with explicit timestamp: use the node-provided timestamp (FPS-based, etc.)
+            # 3. For input nodes without explicit timestamp: create new timestamp automatically
+            if has_data_input and source_timestamp is not None:
+                # Processing node - preserve source timestamp
+                node_image_dict.set_with_timestamp(node_id_name, copy.deepcopy(data["image"]), source_timestamp)
+                node_result_dict.set_with_timestamp(node_id_name, copy.deepcopy(data["json"]), source_timestamp)
+                node_audio_dict.set_with_timestamp(node_id_name, copy.deepcopy(data["audio"]), source_timestamp)
+                logger.debug(f"Node {node_id_name} preserved timestamp {source_timestamp:.6f} from source")
+            elif node_provided_timestamp is not None:
+                # Input node with explicit timestamp (e.g., Video node with FPS-based timing)
+                node_image_dict.set_with_timestamp(node_id_name, copy.deepcopy(data["image"]), node_provided_timestamp)
+                node_result_dict.set_with_timestamp(node_id_name, copy.deepcopy(data["json"]), node_provided_timestamp)
+                node_audio_dict.set_with_timestamp(node_id_name, copy.deepcopy(data["audio"]), node_provided_timestamp)
+                logger.debug(f"Node {node_id_name} used explicit timestamp {node_provided_timestamp:.6f}")
+            else:
+                # Input node without explicit timestamp - create new timestamp automatically
+                node_image_dict[node_id_name] = copy.deepcopy(data["image"])
+                node_result_dict[node_id_name] = copy.deepcopy(data["json"])
+                node_audio_dict[node_id_name] = copy.deepcopy(data["audio"])
+                logger.debug(f"Node {node_id_name} created new timestamp (input node)")
+        except Exception as e:
+            logger.error(f"Error processing node {node_id_name} results: {e}")
 
 
 def main():
@@ -344,70 +235,172 @@ def main():
     setup_logging(level=getattr(__import__("logging"), log_level))
 
     logger.info("=" * 60)
-    logger.info("CV_STUDIO (PySide6) Starting")
+    logger.info("CV_STUDIO Starting")
     logger.info("=" * 60)
     
     # Initialize timestamped buffer system
     logger.info("Initializing timestamped buffer system")
     queue_manager = NodeDataQueueManager(default_maxsize=10)
-    logger.info("Buffer system initialized")
+    logger.info("Buffer system initialized: keeps last 10 timestamped items per node for synchronization")
 
     logger.info("Loading configuration")
     logger.debug(f"Configuration file path: {setting}")
     
-    # Verify the configuration file exists
+    # Verify the configuration file exists before attempting to load
     if not os.path.exists(setting):
         logger.error(f"Configuration file not found: {setting}")
+        # Check if we're in a frozen (PyInstaller) environment
+        if getattr(sys, 'frozen', False):
+            logger.error(f"Running in frozen mode. Base path (_MEIPASS): {sys._MEIPASS}")
+            logger.error("The setting.json file may not have been properly bundled with PyInstaller.")
+            logger.error("Please ensure CV_Studio.spec includes: datas.append(('node_editor', 'node_editor'))")
+        else:
+            logger.error("Running in script mode. The setting.json file should be in node_editor/setting/")
         raise FileNotFoundError(f"Configuration file not found: {setting}")
     
     opencv_setting_dict = None
     with open(setting) as fp:
         opencv_setting_dict = json.load(fp)
     logger.info("Configuration loaded successfully")
+    webcam_width = opencv_setting_dict["webcam_width"]
+    webcam_height = opencv_setting_dict["webcam_height"]
 
-    # Initialize Qt Application
-    app = QApplication(sys.argv)
-    
-    # Setup menu dictionary
-    menu_dict = OrderedDict({
-        "Input": "InputNode",
-        "VisionProcess": "ProcessNode",
-        "VisionModel": "DLNode",
-        "AudioProcess": "AudioProcessNode",
-        "AudioModel": "AudioModelNode",
-        "DataProcess": "StatsNode",
-        "DataModel": "TimeseriesNode",
-        "Trigger": "TriggerNode",
-        "Router": "RouterNode",
-        "Action": "ActionNode",
-        "Overlay": "OverlayNode",
-        "Tracking": "TrackerNode",
-        "Visual": "VisualNode",
-        "Video": "VideoNode",
-        "System": "SystemNode",
-    })
-    
+    # Log GPU information
+    if opencv_setting_dict.get("use_gpu", False):
+        log_gpu_info()
+
+    logger.info("Checking camera connections")
+    device_no_list = check_camera_connection()
+    camera_capture_list = []
+    for device_no in device_no_list:
+        video_capture = cv2.VideoCapture(device_no)
+        video_capture.set(cv2.CAP_PROP_FRAME_WIDTH, webcam_width)
+        video_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, webcam_height)
+        camera_capture_list.append(video_capture)
+        logger.info(f"Camera {device_no} connected")
+
+    opencv_setting_dict["device_no_list"] = device_no_list
+    opencv_setting_dict["camera_capture_list"] = camera_capture_list
+
+    editor_width = opencv_setting_dict["editor_width"]
+    editor_height = opencv_setting_dict["editor_height"]
+
+    serial_device_no_list = []
+    serial_connection_list = []
+    use_serial = opencv_setting_dict["use_serial"]
+    if use_serial == True:
+        try:
+            from .node_editor.util import check_serial_connection
+        except:
+            from node_editor.util import check_serial_connection
+        logger.info("Checking serial device connections")
+        serial_device_no_list = check_serial_connection()
+        for serial_device_no in serial_device_no_list:
+            ser = serial.Serial(serial_device_no, 115200)
+            serial_connection_list.append(ser)
+            logger.info(f"Serial device {serial_device_no} connected")
+
+    opencv_setting_dict["serial_device_no_list"] = serial_device_no_list
+    opencv_setting_dict["serial_connection_list"] = serial_connection_list
+
+    logger.info("Setting up DearPyGui")
+
+    dpg.create_context()
+    dpg.setup_dearpygui()
+    dpg.create_viewport(
+        title="CV_STUDIO",
+        width=editor_width,
+        height=editor_height,
+    )
+
+    # Using default DearPyGui font (no custom font needed)
+    # DearPyGui will use its built-in default font automatically
+
+    logger.info("Creating Node Editor")
+    menu_dict = OrderedDict(
+        {
+            "Input": "InputNode",
+            "VisionProcess": "ProcessNode",
+            "VisionModel": "DLNode",
+            "AudioProcess": "AudioProcessNode",
+            "AudioModel": "AudioModelNode",
+            "DataProcess": "StatsNode",
+            "DataModel": "TimeseriesNode",
+            "Trigger": "TriggerNode",
+            "Router": "RouterNode",
+            "Action": "ActionNode",
+            "Overlay": "OverlayNode",
+            "Tracking": "TrackerNode",
+            "Visual": "VisualNode",
+            "Video": "VideoNode",
+            "System": "SystemNode",
+        }
+    )
+
+    dpg.show_viewport(maximized=True)
+
     current_path = os.path.dirname(os.path.abspath(__file__))
-    
-    # Create main window
-    main_window = CVStudioMainWindow(
+
+    node_editor = DpgNodeEditor(
+        width=editor_width,
+        height=editor_height,
         opencv_setting_dict=opencv_setting_dict,
         menu_dict=menu_dict,
+        use_debug_print=use_debug_print,
         node_dir=current_path + "/node",
-        queue_manager=queue_manager
     )
-    main_window.showMaximized()
-    
-    logger.info("=" * 60)
-    logger.info("PySide6 application started successfully")
-    logger.info("=" * 60)
-    logger.info(f"Loaded {len(main_window.node_factory_list)} node types")
-    logger.info("Use the menus to add nodes to the canvas")
-    
-    # Start Qt event loop
-    sys.exit(app.exec())
+
+    logger.info("Starting main event loop")
+    if not unuse_async_draw:
+        logger.info("Async draw is enabled")
+        event_loop = asyncio.get_event_loop()
+        event_loop.run_in_executor(None, async_main, node_editor, queue_manager)
+        dpg.start_dearpygui()
+
+    else:
+        logger.info("Async draw is disabled")
+        # Create queue-backed dictionaries
+        node_image_dict = QueueBackedDict(queue_manager, "image")
+        node_result_dict = QueueBackedDict(queue_manager, "json")
+        node_audio_dict = QueueBackedDict(queue_manager, "audio")
+        
+        while dpg.is_dearpygui_running():
+            update_node_info(
+                node_editor,
+                node_image_dict,
+                node_result_dict,
+                node_audio_dict,
+                mode_async=False,
+            )
+            dpg.render_dearpygui_frame()
+
+    logger.info("Terminating process")
+
+    logger.info("Closing all nodes")
+    node_list = node_editor.get_node_list()
+    for node_id_name in node_list:
+        node_id, node_name = node_id_name.split(":")
+        node_instance = node_editor.get_node_instances(node_name)
+        node_instance.close(node_id)
+
+    logger.info("Releasing all video captures")
+    for camera_capture in camera_capture_list:
+        camera_capture.release()
+
+    logger.info("Stopping event loop")
+    node_editor.set_terminate_flag()
+    event_loop.stop()
+
+    logger.info("Destroying DearPyGui context")
+    dpg.destroy_context()
+
+    logger.info("CV_STUDIO shutdown complete")
 
 
 if __name__ == "__main__":
+    # Enable multiprocessing support for frozen executables (PyInstaller)
+    # This must be called before any multiprocessing code runs
+    # On Windows, when the executable spawns child processes for multiprocessing,
+    # they will re-execute this script with special arguments that freeze_support() handles
     multiprocessing.freeze_support()
     main()
