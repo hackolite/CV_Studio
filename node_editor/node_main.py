@@ -231,6 +231,9 @@ class DpgNodeEditor(object):
     _opencv_setting_dict = None
 
     _use_debug_print = False
+    
+    # Zoom-related constants
+    DEFAULT_WIDGET_WIDTH = 200  # Default width for widgets without explicit size
 
     def __init__(
         self,
@@ -872,12 +875,14 @@ class DpgNodeEditor(object):
                 
                 # Store original size
                 self._widget_original_sizes[widget_tag] = {
-                    'width': original_width if original_width > 0 else 200,  # Default width
+                    'width': original_width if original_width > 0 else self.DEFAULT_WIDGET_WIDTH,
                     'height': original_height if original_height > 0 else 0,
                 }
-            except:
+            except Exception as e:
                 # If we can't get config, use defaults
-                self._widget_original_sizes[widget_tag] = {'width': 200, 'height': 0}
+                self._widget_original_sizes[widget_tag] = {'width': self.DEFAULT_WIDGET_WIDTH, 'height': 0}
+                if self._use_debug_print:
+                    logger.debug(f"Could not get widget config for {widget_tag}: {e}")
         
         original_size = self._widget_original_sizes[widget_tag]
         
