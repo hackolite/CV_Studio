@@ -131,14 +131,19 @@ class GraphicsNode(QGraphicsItem):
         self.socket_spacing = 25
         self.socket_margin = 10
         
-        # Default color
+        # Default color with brightness boost for selection
         if color is None:
             color = QColor(50, 100, 150)
         self.color = color
+        
+        # Calculate selected color with brightness boost
+        def boost_channel(value):
+            return min(255, int(value * 1.2))
+        
         self.selected_color = QColor(
-            min(255, int(color.red() * 1.2)),
-            min(255, int(color.green() * 1.2)),
-            min(255, int(color.blue() * 1.2))
+            boost_channel(color.red()),
+            boost_channel(color.green()),
+            boost_channel(color.blue())
         )
         
         self.input_sockets = []
@@ -431,10 +436,10 @@ class PySide6NodeEditor(QGraphicsView):
         # Import nodes
         node_map = {}
         for node_data in graph_data.get("nodes", []):
-            # This is a placeholder - actual implementation would need to
-            # instantiate the correct node type based on node_data["type"]
+            # TODO Phase 2: Instantiate correct node type based on node_data["type"]
+            # For now, creating placeholder graphics nodes
             node = self.add_node(
-                None,  # node_instance - would need to be created
+                None,  # node_instance - will be created when factories are properly integrated
                 node_data["type"],
                 pos=node_data["pos"],
                 width=node_data.get("width", 200),
@@ -442,14 +447,27 @@ class PySide6NodeEditor(QGraphicsView):
             )
             node_map[node_data["id"]] = node
             
+            # Add placeholder sockets
+            # TODO Phase 2: Create sockets based on actual node definition
+            node.add_input_socket("Input")
+            node.add_output_socket("Output")
+            
         # Import connections
         for conn_data in graph_data.get("connections", []):
             source_node = node_map.get(conn_data["source_node"])
             dest_node = node_map.get(conn_data["dest_node"])
             
             if source_node and dest_node:
-                source_socket = source_node.output_sockets[conn_data["source_socket"]]
-                dest_socket = dest_node.input_sockets[conn_data["dest_socket"]]
+                source_idx = conn_data.get("source_socket", 0)
+                dest_idx = conn_data.get("dest_socket", 0)
                 
-                connection = NodeConnection(source_socket, dest_socket, self.scene)
-                self.connections.append(connection)
+                # Validate socket indices
+                if (source_idx < len(source_node.output_sockets) and 
+                    dest_idx < len(dest_node.input_sockets)):
+                    source_socket = source_node.output_sockets[source_idx]
+                    dest_socket = dest_node.input_sockets[dest_idx]
+                    
+                    connection = NodeConnection(source_socket, dest_socket, self.scene)
+                    self.connections.append(connection)
+                else:
+                    logger.warning(f"Invalid socket indices in connection: {conn_data}")

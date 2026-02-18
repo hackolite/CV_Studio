@@ -213,13 +213,18 @@ class CVStudioMainWindow(QMainWindow):
             
             # Add graphics node to editor
             graphics_node = self.node_editor.add_node(
-                None,  # We'll set the node instance later
+                None,  # Node instance will be created in Phase 2
                 node_name,
                 pos=None,  # Will be placed at center
                 color=color
             )
             
-            # Add sockets based on node type (placeholder - should be based on actual node definition)
+            # TODO Phase 2: Create actual node instance and connect it to graphics_node
+            # node_instance = factory.create_node(...)
+            # graphics_node.node_instance = node_instance
+            
+            # TODO Phase 2: Add sockets based on actual node definition
+            # For now, adding placeholder sockets for all nodes
             graphics_node.add_input_socket("Input")
             graphics_node.add_output_socket("Output")
             
