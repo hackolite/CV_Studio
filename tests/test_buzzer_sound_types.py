@@ -24,9 +24,16 @@ def test_sound_types_available():
     
     # Import just the class definition without GUI
     import importlib.util
+    buzzer_path = os.path.join(
+        os.path.dirname(__file__), 
+        '..', 
+        'node', 
+        'ActionNode', 
+        'node_buzzer.py'
+    )
     spec = importlib.util.spec_from_file_location(
         "node_buzzer",
-        "/home/runner/work/CV_Studio/CV_Studio/node/ActionNode/node_buzzer.py"
+        buzzer_path
     )
     
     module = importlib.util.module_from_spec(spec)
