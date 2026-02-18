@@ -2,6 +2,14 @@
 
 > A professional node-based image processing application for computer vision development, verification, and comparison.
 
+## 🔄 PySide6 Migration Status
+
+**Note**: A PySide6 migration effort is in progress. See [PYSIDE6_MIGRATION_GUIDE.md](PYSIDE6_MIGRATION_GUIDE.md) for details.
+
+- ✅ Foundation work completed (dependencies, adapter, proof-of-concept)
+- ⚠️ Full migration requires 4-6 months of development (79+ node files to convert)
+- 📝 Current version uses DearPyGUI and is fully functional
+
 <img src="https://user-images.githubusercontent.com/37477845/172011014-23fb025e-68a5-4cb7-925f-c4417029966c.gif" loading="lazy" width="100%">
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
