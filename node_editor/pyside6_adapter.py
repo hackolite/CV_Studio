@@ -126,7 +126,7 @@ def render_dearpygui_frame():
 
 def is_dearpygui_running():
     """Check if Qt application is running"""
-    return _qt_app is not None and not _qt_main_window.isVisible() is False
+    return _qt_app is not None and _qt_main_window is not None and _qt_main_window.isVisible()
 
 
 def destroy_context():
@@ -173,7 +173,12 @@ def add_raw_texture(width, height, data, tag=None, format=mvFormat_Float_rgb):
     
     # Convert numpy array to QImage
     if isinstance(data, np.ndarray):
-        height, width, channels = data.shape if len(data.shape) == 3 else (data.shape[0], data.shape[1], 1)
+        if len(data.shape) == 3:
+            height, width, channels = data.shape
+        else:
+            # 2D grayscale image
+            height, width = data.shape
+            channels = 1
         if channels == 3:
             qimage = QImage(data.data, width, height, 3 * width, QImage.Format_RGB888)
         elif channels == 4:

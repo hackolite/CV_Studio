@@ -15,7 +15,7 @@ This document outlines the comprehensive plan to migrate CV_Studio from DearPyGU
 
 ### Estimated Effort
 **This is effectively a complete application rewrite of the UI layer**, estimated at:
-- **Time**: 2-4 months of full-time development
+- **Time**: 4-6 months of full-time development (15-24 weeks)
 - **Complexity**: High - requires deep understanding of both frameworks
 - **Risk**: High - complete regression testing required
 
