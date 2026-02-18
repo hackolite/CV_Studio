@@ -231,6 +231,9 @@ class DpgNodeEditor(object):
     _opencv_setting_dict = None
 
     _use_debug_print = False
+    
+    # Zoom-related constants
+    DEFAULT_WIDGET_WIDTH = 200  # Default width for widgets without explicit size
 
     def __init__(
         self,
@@ -250,6 +253,7 @@ class DpgNodeEditor(object):
         self._max_zoom = 5.0
         self._zoom_in_factor = 1.1  # Zoom in by 10%
         self._zoom_out_factor = 0.9  # Zoom out by 10%
+        self._widget_original_sizes = {}  # Cache for original widget sizes
 
         self._node_factory_list = {}  # NodeFactorylist (objects), factory list
         self._node_instances_list = {}  # NodeInstanceList (objects), instances list
@@ -741,6 +745,9 @@ class DpgNodeEditor(object):
                 )
 
                 dpg.delete_item(item_id)
+                
+                # Clean up zoom cache for deleted node widgets
+                self._cleanup_widget_cache(node_id_name)
 
         if len(dpg.get_selected_links(self._node_editor_tag)) > 0:
             self._node_link_list.remove(
@@ -775,11 +782,11 @@ class DpgNodeEditor(object):
 
     def _callback_mouse_wheel_zoom(self, sender, delta):
         """
-        Track mouse wheel zoom events to update zoom level display.
+        Handle mouse wheel zoom events to actually scale nodes.
         Inspired by examples/zoomable_node_editor.py
         
-        Note: The actual zooming is handled by DearPyGui's built-in node editor zoom.
-        This callback tracks the zoom level for UI feedback.
+        Note: DearPyGui's built-in node editor zoom doesn't work for scaling nodes,
+        so we manually resize all node widgets based on zoom level.
         """
         # Calculate zoom change (same formula as zoomable_node_editor example)
         zoom_factor = self._zoom_in_factor if delta > 0 else self._zoom_out_factor
@@ -787,6 +794,9 @@ class DpgNodeEditor(object):
         
         # Clamp zoom to valid range (0.1x to 5.0x, same as example)
         self._zoom_level = max(self._min_zoom, min(self._max_zoom, self._zoom_level))
+        
+        # Apply zoom to all nodes
+        self._apply_zoom_to_nodes()
         
         # Update zoom display
         self._update_zoom_display()
@@ -798,6 +808,7 @@ class DpgNodeEditor(object):
         """Zoom in by 10% (simulate mouse wheel up)"""
         self._zoom_level *= self._zoom_in_factor
         self._zoom_level = min(self._max_zoom, self._zoom_level)
+        self._apply_zoom_to_nodes()
         self._update_zoom_display()
         logger.info(f"Zoom in: {self._zoom_level:.2f}x")
     
@@ -805,12 +816,14 @@ class DpgNodeEditor(object):
         """Zoom out by 10% (simulate mouse wheel down)"""
         self._zoom_level *= self._zoom_out_factor
         self._zoom_level = max(self._min_zoom, self._zoom_level)
+        self._apply_zoom_to_nodes()
         self._update_zoom_display()
         logger.info(f"Zoom out: {self._zoom_level:.2f}x")
     
     def _callback_zoom_reset(self):
         """Reset zoom to 100%"""
         self._zoom_level = 1.0
+        self._apply_zoom_to_nodes()
         self._update_zoom_display()
         logger.info("Zoom reset to 100%")
     
@@ -819,3 +832,94 @@ class DpgNodeEditor(object):
         if dpg.does_item_exist("zoom_level_text"):
             zoom_percentage = int(self._zoom_level * 100)
             dpg.set_value("zoom_level_text", f"Zoom: {zoom_percentage}%")
+    
+    def _apply_zoom_to_nodes(self):
+        """
+        Apply zoom transformation to all nodes by resizing their widgets.
+        This is a fast method that scales node widgets based on zoom level.
+        """
+        for node_tag in self._node_list:
+            if not dpg.does_item_exist(node_tag):
+                continue
+            
+            # Get all children of the node (node_attributes)
+            node_children = dpg.get_item_children(node_tag, slot=1) or []
+            
+            for attribute_tag in node_children:
+                if not dpg.does_item_exist(attribute_tag):
+                    continue
+                
+                # Get all widgets inside the node_attribute
+                attribute_children = dpg.get_item_children(attribute_tag, slot=1) or []
+                
+                for widget_tag in attribute_children:
+                    if not dpg.does_item_exist(widget_tag):
+                        continue
+                    
+                    # Scale widget based on its type and original size
+                    self._scale_widget(widget_tag)
+    
+    def _scale_widget(self, widget_tag):
+        """
+        Scale a single widget based on current zoom level.
+        Uses cached original sizes to maintain consistent scaling.
+        """
+        widget_type = dpg.get_item_type(widget_tag)
+        
+        # Get or cache original size
+        if widget_tag not in self._widget_original_sizes:
+            try:
+                config = dpg.get_item_configuration(widget_tag)
+                original_width = config.get('width', 0)
+                original_height = config.get('height', 0)
+                
+                # Store original size
+                self._widget_original_sizes[widget_tag] = {
+                    'width': original_width if original_width > 0 else self.DEFAULT_WIDGET_WIDTH,
+                    'height': original_height if original_height > 0 else 0,
+                }
+            except Exception as e:
+                # If we can't get config, use defaults
+                self._widget_original_sizes[widget_tag] = {'width': self.DEFAULT_WIDGET_WIDTH, 'height': 0}
+                if self._use_debug_print:
+                    logger.debug(f"Could not get widget config for {widget_tag}: {e}")
+        
+        original_size = self._widget_original_sizes[widget_tag]
+        
+        # Calculate scaled size
+        scaled_width = int(original_size['width'] * self._zoom_level)
+        scaled_height = int(original_size['height'] * self._zoom_level) if original_size['height'] > 0 else 0
+        
+        # Apply scaling based on widget type
+        try:
+            # Most widgets support width configuration
+            if original_size['width'] > 0:
+                dpg.configure_item(widget_tag, width=scaled_width)
+            
+            # Some widgets also support height
+            if original_size['height'] > 0:
+                dpg.configure_item(widget_tag, height=scaled_height)
+        except Exception as e:
+            # Some widgets don't support width/height configuration
+            if self._use_debug_print:
+                logger.debug(f"Could not scale widget {widget_tag}: {e}")
+    
+    def _cleanup_widget_cache(self, node_tag):
+        """
+        Clean up widget size cache for a deleted node.
+        Removes all cached widget sizes for widgets that belonged to the node.
+        """
+        # Create a list of widget tags to remove (can't modify dict during iteration)
+        widgets_to_remove = []
+        
+        for widget_tag in list(self._widget_original_sizes.keys()):
+            # Check if widget no longer exists (was part of deleted node)
+            if not dpg.does_item_exist(widget_tag):
+                widgets_to_remove.append(widget_tag)
+        
+        # Remove cached entries for non-existent widgets
+        for widget_tag in widgets_to_remove:
+            del self._widget_original_sizes[widget_tag]
+        
+        if self._use_debug_print and widgets_to_remove:
+            logger.debug(f"Cleaned up {len(widgets_to_remove)} cached widget sizes for deleted node")
