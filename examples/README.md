@@ -2,6 +2,90 @@
 
 Ce dossier contient des exemples d'utilisation de DearPyGui dans le contexte de CV Studio.
 
+## Table des matières
+
+- [zoomable_node_editor.py](#zoomable_node_editorpy) - **NEW!** Éditeur de nodes personnalisé avec zoom et pan avancés
+- [dearpygui_node_editor_colored_combo_example.py](#dearpygui_node_editor_colored_combo_examplepy) - Éditeur de nodes avec combo colorées
+
+---
+
+## zoomable_node_editor.py
+
+### Description
+
+Implémentation complète d'un éditeur de nodes personnalisé avec des capacités avancées de zoom et pan. Contrairement au node editor intégré de DearPyGui, cette implémentation utilise des primitives de dessin de bas niveau pour un contrôle total sur le rendu et le comportement.
+
+**📖 Documentation complète :** Voir [ZOOMABLE_NODE_EDITOR_README.md](ZOOMABLE_NODE_EDITOR_README.md)
+
+### Fonctionnalités principales
+
+✨ **Zoom fluide** - Zoom avec molette de souris centré sur le curseur (plage 0.1x à 5.0x)
+
+🖱️ **Pan** - Déplacement avec bouton milieu de la souris
+
+📦 **Nodes auto-dimensionnés** - Taille automatique basée sur le contenu
+
+🔗 **Connexions Bézier** - Courbes cubiques de Bézier lisses entre les ports
+
+⚡ **Optimisations de performance** - Culling du viewport, dirty flags, limitation à 60 FPS
+
+📐 **Grille statique** - Grille d'arrière-plan qui reste fixe pendant le zoom
+
+### Formule mathématique du zoom
+
+Le zoom centré sur le curseur utilise cette formule précise :
+
+```python
+mouse_pos = dpg.get_mouse_pos(local=False)
+old_zoom = self.zoom
+self.zoom *= (1.1 if delta > 0 else 0.9)
+self.zoom = max(0.1, min(5.0, self.zoom))
+
+# Ajuste l'offset pour garder le point sous la souris fixe
+zoom_ratio = self.zoom / old_zoom - 1
+self.offset_x -= mouse_pos[0] * zoom_ratio / self.zoom
+self.offset_y -= mouse_pos[1] * zoom_ratio / self.zoom
+```
+
+### Exécution
+
+```bash
+# Depuis le répertoire racine du projet
+python examples/zoomable_node_editor.py
+```
+
+### Contrôles
+
+- **Molette de souris** - Zoom avant/arrière (centré sur le curseur)
+- **Bouton milieu + Glisser** - Déplacer la vue
+- **Plage de zoom** - 0.1x (10%) à 5.0x (500%)
+
+### Tests
+
+```bash
+# Tests unitaires
+python tests/test_zoomable_node_editor.py
+
+# Tests de validation (sans GUI)
+python tests/test_zoomable_editor_validation.py
+```
+
+### Cas d'utilisation
+
+Utilisez `ZoomableNodeEditor` quand vous avez besoin de :
+- ✅ Zoom centré sur le curseur avec formule précise
+- ✅ Contrôle total sur le rendu des nodes
+- ✅ Optimisations de performance personnalisées
+- ✅ Personnalisation visuelle spécifique
+- ✅ Apprendre l'implémentation d'interfaces personnalisées
+
+Utilisez le `dpg.node_editor` intégré quand :
+- ✅ Configuration rapide et comportement standard
+- ✅ Widgets de nodes DPG et interactivité
+- ✅ Zoom/pan standard suffisant
+
+---
+
 ## dearpygui_node_editor_colored_combo_example.py
 
 ### Description
