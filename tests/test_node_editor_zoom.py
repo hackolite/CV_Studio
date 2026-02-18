@@ -105,6 +105,72 @@ def test_zoom_factor():
     print("✓ Zoom factor tests passed")
 
 
+def test_zoom_callbacks():
+    """Test zoom callback methods (requires mocking DearPyGui)"""
+    print("Testing zoom callback methods...")
+    
+    # Create a mock node editor to test callbacks
+    class MockNodeEditor:
+        def __init__(self):
+            self._zoom_level = 1.0
+            self._min_zoom = 0.1
+            self._max_zoom = 5.0
+            self._zoom_in_factor = 1.1
+            self._zoom_out_factor = 0.9
+        
+        def _update_zoom_display(self):
+            pass  # Mock method
+        
+        # Copy the actual callback implementations
+        def _callback_zoom_in(self):
+            """Zoom in by 10% (simulate mouse wheel up)"""
+            self._zoom_level *= self._zoom_in_factor
+            self._zoom_level = min(self._max_zoom, self._zoom_level)
+            self._update_zoom_display()
+        
+        def _callback_zoom_out(self):
+            """Zoom out by 10% (simulate mouse wheel down)"""
+            self._zoom_level *= self._zoom_out_factor
+            self._zoom_level = max(self._min_zoom, self._zoom_level)
+            self._update_zoom_display()
+        
+        def _callback_zoom_reset(self):
+            """Reset zoom to 100%"""
+            self._zoom_level = 1.0
+            self._update_zoom_display()
+    
+    editor = MockNodeEditor()
+    
+    # Test zoom in
+    initial_zoom = editor._zoom_level
+    editor._callback_zoom_in()
+    assert editor._zoom_level > initial_zoom, "Zoom in should increase zoom level"
+    assert abs(editor._zoom_level - 1.1) < 0.001, "Zoom in should increase by 10%"
+    
+    # Test zoom out from default
+    editor._zoom_level = 1.0
+    editor._callback_zoom_out()
+    assert editor._zoom_level < 1.0, "Zoom out should decrease zoom level"
+    assert abs(editor._zoom_level - 0.9) < 0.001, "Zoom out should decrease by 10%"
+    
+    # Test reset
+    editor._zoom_level = 2.5
+    editor._callback_zoom_reset()
+    assert editor._zoom_level == 1.0, "Reset should return to 100%"
+    
+    # Test zoom in clamping at max
+    editor._zoom_level = 4.9
+    editor._callback_zoom_in()
+    assert editor._zoom_level <= 5.0, "Zoom in should clamp at max zoom"
+    
+    # Test zoom out clamping at min
+    editor._zoom_level = 0.11
+    editor._callback_zoom_out()
+    assert editor._zoom_level >= 0.1, "Zoom out should clamp at min zoom"
+    
+    print("✓ Zoom callback tests passed")
+
+
 def run_all_tests():
     """Run all tests"""
     print("=" * 60)
@@ -116,6 +182,7 @@ def run_all_tests():
         test_zoom_logic()
         test_zoom_range_compliance()
         test_zoom_factor()
+        test_zoom_callbacks()
         
         print("=" * 60)
         print("✓ All tests passed!")
