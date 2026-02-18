@@ -232,11 +232,6 @@ class DpgNodeEditor(object):
 
     _use_debug_print = False
 
-    # Zoom tracking (inspired by examples/zoomable_node_editor.py)
-    _zoom_level = 1.0
-    _min_zoom = 0.1
-    _max_zoom = 5.0
-
     def __init__(
         self,
         width=None,
@@ -248,7 +243,13 @@ class DpgNodeEditor(object):
         use_debug_print=False,
     ):
         self._node_id = 0
+        
+        # Zoom tracking (inspired by examples/zoomable_node_editor.py)
         self._zoom_level = 1.0
+        self._min_zoom = 0.1
+        self._max_zoom = 5.0
+        self._zoom_in_factor = 1.1  # Zoom in by 10%
+        self._zoom_out_factor = 0.9  # Zoom out by 10%
 
         self._node_factory_list = {}  # NodeFactorylist (objects), factory list
         self._node_instances_list = {}  # NodeInstanceList (objects), instances list
@@ -781,7 +782,7 @@ class DpgNodeEditor(object):
         This callback tracks the zoom level for UI feedback.
         """
         # Calculate zoom change (same formula as zoomable_node_editor example)
-        zoom_factor = 1.1 if delta > 0 else 0.9
+        zoom_factor = self._zoom_in_factor if delta > 0 else self._zoom_out_factor
         self._zoom_level *= zoom_factor
         
         # Clamp zoom to valid range (0.1x to 5.0x, same as example)
@@ -795,14 +796,14 @@ class DpgNodeEditor(object):
     
     def _callback_zoom_in(self):
         """Zoom in by 10% (simulate mouse wheel up)"""
-        self._zoom_level *= 1.1
+        self._zoom_level *= self._zoom_in_factor
         self._zoom_level = min(self._max_zoom, self._zoom_level)
         self._update_zoom_display()
         logger.info(f"Zoom in: {self._zoom_level:.2f}x")
     
     def _callback_zoom_out(self):
         """Zoom out by 10% (simulate mouse wheel down)"""
-        self._zoom_level *= 0.9
+        self._zoom_level *= self._zoom_out_factor
         self._zoom_level = max(self._min_zoom, self._zoom_level)
         self._update_zoom_display()
         logger.info(f"Zoom out: {self._zoom_level:.2f}x")
