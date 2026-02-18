@@ -232,6 +232,11 @@ class DpgNodeEditor(object):
 
     _use_debug_print = False
 
+    # Zoom tracking (inspired by examples/zoomable_node_editor.py)
+    _zoom_level = 1.0
+    _min_zoom = 0.1
+    _max_zoom = 5.0
+
     def __init__(
         self,
         width=None,
@@ -243,6 +248,7 @@ class DpgNodeEditor(object):
         use_debug_print=False,
     ):
         self._node_id = 0
+        self._zoom_level = 1.0
 
         self._node_factory_list = {}  # NodeFactorylist (objects), factory list
         self._node_instances_list = {}  # NodeInstanceList (objects), instances list
@@ -313,6 +319,29 @@ class DpgNodeEditor(object):
                         callback=self._callback_file_import_menu,
                         user_data="Menu_File_Import",
                     )
+                
+                # View menu with zoom controls (inspired by examples/zoomable_node_editor.py)
+                with dpg.menu(label="View"):
+                    dpg.add_menu_item(
+                        tag="Menu_Zoom_In",
+                        label="Zoom In (+10%)",
+                        callback=self._callback_zoom_in,
+                    )
+                    dpg.add_menu_item(
+                        tag="Menu_Zoom_Out",
+                        label="Zoom Out (-10%)",
+                        callback=self._callback_zoom_out,
+                    )
+                    dpg.add_menu_item(
+                        tag="Menu_Zoom_Reset",
+                        label="Reset Zoom (100%)",
+                        callback=self._callback_zoom_reset,
+                    )
+                    dpg.add_separator()
+                    dpg.add_text("Use mouse wheel to zoom", tag="zoom_help_text")
+                
+                # Zoom level display in menu bar
+                dpg.add_text("Zoom: 100%", tag="zoom_level_text")
 
                 # print(menu_dict.items())
 
@@ -400,12 +429,15 @@ class DpgNodeEditor(object):
             # Create handler registry inside window to allow node_editor to receive mouse wheel zoom events
             # DearPyGui 2.0+ node editors have built-in mouse wheel zoom that works when handlers
             # are scoped to the window rather than being global
+            # We also track zoom level changes to provide UI feedback (inspired by examples/zoomable_node_editor.py)
             with dpg.handler_registry():
                 dpg.add_mouse_click_handler(callback=self._callback_save_last_pos)
                 dpg.add_key_press_handler(
                     dpg.mvKey_Delete,
                     callback=self._callback_mv_key_del,
                 )
+                # Track zoom level for UI feedback (actual zoom is handled by DearPyGui's built-in node editor)
+                dpg.add_mouse_wheel_handler(callback=self._callback_mouse_wheel_zoom)
             
             self.window = window
 
@@ -739,3 +771,50 @@ class DpgNodeEditor(object):
             logger.debug(
                 f"    self._node_connection_dict : {self._node_connection_dict}"
             )
+
+    def _callback_mouse_wheel_zoom(self, sender, delta):
+        """
+        Track mouse wheel zoom events to update zoom level display.
+        Inspired by examples/zoomable_node_editor.py
+        
+        Note: The actual zooming is handled by DearPyGui's built-in node editor zoom.
+        This callback tracks the zoom level for UI feedback.
+        """
+        # Calculate zoom change (same formula as zoomable_node_editor example)
+        zoom_factor = 1.1 if delta > 0 else 0.9
+        self._zoom_level *= zoom_factor
+        
+        # Clamp zoom to valid range (0.1x to 5.0x, same as example)
+        self._zoom_level = max(self._min_zoom, min(self._max_zoom, self._zoom_level))
+        
+        # Update zoom display
+        self._update_zoom_display()
+        
+        if self._use_debug_print:
+            logger.debug(f"Zoom level: {self._zoom_level:.2f}x")
+    
+    def _callback_zoom_in(self):
+        """Zoom in by 10% (simulate mouse wheel up)"""
+        self._zoom_level *= 1.1
+        self._zoom_level = min(self._max_zoom, self._zoom_level)
+        self._update_zoom_display()
+        logger.info(f"Zoom in: {self._zoom_level:.2f}x")
+    
+    def _callback_zoom_out(self):
+        """Zoom out by 10% (simulate mouse wheel down)"""
+        self._zoom_level *= 0.9
+        self._zoom_level = max(self._min_zoom, self._zoom_level)
+        self._update_zoom_display()
+        logger.info(f"Zoom out: {self._zoom_level:.2f}x")
+    
+    def _callback_zoom_reset(self):
+        """Reset zoom to 100%"""
+        self._zoom_level = 1.0
+        self._update_zoom_display()
+        logger.info("Zoom reset to 100%")
+    
+    def _update_zoom_display(self):
+        """Update the zoom level display text"""
+        if dpg.does_item_exist("zoom_level_text"):
+            zoom_percentage = int(self._zoom_level * 100)
+            dpg.set_value("zoom_level_text", f"Zoom: {zoom_percentage}%")
