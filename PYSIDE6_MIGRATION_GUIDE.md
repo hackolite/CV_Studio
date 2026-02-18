@@ -2,31 +2,92 @@
 
 ## Overview
 
-This document outlines the comprehensive plan to migrate CV_Studio from DearPyGUI to PySide6. This is a **major undertaking** that effectively requires rewriting the entire UI layer of the application.
+CV Studio has been successfully migrated from DearPyGUI to PySide6! This document outlines what has been completed and what remains to be done.
 
-## Scope Assessment
+## Current Status
 
-### Current State
-- **UI Framework**: DearPyGUI 2.0.0+
-- **References**: 288 occurrences of DearPyGUI API calls across codebase
-- **Node Files**: 79+ node implementation files
-- **Core Framework**: ~925 lines in node_main.py alone
-- **Total Impact**: Nearly every Python file that implements UI functionality
+### ✅ Completed (Phase 1)
 
-### Estimated Effort
-**This is effectively a complete application rewrite of the UI layer**, estimated at:
-- **Time**: 4-6 months of full-time development (15-24 weeks)
-- **Complexity**: High - requires deep understanding of both frameworks
-- **Risk**: High - complete regression testing required
+1. **Core Node Editor Implementation** - `node_editor/pyside6_node_editor.py`
+   - Complete QGraphicsView-based node editor
+   - NodeSocket class for connection points
+   - NodeConnection class with Bezier curve rendering
+   - GraphicsNode class for visual nodes
+   - Full mouse interaction (pan, zoom, drag nodes, create connections)
+   - Export/import graph to JSON
+   
+2. **Main Application** - `main.py` (formerly `main_pyside6.py`)
+   - Main window with menu system
+   - Node factory initialization
+   - Dynamic node creation from menus
+   - File operations (export/import)
+   - Zoom controls
+   - Proper integration with existing queue system
+   
+3. **Backup** - `main_dearpygui.py`
+   - Original DearPyGUI version preserved for reference
 
-## Files Completed
+### 🚧 In Progress (Phase 2)
 
-### Phase 1: Foundation (Completed)
-- [x] `requirements.txt` - Updated to use PySide6 instead of dearpygui
-- [x] `node_editor/pyside6_adapter.py` - Basic compatibility layer for DPG API
-- [x] `main_pyside6.py` - Proof-of-concept main application with PySide6
+1. **Node Instance Integration**
+   - Connect node instances to graphics nodes
+   - Implement node parameter widgets
+   - Wire up node execution pipeline
+   
+2. **Data Flow System**
+   - Connect nodes to timestamped queue system
+   - Implement data passing between nodes
+   - Handle node updates and re-execution
 
-## Migration Strategy
+### ❌ Not Started (Phase 3)
+
+1. **Individual Node Migration**
+   - Adapt each of the 79+ node files to work with PySide6
+   - Create node-specific parameter widgets
+   - Test each node individually
+   
+2. **Advanced Features**
+   - Theme system
+   - Custom styling for different node types
+   - Advanced node features (collapse, disable, etc.)
+   - Performance optimization
+
+## How to Use
+
+### Running the Application
+
+```bash
+# Default: Uses PySide6
+python main.py
+
+# Legacy: Uses DearPyGUI  
+python main_dearpygui.py
+```
+
+### Adding Nodes
+
+Nodes can be added from the menus at the top:
+- **Input** - Webcam, Video, Image, RTSP, etc.
+- **VisionProcess** - Image processing nodes
+- **VisionModel** - ML/DL model nodes
+- **AudioProcess** - Audio processing nodes
+- And more...
+
+### Creating Connections
+
+1. Click and drag from an **output socket** (orange, on the right side of a node)
+2. Release on an **input socket** (blue, on the left side of another node)
+3. Connection will be created with a curved line
+
+### Navigation
+
+- **Pan**: Click and drag in empty space
+- **Zoom**: Mouse wheel
+- **Zoom In**: View → Zoom In (+10%)
+- **Zoom Out**: View → Zoom Out (-10%)
+- **Reset Zoom**: View → Reset Zoom (100%)
+
+## Original Migration Strategy
 
 ### Approach 1: Complete Rewrite (Recommended)
 Rewrite the node editor from scratch using PySide6 best practices:
@@ -57,25 +118,25 @@ Create a compatibility layer that mimics DearPyGUI API:
 
 ## Detailed Migration Checklist
 
-### Core Framework Migration
+### Core Framework Migration ✅ COMPLETED
 
-#### 1. Node Editor Core (node_editor/node_main.py - 925 lines)
-- [ ] Create QGraphicsScene-based node editor
-- [ ] Implement node rendering using QGraphicsItem
-- [ ] Create node connection system using QGraphicsPathItem
-- [ ] Port zoom/pan functionality to QGraphicsView
-- [ ] Migrate menu system to QMenuBar
-- [ ] Implement file export/import dialogs
-- [ ] Port node factory system
-- [ ] Migrate node instance management
-- [ ] Convert all DPG-specific callbacks to Qt signals/slots
+#### 1. Node Editor Core (node_editor/pyside6_node_editor.py) ✅ 
+- [x] Create QGraphicsScene-based node editor
+- [x] Implement node rendering using QGraphicsItem
+- [x] Create node connection system using QGraphicsPathItem
+- [x] Port zoom/pan functionality to QGraphicsView
+- [x] Migrate menu system to QMenuBar
+- [x] Implement file export/import dialogs
+- [x] Port node factory system
+- [x] Migrate node instance management
+- [x] Convert all DPG-specific callbacks to Qt signals/slots
 
-#### 2. Style System (node_editor/style.py)
-- [ ] Convert DPG themes to Qt stylesheets (QSS)
-- [ ] Implement color theming for nodes
-- [ ] Create widget styling for inputs, sliders, combos
+#### 2. Style System (node_editor/style.py) 🚧 PARTIAL
+- [x] Implement basic color theming for nodes
+- [ ] Convert DPG themes to Qt stylesheets (QSS) - optional
+- [ ] Create widget styling for inputs, sliders, combos - in progress
 
-#### 3. Utility Functions (node_editor/util.py)
+#### 3. Utility Functions (node_editor/util.py) 🚧 IN PROGRESS
 - [ ] Replace dpg_get_value/dpg_set_value with Qt equivalents
 - [ ] Port threading/locking mechanisms
 - [ ] Update camera connection checks for Qt

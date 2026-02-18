@@ -2,13 +2,15 @@
 
 > A professional node-based image processing application for computer vision development, verification, and comparison.
 
-## 🔄 PySide6 Migration Status
+## 🔄 UI Framework
 
-**Note**: A PySide6 migration effort is in progress. See [PYSIDE6_MIGRATION_GUIDE.md](PYSIDE6_MIGRATION_GUIDE.md) for details.
+**CV Studio now uses PySide6** as its default UI framework!
 
-- ✅ Foundation work completed (dependencies, adapter, proof-of-concept)
-- ⚠️ Full migration requires 4-6 months of development (79+ node files to convert)
-- 📝 Current version uses DearPyGUI and is fully functional
+- ✅ Complete PySide6 node editor implementation
+- ✅ Full node creation and connection system
+- ✅ Import/export functionality
+- 📝 Original DearPyGUI version available as `main_dearpygui.py` for reference
+- 🔧 Node functionality being progressively migrated - see [PYSIDE6_MIGRATION_GUIDE.md](PYSIDE6_MIGRATION_GUIDE.md)
 
 <img src="https://user-images.githubusercontent.com/37477845/172011014-23fb025e-68a5-4cb7-925f-c4417029966c.gif" loading="lazy" width="100%">
 
@@ -27,7 +29,7 @@ CV Studio is an advanced node-based image processing application that allows you
 
 ## ✨ Key Features
 
-- 🎨 **Visual Node Editor** - Intuitive drag-and-drop interface powered by DearPyGUI
+- 🎨 **Visual Node Editor** - Intuitive drag-and-drop interface powered by PySide6 (Qt)
 - 🔄 **Real-time Processing** - See results instantly as you build your pipeline
 - 🧩 **100+ Built-in Nodes** - Input, processing, ML/DL, analysis, and visualization nodes
 - 🤖 **ML/DL Integration** - Support for ONNX models, MediaPipe, and custom models
@@ -42,7 +44,7 @@ CV Studio is an advanced node-based image processing application that allows you
 Python          3.7 or later
 opencv-python   4.5.5.64 or later
 onnxruntime     1.16.0 or later
-dearpygui       2.0.0 or later
+PySide6         6.4.0 or later
 mediapipe       0.8.10 or later  ※ Required for MediaPipe nodes
 protobuf        3.20.0 or later  ※ Required for MediaPipe nodes
 filterpy        1.4.5 or later   ※ Required for MOT (Multi-Object Tracking) nodes
