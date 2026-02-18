@@ -32,6 +32,10 @@ class FactoryNode:
         node.tag_node_input_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':InputJson'
         node.tag_node_input_json_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':InputJsonValue'
         
+        # Sound type combo
+        tag_node_sound_type_name = tag_node_name + ':SoundType'
+        tag_node_sound_type_value_name = tag_node_name + ':SoundTypeValue'
+        
         # Duration slider
         tag_node_duration_name = tag_node_name + ':Duration'
         tag_node_duration_value_name = tag_node_name + ':DurationValue'
@@ -62,6 +66,19 @@ class FactoryNode:
                 dpg.add_text(
                     tag=node.tag_node_input_json_value_name,
                     default_value='Input JSON with boolean',
+                )
+            
+            # Sound type selection
+            with dpg.node_attribute(
+                tag=tag_node_sound_type_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=tag_node_sound_type_value_name,
+                    label="Sound Indicator",
+                    items=BuzzerNode.SOUND_TYPES,
+                    default_value=BuzzerNode.SOUND_TYPES[0],
+                    width=300,
                 )
             
             # Duration slider
@@ -109,11 +126,20 @@ class FactoryNode:
 
 
 class BuzzerNode(BaseNode):
-    _ver = '0.0.1'
+    _ver = '0.0.2'
     
     # Default configuration values
     DEFAULT_DURATION = 5.0
     DEFAULT_INSENSITIVITY_DELAY = 0.0
+    
+    # Available sound types
+    SOUND_TYPES = [
+        "Default Buzzer",
+        "Airplane Seatbelt Chime",
+        "Gentle Beep",
+        "Soft Chime",
+        "Ambient Tone"
+    ]
 
     def __init__(self):
         super().__init__()
@@ -124,45 +150,140 @@ class BuzzerNode(BaseNode):
         self._buzz_thread = None
         self._insensitivity_end_time = 0
         
-    def _generate_buzz_sound(self, duration):
+    def _generate_buzz_sound(self, duration, sound_type="Default Buzzer"):
         """
-        Generate a non-aggressive modulated buzzer sound.
-        Uses a frequency sweep to make it less harsh.
+        Generate different types of buzzer sounds.
+        Uses various sound patterns depending on the selected type.
+        
+        Args:
+            duration: Duration of the sound in seconds
+            sound_type: Type of sound to generate (from SOUND_TYPES)
+        
+        Returns:
+            tuple: (audio array, sample rate)
         """
         samplerate = 44100  # samples per second
         t = np.linspace(0, duration, int(samplerate * duration), endpoint=False)
         
-        # Create a modulated frequency sweep from 400Hz to 600Hz
-        # This is less aggressive than a constant high-pitched tone
-        start_freq = 400
-        end_freq = 600
-        frequency = start_freq + (end_freq - start_freq) * (t / duration)
-        
-        # Generate the base sine wave
-        audio = 0.3 * np.sin(2 * np.pi * frequency * t)
-        
-        # Apply amplitude modulation (tremolo) for a less aggressive sound
-        mod_freq = 8  # Modulation frequency in Hz
-        modulation = 0.5 + 0.5 * np.sin(2 * np.pi * mod_freq * t)
-        audio = audio * modulation
-        
-        # Apply fade-in and fade-out to avoid clicks
-        fade_duration = 0.05  # 50ms fade
-        fade_samples = int(samplerate * fade_duration)
-        
-        if len(audio) > 2 * fade_samples:
-            # Fade in
-            audio[:fade_samples] *= np.linspace(0, 1, fade_samples)
-            # Fade out
-            audio[-fade_samples:] *= np.linspace(1, 0, fade_samples)
+        if sound_type == "Airplane Seatbelt Chime":
+            # Two-tone chime similar to airplane seatbelt indicator
+            # Calm, pleasant ding-dong sound
+            freq1 = 800  # Hz - first tone (higher)
+            freq2 = 600  # Hz - second tone (lower)
+            
+            # First chime
+            tone_duration = min(0.3, duration / 2)
+            tone_samples = int(samplerate * tone_duration)
+            t1 = t[:tone_samples]
+            chime1 = 0.4 * np.sin(2 * np.pi * freq1 * t1)
+            
+            # Add harmonics for richer sound
+            chime1 += 0.2 * np.sin(2 * np.pi * freq1 * 2 * t1)
+            
+            # Fade out first chime
+            fade_out = np.exp(-5 * t1 / tone_duration)
+            chime1 = chime1 * fade_out
+            
+            # Second chime (after a short pause)
+            if duration > tone_duration * 1.2:
+                pause_samples = int(samplerate * 0.05)
+                t2 = t[:tone_samples]
+                chime2 = 0.4 * np.sin(2 * np.pi * freq2 * t2)
+                chime2 += 0.2 * np.sin(2 * np.pi * freq2 * 2 * t2)
+                chime2 = chime2 * fade_out
+                
+                # Combine chimes with pause
+                audio = np.zeros(len(t))
+                audio[:tone_samples] = chime1
+                audio[tone_samples + pause_samples:tone_samples + pause_samples + tone_samples] = chime2
+            else:
+                audio = np.zeros(len(t))
+                audio[:tone_samples] = chime1
+                
+        elif sound_type == "Gentle Beep":
+            # Single gentle beep at a pleasant frequency
+            frequency = 650  # Hz - comfortable middle frequency
+            audio = 0.3 * np.sin(2 * np.pi * frequency * t)
+            
+            # Smooth envelope for gentle sound
+            attack = 0.05  # 50ms attack
+            release = 0.1  # 100ms release
+            attack_samples = int(samplerate * attack)
+            release_samples = int(samplerate * release)
+            
+            if len(audio) > attack_samples + release_samples:
+                audio[:attack_samples] *= np.linspace(0, 1, attack_samples)
+                audio[-release_samples:] *= np.linspace(1, 0, release_samples)
+                
+        elif sound_type == "Soft Chime":
+            # Bell-like sound using multiple harmonics
+            # Fundamental frequency
+            f0 = 520  # Hz
+            
+            # Create bell harmonics (non-integer ratios for realistic bell)
+            audio = (0.4 * np.sin(2 * np.pi * f0 * t) +
+                    0.3 * np.sin(2 * np.pi * f0 * 2.4 * t) +
+                    0.2 * np.sin(2 * np.pi * f0 * 3.8 * t) +
+                    0.1 * np.sin(2 * np.pi * f0 * 5.2 * t))
+            
+            # Exponential decay for bell-like fade
+            decay = np.exp(-2 * t / duration)
+            audio = audio * decay
+            
+        elif sound_type == "Ambient Tone":
+            # Very calm, low-stress ambient tone
+            # Low frequency with gentle modulation
+            base_freq = 350  # Hz - lower, calmer frequency
+            
+            # Gentle frequency modulation
+            mod_depth = 20  # Hz
+            mod_freq = 0.5  # Very slow modulation
+            frequency = base_freq + mod_depth * np.sin(2 * np.pi * mod_freq * t)
+            
+            # Generate sound with modulated frequency
+            phase = 2 * np.pi * np.cumsum(frequency) / samplerate
+            audio = 0.25 * np.sin(phase)
+            
+            # Very gentle amplitude modulation
+            amp_mod = 0.9 + 0.1 * np.sin(2 * np.pi * 0.3 * t)
+            audio = audio * amp_mod
+            
+            # Smooth fade in and out
+            fade_duration = min(0.2, duration / 4)
+            fade_samples = int(samplerate * fade_duration)
+            if len(audio) > 2 * fade_samples:
+                audio[:fade_samples] *= np.linspace(0, 1, fade_samples)
+                audio[-fade_samples:] *= np.linspace(1, 0, fade_samples)
+                
+        else:  # "Default Buzzer"
+            # Original modulated frequency sweep
+            start_freq = 400
+            end_freq = 600
+            frequency = start_freq + (end_freq - start_freq) * (t / duration)
+            
+            # Generate the base sine wave
+            audio = 0.3 * np.sin(2 * np.pi * frequency * t)
+            
+            # Apply amplitude modulation (tremolo)
+            mod_freq = 8  # Modulation frequency in Hz
+            modulation = 0.5 + 0.5 * np.sin(2 * np.pi * mod_freq * t)
+            audio = audio * modulation
+            
+            # Apply fade-in and fade-out
+            fade_duration = 0.05  # 50ms fade
+            fade_samples = int(samplerate * fade_duration)
+            
+            if len(audio) > 2 * fade_samples:
+                audio[:fade_samples] *= np.linspace(0, 1, fade_samples)
+                audio[-fade_samples:] *= np.linspace(1, 0, fade_samples)
         
         return audio, samplerate
     
-    def _play_buzz_thread(self, duration):
+    def _play_buzz_thread(self, duration, sound_type="Default Buzzer"):
         """Thread function to play the buzzer sound"""
         try:
             self._is_buzzing = True
-            audio, samplerate = self._generate_buzz_sound(duration)
+            audio, samplerate = self._generate_buzz_sound(duration, sound_type)
             sd.play(audio, samplerate=samplerate)
             sd.wait()  # Wait for playback to complete
         except Exception as e:
@@ -172,6 +293,7 @@ class BuzzerNode(BaseNode):
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
         tag_node_name = f"{node_id}:{self.node_tag}"
+        tag_node_sound_type_value_name = f"{tag_node_name}:SoundTypeValue"
         tag_node_duration_value_name = f"{tag_node_name}:DurationValue"
         tag_node_delay_value_name = f"{tag_node_name}:DelayValue"
         tag_node_status_value_name = f"{tag_node_name}:StatusValue"
@@ -191,9 +313,11 @@ class BuzzerNode(BaseNode):
         
         # Get configuration values
         try:
+            sound_type = dpg_get_value(tag_node_sound_type_value_name)
             buzz_duration = float(dpg_get_value(tag_node_duration_value_name))
             insensitivity_delay = float(dpg_get_value(tag_node_delay_value_name))
         except (ValueError, TypeError):
+            sound_type = self.SOUND_TYPES[0]
             buzz_duration = self.DEFAULT_DURATION
             insensitivity_delay = self.DEFAULT_INSENSITIVITY_DELAY
         
@@ -236,7 +360,7 @@ class BuzzerNode(BaseNode):
             # Start buzzing
             self._buzz_thread = threading.Thread(
                 target=self._play_buzz_thread,
-                args=(buzz_duration,),
+                args=(buzz_duration, sound_type),
                 daemon=True
             )
             self._buzz_thread.start()
@@ -268,9 +392,11 @@ class BuzzerNode(BaseNode):
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
+        tag_node_sound_type_value_name = tag_node_name + ':SoundTypeValue'
         tag_node_duration_value_name = tag_node_name + ':DurationValue'
         tag_node_delay_value_name = tag_node_name + ':DelayValue'
 
+        sound_type_value = dpg_get_value(tag_node_sound_type_value_name)
         duration_value = float(dpg_get_value(tag_node_duration_value_name))
         delay_value = float(dpg_get_value(tag_node_delay_value_name))
         pos = dpg.get_item_pos(tag_node_name)
@@ -278,18 +404,22 @@ class BuzzerNode(BaseNode):
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
+        setting_dict[tag_node_sound_type_value_name] = sound_type_value
         setting_dict[tag_node_duration_value_name] = duration_value
         setting_dict[tag_node_delay_value_name] = delay_value
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = str(node_id) + ':' + self.node_tag
+        tag_node_sound_type_value_name = tag_node_name + ':SoundTypeValue'
         tag_node_duration_value_name = tag_node_name + ':DurationValue'
         tag_node_delay_value_name = tag_node_name + ':DelayValue'
 
+        sound_type_value = setting_dict.get(tag_node_sound_type_value_name, self.SOUND_TYPES[0])
         duration_value = float(setting_dict.get(tag_node_duration_value_name, self.DEFAULT_DURATION))
         delay_value = float(setting_dict.get(tag_node_delay_value_name, self.DEFAULT_INSENSITIVITY_DELAY))
         
+        dpg_set_value(tag_node_sound_type_value_name, sound_type_value)
         dpg_set_value(tag_node_duration_value_name, duration_value)
         dpg_set_value(tag_node_delay_value_name, delay_value)
 
