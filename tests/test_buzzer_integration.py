@@ -11,6 +11,12 @@ import time
 # Add the parent directory to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+# Mock GUI dependencies
+import unittest.mock as mock
+sys.modules['cv2'] = mock.MagicMock()
+sys.modules['dearpygui'] = mock.MagicMock()
+sys.modules['dearpygui.dearpygui'] = mock.MagicMock()
+sys.modules['sounddevice'] = mock.MagicMock()
 
 def test_buzzer_sound_parameters():
     """Test buzzer sound generation with different durations"""
@@ -56,13 +62,17 @@ def test_buzzer_constants():
     # Check class constants exist
     assert hasattr(BuzzerNode, 'DEFAULT_DURATION'), "DEFAULT_DURATION constant missing"
     assert hasattr(BuzzerNode, 'DEFAULT_INSENSITIVITY_DELAY'), "DEFAULT_INSENSITIVITY_DELAY constant missing"
+    assert hasattr(BuzzerNode, 'SOUND_TYPES'), "SOUND_TYPES constant missing"
     
     print(f"  DEFAULT_DURATION: {BuzzerNode.DEFAULT_DURATION}s")
     print(f"  DEFAULT_INSENSITIVITY_DELAY: {BuzzerNode.DEFAULT_INSENSITIVITY_DELAY}s")
+    print(f"  SOUND_TYPES: {len(BuzzerNode.SOUND_TYPES)} types available")
     
     # Verify values
     assert BuzzerNode.DEFAULT_DURATION == 5.0, "DEFAULT_DURATION should be 5.0"
     assert BuzzerNode.DEFAULT_INSENSITIVITY_DELAY == 0.0, "DEFAULT_INSENSITIVITY_DELAY should be 0.0"
+    assert len(BuzzerNode.SOUND_TYPES) >= 5, "Should have at least 5 sound types"
+    assert "Airplane Seatbelt Chime" in BuzzerNode.SOUND_TYPES, "Should have airplane chime"
     
     print("  ✓ Constants are correctly defined")
     
