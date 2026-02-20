@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import base64
-import threading
+import multiprocessing
+import queue
 import time
 from collections import deque
-from threading import Lock
 
 import cv2
 import numpy as np
@@ -14,6 +14,40 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node as BaseNode
+
+
+def _vlm_request_worker(result_queue, server, model, caption, frame):
+    """Run a VLM HTTP request in a subprocess.
+
+    Runs entirely outside the main process so the GUI event loop is never
+    blocked.  Results are returned through *result_queue* as a dict:
+      - ``{'text': <str>}`` on success
+      - ``{'error': <str>}`` on failure
+    """
+    try:
+        success, buffer = cv2.imencode('.jpg', frame)
+        if not success:
+            result_queue.put({'error': 'Encode error'})
+            return
+        img_b64 = base64.b64encode(buffer).decode('utf-8')
+        payload = {'model': model, 'caption': caption, 'image': img_b64}
+        response = requests.post(
+            server.rstrip('/') + '/vlm',
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+        data = response.json()
+        result_text = data.get('result', data.get('text', str(data)))
+        result_queue.put({'text': result_text})
+    except requests.exceptions.ConnectionError:
+        result_queue.put({'error': 'Connection error'})
+    except requests.exceptions.Timeout:
+        result_queue.put({'error': 'Timeout'})
+    except requests.exceptions.HTTPError as e:
+        result_queue.put({'error': f'HTTP {e.response.status_code}'})
+    except Exception as e:
+        result_queue.put({'error': f'Error: {str(e)[:40]}'})
 
 
 class FactoryNode:
@@ -201,9 +235,9 @@ class VLMNode(BaseNode):
         self._last_result_text = ''
         self._text_lines = deque(maxlen=self.MAX_LINES)  # rolling 20-line buffer
         self._is_requesting = False
-        self._request_thread = None
+        self._request_process = None
+        self._result_queue = None
         self._pending_frame = None
-        self._pending_frame_lock = Lock()
         self._insensitivity_end_time = 0
 
     def _encode_image(self, frame):
@@ -297,62 +331,6 @@ class VLMNode(BaseNode):
 
         return output
 
-    def _send_request(self, server, model, caption, frame, tag_status, tag_output, small_w, small_h):
-        """Send the VLM request in a background thread."""
-        try:
-            dpg_set_value(tag_status, 'Requesting...')
-            img_b64 = self._encode_image(frame)
-            if img_b64 is None:
-                dpg_set_value(tag_status, 'Encode error')
-                return
-
-            payload = {
-                'model': model,
-                'caption': caption,
-                'image': img_b64,
-            }
-            response = requests.post(
-                server.rstrip('/') + '/vlm',
-                json=payload,
-                timeout=30,
-            )
-            response.raise_for_status()
-            data = response.json()
-            result_text = data.get('result', data.get('text', str(data)))
-
-            self._last_result_text = result_text
-
-            # Wrap the response into lines and append to the rolling 20-line buffer
-            max_text_w = self.TEXT_CANVAS_W - 2 * self.TEXT_MARGIN
-            new_lines = self._wrap_text_to_lines(result_text, max_text_w)
-            for line in new_lines:
-                self._text_lines.append(line)
-
-            # Render the rolling buffer as a large clear text canvas
-            output_frame = self._render_text_canvas()
-            with self._pending_frame_lock:
-                self._pending_frame = output_frame
-
-            texture = self.convert_cv_to_dpg(output_frame, self.TEXT_CANVAS_W, self.TEXT_CANVAS_H)
-            try:
-                dpg_set_value(tag_output, texture)
-            except (SystemError, AttributeError):
-                pass
-
-            short_status = result_text[:40] + ('...' if len(result_text) > 40 else '')
-            dpg_set_value(tag_status, short_status)
-
-        except requests.exceptions.ConnectionError:
-            dpg_set_value(tag_status, 'Connection error')
-        except requests.exceptions.Timeout:
-            dpg_set_value(tag_status, 'Timeout')
-        except requests.exceptions.HTTPError as e:
-            dpg_set_value(tag_status, f'HTTP {e.response.status_code}')
-        except Exception as e:
-            dpg_set_value(tag_status, f'Error: {str(e)[:40]}')
-        finally:
-            self._is_requesting = False
-
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
         tag_node_name = f"{node_id}:{self.node_tag}"
         tag_node_model_value_name = f"{tag_node_name}:ModelValue"
@@ -424,40 +402,61 @@ class VLMNode(BaseNode):
 
         current_time = time.time()
 
+        # Poll the result queue from a previously launched process (non-blocking)
+        if self._result_queue is not None:
+            try:
+                result = self._result_queue.get_nowait()
+                self._result_queue.close()
+                self._result_queue = None
+                if 'error' in result:
+                    dpg_set_value(tag_node_status_value_name, result['error'])
+                else:
+                    result_text = result['text']
+                    self._last_result_text = result_text
+                    max_text_w = self.TEXT_CANVAS_W - 2 * self.TEXT_MARGIN
+                    new_lines = self._wrap_text_to_lines(result_text, max_text_w)
+                    for line in new_lines:
+                        self._text_lines.append(line)
+                    output_frame = self._render_text_canvas()
+                    self._pending_frame = output_frame
+                    texture = self.convert_cv_to_dpg(output_frame, self.TEXT_CANVAS_W, self.TEXT_CANVAS_H)
+                    try:
+                        dpg_set_value(tag_node_output_image_value_name, texture)
+                    except (SystemError, AttributeError):
+                        pass
+                    short_status = result_text[:40] + ('...' if len(result_text) > 40 else '')
+                    dpg_set_value(tag_node_status_value_name, short_status)
+                self._is_requesting = False
+            except queue.Empty:
+                pass
+
         # Check if we're in insensitivity period
         if current_time < self._insensitivity_end_time:
             remaining = self._insensitivity_end_time - current_time
             dpg_set_value(tag_node_status_value_name, f'Insensitive ({remaining:.1f}s)')
-            with self._pending_frame_lock:
-                output_frame = self._pending_frame
-            return {"image": output_frame, "json": None, "audio": None}
+            return {"image": self._pending_frame, "json": None, "audio": None}
 
-        # Launch request when action fires and not already busy
+        # Launch request in a subprocess when action fires and not already busy
         if should_act and frame is not None and not self._is_requesting:
             self._is_requesting = True
             self._insensitivity_end_time = current_time + insensitivity_delay
-            self._request_thread = threading.Thread(
-                target=self._send_request,
-                args=(
-                    server, model, caption, frame,
-                    tag_node_status_value_name,
-                    tag_node_output_image_value_name,
-                    small_window_w, small_window_h,
-                ),
+            dpg_set_value(tag_node_status_value_name, 'Requesting...')
+            self._result_queue = multiprocessing.Queue()
+            self._request_process = multiprocessing.Process(
+                target=_vlm_request_worker,
+                args=(self._result_queue, server, model, caption, frame.copy()),
                 daemon=True,
             )
-            self._request_thread.start()
+            self._request_process.start()
 
-        # Return last rendered output frame (or None if none yet)
-        with self._pending_frame_lock:
-            output_frame = self._pending_frame
-        return {"image": output_frame, "json": None, "audio": None}
+        return {"image": self._pending_frame, "json": None, "audio": None}
 
     def close(self, node_id):
         """Clean up when node is closed."""
         self._is_requesting = False
-        if self._request_thread and self._request_thread.is_alive():
-            self._request_thread.join(timeout=1.0)
+        if self._request_process and self._request_process.is_alive():
+            self._request_process.terminate()
+            self._request_process.join(timeout=1.0)
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
