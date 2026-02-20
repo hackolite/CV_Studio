@@ -25,6 +25,7 @@ def make_node():
     node = VLMNode.__new__(VLMNode)
     node._text_lines = deque(maxlen=VLMNode.MAX_LINES)
     node._new_lines_count = 0
+    node._last_result_text = ''
     node._opencv_setting_dict = {}
     return node
 
@@ -277,6 +278,7 @@ def test_insensitivity_blocks_during_cooldown():
     node._request_process = None
     node._result_queue = None
     node._pending_frame = None
+    node._last_result_text = ''
     node._insensitivity_end_time = time.time() + 100  # far in the future
 
     status_calls = []
@@ -310,6 +312,7 @@ def test_insensitivity_allows_after_cooldown():
     node._request_process = None
     node._result_queue = None
     node._pending_frame = None
+    node._last_result_text = ''
     node._insensitivity_end_time = 0  # already expired
 
     # No connections → should_act = False, so no request is launched, but no insensitivity block
@@ -326,6 +329,100 @@ def test_insensitivity_allows_after_cooldown():
     # No insensitivity block: normal return path reached
     assert result == {"image": None, "json": None, "audio": None}
     assert node._is_requesting is False
+
+
+# ---------------------------------------------------------------------------
+# JSON text output
+# ---------------------------------------------------------------------------
+
+def test_json_output_is_none_when_no_result():
+    """Before any API response, json output must be None."""
+    node = VLMNode.__new__(VLMNode)
+    node._text_lines = deque(maxlen=VLMNode.MAX_LINES)
+    node._opencv_setting_dict = {}
+    node._is_requesting = False
+    node._request_process = None
+    node._result_queue = None
+    node._pending_frame = None
+    node._last_result_text = ''
+    node._insensitivity_end_time = 0
+
+    with mock.patch('node.ActionNode.node_vlm.dpg_get_value', return_value='0.0'), \
+         mock.patch('node.ActionNode.node_vlm.dpg_set_value'):
+        result = node.update(
+            node_id=1,
+            connection_list=[],
+            node_image_dict={},
+            node_result_dict={},
+            node_audio_dict={},
+        )
+
+    assert result['json'] is None
+
+
+def test_json_output_contains_last_result_text():
+    """After an API response, json output must expose the result text under 'TEXT'."""
+    node = VLMNode.__new__(VLMNode)
+    node._text_lines = deque(maxlen=VLMNode.MAX_LINES)
+    node._new_lines_count = 0
+    node._opencv_setting_dict = {}
+    node._is_requesting = True
+    node._request_process = None
+    node._pending_frame = None
+    node._last_result_text = ''
+    node._insensitivity_end_time = 0
+
+    # Simulate a completed API response via a mock queue
+    q = mock.MagicMock()
+    q.get_nowait.return_value = {'text': 'The cat is sitting on the mat.'}
+    node._result_queue = q
+
+    with mock.patch('node.ActionNode.node_vlm.dpg_get_value', return_value='0.0'), \
+         mock.patch('node.ActionNode.node_vlm.dpg_set_value'):
+        result = node.update(
+            node_id=1,
+            connection_list=[],
+            node_image_dict={},
+            node_result_dict={},
+            node_audio_dict={},
+        )
+
+    assert result['json'] == {'TEXT': 'The cat is sitting on the mat.'}
+    assert node._last_result_text == 'The cat is sitting on the mat.'
+
+
+def test_json_output_updated_on_each_response():
+    """The json output must reflect the most recently received text."""
+    def run_update_with_text(node, text):
+        q = mock.MagicMock()
+        q.get_nowait.return_value = {'text': text}
+        node._result_queue = q
+        node._is_requesting = True
+        with mock.patch('node.ActionNode.node_vlm.dpg_get_value', return_value='0.0'), \
+             mock.patch('node.ActionNode.node_vlm.dpg_set_value'):
+            return node.update(
+                node_id=1,
+                connection_list=[],
+                node_image_dict={},
+                node_result_dict={},
+                node_audio_dict={},
+            )
+
+    node = VLMNode.__new__(VLMNode)
+    node._text_lines = deque(maxlen=VLMNode.MAX_LINES)
+    node._new_lines_count = 0
+    node._opencv_setting_dict = {}
+    node._is_requesting = True
+    node._request_process = None
+    node._pending_frame = None
+    node._last_result_text = ''
+    node._insensitivity_end_time = 0
+
+    result1 = run_update_with_text(node, 'First response.')
+    assert result1['json'] == {'TEXT': 'First response.'}
+
+    result2 = run_update_with_text(node, 'Second response.')
+    assert result2['json'] == {'TEXT': 'Second response.'}
 
 
 if __name__ == '__main__':

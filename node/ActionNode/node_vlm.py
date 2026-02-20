@@ -77,6 +77,10 @@ class FactoryNode:
         node.tag_node_output_image_name = tag_node_name + ':' + node.TYPE_IMAGE + ':OutputImage'
         node.tag_node_output_image_value_name = tag_node_name + ':' + node.TYPE_IMAGE + ':OutputImageValue'
 
+        # JSON Text Output
+        node.tag_node_output_json_name = tag_node_name + ':' + node.TYPE_JSON + ':OutputJson'
+        node.tag_node_output_json_value_name = tag_node_name + ':' + node.TYPE_JSON + ':OutputJsonValue'
+
         # Static widget tags
         tag_node_model_name = tag_node_name + ':Model'
         tag_node_model_value_name = tag_node_name + ':ModelValue'
@@ -208,6 +212,18 @@ class FactoryNode:
                 attribute_type=dpg.mvNode_Attr_Output,
             ):
                 dpg.add_image(node.tag_node_output_image_value_name)
+
+            # JSON text output
+            with dpg.node_attribute(
+                tag=node.tag_node_output_json_name,
+                attribute_type=dpg.mvNode_Attr_Output,
+            ):
+                dpg.add_button(
+                    tag=node.tag_node_output_json_value_name,
+                    label='Text',
+                    width=240,
+                    enabled=False,
+                )
 
         return node
 
@@ -449,7 +465,8 @@ class VLMNode(BaseNode):
         if current_time < self._insensitivity_end_time:
             remaining = self._insensitivity_end_time - current_time
             dpg_set_value(tag_node_status_value_name, f'Next API call in {remaining:.1f}s')
-            return {"image": self._pending_frame, "json": None, "audio": None}
+            json_out = {"TEXT": self._last_result_text} if self._last_result_text else None
+            return {"image": self._pending_frame, "json": json_out, "audio": None}
 
         # Launch request in a subprocess when action fires and not already busy
         if should_act and frame is not None and not self._is_requesting:
@@ -464,7 +481,8 @@ class VLMNode(BaseNode):
             )
             self._request_process.start()
 
-        return {"image": self._pending_frame, "json": None, "audio": None}
+        json_out = {"TEXT": self._last_result_text} if self._last_result_text else None
+        return {"image": self._pending_frame, "json": json_out, "audio": None}
 
     def close(self, node_id):
         """Clean up when node is closed."""
