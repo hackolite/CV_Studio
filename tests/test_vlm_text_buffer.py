@@ -108,6 +108,16 @@ def test_render_canvas_returns_correct_shape():
     assert canvas.shape == (VLMNode.TEXT_CANVAS_H, VLMNode.TEXT_CANVAS_W, 3)
 
 
+def test_render_canvas_respects_instance_text_canvas_w():
+    """When add_node overrides TEXT_CANVAS_W to match process_width, _render_text_canvas
+    must produce a canvas whose width equals the overridden value (same as input image)."""
+    node = make_node()
+    node.TEXT_CANVAS_W = 240  # same as default process_width / bounding-box image width
+    node._text_lines.append("Hello world")
+    canvas = node._render_text_canvas()
+    assert canvas.shape == (VLMNode.TEXT_CANVAS_H, 240, 3)
+
+
 def test_render_empty_buffer_returns_black_canvas():
     node = make_node()
     canvas = node._render_text_canvas()
