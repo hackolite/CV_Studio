@@ -39,8 +39,13 @@ def test_max_lines_is_20():
 
 
 def test_canvas_dimensions():
-    assert VLMNode.TEXT_CANVAS_W == 480
+    assert VLMNode.TEXT_CANVAS_W == 320
     assert VLMNode.TEXT_CANVAS_H == 680
+
+
+def test_canvas_min_height():
+    """Minimum display height should be ~1/3 of TEXT_CANVAS_H."""
+    assert VLMNode.TEXT_CANVAS_MIN_H == 227
 
 
 def test_font_scale_is_large():

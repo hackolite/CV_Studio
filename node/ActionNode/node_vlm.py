@@ -81,6 +81,9 @@ class FactoryNode:
         node.tag_node_output_json_name = tag_node_name + ':' + node.TYPE_JSON + ':OutputJson'
         node.tag_node_output_json_value_name = tag_node_name + ':' + node.TYPE_JSON + ':OutputJsonValue'
 
+        # Canvas image display widget (separate from texture tag to allow dynamic height)
+        node.tag_node_output_canvas_image_name = tag_node_name + ':CanvasImage'
+
         # Static widget tags
         tag_node_model_name = tag_node_name + ':Model'
         tag_node_model_value_name = tag_node_name + ':ModelValue'
@@ -211,7 +214,11 @@ class FactoryNode:
                 tag=node.tag_node_output_image_name,
                 attribute_type=dpg.mvNode_Attr_Output,
             ):
-                dpg.add_image(node.tag_node_output_image_value_name)
+                dpg.add_image(
+                    node.tag_node_output_image_value_name,
+                    tag=node.tag_node_output_canvas_image_name,
+                    height=VLMNode.TEXT_CANVAS_MIN_H,
+                )
 
             # JSON text output
             with dpg.node_attribute(
@@ -237,8 +244,9 @@ class VLMNode(BaseNode):
     DEFAULT_INSENSITIVITY_DELAY = 0.0
 
     MAX_LINES = 20
-    TEXT_CANVAS_W = 480
-    TEXT_CANVAS_H = 680   # 20 lines * 32px + 40px margin
+    TEXT_CANVAS_W = 320       # reduced by ~1/3 (was 480)
+    TEXT_CANVAS_H = 680       # max texture height; 20 lines * 32px + 40px margin
+    TEXT_CANVAS_MIN_H = 227   # ~1/3 of TEXT_CANVAS_H, minimum display height
     TEXT_LINE_HEIGHT = 32
     TEXT_FONT_SCALE = 0.9
     TEXT_THICKNESS = 2
@@ -366,6 +374,7 @@ class VLMNode(BaseNode):
         tag_node_status_value_name = f"{tag_node_name}:StatusValue"
         tag_node_input_image_value_name = f"{tag_node_name}:{self.TYPE_IMAGE}:InputImageValue"
         tag_node_output_image_value_name = f"{tag_node_name}:{self.TYPE_IMAGE}:OutputImageValue"
+        tag_node_output_canvas_image_name = f"{tag_node_name}:CanvasImage"
 
         small_window_w = self._opencv_setting_dict.get('process_width', 240) if self._opencv_setting_dict else 240
         small_window_h = self._opencv_setting_dict.get('process_height', 135) if self._opencv_setting_dict else 135
@@ -451,6 +460,11 @@ class VLMNode(BaseNode):
                     texture = self.convert_cv_to_dpg(output_frame, self.TEXT_CANVAS_W, self.TEXT_CANVAS_H)
                     try:
                         dpg_set_value(tag_node_output_image_value_name, texture)
+                        # Dynamically resize: small for short text, grows for long text
+                        n_lines = len(self._text_lines)
+                        needed_h = 2 * self.TEXT_MARGIN + n_lines * self.TEXT_LINE_HEIGHT
+                        display_h = max(self.TEXT_CANVAS_MIN_H, min(needed_h, self.TEXT_CANVAS_H))
+                        dpg.configure_item(tag_node_output_canvas_image_name, height=display_h)
                     except (SystemError, AttributeError):
                         pass
                     short_status = result_text[:40] + ('...' if len(result_text) > 40 else '')
