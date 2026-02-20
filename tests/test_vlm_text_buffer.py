@@ -221,15 +221,14 @@ def test_insensitivity_end_time_initialized_to_zero():
 def test_insensitivity_blocks_during_cooldown():
     """When _insensitivity_end_time is in the future, update must return early."""
     import time
-    from threading import Lock
 
     node = VLMNode.__new__(VLMNode)
     node._text_lines = deque(maxlen=VLMNode.MAX_LINES)
     node._opencv_setting_dict = {}
     node._is_requesting = False
-    node._request_thread = None
+    node._request_process = None
+    node._result_queue = None
     node._pending_frame = None
-    node._pending_frame_lock = Lock()
     node._insensitivity_end_time = time.time() + 100  # far in the future
 
     status_calls = []
@@ -255,15 +254,14 @@ def test_insensitivity_blocks_during_cooldown():
 def test_insensitivity_allows_after_cooldown():
     """After insensitivity period expires, a new trigger should be able to fire."""
     import time
-    from threading import Lock
 
     node = VLMNode.__new__(VLMNode)
     node._text_lines = deque(maxlen=VLMNode.MAX_LINES)
     node._opencv_setting_dict = {}
     node._is_requesting = False
-    node._request_thread = None
+    node._request_process = None
+    node._result_queue = None
     node._pending_frame = None
-    node._pending_frame_lock = Lock()
     node._insensitivity_end_time = 0  # already expired
 
     # No connections → should_act = False, so no request is launched, but no insensitivity block
