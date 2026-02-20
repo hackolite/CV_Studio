@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import base64
 import threading
+from collections import deque
 from threading import Lock
 
 import cv2
@@ -62,6 +63,12 @@ class FactoryNode:
         black_image = np.zeros((small_window_h, small_window_w, 3))
         black_texture = node.convert_cv_to_dpg(black_image, small_window_w, small_window_h)
 
+        # Text canvas for the output: large black canvas sized for 20 lines
+        canvas_w = VLMNode.TEXT_CANVAS_W
+        canvas_h = VLMNode.TEXT_CANVAS_H
+        black_canvas = np.zeros((canvas_h, canvas_w, 3))
+        canvas_texture = node.convert_cv_to_dpg(black_canvas, canvas_w, canvas_h)
+
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(
                 small_window_w,
@@ -71,9 +78,9 @@ class FactoryNode:
                 format=dpg.mvFormat_Float_rgb,
             )
             dpg.add_raw_texture(
-                small_window_w,
-                small_window_h,
-                black_texture,
+                canvas_w,
+                canvas_h,
+                canvas_texture,
                 tag=node.tag_node_output_image_value_name,
                 format=dpg.mvFormat_Float_rgb,
             )
@@ -160,11 +167,20 @@ class VLMNode(BaseNode):
     DEFAULT_CAPTION = 'Describe the image'
     DEFAULT_SERVER = 'http://localhost:5000'
 
+    MAX_LINES = 20
+    TEXT_CANVAS_W = 480
+    TEXT_CANVAS_H = 680   # 20 lines * 32px + 40px margin
+    TEXT_LINE_HEIGHT = 32
+    TEXT_FONT_SCALE = 0.9
+    TEXT_THICKNESS = 2
+    TEXT_MARGIN = 10
+
     def __init__(self):
         super().__init__()
         self.node_label = 'VLM'
         self.node_tag = 'VLM'
         self._last_result_text = ''
+        self._text_lines = deque(maxlen=self.MAX_LINES)  # rolling 20-line buffer
         self._is_requesting = False
         self._request_thread = None
         self._pending_frame = None
@@ -177,8 +193,48 @@ class VLMNode(BaseNode):
             return None
         return base64.b64encode(buffer).decode('utf-8')
 
+    def _wrap_text_to_lines(self, text, max_width):
+        """Wrap text into lines that fit within max_width pixels at the canvas font size."""
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        words = text.split()
+        lines = []
+        current_line = ''
+        for word in words:
+            test_line = (current_line + ' ' + word).strip()
+            (tw, _), _ = cv2.getTextSize(
+                test_line, font, self.TEXT_FONT_SCALE, self.TEXT_THICKNESS
+            )
+            if tw <= max_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        if current_line:
+            lines.append(current_line)
+        return lines
+
+    def _render_text_canvas(self):
+        """Render the rolling 20-line text buffer onto a black canvas with large clear text."""
+        canvas = np.zeros((self.TEXT_CANVAS_H, self.TEXT_CANVAS_W, 3), dtype=np.uint8)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        color = (255, 255, 255)
+        lines = list(self._text_lines)
+        for i, line in enumerate(lines):
+            y = self.TEXT_MARGIN + (i + 1) * self.TEXT_LINE_HEIGHT
+            # Defensive guard: the deque is bounded to MAX_LINES so this should never trigger
+            if y > self.TEXT_CANVAS_H - self.TEXT_MARGIN:
+                break
+            cv2.putText(
+                canvas, line,
+                (self.TEXT_MARGIN, y),
+                font, self.TEXT_FONT_SCALE, color,
+                self.TEXT_THICKNESS, cv2.LINE_AA,
+            )
+        return canvas
+
     def _draw_text_on_image(self, frame, text):
-        """Draw wrapped text overlay on a copy of the frame."""
+        """Draw wrapped text overlay on a copy of the frame (kept for legacy use)."""
         output = frame.copy()
         h, w = output.shape[:2]
 
@@ -245,11 +301,19 @@ class VLMNode(BaseNode):
             result_text = data.get('result', data.get('text', str(data)))
 
             self._last_result_text = result_text
-            output_frame = self._draw_text_on_image(frame, result_text)
+
+            # Wrap the response into lines and append to the rolling 20-line buffer
+            max_text_w = self.TEXT_CANVAS_W - 2 * self.TEXT_MARGIN
+            new_lines = self._wrap_text_to_lines(result_text, max_text_w)
+            for line in new_lines:
+                self._text_lines.append(line)
+
+            # Render the rolling buffer as a large clear text canvas
+            output_frame = self._render_text_canvas()
             with self._pending_frame_lock:
                 self._pending_frame = output_frame
 
-            texture = self.convert_cv_to_dpg(output_frame, small_w, small_h)
+            texture = self.convert_cv_to_dpg(output_frame, self.TEXT_CANVAS_W, self.TEXT_CANVAS_H)
             try:
                 dpg_set_value(tag_output, texture)
             except (SystemError, AttributeError):
