@@ -46,6 +46,10 @@ def test_font_scale_is_large():
     assert VLMNode.TEXT_FONT_SCALE >= 0.8
 
 
+def test_default_insensitivity_delay():
+    assert VLMNode.DEFAULT_INSENSITIVITY_DELAY == 0.0
+
+
 # ---------------------------------------------------------------------------
 # _wrap_text_to_lines
 # ---------------------------------------------------------------------------
@@ -107,7 +111,20 @@ def test_render_with_text_has_non_black_pixels():
     node = make_node()
     node._text_lines.append("Some response text")
     canvas = node._render_text_canvas()
-    assert canvas.sum() > 0  # at least some white pixels from text
+    assert canvas.sum() > 0  # at least some red pixels from text
+
+
+def test_render_text_is_red():
+    """Text must be rendered in red (BGR: B=0, G=0, R>0)."""
+    node = make_node()
+    node._text_lines.append("Red text here")
+    canvas = node._render_text_canvas()
+    # Red channel (index 2 in BGR) must have non-zero pixels
+    assert canvas[:, :, 2].max() > 0, "Red channel should have non-zero pixels"
+    # Blue channel (index 0 in BGR) should be zero (no blue component in pure red)
+    assert canvas[:, :, 0].max() == 0, "Blue channel should be zero for red text"
+    # Green channel (index 1 in BGR) should be zero for pure red
+    assert canvas[:, :, 1].max() == 0, "Green channel should be zero for red text"
 
 
 def test_render_canvas_dtype_is_uint8():
@@ -185,6 +202,84 @@ def test_20_line_buffer_renders_all_lines():
     assert len(node._text_lines) == 20
     canvas = node._render_text_canvas()
     assert canvas.sum() > 0
+
+
+# ---------------------------------------------------------------------------
+# Insensitivity delay
+# ---------------------------------------------------------------------------
+
+def test_insensitivity_end_time_initialized_to_zero():
+    """VLMNode should start with _insensitivity_end_time == 0 (no cooldown)."""
+    from collections import deque
+    node = VLMNode.__new__(VLMNode)
+    node._text_lines = deque(maxlen=VLMNode.MAX_LINES)
+    node._opencv_setting_dict = {}
+    node._insensitivity_end_time = 0
+    assert node._insensitivity_end_time == 0
+
+
+def test_insensitivity_blocks_during_cooldown():
+    """When _insensitivity_end_time is in the future, update must return early."""
+    import time
+    from threading import Lock
+
+    node = VLMNode.__new__(VLMNode)
+    node._text_lines = deque(maxlen=VLMNode.MAX_LINES)
+    node._opencv_setting_dict = {}
+    node._is_requesting = False
+    node._request_thread = None
+    node._pending_frame = None
+    node._pending_frame_lock = Lock()
+    node._insensitivity_end_time = time.time() + 100  # far in the future
+
+    status_calls = []
+
+    with mock.patch('node.ActionNode.node_vlm.dpg_get_value', return_value='test'), \
+         mock.patch('node.ActionNode.node_vlm.dpg_set_value', side_effect=lambda tag, val: status_calls.append((tag, val))):
+        result = node.update(
+            node_id=1,
+            connection_list=[],
+            node_image_dict={},
+            node_result_dict={},
+            node_audio_dict={},
+        )
+
+    # Must return without launching a request
+    assert result == {"image": None, "json": None, "audio": None}
+    assert node._is_requesting is False
+    # Status must contain "Insensitive"
+    assert any('Insensitive' in str(val) for _, val in status_calls), \
+        f"Expected 'Insensitive' in status, got: {status_calls}"
+
+
+def test_insensitivity_allows_after_cooldown():
+    """After insensitivity period expires, a new trigger should be able to fire."""
+    import time
+    from threading import Lock
+
+    node = VLMNode.__new__(VLMNode)
+    node._text_lines = deque(maxlen=VLMNode.MAX_LINES)
+    node._opencv_setting_dict = {}
+    node._is_requesting = False
+    node._request_thread = None
+    node._pending_frame = None
+    node._pending_frame_lock = Lock()
+    node._insensitivity_end_time = 0  # already expired
+
+    # No connections → should_act = False, so no request is launched, but no insensitivity block
+    with mock.patch('node.ActionNode.node_vlm.dpg_get_value', return_value='0.0'), \
+         mock.patch('node.ActionNode.node_vlm.dpg_set_value'):
+        result = node.update(
+            node_id=1,
+            connection_list=[],
+            node_image_dict={},
+            node_result_dict={},
+            node_audio_dict={},
+        )
+
+    # No insensitivity block: normal return path reached
+    assert result == {"image": None, "json": None, "audio": None}
+    assert node._is_requesting is False
 
 
 if __name__ == '__main__':

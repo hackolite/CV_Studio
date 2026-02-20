@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import base64
 import threading
+import time
 from collections import deque
 from threading import Lock
 
@@ -51,6 +52,9 @@ class FactoryNode:
 
         tag_node_server_name = tag_node_name + ':Server'
         tag_node_server_value_name = tag_node_name + ':ServerValue'
+
+        tag_node_delay_name = tag_node_name + ':Delay'
+        tag_node_delay_value_name = tag_node_name + ':DelayValue'
 
         tag_node_status_name = tag_node_name + ':Status'
         tag_node_status_value_name = tag_node_name + ':StatusValue'
@@ -140,6 +144,20 @@ class FactoryNode:
                     width=240,
                 )
 
+            # Insensitivity delay slider
+            with dpg.node_attribute(
+                tag=tag_node_delay_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_float(
+                    tag=tag_node_delay_value_name,
+                    label="Insensitivity Delay (s)",
+                    default_value=VLMNode.DEFAULT_INSENSITIVITY_DELAY,
+                    min_value=0.0,
+                    max_value=60.0,
+                    width=240,
+                )
+
             # Status indicator
             with dpg.node_attribute(
                 tag=tag_node_status_name,
@@ -166,6 +184,7 @@ class VLMNode(BaseNode):
     MODELS = ['florence-base', 'moondream']
     DEFAULT_CAPTION = 'Describe the image'
     DEFAULT_SERVER = 'http://localhost:5000'
+    DEFAULT_INSENSITIVITY_DELAY = 0.0
 
     MAX_LINES = 20
     TEXT_CANVAS_W = 480
@@ -185,6 +204,7 @@ class VLMNode(BaseNode):
         self._request_thread = None
         self._pending_frame = None
         self._pending_frame_lock = Lock()
+        self._insensitivity_end_time = 0
 
     def _encode_image(self, frame):
         """Encode a BGR OpenCV frame to a base64 JPEG string."""
@@ -218,7 +238,7 @@ class VLMNode(BaseNode):
         """Render the rolling 20-line text buffer onto a black canvas with large clear text."""
         canvas = np.zeros((self.TEXT_CANVAS_H, self.TEXT_CANVAS_W, 3), dtype=np.uint8)
         font = cv2.FONT_HERSHEY_SIMPLEX
-        color = (255, 255, 255)
+        color = (0, 0, 255)  # red (BGR)
         lines = list(self._text_lines)
         for i, line in enumerate(lines):
             y = self.TEXT_MARGIN + (i + 1) * self.TEXT_LINE_HEIGHT
@@ -338,6 +358,7 @@ class VLMNode(BaseNode):
         tag_node_model_value_name = f"{tag_node_name}:ModelValue"
         tag_node_caption_value_name = f"{tag_node_name}:CaptionValue"
         tag_node_server_value_name = f"{tag_node_name}:ServerValue"
+        tag_node_delay_value_name = f"{tag_node_name}:DelayValue"
         tag_node_status_value_name = f"{tag_node_name}:StatusValue"
         tag_node_input_image_value_name = f"{tag_node_name}:{self.TYPE_IMAGE}:InputImageValue"
         tag_node_output_image_value_name = f"{tag_node_name}:{self.TYPE_IMAGE}:OutputImageValue"
@@ -396,10 +417,25 @@ class VLMNode(BaseNode):
         model = dpg_get_value(tag_node_model_value_name) or self.MODELS[0]
         caption = dpg_get_value(tag_node_caption_value_name) or self.DEFAULT_CAPTION
         server = dpg_get_value(tag_node_server_value_name) or self.DEFAULT_SERVER
+        try:
+            insensitivity_delay = float(dpg_get_value(tag_node_delay_value_name))
+        except (ValueError, TypeError):
+            insensitivity_delay = self.DEFAULT_INSENSITIVITY_DELAY
+
+        current_time = time.time()
+
+        # Check if we're in insensitivity period
+        if current_time < self._insensitivity_end_time:
+            remaining = self._insensitivity_end_time - current_time
+            dpg_set_value(tag_node_status_value_name, f'Insensitive ({remaining:.1f}s)')
+            with self._pending_frame_lock:
+                output_frame = self._pending_frame
+            return {"image": output_frame, "json": None, "audio": None}
 
         # Launch request when action fires and not already busy
         if should_act and frame is not None and not self._is_requesting:
             self._is_requesting = True
+            self._insensitivity_end_time = current_time + insensitivity_delay
             self._request_thread = threading.Thread(
                 target=self._send_request,
                 args=(
@@ -428,6 +464,7 @@ class VLMNode(BaseNode):
         tag_node_model_value_name = tag_node_name + ':ModelValue'
         tag_node_caption_value_name = tag_node_name + ':CaptionValue'
         tag_node_server_value_name = tag_node_name + ':ServerValue'
+        tag_node_delay_value_name = tag_node_name + ':DelayValue'
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -437,6 +474,7 @@ class VLMNode(BaseNode):
         setting_dict[tag_node_model_value_name] = dpg_get_value(tag_node_model_value_name)
         setting_dict[tag_node_caption_value_name] = dpg_get_value(tag_node_caption_value_name)
         setting_dict[tag_node_server_value_name] = dpg_get_value(tag_node_server_value_name)
+        setting_dict[tag_node_delay_value_name] = float(dpg_get_value(tag_node_delay_value_name))
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
@@ -444,6 +482,7 @@ class VLMNode(BaseNode):
         tag_node_model_value_name = tag_node_name + ':ModelValue'
         tag_node_caption_value_name = tag_node_name + ':CaptionValue'
         tag_node_server_value_name = tag_node_name + ':ServerValue'
+        tag_node_delay_value_name = tag_node_name + ':DelayValue'
 
         dpg_set_value(tag_node_model_value_name,
                       setting_dict.get(tag_node_model_value_name, self.MODELS[0]))
@@ -451,6 +490,8 @@ class VLMNode(BaseNode):
                       setting_dict.get(tag_node_caption_value_name, self.DEFAULT_CAPTION))
         dpg_set_value(tag_node_server_value_name,
                       setting_dict.get(tag_node_server_value_name, self.DEFAULT_SERVER))
+        dpg_set_value(tag_node_delay_value_name,
+                      float(setting_dict.get(tag_node_delay_value_name, self.DEFAULT_INSENSITIVITY_DELAY)))
 
 
 # Test code to verify that the node displays correctly
