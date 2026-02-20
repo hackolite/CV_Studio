@@ -24,6 +24,7 @@ from node.ActionNode.node_vlm import VLMNode
 def make_node():
     node = VLMNode.__new__(VLMNode)
     node._text_lines = deque(maxlen=VLMNode.MAX_LINES)
+    node._new_lines_count = 0
     node._opencv_setting_dict = {}
     return node
 
@@ -115,9 +116,10 @@ def test_render_with_text_has_non_black_pixels():
 
 
 def test_render_text_is_red():
-    """Text must be rendered in red (BGR: B=0, G=0, R>0)."""
+    """Newly arrived text (all lines when _new_lines_count==0) must be rendered in red."""
     node = make_node()
     node._text_lines.append("Red text here")
+    # _new_lines_count == 0 means all lines are treated as new → red
     canvas = node._render_text_canvas()
     # Red channel (index 2 in BGR) must have non-zero pixels
     assert canvas[:, :, 2].max() > 0, "Red channel should have non-zero pixels"
@@ -125,6 +127,52 @@ def test_render_text_is_red():
     assert canvas[:, :, 0].max() == 0, "Blue channel should be zero for red text"
     # Green channel (index 1 in BGR) should be zero for pure red
     assert canvas[:, :, 1].max() == 0, "Green channel should be zero for red text"
+
+
+def test_render_new_lines_red_old_lines_white():
+    """Lines from latest response are red; previous lines are white."""
+    node = make_node()
+    node._text_lines.append("Old response line")
+    node._text_lines.append('')  # spacer
+    node._text_lines.append("New response line")
+    node._new_lines_count = 1  # only the last line is "new"
+    canvas = node._render_text_canvas()
+    # White channel (all BGR channels) should be present for old lines
+    assert canvas[:, :, 1].max() > 0, "Green channel should be non-zero (white old text)"
+    # Red channel should also be present for new lines
+    assert canvas[:, :, 2].max() > 0, "Red channel should be non-zero (red new text)"
+
+
+def test_render_spacer_line_creates_visual_gap():
+    """A spacer ('') in _text_lines moves subsequent lines to a lower y position."""
+    node = make_node()
+    # Canvas without spacer: Line B appears at row 2
+    node._text_lines.append("Line A")
+    node._text_lines.append("Line B")
+    canvas_no_spacer = node._render_text_canvas().copy()
+
+    # Canvas with spacer between lines: Line B is shifted down by one row
+    node._text_lines.clear()
+    node._text_lines.append("Line A")
+    node._text_lines.append('')   # spacer
+    node._text_lines.append("Line B")
+    canvas_with_spacer = node._render_text_canvas()
+
+    # Both should have non-zero pixels (text rendered)
+    assert canvas_no_spacer.sum() > 0
+    assert canvas_with_spacer.sum() > 0
+    # The two canvases must differ because Line B is drawn at a different y position
+    assert not np.array_equal(canvas_with_spacer, canvas_no_spacer), \
+        "Spacer should shift Line B to a lower y position, producing a different canvas"
+
+
+def test_render_only_spacer_lines_is_black():
+    """A canvas containing only spacer lines should remain all black."""
+    node = make_node()
+    node._text_lines.append('')
+    node._text_lines.append('')
+    canvas = node._render_text_canvas()
+    assert canvas.sum() == 0
 
 
 def test_render_canvas_dtype_is_uint8():
@@ -246,9 +294,9 @@ def test_insensitivity_blocks_during_cooldown():
     # Must return without launching a request
     assert result == {"image": None, "json": None, "audio": None}
     assert node._is_requesting is False
-    # Status must contain "Insensitive"
-    assert any('Insensitive' in str(val) for _, val in status_calls), \
-        f"Expected 'Insensitive' in status, got: {status_calls}"
+    # Status must contain "Next API call in"
+    assert any('Next API call in' in str(val) for _, val in status_calls), \
+        f"Expected 'Next API call in' in status, got: {status_calls}"
 
 
 def test_insensitivity_allows_after_cooldown():
