@@ -441,13 +441,11 @@ class VLMNode(BaseNode):
                     self._last_result_text = result_text
                     max_text_w = self.TEXT_CANVAS_W - 2 * self.TEXT_MARGIN
                     new_lines = self._wrap_text_to_lines(result_text, max_text_w)
-                    # Insert a blank spacer between responses for visual separation
-                    if self._text_lines:
-                        self._text_lines.append('')
+                    # Only display the latest response – clear previous text
+                    self._text_lines.clear()
                     for line in new_lines:
                         self._text_lines.append(line)
-                    # Clamp to actual buffer size in case lines were evicted by the deque
-                    self._new_lines_count = min(len(new_lines), len(self._text_lines))
+                    self._new_lines_count = len(new_lines)
                     output_frame = self._render_text_canvas()
                     self._pending_frame = output_frame
                     texture = self.convert_cv_to_dpg(output_frame, self.TEXT_CANVAS_W, self.TEXT_CANVAS_H)
