@@ -234,6 +234,7 @@ class VLMNode(BaseNode):
         self.node_tag = 'VLM'
         self._last_result_text = ''
         self._text_lines = deque(maxlen=self.MAX_LINES)  # rolling 20-line buffer
+        self._new_lines_count = 0  # number of lines from the latest API response
         self._is_requesting = False
         self._request_process = None
         self._result_queue = None
@@ -269,16 +270,25 @@ class VLMNode(BaseNode):
         return lines
 
     def _render_text_canvas(self):
-        """Render the rolling 20-line text buffer onto a black canvas with large clear text."""
+        """Render the rolling 20-line text buffer onto a black canvas with large clear text.
+
+        The most recently arrived lines are rendered in red; all older lines are white.
+        Empty spacer lines (inserted between responses) advance the vertical position
+        without drawing text, creating visual separation between responses.
+        """
         canvas = np.zeros((self.TEXT_CANVAS_H, self.TEXT_CANVAS_W, 3), dtype=np.uint8)
         font = cv2.FONT_HERSHEY_SIMPLEX
-        color = (0, 0, 255)  # red (BGR)
         lines = list(self._text_lines)
+        # When _new_lines_count is 0 (no response yet), treat all lines as new (red).
+        new_start = len(lines) - self._new_lines_count if self._new_lines_count > 0 else 0
         for i, line in enumerate(lines):
             y = self.TEXT_MARGIN + (i + 1) * self.TEXT_LINE_HEIGHT
             # Defensive guard: the deque is bounded to MAX_LINES so this should never trigger
             if y > self.TEXT_CANVAS_H - self.TEXT_MARGIN:
                 break
+            if not line:  # spacer line: advance position without drawing
+                continue
+            color = (0, 0, 255) if i >= new_start else (255, 255, 255)  # red=new, white=old (BGR)
             cv2.putText(
                 canvas, line,
                 (self.TEXT_MARGIN, y),
@@ -415,8 +425,13 @@ class VLMNode(BaseNode):
                     self._last_result_text = result_text
                     max_text_w = self.TEXT_CANVAS_W - 2 * self.TEXT_MARGIN
                     new_lines = self._wrap_text_to_lines(result_text, max_text_w)
+                    # Insert a blank spacer between responses for visual separation
+                    if self._text_lines:
+                        self._text_lines.append('')
                     for line in new_lines:
                         self._text_lines.append(line)
+                    # Clamp to actual buffer size in case lines were evicted by the deque
+                    self._new_lines_count = min(len(new_lines), len(self._text_lines))
                     output_frame = self._render_text_canvas()
                     self._pending_frame = output_frame
                     texture = self.convert_cv_to_dpg(output_frame, self.TEXT_CANVAS_W, self.TEXT_CANVAS_H)
@@ -433,7 +448,7 @@ class VLMNode(BaseNode):
         # Check if we're in insensitivity period
         if current_time < self._insensitivity_end_time:
             remaining = self._insensitivity_end_time - current_time
-            dpg_set_value(tag_node_status_value_name, f'Insensitive ({remaining:.1f}s)')
+            dpg_set_value(tag_node_status_value_name, f'Next API call in {remaining:.1f}s')
             return {"image": self._pending_frame, "json": None, "audio": None}
 
         # Launch request in a subprocess when action fires and not already busy
