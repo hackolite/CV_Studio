@@ -215,17 +215,47 @@ def test_buffer_rolls_over_at_20_lines():
     assert lines[-1] == "line 24"
 
 
-def test_multiple_responses_accumulate():
-    node = make_node()
-    # First response: 3 lines
-    for line in ["Response 1 line A", "Response 1 line B", "Response 1 line C"]:
-        node._text_lines.append(line)
-    # Second response: 2 more lines
-    for line in ["Response 2 line A", "Response 2 line B"]:
-        node._text_lines.append(line)
-    assert len(node._text_lines) == 5
-    assert list(node._text_lines)[0] == "Response 1 line A"
-    assert list(node._text_lines)[-1] == "Response 2 line B"
+def test_only_last_response_shown():
+    """Only the latest response should be visible in the output image (buffer is cleared on each result)."""
+    def run_update_with_text(node, text):
+        q = mock.MagicMock()
+        q.get_nowait.return_value = {'text': text}
+        node._result_queue = q
+        node._is_requesting = True
+        with mock.patch('node.ActionNode.node_vlm.dpg_get_value', return_value='0.0'), \
+             mock.patch('node.ActionNode.node_vlm.dpg_set_value'):
+            return node.update(
+                node_id=1,
+                connection_list=[],
+                node_image_dict={},
+                node_result_dict={},
+                node_audio_dict={},
+            )
+
+    node = VLMNode.__new__(VLMNode)
+    node._text_lines = deque(maxlen=VLMNode.MAX_LINES)
+    node._new_lines_count = 0
+    node._opencv_setting_dict = {}
+    node._is_requesting = True
+    node._request_process = None
+    node._pending_frame = None
+    node._last_result_text = ''
+    node._insensitivity_end_time = 0
+
+    run_update_with_text(node, 'First response.')
+    # After first response, only that text should be in the buffer
+    first_lines = [l for l in node._text_lines if l]
+    assert len(first_lines) > 0, "Buffer should be non-empty after first response"
+    assert all('First' in line for line in first_lines)
+
+    run_update_with_text(node, 'Second response.')
+    # After second response, only the second text should remain
+    lines = [l for l in node._text_lines if l]
+    assert len(lines) > 0, "Buffer should be non-empty after second response"
+    assert all('Second' in line for line in lines), \
+        f"Buffer should only contain 'Second response.' lines, got: {list(node._text_lines)}"
+    assert not any('First' in line for line in lines), \
+        f"Buffer must not contain previous response, got: {list(node._text_lines)}"
 
 
 # ---------------------------------------------------------------------------
