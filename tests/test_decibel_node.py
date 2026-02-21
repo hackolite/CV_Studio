@@ -99,7 +99,7 @@ def test_db_history_round_robin():
     node = Node()
     now = datetime.now().replace(microsecond=0)
 
-    # Insert a bucket that is exactly WINDOW_SECONDS old (should be removed)
+    # Insert a bucket that is older than the window (should be removed)
     old_bucket = now - timedelta(seconds=WINDOW_SECONDS + 1)
     node.db_history[old_bucket] = -50.0
 
