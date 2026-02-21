@@ -468,8 +468,7 @@ class VLMNode(BaseNode):
                         dpg.configure_item(tag_node_output_canvas_image_name, height=display_h)
                     except (SystemError, AttributeError):
                         pass
-                    short_status = result_text[:40] + ('...' if len(result_text) > 40 else '')
-                    dpg_set_value(tag_node_status_value_name, short_status)
+                    dpg_set_value(tag_node_status_value_name, 'Ready')
                 self._is_requesting = False
             except queue.Empty:
                 pass
