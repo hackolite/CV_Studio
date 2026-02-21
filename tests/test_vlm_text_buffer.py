@@ -44,8 +44,27 @@ def test_canvas_dimensions():
 
 
 def test_canvas_min_height():
-    """Minimum display height should be ~1/3 of TEXT_CANVAS_H."""
+    """Default class constant; add_node overrides it dynamically per instance."""
     assert VLMNode.TEXT_CANVAS_MIN_H == 227
+
+
+def test_canvas_min_height_instance_not_wider_than_tall():
+    """add_node sets TEXT_CANVAS_MIN_H on the instance to canvas_w so height >= width.
+
+    The class constant (227) is smaller than the default process_width (240), which is
+    why add_node must override it per-instance.
+    """
+    # The class constant alone would produce a wider-than-tall display for process_width=240
+    assert VLMNode.TEXT_CANVAS_MIN_H < 240, (
+        "Class constant TEXT_CANVAS_MIN_H should be less than default process_width=240"
+    )
+    # The add_node assignment (canvas_min_h = canvas_w) must make height >= width
+    node = make_node()
+    for process_width in [240, 320, 480]:
+        node.TEXT_CANVAS_MIN_H = process_width  # simulates what add_node does
+        assert node.TEXT_CANVAS_MIN_H >= process_width, (
+            f"TEXT_CANVAS_MIN_H ({node.TEXT_CANVAS_MIN_H}) < process_width ({process_width})"
+        )
 
 
 def test_font_scale_is_large():

@@ -111,6 +111,10 @@ class FactoryNode:
         # Text canvas for the output: same width as the input image (bounding box)
         canvas_w = small_window_w
         node.TEXT_CANVAS_W = small_window_w
+        # Ensure the minimum display height is at least as large as the canvas width
+        # so the text area is never wider than tall (portrait orientation).
+        canvas_min_h = canvas_w
+        node.TEXT_CANVAS_MIN_H = canvas_min_h
         canvas_h = VLMNode.TEXT_CANVAS_H
         black_canvas = np.zeros((canvas_h, canvas_w, 3))
         canvas_texture = node.convert_cv_to_dpg(black_canvas, canvas_w, canvas_h)
@@ -218,7 +222,7 @@ class FactoryNode:
                 dpg.add_image(
                     node.tag_node_output_image_value_name,
                     tag=node.tag_node_output_canvas_image_name,
-                    height=VLMNode.TEXT_CANVAS_MIN_H,
+                    height=canvas_min_h,
                 )
 
             # JSON text output
