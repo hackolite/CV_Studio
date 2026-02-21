@@ -160,7 +160,6 @@ class FactoryNode:
             ):
                 dpg.add_combo(
                     tag=tag_node_model_value_name,
-                    label="Model",
                     items=VLMNode.MODELS,
                     default_value=VLMNode.MODELS[0],
                     width=240,
@@ -173,7 +172,6 @@ class FactoryNode:
             ):
                 dpg.add_input_text(
                     tag=tag_node_caption_value_name,
-                    label="Caption",
                     default_value=VLMNode.DEFAULT_CAPTION,
                     width=240,
                 )
@@ -185,7 +183,6 @@ class FactoryNode:
             ):
                 dpg.add_input_text(
                     tag=tag_node_server_value_name,
-                    label="Server",
                     default_value=VLMNode.DEFAULT_SERVER,
                     width=240,
                 )
@@ -197,7 +194,6 @@ class FactoryNode:
             ):
                 dpg.add_slider_float(
                     tag=tag_node_delay_value_name,
-                    label="Insensitivity Delay (s)",
                     default_value=VLMNode.DEFAULT_INSENSITIVITY_DELAY,
                     min_value=0.0,
                     max_value=60.0,
@@ -245,7 +241,7 @@ class VLMNode(BaseNode):
 
     MODELS = ['florence-base', 'moondream']
     DEFAULT_CAPTION = 'Describe the image'
-    DEFAULT_SERVER = 'http://localhost:5000'
+    DEFAULT_SERVER = 'http://10.217.172.75:8000'
     DEFAULT_INSENSITIVITY_DELAY = 0.0
 
     MAX_LINES = 20
