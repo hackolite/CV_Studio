@@ -60,6 +60,10 @@ class FactoryNode:
         node.tag_node_input05_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input05'
         node.tag_node_input05_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input05Value'
         
+        # Slide duration input
+        node.tag_node_input06_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input06'
+        node.tag_node_input06_value_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input06Value'
+        
         # Audio output
         node.tag_node_output_audio_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudio'
         node.tag_node_output_audio_value_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudioValue'
@@ -189,6 +193,21 @@ class FactoryNode:
                     default_value='Mono',
                 )
 
+            # Slide duration (in seconds)
+            with dpg.node_attribute(
+                    tag=node.tag_node_input06_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_float(
+                    label="Slide (s)",
+                    width=node.small_window_w - 20,
+                    tag=node.tag_node_input06_value_name,
+                    default_value=0.5,
+                    min_value=0.05,
+                    max_value=10.0,
+                    format="%.2f",
+                )
+
             # Start/Stop button
             with dpg.node_attribute(
                     tag=node.tag_node_button_name,
@@ -244,7 +263,7 @@ class FactoryNode:
 
 
 class MicrophoneNode(Node):
-    _ver = '0.0.3'
+    _ver = '0.0.4'
 
     node_label = 'Microphone'
     node_tag = 'Microphone'
@@ -267,6 +286,9 @@ class MicrophoneNode(Node):
         self._audio_buffer = queue.Queue(maxsize=10)  # Limit buffer size to prevent memory issues
         self._current_sample_rate = 44100
         self._current_channels = 1
+        self._current_chunk_duration = 1.0
+        self._current_slide_duration = 0.5
+        self._rolling_buffer = None  # Sliding window buffer
         self._lock = threading.Lock()
         # UI update throttling to prevent lag
         self._ui_update_counter = 0
@@ -281,45 +303,69 @@ class MicrophoneNode(Node):
             # Only print on actual errors to avoid performance impact
             pass  # Could log to a file if needed
         
-        # Copy audio data to buffer (non-blocking)
+        # Copy audio data and update rolling buffer (non-blocking)
         try:
-            # Make a copy to avoid issues with the buffer being reused
             audio_copy = indata.copy()
-            self._audio_buffer.put_nowait(audio_copy)
-        except queue.Full:
-            # Buffer is full, discard oldest data by clearing and adding new
+            if self._rolling_buffer is not None:
+                slide_len = len(audio_copy)
+                buf_len = len(self._rolling_buffer)
+                if slide_len >= buf_len:
+                    # Slide is at least as large as chunk — use the latest buf_len samples
+                    self._rolling_buffer[:] = audio_copy[-buf_len:]
+                else:
+                    # Shift buffer left and append new samples at the end
+                    self._rolling_buffer[:buf_len - slide_len] = self._rolling_buffer[slide_len:]
+                    self._rolling_buffer[buf_len - slide_len:] = audio_copy
+                output = self._rolling_buffer.copy()
+            else:
+                output = audio_copy
             try:
-                self._audio_buffer.get_nowait()  # Remove oldest
-                self._audio_buffer.put_nowait(audio_copy)
-            except queue.Empty:
-                pass
+                self._audio_buffer.put_nowait(output)
+            except queue.Full:
+                # Buffer is full, discard oldest data by clearing and adding new
+                try:
+                    self._audio_buffer.get_nowait()  # Remove oldest
+                    self._audio_buffer.put_nowait(output)
+                except queue.Empty:
+                    pass
+        except Exception:
+            pass
     
-    def _start_stream(self, device_idx, sample_rate, chunk_duration, channels):
+    def _start_stream(self, device_idx, sample_rate, chunk_duration, slide_duration, channels):
         """Start the non-blocking audio stream"""
         with self._lock:
             # Stop existing stream if any
             self._stop_stream()
             
             try:
-                # Calculate blocksize for the chunk duration
-                blocksize = int(sample_rate * chunk_duration)
+                chunk_samples = int(sample_rate * chunk_duration)
+                slide_samples = max(1, min(int(sample_rate * slide_duration), chunk_samples))
                 
-                # Create and start the input stream
+                if slide_duration > chunk_duration:
+                    print(f"⚠️ Slide duration ({slide_duration:.2f}s) > chunk duration ({chunk_duration:.2f}s): no overlap, some audio will be skipped.")
+                
+                # Initialize rolling buffer with zeros
+                self._rolling_buffer = np.zeros((chunk_samples, channels), dtype=np.float32)
+                
+                # Create and start the input stream using slide_samples as blocksize
                 self._audio_stream = sd.InputStream(
                     device=device_idx,
                     channels=channels,
                     samplerate=sample_rate,
-                    blocksize=blocksize,
+                    blocksize=slide_samples,
                     dtype='float32',
                     callback=self._audio_callback,
                 )
                 self._current_sample_rate = sample_rate
                 self._current_channels = channels
+                self._current_chunk_duration = chunk_duration
+                self._current_slide_duration = slide_duration
                 self._audio_stream.start()
-                print(f"🎤 Audio stream started (device: {device_idx}, sample_rate: {sample_rate}, channels: {channels}, blocksize: {blocksize})")
+                print(f"🎤 Audio stream started (device: {device_idx}, sample_rate: {sample_rate}, channels: {channels}, chunk: {chunk_samples}, slide: {slide_samples})")
             except Exception as e:
                 print(f"⚠️ Error starting audio stream: {e}")
                 self._audio_stream = None
+                self._rolling_buffer = None
     
     def _stop_stream(self):
         """Stop the audio stream and clear the buffer"""
@@ -332,6 +378,8 @@ class MicrophoneNode(Node):
                 print(f"⚠️ Error stopping audio stream: {e}")
             finally:
                 self._audio_stream = None
+        
+        self._rolling_buffer = None
         
         # Clear the buffer
         while not self._audio_buffer.empty():
@@ -403,6 +451,7 @@ class MicrophoneNode(Node):
         input_value03_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
         input_value04_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input04Value'
         input_value05_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input05Value'
+        input_value06_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':Input06Value'
         indicator_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Indicator'
 
         # Get settings
@@ -411,6 +460,7 @@ class MicrophoneNode(Node):
         chunk_duration = dpg_get_value(input_value03_tag)
         output_mode = dpg_get_value(input_value04_tag)
         channels_mode = dpg_get_value(input_value05_tag)
+        slide_duration = dpg_get_value(input_value06_tag)
 
         audio_data = None
         sample_rate = 44100  # Default
@@ -435,11 +485,13 @@ class MicrophoneNode(Node):
                     self._audio_stream is None or 
                     not self._audio_stream.active or
                     self._current_sample_rate != sample_rate or
-                    self._current_channels != channels
+                    self._current_channels != channels or
+                    self._current_chunk_duration != chunk_duration or
+                    self._current_slide_duration != slide_duration
                 )
             
             if stream_needs_restart:
-                self._start_stream(device_idx, sample_rate, chunk_duration, channels)
+                self._start_stream(device_idx, sample_rate, chunk_duration, slide_duration, channels)
             
             # Try to get audio data from buffer (non-blocking)
             try:
@@ -494,6 +546,7 @@ class MicrophoneNode(Node):
                     'sample_rate': sample_rate,
                     'channels': channels,
                     'chunk_duration': chunk_duration,
+                    'slide_duration': slide_duration,
                     'output_mode': output_mode,
                     'samples': samples_count,
                 }
