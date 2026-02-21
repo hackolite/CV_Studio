@@ -25,7 +25,7 @@ DB_REFERENCE = 1.0
 # Minimum RMS to avoid log(0)
 MIN_RMS = 1e-10
 # Rolling window duration in seconds
-WINDOW_SECONDS = 10
+WINDOW_SECONDS = 60
 
 
 def compute_db(audio_data):
@@ -136,11 +136,11 @@ class Node(BaseNode):
     _opencv_setting_dict = None
 
     def __init__(self):
-        # Rolling window round-robin: {datetime_second: db_value}
+        # Rolling 60-second round-robin: {datetime_second: db_value}
         self.db_history = {}
-        # Performance throttle: limit chart re-renders (interval in seconds)
+        # Performance throttle: render chart at most once per second
         self.last_render_time = 0
-        self.render_interval = 0.1
+        self.render_interval = 1.0
         self.cached_chart_image = None
 
     def _current_second_bucket(self):
@@ -184,7 +184,7 @@ class Node(BaseNode):
             ax.bar(x_pos, bar_values, color=colors, width=0.8)
             ax.set_xlabel('Time (seconds)')
             ax.set_ylabel('Level (dBFS)')
-            ax.set_title(f'Microphone decibel level ({WINDOW_SECONDS}-second rolling window)')
+            ax.set_title('Microphone decibel level (1-minute rolling window)')
 
             # Show only a subset of x-tick labels to avoid crowding
             tick_step = max(1, WINDOW_SECONDS // 10)
