@@ -155,24 +155,31 @@ class FactoryNode:
 
 
 def receive_image_process(rtsp_url, image_queue, request):
-    rtsp_capture = cv2.VideoCapture(rtsp_url)
-
-    while True:
-        ret, frame = rtsp_capture.read()
-
-        if ret:
-            if image_queue.qsize() == 0:
-                image_queue.put(frame)
-            time.sleep(0.001)
-        else:
-            time.sleep(1)
-            rtsp_capture.release()
+    while request.value != 0:
+        try:
             rtsp_capture = cv2.VideoCapture(rtsp_url)
-
-
-        if request.value == 0:
-            rtsp_capture.release()
-            break
+            while request.value != 0:
+                try:
+                    ret, frame = rtsp_capture.read()
+                    if ret:
+                        if image_queue.qsize() == 0:
+                            image_queue.put(frame)
+                        time.sleep(0.001)
+                    else:
+                        time.sleep(1)
+                        rtsp_capture.release()
+                        rtsp_capture = cv2.VideoCapture(rtsp_url)
+                except Exception as e:
+                    print(f'[RTSP] Read error for {rtsp_url}: {e}')
+                    time.sleep(1)
+                    try:
+                        rtsp_capture.release()
+                    except Exception:
+                        pass
+                    break
+        except Exception as e:
+            print(f'[RTSP] Connection error for {rtsp_url}: {e}')
+            time.sleep(1)
 
 
 class RtspNode(Node):
@@ -235,10 +242,21 @@ class RtspNode(Node):
         if rtsp_url != '':
             if use_mp:
                 # multiprocessing
+                if rtsp_url in self._process:
+                    # Restart subprocess if it has died unexpectedly
+                    if not self._process[rtsp_url].is_alive():
+                        self._image_queue[rtsp_url] = mp.Queue(maxsize=1)
+                        self._request[rtsp_url] = mp.Value('i', 1)
+                        self._process[rtsp_url] = mp.Process(
+                            target=receive_image_process,
+                            args=(rtsp_url, self._image_queue[rtsp_url],
+                                  self._request[rtsp_url]),
+                        )
+                        self._process[rtsp_url].start()
                 if rtsp_url in self._image_queue:
                     image_queue = self._image_queue[rtsp_url]
             else:
-                # multiprocessing
+                # single-threaded
                 if rtsp_url in self._rtsp_capture:
                     rtsp_capture = self._rtsp_capture[rtsp_url]
 
@@ -255,9 +273,12 @@ class RtspNode(Node):
                 if num > 0:
                     frame = image_queue.get()
         else:
-            # multiprocessing
+            # single-threaded
             if rtsp_capture is not None:
-                ret, frame = rtsp_capture.read()
+                try:
+                    ret, frame = rtsp_capture.read()
+                except Exception:
+                    ret = False
                 if not ret:
                     return {"image": None, "json": None, "audio": None}
 

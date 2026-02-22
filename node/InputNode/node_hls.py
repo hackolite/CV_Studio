@@ -153,24 +153,31 @@ class FactoryNode:
 
 
 def receive_image_process(hls_url, image_queue, request):
-    hls_capture = cv2.VideoCapture(hls_url)
-
-    while True:
-        ret, frame = hls_capture.read()
-
-        if ret:
-            if image_queue.qsize() == 0:
-                image_queue.put(frame)
-            time.sleep(0.001)
-        else:
-            time.sleep(1)
-            hls_capture.release()
+    while request.value != 0:
+        try:
             hls_capture = cv2.VideoCapture(hls_url)
-
-
-        if request.value == 0:
-            hls_capture.release()
-            break
+            while request.value != 0:
+                try:
+                    ret, frame = hls_capture.read()
+                    if ret:
+                        if image_queue.qsize() == 0:
+                            image_queue.put(frame)
+                        time.sleep(0.001)
+                    else:
+                        time.sleep(1)
+                        hls_capture.release()
+                        hls_capture = cv2.VideoCapture(hls_url)
+                except Exception as e:
+                    print(f'[HLS] Read error for {hls_url}: {e}')
+                    time.sleep(1)
+                    try:
+                        hls_capture.release()
+                    except Exception:
+                        pass
+                    break
+        except Exception as e:
+            print(f'[HLS] Connection error for {hls_url}: {e}')
+            time.sleep(1)
 
 
 class HlsNode(Node):
@@ -222,7 +229,7 @@ class HlsNode(Node):
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
 
-        use_mp = self._opencv_setting_dict.get('use_multiprocessing_hls', False)
+        use_mp = self._opencv_setting_dict.get('use_multiprocessing_hls', True)
 
 
         hls_url = dpg_get_value(input_value01_tag)
@@ -232,6 +239,17 @@ class HlsNode(Node):
         image_queue = None
         if hls_url != '':
             if use_mp:
+                if hls_url in self._process:
+                    # Restart subprocess if it has died unexpectedly
+                    if not self._process[hls_url].is_alive():
+                        self._image_queue[hls_url] = mp.Queue(maxsize=1)
+                        self._request[hls_url] = mp.Value('i', 1)
+                        self._process[hls_url] = mp.Process(
+                            target=receive_image_process,
+                            args=(hls_url, self._image_queue[hls_url],
+                                  self._request[hls_url]),
+                        )
+                        self._process[hls_url].start()
                 if hls_url in self._image_queue:
                     image_queue = self._image_queue[hls_url]
             else:
@@ -253,7 +271,10 @@ class HlsNode(Node):
         else:
             # single-threaded
             if hls_capture is not None:
-                ret, frame = hls_capture.read()
+                try:
+                    ret, frame = hls_capture.read()
+                except Exception:
+                    ret = False
                 if not ret:
                     return {"image": None, "json": None, "audio": None}
 
@@ -276,7 +297,7 @@ class HlsNode(Node):
         return {"image": frame, "json": None, "audio": None}
 
     def close(self, node_id):
-        use_mp = self._opencv_setting_dict.get('use_multiprocessing_hls', False)
+        use_mp = self._opencv_setting_dict.get('use_multiprocessing_hls', True)
         if use_mp:
             for hls_url in self._process.keys():
                 self._request[hls_url].value = 0
@@ -314,7 +335,7 @@ class HlsNode(Node):
 
         hls_url = dpg_get_value(input_value01_tag)
 
-        use_mp = self._opencv_setting_dict.get('use_multiprocessing_hls', False)
+        use_mp = self._opencv_setting_dict.get('use_multiprocessing_hls', True)
 
         if label == self._start_label:
             if hls_url != '':
