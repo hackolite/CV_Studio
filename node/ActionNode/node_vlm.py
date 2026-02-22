@@ -165,13 +165,14 @@ class FactoryNode:
                     width=240,
                 )
 
-            # Caption text field
+            # Caption type combobox (Florence2 task tokens)
             with dpg.node_attribute(
                 tag=tag_node_caption_name,
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
-                dpg.add_input_text(
+                dpg.add_combo(
                     tag=tag_node_caption_value_name,
+                    items=VLMNode.FLORENCE2_CAPTION_TYPES,
                     default_value=VLMNode.DEFAULT_CAPTION,
                     width=240,
                 )
@@ -240,7 +241,17 @@ class VLMNode(BaseNode):
     _ver = '0.0.1'
 
     MODELS = ['florence-base', 'moondream']
-    DEFAULT_CAPTION = 'Describe the image'
+    FLORENCE2_CAPTION_TYPES = [
+        '<CAPTION>',
+        '<DETAILED_CAPTION>',
+        '<MORE_DETAILED_CAPTION>',
+        '<OD>',
+        '<DENSE_REGION_CAPTION>',
+        '<REGION_PROPOSAL>',
+        '<OCR>',
+        '<OCR_WITH_REGION>',
+    ]
+    DEFAULT_CAPTION = '<CAPTION>'
     DEFAULT_SERVER = 'http://10.217.172.75:8000'
     DEFAULT_INSENSITIVITY_DELAY = 0.0
 
