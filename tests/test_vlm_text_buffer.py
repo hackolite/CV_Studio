@@ -38,6 +38,28 @@ def test_max_lines_is_20():
     assert VLMNode.MAX_LINES == 20
 
 
+def test_florence2_caption_types_defined():
+    """FLORENCE2_CAPTION_TYPES should contain the standard Florence2 task tokens."""
+    assert hasattr(VLMNode, 'FLORENCE2_CAPTION_TYPES')
+    expected = [
+        '<CAPTION>',
+        '<DETAILED_CAPTION>',
+        '<MORE_DETAILED_CAPTION>',
+        '<OD>',
+        '<DENSE_REGION_CAPTION>',
+        '<REGION_PROPOSAL>',
+        '<OCR>',
+        '<OCR_WITH_REGION>',
+    ]
+    assert VLMNode.FLORENCE2_CAPTION_TYPES == expected
+
+
+def test_default_caption_is_florence2_token():
+    """DEFAULT_CAPTION should be the first Florence2 task token."""
+    assert VLMNode.DEFAULT_CAPTION == VLMNode.FLORENCE2_CAPTION_TYPES[0]
+    assert VLMNode.DEFAULT_CAPTION == '<CAPTION>'
+
+
 def test_canvas_dimensions():
     assert VLMNode.TEXT_CANVAS_W == 320
     assert VLMNode.TEXT_CANVAS_H == 680
