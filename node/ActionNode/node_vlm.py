@@ -269,6 +269,7 @@ class VLMNode(BaseNode):
         self.node_label = 'VLM'
         self.node_tag = 'VLM'
         self._last_result_text = ''
+        self._last_caption_type = ''
         self._text_lines = deque(maxlen=self.MAX_LINES)  # rolling 20-line buffer
         self._new_lines_count = 0  # number of lines from the latest API response
         self._is_requesting = False
@@ -488,12 +489,13 @@ class VLMNode(BaseNode):
         if current_time < self._insensitivity_end_time:
             remaining = self._insensitivity_end_time - current_time
             dpg_set_value(tag_node_status_value_name, f'Next API call in {remaining:.1f}s')
-            json_out = {"TEXT": self._last_result_text} if self._last_result_text else None
+            json_out = {"TEXT": self._last_result_text, "type": self._last_caption_type} if self._last_result_text else None
             return {"image": self._pending_frame, "json": json_out, "audio": None}
 
         # Launch request in a subprocess when action fires and not already busy
         if should_act and frame is not None and not self._is_requesting:
             self._is_requesting = True
+            self._last_caption_type = caption
             self._insensitivity_end_time = current_time + insensitivity_delay
             dpg_set_value(tag_node_status_value_name, 'Requesting...')
             self._result_queue = multiprocessing.Queue()
@@ -504,7 +506,7 @@ class VLMNode(BaseNode):
             )
             self._request_process.start()
 
-        json_out = {"TEXT": self._last_result_text} if self._last_result_text else None
+        json_out = {"TEXT": self._last_result_text, "type": self._last_caption_type} if self._last_result_text else None
         return {"image": self._pending_frame, "json": json_out, "audio": None}
 
     def close(self, node_id):
