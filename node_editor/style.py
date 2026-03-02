@@ -27,6 +27,7 @@ TRACKING = ["MultiObjectTracking", "ReId"]
 OVERLAY = ["DrawInformation", "PutText"]
 VIZ = ["Heatmap", "ObjChart", "Visual", "Map"]
 TIMESERIES = ["PositionPrediction"]
+NLP_MODEL = ["TinyBertVigilance"]
 SYSTEM = ["SyncQueue"]
 
 
@@ -87,6 +88,10 @@ STYLE = {
     "Visual": {
         "names": VIZ,
         "style": [(255, 182, 193, 255)]  # rose clair (light pink)
+    },
+    "NLPModel": {
+        "names": NLP_MODEL,
+        "style": [(200, 230, 255, 255)]  # light sky blue pastel
     },
     "System": {
         "names": SYSTEM,

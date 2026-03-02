@@ -326,6 +326,7 @@ def main():
             "AudioModel": "AudioModelNode",
             "DataProcess": "StatsNode",
             "DataModel": "TimeseriesNode",
+            "NLPModel": "NLPModelNode",
             "Trigger": "TriggerNode",
             "Router": "RouterNode",
             "Action": "ActionNode",
