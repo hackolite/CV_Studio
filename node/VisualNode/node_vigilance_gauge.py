@@ -213,9 +213,14 @@ class VigilanceGaugeNode(BaseNode):
         if isinstance(input_json, dict):
             vigilance = input_json.get('vigilance')
 
-        if vigilance is not None and 1 <= int(vigilance) <= 5:
+        try:
+            vigilance_int = int(vigilance) if vigilance is not None else None
+        except (ValueError, TypeError):
+            vigilance_int = None
+
+        if vigilance_int is not None and 1 <= vigilance_int <= 5:
             self._thinking = False
-            self._last_level = int(vigilance)
+            self._last_level = vigilance_int
         else:
             # No valid vigilance → NLP model is thinking or not connected
             self._thinking = True
