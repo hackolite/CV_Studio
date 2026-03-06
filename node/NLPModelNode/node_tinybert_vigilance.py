@@ -10,21 +10,60 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.basenode import Node as BaseNode
 
+# ---------------------------------------------------------------------------
+# Module-level caches shared across all node instances
+# ---------------------------------------------------------------------------
+
+# Maps model_name -> {'tokenizer': ..., 'model': ...}
+_MODEL_CACHE = {}
+
+# Maps db_name (CSV basename without extension) ->
+#   {'vectors': np.ndarray, 'scores': np.ndarray,
+#    'nn_index': NearestNeighbors|None, 'sentence_count': int}
+_DB_CACHE = {}
+
 
 def _load_model_and_build_db(result_dict, csv_path, model_name):
     """Load TinyBERT model, read CSV, vectorize sentences, build database.
 
     Runs in a background thread so the GUI stays responsive.
     Results are returned through *result_dict*.
+
+    Both the model and the vector database are stored in module-level caches
+    so that subsequent loads of the same CSV (or model) are instantaneous.
     """
     try:
         import torch
         from transformers import AutoTokenizer, AutoModel
 
-        result_dict['status'] = 'Loading model...'
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModel.from_pretrained(model_name)
-        model.eval()
+        # --- Model cache: avoid re-downloading / re-loading the model ---
+        if model_name not in _MODEL_CACHE:
+            result_dict['status'] = 'Loading model...'
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            model = AutoModel.from_pretrained(model_name)
+            model.eval()
+            _MODEL_CACHE[model_name] = {'tokenizer': tokenizer, 'model': model}
+        else:
+            result_dict['status'] = 'Model ready (cached)...'
+
+        tokenizer = _MODEL_CACHE[model_name]['tokenizer']
+        model = _MODEL_CACHE[model_name]['model']
+
+        # --- DB cache: avoid re-vectorizing an already-processed CSV ---
+        db_name = os.path.splitext(os.path.basename(csv_path))[0]
+        if db_name in _DB_CACHE:
+            cached = _DB_CACHE[db_name]
+            result_dict['tokenizer'] = tokenizer
+            result_dict['model'] = model
+            result_dict['vectors'] = cached['vectors']
+            result_dict['scores'] = cached['scores']
+            result_dict['nn_index'] = cached['nn_index']
+            result_dict['db_name'] = db_name
+            result_dict['done'] = True
+            result_dict['status'] = 'Loaded {} sentences (from cache)'.format(
+                cached['sentence_count'],
+            )
+            return
 
         result_dict['status'] = 'Reading CSV...'
         sentences = []
@@ -76,11 +115,22 @@ def _load_model_and_build_db(result_dict, csv_path, model_name):
             )
             nn_index.fit(vectors)
 
+        scores_array = np.array(scores)
+
+        # Store in DB cache so future loads of the same CSV are instant
+        _DB_CACHE[db_name] = {
+            'vectors': vectors,
+            'scores': scores_array,
+            'nn_index': nn_index,
+            'sentence_count': len(sentences),
+        }
+
         result_dict['tokenizer'] = tokenizer
         result_dict['model'] = model
         result_dict['vectors'] = vectors
-        result_dict['scores'] = np.array(scores)
+        result_dict['scores'] = scores_array
         result_dict['nn_index'] = nn_index
+        result_dict['db_name'] = db_name
         result_dict['done'] = True
         result_dict['status'] = 'Loaded {} sentences'.format(len(sentences))
 
@@ -96,6 +146,14 @@ def _on_load_click(sender, app_data, user_data):
     """Callback for Load button click."""
     node = user_data
     node._load_requested = True
+
+
+def _on_db_combo_change(sender, app_data, user_data):
+    """Callback fired when the user selects a database from the combobox."""
+    node = user_data
+    if app_data and app_data in _DB_CACHE:
+        node._selected_db_name = app_data
+        node._db_select_requested = True
 
 
 class FactoryNode:
@@ -133,8 +191,10 @@ class FactoryNode:
         tag_csv_path = tag_node_name + ':CsvPathValue'
         tag_model_name = tag_node_name + ':ModelNameValue'
         tag_status = tag_node_name + ':StatusValue'
+        tag_db_combo = tag_node_name + ':DbComboValue'
 
         node._opencv_setting_dict = opencv_setting_dict or {}
+        node.tag_db_combo = tag_db_combo
 
         # Default CSV path (bundled with the node)
         default_csv = os.path.join(
@@ -193,6 +253,21 @@ class FactoryNode:
                     user_data=node,
                 )
 
+            # Cached databases combobox
+            with dpg.node_attribute(
+                tag=tag_node_name + ':DbCombo',
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=tag_db_combo,
+                    items=list(_DB_CACHE.keys()),
+                    default_value='',
+                    width=240,
+                    label='DB Cache',
+                    callback=_on_db_combo_change,
+                    user_data=node,
+                )
+
             # Status indicator
             with dpg.node_attribute(
                 tag=tag_node_name + ':Status',
@@ -235,6 +310,13 @@ class TinyBertVigilanceNode(BaseNode):
         self._load_requested = False
         self._load_result = {}
         self._load_thread = None
+        # DB cache selection state
+        self._selected_db_name = None
+        self._db_select_requested = False
+        # Track cache size to know when to refresh the combobox items
+        self._last_db_cache_size = 0
+        # DPG tag for the DB combobox (set by FactoryNode.add_node)
+        self.tag_db_combo = None
 
     @staticmethod
     def _map_score_to_vigilance(score_0_10):
@@ -288,6 +370,14 @@ class TinyBertVigilanceNode(BaseNode):
             idx = int(np.argmax(similarities))
             return self._scores[idx]
 
+    def _refresh_db_combo(self):
+        """Update the combobox items to reflect the current DB cache contents."""
+        if self.tag_db_combo is not None:
+            dpg.configure_item(
+                self.tag_db_combo,
+                items=list(_DB_CACHE.keys()),
+            )
+
     def update(
         self, node_id, connection_list, node_image_dict,
         node_result_dict, node_audio_dict,
@@ -296,6 +386,34 @@ class TinyBertVigilanceNode(BaseNode):
         tag_status = '{}:StatusValue'.format(tag_node_name)
         tag_csv_path = '{}:CsvPathValue'.format(tag_node_name)
         tag_model_name = '{}:ModelNameValue'.format(tag_node_name)
+
+        # Refresh combobox if the cache has grown since last check
+        current_cache_size = len(_DB_CACHE)
+        if current_cache_size != self._last_db_cache_size:
+            self._last_db_cache_size = current_cache_size
+            self._refresh_db_combo()
+
+        # Handle instant load from cache (no thread needed)
+        if self._db_select_requested and not self._is_loading:
+            self._db_select_requested = False
+            db_name = self._selected_db_name
+            if db_name and db_name in _DB_CACHE:
+                cached = _DB_CACHE[db_name]
+                self._vectors = cached['vectors']
+                self._scores = cached['scores']
+                self._nn_index = cached['nn_index']
+                self._is_loaded = True
+                dpg_set_value(
+                    tag_status,
+                    '{} ({} sentences, cached)'.format(
+                        db_name, cached['sentence_count'],
+                    ),
+                )
+            else:
+                dpg_set_value(
+                    tag_status,
+                    'DB not in cache: {}'.format(db_name or '(none)'),
+                )
 
         # Handle loading request
         if self._load_requested and not self._is_loading:
@@ -333,6 +451,8 @@ class TinyBertVigilanceNode(BaseNode):
                     tag_status,
                     self._load_result.get('status', 'Loaded'),
                 )
+                # Refresh combobox after a new DB has been added to the cache
+                self._refresh_db_combo()
             elif 'status' in self._load_result:
                 dpg_set_value(tag_status, self._load_result['status'])
             return {"image": None, "json": None, "audio": None}
