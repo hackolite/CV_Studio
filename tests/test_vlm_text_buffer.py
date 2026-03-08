@@ -62,25 +62,19 @@ def test_default_caption_is_florence2_token():
 
 
 def test_canvas_dimensions():
-    assert VLMNode.TEXT_CANVAS_W == 320
-    assert VLMNode.TEXT_CANVAS_H == 680
+    assert VLMNode.TEXT_CANVAS_W == 220
+    assert VLMNode.TEXT_CANVAS_H == 760
 
 
 def test_canvas_min_height():
     """Default class constant; add_node overrides it dynamically per instance."""
-    assert VLMNode.TEXT_CANVAS_MIN_H == 227
+    assert VLMNode.TEXT_CANVAS_MIN_H == 300
 
 
 def test_canvas_min_height_instance_not_wider_than_tall():
-    """add_node sets TEXT_CANVAS_MIN_H on the instance to canvas_w so height >= width.
-
-    The class constant (227) is smaller than the default process_width (240), which is
-    why add_node must override it per-instance.
-    """
-    # The class constant alone would produce a wider-than-tall display for process_width=240
-    assert VLMNode.TEXT_CANVAS_MIN_H < 240, (
-        "Class constant TEXT_CANVAS_MIN_H should be less than default process_width=240"
-    )
+    """add_node sets TEXT_CANVAS_MIN_H on the instance to canvas_w so height >= width."""
+    # Verify the class constant is a positive value
+    assert VLMNode.TEXT_CANVAS_MIN_H > 0
     # The add_node assignment (canvas_min_h = canvas_w) must make height >= width
     node = make_node()
     for process_width in [240, 320, 480]:
@@ -170,35 +164,32 @@ def test_render_with_text_has_non_black_pixels():
     node = make_node()
     node._text_lines.append("Some response text")
     canvas = node._render_text_canvas()
-    assert canvas.sum() > 0  # at least some red pixels from text
+    assert canvas.sum() > 0  # at least some white pixels from text
 
 
-def test_render_text_is_red():
-    """Newly arrived text (all lines when _new_lines_count==0) must be rendered in red."""
+def test_render_text_is_white():
+    """All text must be rendered in white."""
     node = make_node()
-    node._text_lines.append("Red text here")
-    # _new_lines_count == 0 means all lines are treated as new → red
+    node._text_lines.append("White text here")
     canvas = node._render_text_canvas()
-    # Red channel (index 2 in BGR) must have non-zero pixels
-    assert canvas[:, :, 2].max() > 0, "Red channel should have non-zero pixels"
-    # Blue channel (index 0 in BGR) should be zero (no blue component in pure red)
-    assert canvas[:, :, 0].max() == 0, "Blue channel should be zero for red text"
-    # Green channel (index 1 in BGR) should be zero for pure red
-    assert canvas[:, :, 1].max() == 0, "Green channel should be zero for red text"
+    # All three BGR channels must have non-zero pixels (white = 255,255,255)
+    assert canvas[:, :, 0].max() > 0, "Blue channel should be non-zero for white text"
+    assert canvas[:, :, 1].max() > 0, "Green channel should be non-zero for white text"
+    assert canvas[:, :, 2].max() > 0, "Red channel should be non-zero for white text"
 
 
-def test_render_new_lines_red_old_lines_white():
-    """Lines from latest response are red; previous lines are white."""
+def test_render_all_lines_white():
+    """All lines (old and new) are rendered in white."""
     node = make_node()
     node._text_lines.append("Old response line")
     node._text_lines.append('')  # spacer
     node._text_lines.append("New response line")
     node._new_lines_count = 1  # only the last line is "new"
     canvas = node._render_text_canvas()
-    # White channel (all BGR channels) should be present for old lines
-    assert canvas[:, :, 1].max() > 0, "Green channel should be non-zero (white old text)"
-    # Red channel should also be present for new lines
-    assert canvas[:, :, 2].max() > 0, "Red channel should be non-zero (red new text)"
+    # White text: all three BGR channels should be non-zero
+    assert canvas[:, :, 0].max() > 0, "Blue channel should be non-zero (white text)"
+    assert canvas[:, :, 1].max() > 0, "Green channel should be non-zero (white text)"
+    assert canvas[:, :, 2].max() > 0, "Red channel should be non-zero (white text)"
 
 
 def test_render_spacer_line_creates_visual_gap():
@@ -301,18 +292,24 @@ def test_only_last_response_shown():
     node._insensitivity_end_time = 0
 
     run_update_with_text(node, 'First response.')
-    # After first response, only that text should be in the buffer
+    # After first response, only that text should be in the buffer.
+    # At TEXT_FONT_SCALE=1.1 / TEXT_CANVAS_W=220, 'First response.' wraps to multiple
+    # lines so we join all lines and check the key word spans the full buffer.
     first_lines = [l for l in node._text_lines if l]
     assert len(first_lines) > 0, "Buffer should be non-empty after first response"
-    assert all('First' in line for line in first_lines)
+    all_first_text = ' '.join(first_lines)
+    assert 'First' in all_first_text, f"Buffer should contain 'First', got: {first_lines}"
+    assert 'response' in all_first_text, f"Buffer should contain 'response', got: {first_lines}"
 
     run_update_with_text(node, 'Second response.')
-    # After second response, only the second text should remain
+    # After second response, only the second text should remain.
+    # Same wrapping rationale: join all lines to verify content and absence.
     lines = [l for l in node._text_lines if l]
     assert len(lines) > 0, "Buffer should be non-empty after second response"
-    assert all('Second' in line for line in lines), \
-        f"Buffer should only contain 'Second response.' lines, got: {list(node._text_lines)}"
-    assert not any('First' in line for line in lines), \
+    all_text = ' '.join(lines)
+    assert 'Second' in all_text, \
+        f"Buffer should contain 'Second' word, got: {list(node._text_lines)}"
+    assert 'First' not in all_text, \
         f"Buffer must not contain previous response, got: {list(node._text_lines)}"
 
 

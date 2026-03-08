@@ -256,11 +256,11 @@ class VLMNode(BaseNode):
     DEFAULT_INSENSITIVITY_DELAY = 0.0
 
     MAX_LINES = 20
-    TEXT_CANVAS_W = 320       # reduced by ~1/3 (was 480)
-    TEXT_CANVAS_H = 680       # max texture height; 20 lines * 32px + 40px margin
-    TEXT_CANVAS_MIN_H = 227   # ~1/3 of TEXT_CANVAS_H, minimum display height
-    TEXT_LINE_HEIGHT = 32
-    TEXT_FONT_SCALE = 0.9
+    TEXT_CANVAS_W = 220       # narrow canvas for portrait orientation
+    TEXT_CANVAS_H = 760       # max texture height; 20 lines * 36px + 40px margin
+    TEXT_CANVAS_MIN_H = 300   # minimum display height
+    TEXT_LINE_HEIGHT = 36
+    TEXT_FONT_SCALE = 1.1
     TEXT_THICKNESS = 2
     TEXT_MARGIN = 10
 
@@ -309,15 +309,13 @@ class VLMNode(BaseNode):
     def _render_text_canvas(self):
         """Render the rolling 20-line text buffer onto a black canvas with large clear text.
 
-        The most recently arrived lines are rendered in red; all older lines are white.
+        All lines are rendered in white.
         Empty spacer lines (inserted between responses) advance the vertical position
         without drawing text, creating visual separation between responses.
         """
         canvas = np.zeros((self.TEXT_CANVAS_H, self.TEXT_CANVAS_W, 3), dtype=np.uint8)
         font = cv2.FONT_HERSHEY_SIMPLEX
         lines = list(self._text_lines)
-        # When _new_lines_count is 0 (no response yet), treat all lines as new (red).
-        new_start = len(lines) - self._new_lines_count if self._new_lines_count > 0 else 0
         for i, line in enumerate(lines):
             y = self.TEXT_MARGIN + (i + 1) * self.TEXT_LINE_HEIGHT
             # Defensive guard: the deque is bounded to MAX_LINES so this should never trigger
@@ -325,7 +323,7 @@ class VLMNode(BaseNode):
                 break
             if not line:  # spacer line: advance position without drawing
                 continue
-            color = (0, 0, 255) if i >= new_start else (255, 255, 255)  # red=new, white=old (BGR)
+            color = (255, 255, 255)  # white (BGR)
             cv2.putText(
                 canvas, line,
                 (self.TEXT_MARGIN, y),
