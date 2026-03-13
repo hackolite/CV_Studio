@@ -13,6 +13,7 @@ The node also exposes a ``max_words`` slider (10 – 200) to control density.
 """
 import re
 import io
+import time
 
 import cv2
 import numpy as np
@@ -35,6 +36,7 @@ COLOURMAPS = [
 
 DEFAULT_COLOURMAP = 'plasma'
 DEFAULT_MAX_WORDS = 80
+DEFAULT_DELTA_T = 30  # seconds – rolling time window for word accumulation
 
 # ── Colour pairs (background, fallback text) per colourmap ───────────────
 _BG_COLOUR = {
@@ -168,6 +170,8 @@ class FactoryNode:
         tag_colourmap_value = tag_node_name + ':ColourmapValue'
         tag_max_words_name = tag_node_name + ':MaxWords'
         tag_max_words_value = tag_node_name + ':MaxWordsValue'
+        tag_delta_t_name = tag_node_name + ':DeltaT'
+        tag_delta_t_value = tag_node_name + ':DeltaTValue'
 
         node._opencv_setting_dict = opencv_setting_dict or {}
 
@@ -225,6 +229,20 @@ class FactoryNode:
                     label='Max words',
                 )
 
+            # ── Delta T slider (rolling time window in seconds) ───────
+            with dpg.node_attribute(
+                tag=tag_delta_t_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_int(
+                    tag=tag_delta_t_value,
+                    default_value=DEFAULT_DELTA_T,
+                    min_value=5,
+                    max_value=300,
+                    width=240,
+                    label='ΔT (s)',
+                )
+
             # ── Image output ──────────────────────────────────────────
             with dpg.node_attribute(
                 tag=node.tag_node_output_image_name,
@@ -256,10 +274,16 @@ class WordCloudNode(BaseNode):
         super().__init__()
         self.node_label = 'Word Cloud'
         self.node_tag = 'WordCloud'
-        self._last_text = ''
         self._last_frame = None
         self._last_colourmap = DEFAULT_COLOURMAP
         self._last_max_words = DEFAULT_MAX_WORDS
+        self._last_delta_t = DEFAULT_DELTA_T
+        # Rolling buffer: list of (timestamp, text) pairs
+        self._text_buffer = []
+        # Track last text appended to buffer to avoid duplicate entries
+        self._last_appended_text = ''
+        # Combined text used for the last render (to detect changes)
+        self._last_combined_text = ''
 
     def update(
         self, node_id, connection_list, node_image_dict,
@@ -298,19 +322,42 @@ class WordCloudNode(BaseNode):
             max_words = int(dpg_get_value(tag_max_words_value))
         except (ValueError, TypeError):
             max_words = DEFAULT_MAX_WORDS
+        tag_delta_t_value = tag_node_name + ':DeltaTValue'
+        try:
+            delta_t = int(dpg_get_value(tag_delta_t_value))
+            if delta_t < 1:
+                delta_t = DEFAULT_DELTA_T
+        except (ValueError, TypeError):
+            delta_t = DEFAULT_DELTA_T
+
+        # ── Update rolling text buffer ────────────────────────────────
+        now = time.time()
+        # Append text to buffer when it changes (new observation)
+        if text and text != self._last_appended_text:
+            self._text_buffer.append((now, text))
+            self._last_appended_text = text
+        # Prune entries older than delta_t
+        cutoff = now - delta_t
+        self._text_buffer = [
+            (ts, txt) for ts, txt in self._text_buffer if ts >= cutoff
+        ]
+        # Build combined text from the rolling window
+        combined = ' '.join(txt for _, txt in self._text_buffer)
 
         # ── Regenerate only when something changed ────────────────────
         changed = (
-            text != self._last_text
+            combined != self._last_combined_text
             or colourmap != self._last_colourmap
             or max_words != self._last_max_words
+            or delta_t != self._last_delta_t
         )
 
         if changed or self._last_frame is None:
-            self._last_text = text
+            self._last_combined_text = combined
             self._last_colourmap = colourmap
             self._last_max_words = max_words
-            self._last_frame = _render_word_cloud(text, colourmap, max_words)
+            self._last_delta_t = delta_t
+            self._last_frame = _render_word_cloud(combined, colourmap, max_words)
 
         frame = self._last_frame
 
@@ -324,7 +371,7 @@ class WordCloudNode(BaseNode):
         # ── Build JSON output (for Concat / downstream nodes) ─────────
         # Always return a dict so downstream nodes can rely on a consistent
         # API contract regardless of whether text is available.
-        json_out = {'TEXT': text}
+        json_out = {'TEXT': combined}
 
         return {'image': frame, 'json': json_out, 'audio': None}
 
@@ -336,18 +383,23 @@ class WordCloudNode(BaseNode):
         pos = dpg.get_item_pos(tag_node_name)
         tag_colourmap_value = tag_node_name + ':ColourmapValue'
         tag_max_words_value = tag_node_name + ':MaxWordsValue'
+        tag_delta_t_value = tag_node_name + ':DeltaTValue'
         return {
             'ver': self._ver,
             'pos': pos,
             tag_colourmap_value: dpg_get_value(tag_colourmap_value),
             tag_max_words_value: dpg_get_value(tag_max_words_value),
+            tag_delta_t_value: dpg_get_value(tag_delta_t_value),
         }
 
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = '{}:{}'.format(node_id, self.node_tag)
         tag_colourmap_value = tag_node_name + ':ColourmapValue'
         tag_max_words_value = tag_node_name + ':MaxWordsValue'
+        tag_delta_t_value = tag_node_name + ':DeltaTValue'
         if tag_colourmap_value in setting_dict:
             dpg_set_value(tag_colourmap_value, setting_dict[tag_colourmap_value])
         if tag_max_words_value in setting_dict:
             dpg_set_value(tag_max_words_value, int(setting_dict[tag_max_words_value]))
+        if tag_delta_t_value in setting_dict:
+            dpg_set_value(tag_delta_t_value, int(setting_dict[tag_delta_t_value]))
