@@ -52,6 +52,7 @@ hiddenimports += collect_submodules('motpy')
 hiddenimports += collect_submodules('norfair')
 hiddenimports += collect_submodules('ffmpeg')
 hiddenimports += collect_submodules('streamlink')
+hiddenimports += collect_submodules('wordcloud')
 
 # Add explicit hidden imports for node modules
 hiddenimports += [
@@ -118,6 +119,7 @@ hiddenimports += [
     'ffmpeg',
     'sounddevice',
     'streamlink',
+    'wordcloud',
 ]
 
 # Collect data files
