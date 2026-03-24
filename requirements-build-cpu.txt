@@ -38,3 +38,4 @@ motpy>=0.0.10
 norfair>=2.2.0
 rich>=10.0.0
 streamlink>=6.0.0
+wordcloud>=1.9.0
