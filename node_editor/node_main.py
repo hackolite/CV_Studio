@@ -362,9 +362,10 @@ class DpgNodeEditor(object):
 
                                 factorynode.style = node_style(menu_label)
                                 self._node_factory_list[factorynode.node_tag] = factorynode
-                            except AttributeError:
+                            except (AttributeError, ImportError) as e:
                                 # Skip files without FactoryNode class (utility modules)
-                                logger.debug(f"Skipping {import_path}: no FactoryNode attribute")
+                                # or files whose dependencies are not installed
+                                logger.debug(f"Skipping {import_path}: {type(e).__name__}: {e}")
                                 continue
 
             with dpg.node_editor(
