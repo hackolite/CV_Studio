@@ -9,14 +9,15 @@ configuration for all dependencies, hidden imports, and data files.
 
 Features:
 - Uses CV_Studio.spec for complete dependency configuration
-- Includes all hidden imports (cv2, onnxruntime, mediapipe, etc.)
-- Automatic cleanup of build/, dist/, and .spec files
+- Includes all hidden imports (cv2, onnxruntime, mediapipe, wordcloud, etc.)
+- Optional cleanup of build/, dist/, and .spec files with --clean flag
 - Clear console logging at each step
 - Runtime hooks for proper path management in frozen executables
 - Includes all ONNX models, nodes, fonts, and settings
 
 Usage:
-    python build.py
+    python build.py                 # Build without cleaning
+    python build.py --clean         # Clean build artifacts then build
 
 The script will build main.py into a standalone executable using the
 CV_Studio.spec configuration file, ensuring all modules are properly included.
@@ -26,6 +27,7 @@ import os
 import sys
 import shutil
 import subprocess
+import argparse
 
 # ============================================================================
 # ROBUSTNESS: Increase recursion limit for large libraries (Pandas, Tkinter)
@@ -305,10 +307,17 @@ def main():
     Main function to orchestrate the build process.
     
     Steps:
-    1. Cleanup - Remove previous build artifacts
+    1. Cleanup - Remove previous build artifacts (when --clean is used)
     2. Compile - Build executable with PyInstaller
     3. Summary - Display build results
     """
+    parser = argparse.ArgumentParser(
+        description='Build CV_Studio executable with PyInstaller',
+    )
+    parser.add_argument('--clean', action='store_true',
+                        help='Clean build directories before building')
+    args = parser.parse_args()
+
     print()
     print("╔" + "═" * BOX_WIDTH + "╗")
     print("║" + _pad_line("    CV_Studio - Script de Build PyInstaller") + "║")
@@ -318,10 +327,13 @@ def main():
     # Show recursion limit setting
     log_info(f"Limite de récursion augmentée à: {sys.getrecursionlimit()}")
     
-    # Step 1: Cleanup
-    if not cleanup_build_artifacts():
-        display_summary(False)
-        sys.exit(1)
+    # Step 1: Cleanup (when --clean is passed)
+    if args.clean:
+        if not cleanup_build_artifacts():
+            display_summary(False)
+            sys.exit(1)
+    else:
+        log_info("Pas de nettoyage demandé (utilisez --clean pour nettoyer)")
     
     # Step 2: Build
     success = build_executable()

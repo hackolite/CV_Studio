@@ -150,6 +150,7 @@ datas += collect_data_files('onnxruntime')
 datas += collect_data_files('librosa')
 datas += collect_data_files('sklearn')
 datas += collect_data_files('streamlink')
+datas += collect_data_files('wordcloud')
 
 # Binary excludes - exclude unnecessary binaries
 binaries = []
