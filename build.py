@@ -270,7 +270,6 @@ def display_summary(success, onefile=False):
         
         if onefile:
             exe_path = os.path.join(base_dir, 'dist', 'CV_Studio.exe')
-            dist_description = "dist/CV_Studio.exe (exécutable autonome)"
         else:
             exe_path = os.path.join(base_dir, 'dist', 'CV_Studio', 'CV_Studio.exe')
             dist_folder = os.path.join(base_dir, 'dist', 'CV_Studio')
