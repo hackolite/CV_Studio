@@ -23,6 +23,9 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 block_cipher = None
 base_path = os.path.abspath('.')
 
+# Onefile mode: set CV_STUDIO_ONEFILE=1 in the environment (done by build.py --onefile)
+onefile_mode = os.environ.get('CV_STUDIO_ONEFILE', '0') == '1'
+
 # Collect all submodules for key packages
 hiddenimports = []
 hiddenimports += collect_submodules('dearpygui')
@@ -186,32 +189,57 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name='CV_Studio',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    console=True,  # Set to False to hide console window
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=None,  # Add icon='icon.ico' if you have an icon file
-)
+if onefile_mode:
+    # Onefile mode: all binaries, datas and zipfiles are bundled directly into the .exe
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        [],
+        exclude_binaries=False,
+        name='CV_Studio',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        console=True,  # Set to False to hide console window
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+        icon=None,  # Add icon='icon.ico' if you have an icon file
+    )
+else:
+    # Folder mode (default): produces dist/CV_Studio/ with CV_Studio.exe + dependencies
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name='CV_Studio',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        console=True,  # Set to False to hide console window
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+        icon=None,  # Add icon='icon.ico' if you have an icon file
+    )
 
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='CV_Studio',
-)
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        strip=False,
+        upx=True,
+        upx_exclude=[],
+        name='CV_Studio',
+    )

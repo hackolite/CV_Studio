@@ -11,13 +11,16 @@ Features:
 - Uses CV_Studio.spec for complete dependency configuration
 - Includes all hidden imports (cv2, onnxruntime, mediapipe, wordcloud, etc.)
 - Optional cleanup of build/, dist/, and .spec files with --clean flag
+- Optional onefile mode (single .exe) with --onefile flag
 - Clear console logging at each step
 - Runtime hooks for proper path management in frozen executables
 - Includes all ONNX models, nodes, fonts, and settings
 
 Usage:
-    python build.py                 # Build without cleaning
-    python build.py --clean         # Clean build artifacts then build
+    python build.py                         # Build folder distribution
+    python build.py --onefile               # Build single .exe (onefile)
+    python build.py --clean                 # Clean artifacts then build folder
+    python build.py --clean --onefile       # Clean artifacts then build onefile
 
 The script will build main.py into a standalone executable using the
 CV_Studio.spec configuration file, ensuring all modules are properly included.
@@ -163,7 +166,7 @@ def cleanup_build_artifacts():
 # ============================================================================
 # BUILD: Compile with PyInstaller
 # ============================================================================
-def build_executable():
+def build_executable(onefile=False):
     """
     Build the executable using PyInstaller with the CV_Studio.spec configuration.
     
@@ -175,10 +178,15 @@ def build_executable():
     
     This ensures all modules, especially cv2, are properly included in the executable.
     
+    Args:
+        onefile (bool): When True, build a single self-contained .exe (onefile mode).
+                        When False (default), build a folder-based distribution.
+    
     Returns:
         bool: True if build succeeded, False otherwise
     """
-    log_step(2, 3, "Compilation avec PyInstaller...")
+    mode_label = "onefile (.exe autonome)" if onefile else "dossier (dist/CV_Studio/)"
+    log_step(2, 3, f"Compilation avec PyInstaller [{mode_label}]...")
     
     # Get the base directory
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -192,6 +200,8 @@ def build_executable():
     
     log_info(f"Fichier de configuration: CV_Studio.spec")
     log_info("Ce fichier inclut tous les imports cachés (cv2, onnxruntime, etc.)")
+    if onefile:
+        log_info("Mode onefile activé: un seul .exe sera généré dans dist/")
     
     # Build PyInstaller command using the spec file
     cmd = [
@@ -204,12 +214,20 @@ def build_executable():
     log_info(f"Commande: {' '.join(cmd)}")
     print()
     
+    # Propagate onefile flag to the spec file via environment variable
+    env = os.environ.copy()
+    if onefile:
+        env['CV_STUDIO_ONEFILE'] = '1'
+    else:
+        env.pop('CV_STUDIO_ONEFILE', None)
+    
     # Run PyInstaller
     try:
-        result = subprocess.run(
+        subprocess.run(
             cmd,
             check=True,
-            cwd=base_dir
+            cwd=base_dir,
+            env=env,
         )
         log_success("Compilation PyInstaller terminée avec succès")
         return True
@@ -237,19 +255,25 @@ def _pad_line(text, width=BOX_WIDTH):
     return text + " " * padding_needed
 
 
-def display_summary(success):
+def display_summary(success, onefile=False):
     """
     Display the build summary with clear status indication.
     
     Args:
         success (bool): Whether the build was successful
+        onefile (bool): Whether this was a onefile build
     """
     log_step(3, 3, "Résumé de la compilation")
     
     if success:
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        exe_path = os.path.join(base_dir, 'dist', 'CV_Studio', 'CV_Studio.exe')
-        dist_folder = os.path.join(base_dir, 'dist', 'CV_Studio')
+        
+        if onefile:
+            exe_path = os.path.join(base_dir, 'dist', 'CV_Studio.exe')
+            dist_description = "dist/CV_Studio.exe (exécutable autonome)"
+        else:
+            exe_path = os.path.join(base_dir, 'dist', 'CV_Studio', 'CV_Studio.exe')
+            dist_folder = os.path.join(base_dir, 'dist', 'CV_Studio')
         
         print()
         print("╔" + "═" * BOX_WIDTH + "╗")
@@ -260,29 +284,42 @@ def display_summary(success):
             # Get file size
             size_bytes = os.path.getsize(exe_path)
             size_mb = size_bytes / (1024 * 1024)
-            print("║" + _pad_line("  Exécutable créé: dist/CV_Studio/CV_Studio.exe") + "║")
-            print("║" + _pad_line(f"  Taille de l'exe: {size_mb:.1f} MB") + "║")
-            
-            # Get folder size
-            total_size = 0
-            for dirpath, dirnames, filenames in os.walk(dist_folder):
-                for filename in filenames:
-                    fp = os.path.join(dirpath, filename)
-                    if os.path.exists(fp):
-                        total_size += os.path.getsize(fp)
-            folder_size_mb = total_size / (1024 * 1024)
-            print("║" + _pad_line(f"  Taille totale du dossier: {folder_size_mb:.1f} MB") + "║")
+            if onefile:
+                print("║" + _pad_line("  Exécutable créé: dist/CV_Studio.exe") + "║")
+                print("║" + _pad_line(f"  Taille de l'exe: {size_mb:.1f} MB") + "║")
+            else:
+                print("║" + _pad_line("  Exécutable créé: dist/CV_Studio/CV_Studio.exe") + "║")
+                print("║" + _pad_line(f"  Taille de l'exe: {size_mb:.1f} MB") + "║")
+                
+                # Get folder size
+                total_size = 0
+                for dirpath, dirnames, filenames in os.walk(dist_folder):
+                    for filename in filenames:
+                        fp = os.path.join(dirpath, filename)
+                        if os.path.exists(fp):
+                            total_size += os.path.getsize(fp)
+                folder_size_mb = total_size / (1024 * 1024)
+                print("║" + _pad_line(f"  Taille totale du dossier: {folder_size_mb:.1f} MB") + "║")
         else:
-            print("║" + _pad_line("  Exécutable: dist/CV_Studio/CV_Studio.exe") + "║")
+            if onefile:
+                print("║" + _pad_line("  Exécutable: dist/CV_Studio.exe") + "║")
+            else:
+                print("║" + _pad_line("  Exécutable: dist/CV_Studio/CV_Studio.exe") + "║")
         
         print("╠" + "═" * BOX_WIDTH + "╣")
         print("║" + _pad_line("  Pour lancer l'application:") + "║")
-        print("║" + _pad_line("    .\\dist\\CV_Studio\\CV_Studio.exe") + "║")
-        print("║" + _pad_line("") + "║")
-        print("║" + _pad_line("  Le dossier dist/CV_Studio/ contient:") + "║")
-        print("║" + _pad_line("    - CV_Studio.exe (exécutable principal)") + "║")
-        print("║" + _pad_line("    - _internal/ (dépendances Python et modules)") + "║")
-        print("║" + _pad_line("    - node/ (tous les noeuds avec modèles ONNX)") + "║")
+        if onefile:
+            print("║" + _pad_line("    .\\dist\\CV_Studio.exe") + "║")
+            print("║" + _pad_line("") + "║")
+            print("║" + _pad_line("  Le fichier dist/CV_Studio.exe est autonome") + "║")
+            print("║" + _pad_line("  (toutes les dépendances sont intégrées)") + "║")
+        else:
+            print("║" + _pad_line("    .\\dist\\CV_Studio\\CV_Studio.exe") + "║")
+            print("║" + _pad_line("") + "║")
+            print("║" + _pad_line("  Le dossier dist/CV_Studio/ contient:") + "║")
+            print("║" + _pad_line("    - CV_Studio.exe (exécutable principal)") + "║")
+            print("║" + _pad_line("    - _internal/ (dépendances Python et modules)") + "║")
+            print("║" + _pad_line("    - node/ (tous les noeuds avec modèles ONNX)") + "║")
         print("╚" + "═" * BOX_WIDTH + "╝")
         print()
     else:
@@ -316,12 +353,17 @@ def main():
     )
     parser.add_argument('--clean', action='store_true',
                         help='Clean build directories before building')
+    parser.add_argument('--onefile', action='store_true',
+                        help='Build a single self-contained .exe (onefile mode) instead of a folder distribution')
     args = parser.parse_args()
 
     print()
     print("╔" + "═" * BOX_WIDTH + "╗")
     print("║" + _pad_line("    CV_Studio - Script de Build PyInstaller") + "║")
-    print("║" + _pad_line("           Automatisation Windows") + "║")
+    if args.onefile:
+        print("║" + _pad_line("        Mode: onefile (.exe autonome)") + "║")
+    else:
+        print("║" + _pad_line("           Automatisation Windows") + "║")
     print("╚" + "═" * BOX_WIDTH + "╝")
     
     # Show recursion limit setting
@@ -330,16 +372,16 @@ def main():
     # Step 1: Cleanup (when --clean is passed)
     if args.clean:
         if not cleanup_build_artifacts():
-            display_summary(False)
+            display_summary(False, onefile=args.onefile)
             sys.exit(1)
     else:
         log_info("Pas de nettoyage demandé (utilisez --clean pour nettoyer)")
     
     # Step 2: Build
-    success = build_executable()
+    success = build_executable(onefile=args.onefile)
     
     # Step 3: Summary
-    display_summary(success)
+    display_summary(success, onefile=args.onefile)
     
     if not success:
         sys.exit(1)
