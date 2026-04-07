@@ -15,6 +15,8 @@ import subprocess
 import sys
 import datetime
 
+DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+
 import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_set_value
@@ -24,15 +26,20 @@ from node.basenode import Node as BaseNode
 def _get_git_commit():
     """Return (short_hash, date_str) of the last git commit, or ('N/A', 'N/A')."""
     try:
-        root = os.path.dirname(os.path.abspath(__file__))
+        here = os.path.dirname(os.path.abspath(__file__))
+        repo_root = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=here,
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
         short_hash = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"],
-            cwd=root,
+            cwd=repo_root,
             stderr=subprocess.DEVNULL,
         ).decode().strip()
         date_str = subprocess.check_output(
             ["git", "log", "-1", "--format=%ci"],
-            cwd=root,
+            cwd=repo_root,
             stderr=subprocess.DEVNULL,
         ).decode().strip()
         return short_hash, date_str
@@ -115,7 +122,7 @@ class FactoryNode:
                 dpg.add_text("Current time:")
                 dpg.add_text(
                     tag=node._tag_now,
-                    default_value=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    default_value=datetime.datetime.now().strftime(DATETIME_FORMAT),
                 )
 
         return node
@@ -129,8 +136,6 @@ class InfoNode(BaseNode):
 
     def __init__(self):
         super().__init__()
-        self.node_label = "Info"
-        self.node_tag = "Info"
         self._tag_now = None
 
     def update(
@@ -145,7 +150,7 @@ class InfoNode(BaseNode):
         if self._tag_now and dpg.does_item_exist(self._tag_now):
             dpg_set_value(
                 self._tag_now,
-                datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                datetime.datetime.now().strftime(DATETIME_FORMAT),
             )
         return {"image": None, "json": None, "audio": None}
 
