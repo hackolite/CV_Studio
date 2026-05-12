@@ -257,7 +257,6 @@ class FactoryNode:
             # ---- Upload custom ONNX button ---------------------------------
             node.tag_upload_btn = node.tag_node_name + ':UploadONNX'
             node.tag_onnx_dialog = node.tag_node_name + ':ONNXDialog'
-            node.tag_classes_dialog = node.tag_node_name + ':ClassesDialog'
 
             with dpg.node_attribute(
                     tag=node.tag_node_name + ':UploadAttr',
@@ -294,21 +293,7 @@ class FactoryNode:
                     dpg.add_file_extension(".onnx", color=(0, 200, 100, 255))
                     dpg.add_file_extension(".*")
 
-                # Classes file dialog (hidden, opened if classes not found in ONNX)
-                with dpg.file_dialog(
-                    tag=node.tag_classes_dialog,
-                    label="Select class names file (.txt or .json)",
-                    width=600,
-                    height=400,
-                    show=False,
-                    modal=True,
-                    callback=lambda s, a, u: Node._on_classes_selected(s, a, u),
-                    cancel_callback=lambda s, a, u: Node._on_classes_skip(u),
-                    user_data=node,
-                ):
-                    dpg.add_file_extension(".txt", color=(200, 200, 0, 255))
-                    dpg.add_file_extension(".json", color=(200, 150, 0, 255))
-                    dpg.add_file_extension(".*")
+
 
         return node
 
@@ -388,8 +373,6 @@ class Node(Node):
 
     # Tag suffix used for the "Upload ONNX" button inside the node
     _UPLOAD_BTN_SUFFIX = ':UploadONNX'
-    # Tag for the classes file dialog associated with this node
-    _CLASSES_DIALOG_SUFFIX = ':ClassesDialog'
     # Tag for the ONNX file dialog
     _ONNX_DIALOG_SUFFIX = ':ONNXDialog'
     # Temporary storage for pending upload state (keyed by node tag)
@@ -487,37 +470,11 @@ class Node(Node):
             "meta": meta,
         }
 
-        if meta.get("class_names"):
-            # Classes found in ONNX metadata → skip classes dialog
-            Node._finalise_upload(node, meta["class_names"])
-        else:
-            # Ask the user for a classes file
-            try:
-                dpg.show_item(node.tag_classes_dialog)
-            except Exception as exc:
-                logger.warning(f"Could not open classes dialog: {exc}")
-
-    @staticmethod
-    def _on_classes_selected(sender, app_data, node):
-        """Called when the user selects a class names file."""
-        selections = app_data.get("selections", {})
-        class_names = {}
-        if selections:
-            classes_path = list(selections.values())[0]
-            class_names = onnx_inspector.load_class_names_from_file(classes_path)
-
-        if not class_names:
-            # Fall back to COCO classes
-            class_names = dict(coco_class_names)
-            logger.info("No valid class names file selected; using COCO defaults.")
-
+        # Use class names from ONNX metadata, or fall back to COCO defaults
+        class_names = meta.get("class_names") or dict(coco_class_names)
+        if not meta.get("class_names"):
+            logger.info("No class names found in ONNX metadata; using COCO class names as fallback.")
         Node._finalise_upload(node, class_names)
-
-    @staticmethod
-    def _on_classes_skip(node):
-        """Called when the user cancels the classes file dialog."""
-        logger.info("Classes file dialog cancelled; using COCO class names as fallback.")
-        Node._finalise_upload(node, dict(coco_class_names))
 
     @staticmethod
     def _finalise_upload(node, class_names: dict):
