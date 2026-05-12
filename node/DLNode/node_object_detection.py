@@ -255,9 +255,9 @@ class FactoryNode:
                 dpg.bind_item_theme(btn, yellow_button_theme)
 
             # ---- Upload custom ONNX button ---------------------------------
-            node.tag_upload_btn = node.tag_node_name + Node._UPLOAD_BTN_SUFFIX
-            node.tag_onnx_dialog = node.tag_node_name + Node._ONNX_DIALOG_SUFFIX
-            node.tag_classes_dialog = node.tag_node_name + Node._CLASSES_DIALOG_SUFFIX
+            node.tag_upload_btn = node.tag_node_name + ':UploadONNX'
+            node.tag_onnx_dialog = node.tag_node_name + ':ONNXDialog'
+            node.tag_classes_dialog = node.tag_node_name + ':ClassesDialog'
 
             with dpg.node_attribute(
                     tag=node.tag_node_name + ':UploadAttr',
