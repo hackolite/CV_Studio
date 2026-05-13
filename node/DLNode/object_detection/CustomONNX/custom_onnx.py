@@ -175,13 +175,25 @@ class CustomONNX:
             return np.array([]), np.array([]), np.array([])
 
         # output is (num_classes+4, num_anchors); check orientation
-        # Axis 0 should be the smaller dimension (C+4), axis 1 the larger (anchors)
-        if output.shape[0] > output.shape[1]:
+        # Use num_classes when known, otherwise fall back to dimension comparison.
+        expected_channels = self.num_classes + 4 if self.num_classes > 0 else None
+        needs_transpose = False
+        if expected_channels is not None:
+            if output.shape[0] != expected_channels and output.shape[1] == expected_channels:
+                needs_transpose = True
+                logger.warning(
+                    f"[CustomONNX] yolo11 post-process: output shape {output.shape} does not "
+                    f"match expected [C+4={expected_channels}, anchors]. Transposing."
+                )
+        elif output.shape[0] > output.shape[1]:
+            # Heuristic: larger axis-0 suggests (anchors, C+4) orientation
+            needs_transpose = True
             logger.warning(
                 f"[CustomONNX] yolo11 post-process: shape after squeeze is "
                 f"{output.shape} — axis-0 ({output.shape[0]}) > axis-1 ({output.shape[1]}). "
                 f"Expected [C+4, anchors]. Transposing to correct orientation."
             )
+        if needs_transpose:
             output = output.T
 
         # Transpose to (num_anchors, num_classes+4)
@@ -264,13 +276,25 @@ class CustomONNX:
             return np.array([]), np.array([]), np.array([])
 
         # output is (num_anchors, num_classes+5); check orientation
-        # Axis 1 should be the smaller dimension (C+5), axis 0 the larger (anchors)
-        if output.shape[1] > output.shape[0]:
+        # Use num_classes when known, otherwise fall back to dimension comparison.
+        expected_channels = self.num_classes + 5 if self.num_classes > 0 else None
+        needs_transpose = False
+        if expected_channels is not None:
+            if output.shape[1] != expected_channels and output.shape[0] == expected_channels:
+                needs_transpose = True
+                logger.warning(
+                    f"[CustomONNX] yolox post-process: output shape {output.shape} does not "
+                    f"match expected [anchors, C+5={expected_channels}]. Transposing."
+                )
+        elif output.shape[1] > output.shape[0]:
+            # Heuristic: larger axis-1 suggests (C+5, anchors) orientation
+            needs_transpose = True
             logger.warning(
                 f"[CustomONNX] yolox post-process: shape after squeeze is "
                 f"{output.shape} — axis-1 ({output.shape[1]}) > axis-0 ({output.shape[0]}). "
                 f"Expected [anchors, C+5]. Transposing to correct orientation."
             )
+        if needs_transpose:
             output = output.T
 
         if output.shape[1] < 6:
