@@ -403,7 +403,11 @@ class Node(Node):
             raw_classes = entry.get('class_names', {})
             class_names = {int(k): str(v) for k, v in raw_classes.items()}
             if not class_names:
-                class_names = coco_class_names  # fallback
+                num_classes = int(entry.get('num_classes', 0))
+                if num_classes > 0:
+                    class_names = {i: f"class_{i}" for i in range(num_classes)}
+                else:
+                    class_names = dict(coco_class_names)
 
             output_fmt = entry.get('output_format', 'yolo11')
             in_w = int(entry.get('input_width', 640))
@@ -470,10 +474,20 @@ class Node(Node):
             "meta": meta,
         }
 
-        # Use class names from ONNX metadata, or fall back to COCO defaults
-        class_names = meta.get("class_names") or dict(coco_class_names)
-        if not meta.get("class_names"):
-            logger.info("No class names found in ONNX metadata; using COCO class names as fallback.")
+        # Use class names from ONNX metadata, or fall back to generic class_N names
+        class_names = meta.get("class_names")
+        if not class_names:
+            num_classes = meta.get("num_classes", 0)
+            if num_classes > 0:
+                class_names = {i: f"class_{i}" for i in range(num_classes)}
+                logger.info(
+                    f"No class names found in ONNX metadata; generated {num_classes} generic class names."
+                )
+            else:
+                class_names = dict(coco_class_names)
+                logger.info(
+                    "No class names or class count found in ONNX metadata; using COCO class names as fallback."
+                )
         Node._finalise_upload(node, class_names)
 
     @staticmethod
@@ -860,7 +874,11 @@ class Node(Node):
                 raw_classes = entry.get('class_names', {})
                 class_names_restored = {int(k): str(v) for k, v in raw_classes.items()}
                 if not class_names_restored:
-                    class_names_restored = dict(coco_class_names)
+                    num_classes = int(entry.get('num_classes', 0))
+                    if num_classes > 0:
+                        class_names_restored = {i: f"class_{i}" for i in range(num_classes)}
+                    else:
+                        class_names_restored = dict(coco_class_names)
                 Node._register_custom_model(
                     model_name,
                     entry['path'],
@@ -953,7 +971,7 @@ class Node(Node):
 
                 score = '%.2f' % score
                 text = '%s:%s(%s)' % (int(class_id), str(
-                    class_names[int(class_id)]), score)
+                    class_names.get(int(class_id), str(int(class_id)))), score)
                 
                 # Calculate text size to position it better
                 (text_width, text_height), baseline = cv2.getTextSize(
