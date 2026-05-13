@@ -540,7 +540,7 @@ class Node(Node):
             if dpg.does_item_exist(tag):
                 dpg.delete_item(tag)
 
-        # ---- file dialog (top-level, shown from Browse button) ---------
+        # ---- file dialog (created lazily on Browse click for correct z-order) -
         def _on_browse_select(sender, app_data):
             selections = app_data.get("selections", {})
             if not selections:
@@ -571,18 +571,23 @@ class Node(Node):
                 dpg.set_value(info_tag, f"Inspection error: {exc}")
                 logger.error(f"[Upload] ONNX inspection failed: {exc}")
 
-        with dpg.file_dialog(
-            tag=file_dialog_tag,
-            label="Select ONNX model",
-            width=600,
-            height=400,
-            show=False,
-            modal=True,
-            callback=_on_browse_select,
-            cancel_callback=lambda s, a: None,
-        ):
-            dpg.add_file_extension(".onnx", color=(0, 200, 100, 255))
-            dpg.add_file_extension(".*")
+        def _open_file_dialog():
+            # Re-create the file dialog each time so it is rendered on top of
+            # the modal window (DearPyGui draws items in creation order).
+            if dpg.does_item_exist(file_dialog_tag):
+                dpg.delete_item(file_dialog_tag)
+            with dpg.file_dialog(
+                tag=file_dialog_tag,
+                label="Select ONNX model",
+                width=600,
+                height=400,
+                show=True,
+                modal=True,
+                callback=_on_browse_select,
+                cancel_callback=lambda s, a: None,
+            ):
+                dpg.add_file_extension(".onnx", color=(0, 200, 100, 255))
+                dpg.add_file_extension(".*")
 
         # ---- modal window -----------------------------------------------
         def _on_add_model():
@@ -652,7 +657,7 @@ class Node(Node):
                 )
                 dpg.add_button(
                     label="Browse",
-                    callback=lambda: dpg.show_item(file_dialog_tag),
+                    callback=lambda: _open_file_dialog(),
                 )
 
             dpg.add_text("", tag=info_tag)
