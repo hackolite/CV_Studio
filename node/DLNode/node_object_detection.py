@@ -540,7 +540,7 @@ class Node(Node):
             if dpg.does_item_exist(tag):
                 dpg.delete_item(tag)
 
-        # ---- file dialog (created lazily on Browse click for correct z-order) -
+        # ---- file dialog (created lazily on Browse click for correct z-order) ---
         def _on_browse_select(sender, app_data):
             selections = app_data.get("selections", {})
             if not selections:
