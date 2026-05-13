@@ -10,6 +10,7 @@ numpy>=1.21.0
 opencv-contrib-python>=4.8.1.78
 # Use CPU version for broader compatibility
 onnxruntime>=1.16.0
+onnx>=1.14.0
 dearpygui>=2.0.0
 mediapipe>=0.10.0
 protobuf>=3.20.2,<4.0.0

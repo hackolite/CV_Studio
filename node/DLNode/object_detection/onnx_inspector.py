@@ -15,6 +15,7 @@ import logging
 import os
 
 import onnxruntime
+from node.DLNode.object_detection.onnx_session_utils import make_session
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +47,7 @@ def inspect_onnx_model(model_path: str) -> dict:
 
     logger.info(f"[ONNX Inspector] Loading model: {model_path}")
 
-    session = onnxruntime.InferenceSession(
-        model_path, providers=["CPUExecutionProvider"]
-    )
+    session = make_session(model_path, providers=["CPUExecutionProvider"])
 
     # ---- Input info --------------------------------------------------------
     input_detail = session.get_inputs()[0]

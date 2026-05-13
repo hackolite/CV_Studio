@@ -19,12 +19,12 @@ import cv2
 import numpy as np
 import onnxruntime
 
+from node.DLNode.object_detection.onnx_session_utils import make_session
+
 # Disable cuDNN for safer operation (mirrors other YOLO wrappers in this project)
 os.environ["ORT_CUDA_USE_CUDNN"] = "0"
 
 logger = logging.getLogger(__name__)
-
-
 class CustomONNX:
     """Generic ONNX object-detection wrapper.
 
@@ -62,9 +62,7 @@ class CustomONNX:
             f"num_classes={num_classes}, providers={providers}"
         )
 
-        self.onnx_session = onnxruntime.InferenceSession(
-            model_path, providers=providers
-        )
+        self.onnx_session = make_session(model_path, providers)
 
         # Use provided input name, fall back to first input name from model
         if input_name:
