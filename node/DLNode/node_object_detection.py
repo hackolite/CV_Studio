@@ -641,12 +641,12 @@ class Node(Node):
 
         if class_names:
             dpg.add_text("Class list:", parent=self.tag_preview_details)
-            _MAX_SHOW = 40
-            for cid, cname in sorted(class_names.items())[:_MAX_SHOW]:
+            max_show = 40
+            for cid, cname in sorted(class_names.items(), key=lambda x: x[0])[:max_show]:
                 dpg.add_text(f"  {cid}: {cname}", parent=self.tag_preview_details)
-            if len(class_names) > _MAX_SHOW:
+            if len(class_names) > max_show:
                 dpg.add_text(
-                    f"  … and {len(class_names) - _MAX_SHOW} more classes",
+                    f"  … and {len(class_names) - max_show} more classes",
                     parent=self.tag_preview_details,
                 )
         else:
