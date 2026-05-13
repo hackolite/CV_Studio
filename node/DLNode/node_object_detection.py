@@ -356,6 +356,13 @@ class FactoryNode:
             # ---- Add model button (opens upload dialog on click) ------------
             node.tag_upload_btn = node.tag_node_name + ':UploadONNX'
 
+            def _on_upload_clicked(sender, app_data, user_data):
+                logger.info(
+                    f"[Upload] 'Add Model' button clicked — "
+                    f"showing file dialog '{onnx_file_dialog_tag}'"
+                )
+                dpg.show_item(onnx_file_dialog_tag)
+
             with dpg.node_attribute(
                     tag=node.tag_node_name + ':UploadAttr',
                     attribute_type=dpg.mvNode_Attr_Static,
@@ -370,10 +377,7 @@ class FactoryNode:
                     label=u"📂 Add Model",
                     tag=node.tag_upload_btn,
                     width=small_window_w,
-                    callback=lambda s, a, u: (
-                        logger.info(f"[Upload] 'Add Model' button clicked — showing file dialog '{onnx_file_dialog_tag}'"),
-                        dpg.show_item(onnx_file_dialog_tag),
-                    ),
+                    callback=_on_upload_clicked,
                 )
                 dpg.bind_item_theme(upload_btn, green_btn_theme)
 

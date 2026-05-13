@@ -173,7 +173,7 @@ class CustomONNX:
         YOLOX was trained with:
           - Letterbox padding (value=114) maintaining aspect ratio.
           - Raw pixel values in [0, 255] — **no** /255 normalisation.
-          - BGR→ no colour conversion (model expects BGR input).
+          - BGR colour format (no colour space conversion needed).
 
         Returns (blob, ratio) where ratio = resized / original.
         """
@@ -182,7 +182,8 @@ class CustomONNX:
         new_h = int(orig_h * ratio)
         new_w = int(orig_w * ratio)
 
-        # Letterbox canvas filled with 114 (YOLOX convention)
+        # Letterbox canvas filled with 114 — the neutral gray value used during
+        # YOLOX training to pad images to the target resolution.
         padded = np.full(
             (self.input_height, self.input_width, 3), 114.0, dtype=np.float32
         )
