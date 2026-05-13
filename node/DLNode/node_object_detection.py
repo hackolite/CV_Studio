@@ -12,6 +12,7 @@ editor.
 
 import copy
 import os
+import shutil
 import time
 
 import cv2
@@ -39,6 +40,9 @@ logger = get_logger(__name__)
 _OBJECT_DETECTION_BASE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), 'object_detection'
 )
+
+# Directory where user-uploaded ONNX models are stored permanently
+_UPLOADS_DIR = os.path.join(_OBJECT_DETECTION_BASE, 'CustomONNX', 'models')
 
 _COCO_CLASSES = {k: v for k, v in coco_class_names.items()}
 
@@ -240,6 +244,50 @@ class FactoryNode:
             dpg.add_file_extension("ONNX (*.onnx){.onnx}")
             dpg.add_file_extension("", color=(150, 255, 150, 255))
         node.tag_upload_file_dialog = onnx_file_dialog_tag
+
+        # ---- ONNX preview / confirmation dialog ----------------------------
+        preview_window_tag  = "onnx_preview_window:"  + str(node_id)
+        preview_name_tag    = "onnx_preview_name:"    + str(node_id)
+        preview_details_tag = "onnx_preview_details:" + str(node_id)
+        preview_status_tag  = "onnx_preview_status:"  + str(node_id)
+
+        node.tag_preview_window  = preview_window_tag
+        node.tag_preview_name    = preview_name_tag
+        node.tag_preview_details = preview_details_tag
+        node.tag_preview_status  = preview_status_tag
+
+        def _on_upload_confirm(sender, app_data, user_data):
+            node._do_confirm_upload()
+
+        def _on_upload_cancel(sender, app_data, user_data):
+            dpg.hide_item(preview_window_tag)
+
+        with dpg.window(
+            label="ONNX Model Preview",
+            tag=preview_window_tag,
+            modal=True,
+            show=False,
+            width=430,
+            no_close=True,
+        ):
+            dpg.add_text("Model name (editable):")
+            dpg.add_input_text(tag=preview_name_tag, width=410)
+            dpg.add_separator()
+            # Dynamic details area — cleared and repopulated on each upload
+            dpg.add_group(tag=preview_details_tag)
+            dpg.add_separator()
+            dpg.add_text("", tag=preview_status_tag)
+            dpg.add_spacer(height=4)
+            with dpg.group(horizontal=True):
+                dpg.add_button(
+                    label="  Confirm Upload  ",
+                    callback=_on_upload_confirm,
+                )
+                dpg.add_spacer(width=10)
+                dpg.add_button(
+                    label="  Cancel  ",
+                    callback=_on_upload_cancel,
+                )
 
         with dpg.node(
                 tag=node.tag_node_name,
@@ -506,11 +554,12 @@ class Node(Node):
     # Upload callback
     # ------------------------------------------------------------------
 
-    def _callback_onnx_select(self, sender, data):
+    def _callback_onnx_select(self, sender, data, user_data=None):
         """Handle ONNX file selection from the file dialog.
 
-        Inspects the selected ONNX file to extract metadata and class names
-        (from embedded ONNX metadata only), then registers the model.
+        Inspects the selected ONNX file to extract metadata and class names,
+        then shows the preview/confirmation dialog instead of registering
+        the model immediately.
         """
         logger.info(f"[Upload] File dialog callback triggered — sender={sender}, data={data}")
         if data.get("file_name") == ".":
@@ -533,6 +582,21 @@ class Node(Node):
             )
         except Exception as exc:
             logger.error(f"[Upload] ONNX inspection failed: {exc}", exc_info=True)
+            # Show error in the preview dialog
+            self._pending_onnx_path = None
+            self._pending_meta = None
+            self._pending_class_names = None
+            try:
+                dpg.delete_item(self.tag_preview_details, children_only=True)
+                dpg.add_text(
+                    f"Inspection error: {exc}",
+                    parent=self.tag_preview_details,
+                    color=(255, 100, 100, 255),
+                )
+                dpg.set_value(self.tag_preview_status, "")
+                dpg.show_item(self.tag_preview_window)
+            except Exception:
+                pass
             return
 
         # Class names come exclusively from the ONNX file metadata
@@ -546,13 +610,131 @@ class Node(Node):
             if num_classes > 0:
                 class_names = {i: f"class_{i}" for i in range(num_classes)}
 
-        Node._finalise_upload(self, onnx_path, meta, class_names)
+        # Store pending upload data on the instance
+        self._pending_onnx_path = onnx_path
+        self._pending_meta = meta
+        self._pending_class_names = class_names
+
+        # Populate preview dialog
+        base_name = os.path.splitext(os.path.basename(onnx_path))[0]
+        dpg.set_value(self.tag_preview_name, base_name)
+
+        dpg.delete_item(self.tag_preview_details, children_only=True)
+
+        in_w = meta.get("input_width", 640)
+        in_h = meta.get("input_height", 640)
+        out_fmt = meta.get("output_format", "unknown")
+        num_cls = meta.get("num_classes", len(class_names))
+
+        dpg.add_text(
+            f"Input dimensions : {in_w} x {in_h} px (W x H)",
+            parent=self.tag_preview_details,
+        )
+        dpg.add_text(
+            f"Output format    : {out_fmt}",
+            parent=self.tag_preview_details,
+        )
+        dpg.add_text(
+            f"Number of classes: {num_cls}",
+            parent=self.tag_preview_details,
+        )
+
+        if class_names:
+            dpg.add_text("Class list:", parent=self.tag_preview_details)
+            max_show = 40
+            for cid, cname in sorted(class_names.items(), key=lambda x: x[0])[:max_show]:
+                dpg.add_text(f"  {cid}: {cname}", parent=self.tag_preview_details)
+            if len(class_names) > max_show:
+                dpg.add_text(
+                    f"  … and {len(class_names) - max_show} more classes",
+                    parent=self.tag_preview_details,
+                )
+        else:
+            dpg.add_text(
+                "(No class names found in model metadata)",
+                parent=self.tag_preview_details,
+                color=(255, 200, 100, 255),
+            )
+
+        # Clear any previous status message and show the dialog
+        dpg.set_value(self.tag_preview_status, "")
+        dpg.show_item(self.tag_preview_window)
+
+    def _do_confirm_upload(self):
+        """Called when the user clicks 'Confirm Upload' in the preview dialog.
+
+        Copies the ONNX file to the dedicated uploads directory, registers
+        the model, updates the combobox, and reports success or failure.
+        """
+        onnx_path = getattr(self, '_pending_onnx_path', None)
+        meta = getattr(self, '_pending_meta', None)
+        class_names = getattr(self, '_pending_class_names', None)
+
+        if not onnx_path or meta is None:
+            dpg.set_value(self.tag_preview_status, "No pending upload — please select a file first.")
+            return
+
+        # Read the (possibly edited) model name from the dialog
+        custom_name = dpg.get_value(self.tag_preview_name).strip()
+        if not custom_name:
+            custom_name = os.path.splitext(os.path.basename(onnx_path))[0]
+
+        # Copy ONNX to the dedicated uploads directory
+        os.makedirs(_UPLOADS_DIR, exist_ok=True)
+        dest_path = onnx_path
+        try:
+            basename = os.path.basename(onnx_path)
+            candidate = os.path.join(_UPLOADS_DIR, basename)
+            if os.path.abspath(onnx_path) != os.path.abspath(candidate):
+                shutil.copy2(onnx_path, candidate)
+                dest_path = candidate
+                logger.info(f"[Upload] Copied ONNX to: {dest_path}")
+            else:
+                logger.info("[Upload] Source and destination are the same — skipping copy.")
+        except Exception as exc:
+            logger.warning(f"[Upload] Could not copy ONNX to uploads dir: {exc}")
+            # Fall back to using the original path
+            dest_path = onnx_path
+
+        # Finalise registration
+        try:
+            Node._finalise_upload(self, dest_path, meta, class_names, custom_name=custom_name)
+            dpg.set_value(
+                self.tag_preview_status,
+                f"\u2713 Model '{custom_name}' uploaded successfully!",
+            )
+            logger.info(f"[Upload] Upload confirmed for '{custom_name}'.")
+        except Exception as exc:
+            logger.error(f"[Upload] Finalise failed: {exc}", exc_info=True)
+            dpg.set_value(
+                self.tag_preview_status,
+                f"\u2717 Upload failed: {exc}",
+            )
+
+        # Clear pending state
+        self._pending_onnx_path = None
+        self._pending_meta = None
+        self._pending_class_names = None
 
     @staticmethod
-    def _finalise_upload(node, onnx_path: str, meta: dict, class_names: dict):
-        """Register the custom model and refresh the node UI dropdowns."""
-        # Display name = filename without extension, made unique
-        base = os.path.splitext(os.path.basename(onnx_path))[0]
+    def _finalise_upload(node, onnx_path: str, meta: dict, class_names: dict, custom_name: str = None):
+        """Register the custom model and refresh the node UI dropdowns.
+
+        Parameters
+        ----------
+        node : Node
+            The node instance whose UI should be updated.
+        onnx_path : str
+            Path to the (possibly already-copied) ONNX file.
+        meta : dict
+            Metadata from ``onnx_inspector.inspect_onnx_model()``.
+        class_names : dict
+            ``{int_id: str_name}`` mapping for all classes.
+        custom_name : str, optional
+            Display name chosen by the user; defaults to the filename stem.
+        """
+        # Determine unique display name
+        base = custom_name if custom_name else os.path.splitext(os.path.basename(onnx_path))[0]
         name = base
         counter = 1
         while name in Node._model_class:
