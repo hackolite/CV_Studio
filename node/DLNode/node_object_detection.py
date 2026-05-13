@@ -356,6 +356,13 @@ class FactoryNode:
             # ---- Add model button (opens upload dialog on click) ------------
             node.tag_upload_btn = node.tag_node_name + ':UploadONNX'
 
+            def _on_upload_clicked(sender, app_data, user_data):
+                logger.info(
+                    f"[Upload] 'Add Model' button clicked — "
+                    f"showing file dialog '{onnx_file_dialog_tag}'"
+                )
+                dpg.show_item(onnx_file_dialog_tag)
+
             with dpg.node_attribute(
                     tag=node.tag_node_name + ':UploadAttr',
                     attribute_type=dpg.mvNode_Attr_Static,
@@ -370,7 +377,7 @@ class FactoryNode:
                     label=u"📂 Add Model",
                     tag=node.tag_upload_btn,
                     width=small_window_w,
-                    callback=lambda: dpg.show_item(onnx_file_dialog_tag),
+                    callback=_on_upload_clicked,
                 )
                 dpg.bind_item_theme(upload_btn, green_btn_theme)
 
@@ -505,23 +512,37 @@ class Node(Node):
         Inspects the selected ONNX file to extract metadata and class names
         (from embedded ONNX metadata only), then registers the model.
         """
+        logger.info(f"[Upload] File dialog callback triggered — sender={sender}, data={data}")
         if data.get("file_name") == ".":
+            logger.info("[Upload] User cancelled the file dialog (file_name='.').")
             return
         onnx_path = data.get("file_path_name", "")
+        logger.info(f"[Upload] Selected file path: '{onnx_path}'")
         if not onnx_path or not os.path.isfile(onnx_path):
-            logger.warning("[Upload] No valid ONNX file selected.")
+            logger.warning(f"[Upload] No valid ONNX file selected (path='{onnx_path}').")
             return
 
         try:
+            logger.info(f"[Upload] Inspecting ONNX model: {onnx_path}")
             meta = onnx_inspector.inspect_onnx_model(onnx_path)
+            logger.info(
+                f"[Upload] Inspection result: format='{meta.get('output_format')}', "
+                f"input={meta.get('input_width')}x{meta.get('input_height')}, "
+                f"num_classes={meta.get('num_classes')}, "
+                f"class_names_count={len(meta.get('class_names', {}))}"
+            )
         except Exception as exc:
-            logger.error(f"[Upload] ONNX inspection failed: {exc}")
+            logger.error(f"[Upload] ONNX inspection failed: {exc}", exc_info=True)
             return
 
         # Class names come exclusively from the ONNX file metadata
         class_names = meta.get("class_names", {})
         if not class_names:
             num_classes = meta.get("num_classes", 0)
+            logger.info(
+                f"[Upload] No class names in metadata — "
+                f"{'generating generic names for ' + str(num_classes) + ' classes' if num_classes > 0 else 'no num_classes either'}"
+            )
             if num_classes > 0:
                 class_names = {i: f"class_{i}" for i in range(num_classes)}
 
