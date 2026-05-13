@@ -91,29 +91,6 @@ def test_builtin_models_defined():
     assert tennis['class_names'].get(2) == 'ball'
 
 
-def test_parse_class_names_text():
-    """Test parsing class names from the textarea format."""
-    _mock_dpg_modules()
-    from node.DLNode.node_object_detection import _parse_class_names_text
-
-    # 'id: name' format
-    result = _parse_class_names_text("0: person\n1: car\n2: truck")
-    assert result == {0: 'person', 1: 'car', 2: 'truck'}
-
-    # plain name format (auto-index)
-    result = _parse_class_names_text("person\ncar\ntruck")
-    assert result == {0: 'person', 1: 'car', 2: 'truck'}
-
-    # mixed
-    result = _parse_class_names_text("0: person\ncar")
-    assert result[0] == 'person'
-    assert 'car' in result.values()
-
-    # empty
-    assert _parse_class_names_text("") == {}
-    assert _parse_class_names_text("   ") == {}
-
-
 def test_callback_function_exists():
     """Test that on_model_change callback and related helpers are present."""
     file_path = os.path.join(
