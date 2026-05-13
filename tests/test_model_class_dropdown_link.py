@@ -83,10 +83,12 @@ def test_builtin_models_defined():
             assert key in m, f"Missing key '{key}' in built-in model '{m.get('name')}'"
 
     # Tennis model should have 3 classes
-    tennis = next(m for m in _BUILTIN_MODELS if m['name'] == 'YOLOTENNIS')
+    tennis = next((m for m in _BUILTIN_MODELS if m['name'] == 'YOLOTENNIS'), None)
+    assert tennis is not None, "YOLOTENNIS should be in _BUILTIN_MODELS"
     assert tennis['num_classes'] == 3
-    assert tennis['class_names'].get('0') == 'player1'
-    assert tennis['class_names'].get('2') == 'ball'
+    assert tennis['class_names'].get(0) == 'player1'
+    assert tennis['class_names'].get(1) == 'player2'
+    assert tennis['class_names'].get(2) == 'ball'
 
 
 def test_parse_class_names_text():

@@ -40,7 +40,7 @@ _OBJECT_DETECTION_BASE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), 'object_detection'
 )
 
-_COCO_CLASSES = {str(k): v for k, v in coco_class_names.items()}
+_COCO_CLASSES = {k: v for k, v in coco_class_names.items()}
 
 _BUILTIN_MODELS = [
     {
@@ -95,7 +95,7 @@ _BUILTIN_MODELS = [
         'input_width': 640,
         'input_height': 640,
         'num_classes': 1,
-        'class_names': {'0': 'person'},
+        'class_names': {0: 'person'},
     },
     {
         'name': 'Light-Weight Person Detector',
@@ -104,7 +104,7 @@ _BUILTIN_MODELS = [
         'input_width': 192,
         'input_height': 192,
         'num_classes': 1,
-        'class_names': {'0': 'person'},
+        'class_names': {0: 'person'},
     },
     {
         'name': 'YOLOTENNIS',
@@ -113,7 +113,7 @@ _BUILTIN_MODELS = [
         'input_width': 608,
         'input_height': 608,
         'num_classes': 3,
-        'class_names': {'0': 'player1', '1': 'player2', '2': 'ball'},
+        'class_names': {0: 'player1', 1: 'player2', 2: 'ball'},
     },
 ]
 
@@ -430,7 +430,11 @@ class Node(Node):
         model combo without requiring the user to upload them manually.  Entries are
         skipped when the ONNX file does not exist on disk (e.g., stripped builds).
         """
-        existing = {e.get('name') for e in custom_models_registry._load_raw()}
+        try:
+            existing = {e.get('name') for e in custom_models_registry.load_registry()}
+        except Exception as exc:
+            logger.warning(f"[Builtin] Could not read registry: {exc}")
+            return
         for meta in _BUILTIN_MODELS:
             name = meta['name']
             path = meta['path']
@@ -439,6 +443,7 @@ class Node(Node):
             if not os.path.isfile(path):
                 logger.debug(f"[Builtin] Skipping '{name}' — ONNX file not found: {path}")
                 continue
+            # Registry always stores class_names with string keys
             entry = {
                 'name': name,
                 'path': path,
@@ -446,7 +451,7 @@ class Node(Node):
                 'input_width': meta['input_width'],
                 'input_height': meta['input_height'],
                 'num_classes': meta['num_classes'],
-                'class_names': meta['class_names'],
+                'class_names': {str(k): v for k, v in meta['class_names'].items()},
             }
             try:
                 custom_models_registry.save_entry(entry)
