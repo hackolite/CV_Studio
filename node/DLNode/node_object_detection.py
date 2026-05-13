@@ -1,24 +1,27 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+"""
+Object Detection node for CvStudio.
+
+A single inference class (CustomONNX) handles all ONNX-based detection.
+All models — built-in and user-uploaded — are managed through a persistent
+registry (custom_models_registry.json).  Users add their own models via the
+"Add Model" dialog which combines a file picker and an optional class-name
+editor.
+"""
+
 import copy
-import time
 import os
+import time
 
-import numpy as np
+import cv2
 import dearpygui.dearpygui as dpg
-import cv2 
-from node_editor.util import dpg_get_value, dpg_set_value
+import numpy as np
 
+from node_editor.util import dpg_get_value, dpg_set_value
 from node.basenode import Node
-from node.DLNode.object_detection.YOLOX.yolox import YOLOX
-from node.DLNode.object_detection.YOLO.yolo import YOLO
-from node.DLNode.object_detection.TennisYOLO.yolotennis import YOLOTENNIS
-from node.DLNode.object_detection.LightWeightPersonDetector.detector import LWPDetector
-from node.DLNode.object_detection.FreeYOLO.freeyolo import FreeYOLO
-from node.DLNode.object_detection.coco_class_names import coco_class_names
-from node.DLNode.object_detection.coco_class_names_only_person import coco_class_names_only_person
-from node.DLNode.object_detection.coco_class_names_tennis import coco_class_names_tennis
 from node.DLNode.object_detection.CustomONNX.custom_onnx import CustomONNX
+from node.DLNode.object_detection.coco_class_names import coco_class_names
 from node.DLNode.object_detection import onnx_inspector
 from node.DLNode.object_detection import custom_models_registry
 from src.utils.logging import get_logger
@@ -26,21 +29,132 @@ from src.utils.gpu_utils import get_execution_providers
 
 logger = get_logger(__name__)
 
+# ---------------------------------------------------------------------------
+# Built-in models
+# All inference goes through CustomONNX; these entries are written to the
+# registry on first run so they appear in the model combo alongside any
+# user-uploaded models.
+# ---------------------------------------------------------------------------
+
+_OBJECT_DETECTION_BASE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'object_detection'
+)
+
+_COCO_CLASSES = {str(k): v for k, v in coco_class_names.items()}
+
+_BUILTIN_MODELS = [
+    {
+        'name': 'YOLOX-Nano(416x416)',
+        'path': os.path.join(_OBJECT_DETECTION_BASE, 'YOLOX', 'model', 'yolox_nano.onnx'),
+        'output_format': 'yolox',
+        'input_width': 416,
+        'input_height': 416,
+        'num_classes': 80,
+        'class_names': _COCO_CLASSES,
+    },
+    {
+        'name': 'YOLOX-Tiny(416x416)',
+        'path': os.path.join(_OBJECT_DETECTION_BASE, 'YOLOX', 'model', 'yolox_tiny.onnx'),
+        'output_format': 'yolox',
+        'input_width': 416,
+        'input_height': 416,
+        'num_classes': 80,
+        'class_names': _COCO_CLASSES,
+    },
+    {
+        'name': 'YOLOX-S(640x640)',
+        'path': os.path.join(_OBJECT_DETECTION_BASE, 'YOLOX', 'model', 'yolox_s.onnx'),
+        'output_format': 'yolox',
+        'input_width': 640,
+        'input_height': 640,
+        'num_classes': 80,
+        'class_names': _COCO_CLASSES,
+    },
+    {
+        'name': 'YOLO11Nano',
+        'path': os.path.join(_OBJECT_DETECTION_BASE, 'YOLO', 'model', 'yolo11_n.onnx'),
+        'output_format': 'yolo11',
+        'input_width': 608,
+        'input_height': 416,
+        'num_classes': 80,
+        'class_names': _COCO_CLASSES,
+    },
+    {
+        'name': 'FreeYOLO-Nano(640x640)',
+        'path': os.path.join(_OBJECT_DETECTION_BASE, 'FreeYOLO', 'model', 'yolo_free_nano_640x640.onnx'),
+        'output_format': 'yolox',
+        'input_width': 640,
+        'input_height': 640,
+        'num_classes': 80,
+        'class_names': _COCO_CLASSES,
+    },
+    {
+        'name': 'FreeYOLO-CrowdHuman(640x640)',
+        'path': os.path.join(_OBJECT_DETECTION_BASE, 'FreeYOLO', 'model', 'yolo_free_nano_crowdhuman_640x640.onnx'),
+        'output_format': 'yolox',
+        'input_width': 640,
+        'input_height': 640,
+        'num_classes': 1,
+        'class_names': {'0': 'person'},
+    },
+    {
+        'name': 'Light-Weight Person Detector',
+        'path': os.path.join(_OBJECT_DETECTION_BASE, 'LightWeightPersonDetector', 'model', 'model.onnx'),
+        'output_format': 'yolox',
+        'input_width': 192,
+        'input_height': 192,
+        'num_classes': 1,
+        'class_names': {'0': 'person'},
+    },
+    {
+        'name': 'YOLOTENNIS',
+        'path': os.path.join(_OBJECT_DETECTION_BASE, 'TennisYOLO', 'model', 'tennis.onnx'),
+        'output_format': 'yolo11',
+        'input_width': 608,
+        'input_height': 608,
+        'num_classes': 3,
+        'class_names': {'0': 'player1', '1': 'player2', '2': 'ball'},
+    },
+]
+
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_class_names_text(text: str) -> dict:
+    """Parse class names entered in the upload dialog textarea.
+
+    Accepts two formats (can be mixed):
+      * ``name``          – one name per line, index assigned automatically (0-based)
+      * ``id: name``      – explicit integer id followed by the class name
+
+    Returns a ``{int_id: str_name}`` dict, or an empty dict if *text* is blank.
+    """
+    result = {}
+    auto_idx = 0
+    for line in text.strip().split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        if ':' in line:
+            parts = line.split(':', 1)
+            try:
+                class_id = int(parts[0].strip())
+                result[class_id] = parts[1].strip()
+                auto_idx = class_id + 1
+                continue
+            except ValueError:
+                pass
+        result[auto_idx] = line
+        auto_idx += 1
+    return result
+
 
 def get_class_rejection_dropdown_items(class_name_dict):
-    """Generate dropdown items for class rejection with class IDs and names.
-    
-    Args:
-        class_name_dict: Dictionary mapping class IDs to class names
-        
-    Returns:
-        List of formatted strings for dropdown (e.g., ["0: person", "1: bicycle", ...])
-    """
-    items = []
-    for class_id in sorted(class_name_dict.keys()):
-        class_name = class_name_dict[class_id]
-        items.append(f"{class_id}: {class_name}")
-    return items
+    """Return sorted ``["id: name", ...]`` list for the rejection combo."""
+    return [f"{class_id}: {class_name_dict[class_id]}"
+            for class_id in sorted(class_name_dict.keys())]
 
 
 
@@ -254,15 +368,13 @@ class FactoryNode:
                 )
                 dpg.bind_item_theme(btn, yellow_button_theme)
 
-            # ---- Upload custom ONNX button ---------------------------------
+            # ---- Add model button (opens upload dialog on click) ------------
             node.tag_upload_btn = node.tag_node_name + ':UploadONNX'
-            node.tag_onnx_dialog = node.tag_node_name + ':ONNXDialog'
 
             with dpg.node_attribute(
                     tag=node.tag_node_name + ':UploadAttr',
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
-                # Create green theme for upload button
                 with dpg.theme() as green_btn_theme:
                     with dpg.theme_component(dpg.mvButton):
                         dpg.add_theme_color(dpg.mvThemeCol_Button, (60, 160, 60, 255))
@@ -270,28 +382,13 @@ class FactoryNode:
                         dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (40, 120, 40, 255))
 
                 upload_btn = dpg.add_button(
-                    label=u"📂 Upload ONNX",
+                    label=u"📂 Add Model",
                     tag=node.tag_upload_btn,
                     width=small_window_w,
-                    callback=lambda s, a, u: Node._open_onnx_dialog(u),
+                    callback=lambda s, a, u: Node._open_upload_dialog(u),
                     user_data=node,
                 )
                 dpg.bind_item_theme(upload_btn, green_btn_theme)
-
-                # ONNX file dialog (hidden, opened on button click)
-                with dpg.file_dialog(
-                    tag=node.tag_onnx_dialog,
-                    label="Select ONNX model",
-                    width=600,
-                    height=400,
-                    show=False,
-                    modal=True,
-                    callback=lambda s, a, u: Node._on_onnx_selected(s, a, u),
-                    cancel_callback=lambda s, a: None,
-                    user_data=node,
-                ):
-                    dpg.add_file_extension(".onnx", color=(0, 200, 100, 255))
-                    dpg.add_file_extension(".*")
 
 
 
@@ -305,76 +402,20 @@ class Node(Node):
     node_label = 'ObjectDetection'
     node_tag = 'ObjectDetection'
 
-
     _min_val = 0.0
     _max_val = 1.0
 
     _opencv_setting_dict = None
-    
-    # Default value for draw bounding boxes checkbox
+
     DEFAULT_DRAW_BBOX = True
 
+    # All models (built-in + user-uploaded) populated from the registry at load time.
+    _model_class: dict = {}           # name → CustomONNX factory callable
+    _model_path_setting: dict = {}    # name → onnx file path
+    _model_class_name_list: dict = {} # name → {int_id: str_name}
 
-    # Chemin de base pour les modèles
-    _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/object_detection/'
+    _model_instance: dict = {}
 
-
-    _model_class = {
-        'YOLOX-Nano(416x416)': YOLOX,
-        'YOLOX-Tiny(416x416)': YOLOX,
-        'YOLOX-S(640x640)': YOLOX,
-        'Light-Weight Person Detector': LWPDetector,
-        'YOLOX-Nano(416x416)': YOLOX,
-        'FreeYOLO-Nano(640x640)': FreeYOLO,
-        'FreeYOLO-Nano-CrowdHuman(640x640)': FreeYOLO,
-        'YOLO11Nano': YOLO,
-        'YOLOTENNIS': YOLOTENNIS,
-
-    }
-
-
-    _model_path_setting = {
-        'YOLOX-Nano(416x416)':
-        _model_base_path + 'YOLOX/model/yolox_nano.onnx',
-        'YOLOX-Tiny(416x416)':
-        _model_base_path + 'YOLOX/model/yolox_tiny.onnx',
-        'YOLOX-S(640x640)':
-        _model_base_path + 'YOLOX/model/yolox_s.onnx',
-        'YOLO11Nano' : _model_base_path + 'YOLO/model/yolo11_n.onnx',
-        'FreeYOLO-Nano(640x640)':
-        _model_base_path + 'FreeYOLO/model/yolo_free_nano_640x640.onnx',
-        'FreeYOLO-Nano-CrowdHuman(640x640)':
-        _model_base_path +
-        'FreeYOLO/model/yolo_free_nano_crowdhuman_640x640.onnx',
-         'Light-Weight Person Detector': 
-        _model_base_path +
-        'LightWeightPersonDetector/model/model.onnx',
-        'YOLOTENNIS': 
-        _model_base_path +
-        'TennisYOLO/model/tennis.onnx'
-
-    }
-
-
-    _model_class_name_list = {
-        'YOLOX-Nano(416x416)': coco_class_names,
-        'YOLOX-Tiny(416x416)': coco_class_names,
-        'YOLOX-S(640x640)': coco_class_names,
-        'Light-Weight Person Detector': coco_class_names_only_person,
-        'FreeYOLO-Nano(640x640)': coco_class_names,
-        'FreeYOLO-Nano-CrowdHuman(640x640)': coco_class_names_only_person,
-        'YOLO11Nano': coco_class_names,
-        'YOLOTENNIS': coco_class_names_tennis
-    }
-
-
-
-    _model_instance = {}
-
-    # Tag suffix used for the "Upload ONNX" button inside the node
-    _UPLOAD_BTN_SUFFIX = ':UploadONNX'
-    # Tag for the ONNX file dialog
-    _ONNX_DIALOG_SUFFIX = ':ONNXDialog'
     # Temporary storage for pending upload state (keyed by node tag)
     _pending_upload: dict = {}
 
@@ -382,15 +423,49 @@ class Node(Node):
         pass
 
     @classmethod
+    def _ensure_builtin_models(cls):
+        """Write built-in model entries to the registry if they are not already there.
+
+        This runs once at module load time so that built-in ONNX files appear in the
+        model combo without requiring the user to upload them manually.  Entries are
+        skipped when the ONNX file does not exist on disk (e.g., stripped builds).
+        """
+        existing = {e.get('name') for e in custom_models_registry._load_raw()}
+        for meta in _BUILTIN_MODELS:
+            name = meta['name']
+            path = meta['path']
+            if name in existing:
+                continue
+            if not os.path.isfile(path):
+                logger.debug(f"[Builtin] Skipping '{name}' — ONNX file not found: {path}")
+                continue
+            entry = {
+                'name': name,
+                'path': path,
+                'output_format': meta['output_format'],
+                'input_width': meta['input_width'],
+                'input_height': meta['input_height'],
+                'num_classes': meta['num_classes'],
+                'class_names': meta['class_names'],
+            }
+            try:
+                custom_models_registry.save_entry(entry)
+                logger.info(f"[Builtin] Registered built-in model: {name}")
+            except Exception as exc:
+                logger.warning(f"[Builtin] Could not register '{name}': {exc}")
+
+    @classmethod
     def _load_custom_models_from_registry(cls):
-        """Populate _model_class, _model_path_setting, _model_class_name_list
-        with entries from the persistent custom model registry.
-        Called once at class load time and after each new upload.
+        """Load all models (built-in and user-uploaded) from the registry.
+
+        Populates ``_model_class``, ``_model_path_setting`` and
+        ``_model_class_name_list``.  Called once at module load time and again
+        after each successful upload.
         """
         try:
             entries = custom_models_registry.load_registry()
         except Exception as exc:
-            logger.warning(f"Failed to load custom models registry: {exc}")
+            logger.warning(f"Failed to load models registry: {exc}")
             return
         for entry in entries:
             name = entry.get('name', '')
@@ -398,33 +473,25 @@ class Node(Node):
             if not name or not path:
                 continue
             if name in cls._model_class:
-                # Already registered (either built-in or previously loaded custom)
-                logger.warning(
-                    f"[ONNX Registry] Skipping custom model '{name}' — "
-                    f"a model with this name is already registered."
-                )
                 continue
             raw_classes = entry.get('class_names', {})
             class_names = {int(k): str(v) for k, v in raw_classes.items()}
             if not class_names:
                 num_classes = int(entry.get('num_classes', 0))
-                if num_classes > 0:
-                    class_names = {i: f"class_{i}" for i in range(num_classes)}
-                else:
-                    class_names = dict(coco_class_names)
-
+                class_names = (
+                    {i: f"class_{i}" for i in range(num_classes)}
+                    if num_classes > 0
+                    else dict(coco_class_names)
+                )
             output_fmt = entry.get('output_format', 'yolo11')
             in_w = int(entry.get('input_width', 640))
             in_h = int(entry.get('input_height', 640))
-
-            # Wrap with a factory lambda so the constructor receives the right args
             cls._register_custom_model(name, path, class_names, output_fmt, in_w, in_h)
-            logger.info(f"Loaded custom model from registry: {name}")
+            logger.info(f"Loaded model from registry: {name}")
 
     @classmethod
     def _register_custom_model(cls, name, path, class_names, output_fmt, in_w, in_h):
-        """Register a custom model into the class-level dictionaries."""
-        # Capture loop variables explicitly to avoid closure issues
+        """Add a model to the class-level runtime dictionaries."""
         def _make_factory(p, fmt, w, h):
             def factory(model_path, providers=None):
                 if providers is None:
@@ -443,106 +510,194 @@ class Node(Node):
         cls._model_class_name_list[name] = class_names
 
     # ------------------------------------------------------------------
-    # Upload ONNX dialog callbacks
+    # Upload dialog
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _open_onnx_dialog(node):
-        """Show the ONNX file picker dialog."""
+    def _open_upload_dialog(node):
+        """Create and show the Add Model modal dialog.
+
+        The dialog contains:
+        * an ONNX file path input with a Browse button (opens a file dialog),
+        * an info label that shows detected format/dims after file selection,
+        * a multiline class names editor (pre-filled from embedded ONNX metadata
+          when available, empty otherwise so the user can type their own names),
+        * Cancel and Add Model buttons.
+        """
+        dialog_tag = node.tag_node_name + ':UploadModal'
+        file_dialog_tag = dialog_tag + ':FileDialog'
+        onnx_path_tag = dialog_tag + ':OnnxPath'
+        info_tag = dialog_tag + ':Info'
+        classes_tag = dialog_tag + ':ClassNames'
+
+        # Clean up any previous instance of the dialog
+        for tag in (dialog_tag, file_dialog_tag):
+            if dpg.does_item_exist(tag):
+                dpg.delete_item(tag)
+
+        # ---- file dialog (top-level, shown from Browse button) ---------
+        def _on_browse_select(sender, app_data):
+            selections = app_data.get("selections", {})
+            if not selections:
+                return
+            onnx_path = list(selections.values())[0]
+            dpg.set_value(onnx_path_tag, onnx_path)
+            # Inspect and pre-fill
+            try:
+                meta = onnx_inspector.inspect_onnx_model(onnx_path)
+                fmt = meta.get("output_format", "unknown")
+                w = meta.get("input_width", 640)
+                h = meta.get("input_height", 640)
+                n = meta.get("num_classes", 0)
+                dpg.set_value(info_tag,
+                              f"Format: {fmt}  |  Input: {w}×{h}  |  Classes detected: {n}")
+                class_names = meta.get("class_names", {})
+                if class_names:
+                    lines = "\n".join(
+                        f"{k}: {v}" for k, v in sorted(class_names.items())
+                    )
+                    dpg.set_value(classes_tag, lines)
+                else:
+                    dpg.set_value(classes_tag, "")
+                Node._pending_upload[node.tag_node_name] = {
+                    "path": onnx_path, "meta": meta
+                }
+            except Exception as exc:
+                dpg.set_value(info_tag, f"Inspection error: {exc}")
+                logger.error(f"[Upload] ONNX inspection failed: {exc}")
+
+        with dpg.file_dialog(
+            tag=file_dialog_tag,
+            label="Select ONNX model",
+            width=600,
+            height=400,
+            show=False,
+            modal=True,
+            callback=_on_browse_select,
+            cancel_callback=lambda s, a: None,
+        ):
+            dpg.add_file_extension(".onnx", color=(0, 200, 100, 255))
+            dpg.add_file_extension(".*")
+
+        # ---- modal window -----------------------------------------------
+        def _on_add_model():
+            onnx_path = dpg.get_value(onnx_path_tag).strip()
+            if not onnx_path or not os.path.isfile(onnx_path):
+                logger.warning("[Upload] No valid ONNX file path provided.")
+                return
+
+            # Re-inspect if no pending meta (e.g. path typed manually)
+            pending = Node._pending_upload.get(node.tag_node_name)
+            if not pending or pending.get("path") != onnx_path:
+                try:
+                    meta = onnx_inspector.inspect_onnx_model(onnx_path)
+                except Exception as exc:
+                    logger.error(f"[Upload] Inspection failed: {exc}")
+                    return
+                Node._pending_upload[node.tag_node_name] = {
+                    "path": onnx_path, "meta": meta
+                }
+
+            # Parse class names from the text area
+            classes_text = dpg.get_value(classes_tag).strip()
+            class_names = _parse_class_names_text(classes_text) if classes_text else {}
+
+            # Fall back to embedded names → generic names
+            if not class_names:
+                meta = Node._pending_upload[node.tag_node_name]["meta"]
+                class_names = meta.get("class_names", {})
+                if not class_names:
+                    num_classes = meta.get("num_classes", 0)
+                    if num_classes > 0:
+                        class_names = {i: f"class_{i}" for i in range(num_classes)}
+                    else:
+                        class_names = dict(coco_class_names)
+
+            dpg.delete_item(dialog_tag)
+            Node._finalise_upload(node, class_names)
+
         try:
-            dpg.show_item(node.tag_onnx_dialog)
-        except Exception as exc:
-            logger.warning(f"Could not open ONNX dialog: {exc}")
+            vp_w = dpg.get_viewport_width()
+            vp_h = dpg.get_viewport_height()
+        except Exception:
+            vp_w, vp_h = 1280, 720
+        dlg_w, dlg_h = 540, 440
+        dlg_x = max(0, (vp_w - dlg_w) // 2)
+        dlg_y = max(0, (vp_h - dlg_h) // 2)
 
-    @staticmethod
-    def _on_onnx_selected(sender, app_data, node):
-        """Called when the user confirms an ONNX file selection."""
-        selections = app_data.get("selections", {})
-        if not selections:
-            logger.warning("[ONNX Upload] File dialog confirmed but no file was selected.")
-            return
-        onnx_path = list(selections.values())[0]
-        logger.info(f"[ONNX Upload] File selected: {onnx_path}")
-        if not os.path.isfile(onnx_path):
-            logger.error(f"[ONNX Upload] Selected ONNX path does not exist: {onnx_path}")
-            return
+        with dpg.window(
+            tag=dialog_tag,
+            label="Add ONNX Model",
+            modal=True,
+            width=dlg_w,
+            height=dlg_h,
+            pos=[dlg_x, dlg_y],
+            no_resize=False,
+            on_close=lambda: (
+                dpg.delete_item(file_dialog_tag)
+                if dpg.does_item_exist(file_dialog_tag) else None
+            ),
+        ):
+            dpg.add_text("ONNX Model File:")
+            with dpg.group(horizontal=True):
+                dpg.add_input_text(
+                    tag=onnx_path_tag,
+                    width=390,
+                    hint="Path to .onnx file (or use Browse)",
+                )
+                dpg.add_button(
+                    label="Browse",
+                    callback=lambda: dpg.show_item(file_dialog_tag),
+                )
 
-        # Inspect the model
-        try:
-            meta = onnx_inspector.inspect_onnx_model(onnx_path)
-        except Exception as exc:
-            logger.error(f"[ONNX Upload] ONNX inspection failed for '{onnx_path}': {exc}")
-            return
+            dpg.add_text("", tag=info_tag)
+            dpg.add_separator()
 
-        logger.info(
-            f"[ONNX Upload] Inspection result — "
-            f"format='{meta.get('output_format')}', "
-            f"input_shape={meta.get('input_shape')}, "
-            f"output_shape={meta.get('output_shape')}, "
-            f"num_classes={meta.get('num_classes')}, "
-            f"embedded_class_names={len(meta.get('class_names', {}))}"
-        )
-
-        if meta.get("output_format") == "unknown":
-            logger.warning(
-                f"[ONNX Upload] Output format could not be determined for '{onnx_path}'. "
-                f"Defaulting to 'yolo11' — inference may produce incorrect results if "
-                f"the model uses a different layout."
+            dpg.add_text("Class names (optional — one per line):")
+            dpg.add_text(
+                "Formats accepted:  'person'  or  '0: person'",
+                color=(180, 180, 180, 255),
+            )
+            dpg.add_input_text(
+                tag=classes_tag,
+                multiline=True,
+                width=520,
+                height=160,
+                hint="0: person\n1: car\n2: truck\n...",
             )
 
-        # Store pending state on node (class names may still be needed)
-        Node._pending_upload[node.tag_node_name] = {
-            "path": onnx_path,
-            "meta": meta,
-        }
-
-        # Use class names from ONNX metadata, or fall back to generic class_N names
-        class_names = meta.get("class_names")
-        if not class_names:
-            num_classes = meta.get("num_classes", 0)
-            if num_classes > 0:
-                class_names = {i: f"class_{i}" for i in range(num_classes)}
-                logger.info(
-                    f"[ONNX Upload] No class names found in ONNX metadata; "
-                    f"generated {num_classes} generic class names."
+            dpg.add_separator()
+            with dpg.group(horizontal=True):
+                dpg.add_button(
+                    label="Cancel",
+                    width=130,
+                    callback=lambda: dpg.delete_item(dialog_tag),
                 )
-            else:
-                class_names = dict(coco_class_names)
-                logger.info(
-                    "[ONNX Upload] No class names or class count found in ONNX metadata; "
-                    "using COCO class names as fallback."
+                dpg.add_spacer(width=220)
+                dpg.add_button(
+                    label="Add Model",
+                    width=130,
+                    callback=lambda: _on_add_model(),
                 )
-        else:
-            logger.info(
-                f"[ONNX Upload] Using {len(class_names)} class names from ONNX metadata."
-            )
-        Node._finalise_upload(node, class_names)
 
     @staticmethod
     def _finalise_upload(node, class_names: dict):
         """Register the custom model and refresh the node UI dropdowns."""
         pending = Node._pending_upload.pop(node.tag_node_name, None)
         if pending is None:
-            logger.warning("[ONNX Upload] _finalise_upload called but no pending upload found.")
+            logger.warning("[Upload] _finalise_upload called but no pending upload found.")
             return
 
         onnx_path = pending["path"]
         meta = pending["meta"]
 
-        # Build a display name from the filename (without extension)
+        # Display name = filename without extension, made unique
         base = os.path.splitext(os.path.basename(onnx_path))[0]
-        # Ensure uniqueness
         name = base
         counter = 1
         while name in Node._model_class:
             name = f"{base}_{counter}"
             counter += 1
-
-        if name != base:
-            logger.info(
-                f"[ONNX Upload] Model name '{base}' already registered; "
-                f"using unique name '{name}'."
-            )
 
         output_fmt = meta.get("output_format", "yolo11")
         in_w = meta.get("input_width", 640)
@@ -550,16 +705,12 @@ class Node(Node):
         num_classes = meta.get("num_classes", len(class_names))
 
         logger.info(
-            f"[ONNX Upload] Registering model '{name}' — "
-            f"path='{onnx_path}', format='{output_fmt}', "
-            f"input={in_w}x{in_h}, num_classes={num_classes}, "
-            f"class_names_count={len(class_names)}"
+            f"[Upload] Registering '{name}' — format='{output_fmt}', "
+            f"input={in_w}x{in_h}, classes={num_classes}"
         )
 
-        # Register in class-level dicts
         Node._register_custom_model(name, onnx_path, class_names, output_fmt, in_w, in_h)
 
-        # Persist to registry
         registry_entry = {
             "name": name,
             "path": onnx_path,
@@ -571,34 +722,28 @@ class Node(Node):
         }
         try:
             custom_models_registry.save_entry(registry_entry)
-            logger.info(f"[ONNX Upload] Registry entry saved for '{name}'.")
+            logger.info(f"[Upload] Registry entry saved for '{name}'.")
         except Exception as exc:
-            logger.warning(f"[ONNX Upload] Could not save registry entry for '{name}': {exc}")
+            logger.warning(f"[Upload] Could not save registry entry for '{name}': {exc}")
 
-        # --- Update the model dropdown in the node UI without restarting ---
+        # Update model combobox
         model_combo_tag = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input02Value'
         try:
             current_items = dpg.get_item_configuration(model_combo_tag).get("items", [])
             if name not in current_items:
                 current_items = list(current_items) + [name]
             dpg.configure_item(model_combo_tag, items=current_items, default_value=name)
-            logger.info(f"[ONNX Upload] Model dropdown updated; '{name}' is now selected.")
+            logger.info(f"[Upload] Model dropdown updated — '{name}' selected.")
         except Exception as exc:
-            logger.warning(f"[ONNX Upload] Could not update model dropdown: {exc}")
+            logger.warning(f"[Upload] Could not update model dropdown: {exc}")
 
-        # Update rejected classes dropdown to show the new model's classes
+        # Update rejected-classes dropdown
         try:
             class_items = get_class_rejection_dropdown_items(class_names)
             dpg.configure_item(node.tag_node_rejected_classes_value_name, items=class_items)
             dpg_set_value(node.tag_node_rejected_classes_value_name, "")
         except Exception as exc:
-            logger.warning(f"[ONNX Upload] Could not update classes dropdown: {exc}")
-
-        logger.info(
-            f"[ONNX Upload] Custom ONNX model successfully registered: "
-            f"name='{name}', format='{output_fmt}', "
-            f"input={in_w}x{in_h}, classes={num_classes}"
-        )
+            logger.warning(f"[Upload] Could not update classes dropdown: {exc}")
 
     def _per_class_nms(self, bboxes, scores, class_ids):
         """Apply NMS per class to keep only the best detection per class.
@@ -1049,5 +1194,7 @@ class Node(Node):
         )
         return color
 
-# Load any previously registered custom models on startup
+# Seed the registry with built-in models (skips entries already present)
+Node._ensure_builtin_models()
+# Load all models (built-in + user-uploaded) into runtime dictionaries
 Node._load_custom_models_from_registry()
