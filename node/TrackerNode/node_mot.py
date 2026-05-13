@@ -195,7 +195,7 @@ class FactoryNode:
                     tag=node.tag_node_bbox_thickness_value_name,
                     label="thickness",
                     width=small_window_w - 80,
-                    default_value=2,
+                    default_value=3,
                     min_value=1,
                     max_value=10,
                 )
@@ -233,6 +233,8 @@ class Node(Node):
     node_tag = 'MultiObjectTracking'
 
     _opencv_setting_dict = None
+
+    DEFAULT_BBOX_THICKNESS = 3
 
     # モデル設定
     _model_class = {
@@ -519,7 +521,7 @@ class Node(Node):
 
                 bbox_thickness = dpg_get_value(bbox_thickness_tag)
                 if bbox_thickness is None:
-                    bbox_thickness = 2
+                    bbox_thickness = self.DEFAULT_BBOX_THICKNESS
 
                 debug_frame = self.draw_multi_object_tracking_info(
                     debug_frame,
@@ -585,7 +587,7 @@ class Node(Node):
         # Get bbox thickness value
         bbox_thickness = dpg_get_value(bbox_thickness_tag)
         if bbox_thickness is None:
-            bbox_thickness = 2
+            bbox_thickness = self.DEFAULT_BBOX_THICKNESS
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -619,5 +621,5 @@ class Node(Node):
         dpg_set_value(enable_checkbox_tag, enable_checkbox_value)
 
         # Set bbox thickness with default value for backward compatibility
-        bbox_thickness_value = setting_dict.get(bbox_thickness_tag, 2)
+        bbox_thickness_value = setting_dict.get(bbox_thickness_tag, self.DEFAULT_BBOX_THICKNESS)
         dpg_set_value(bbox_thickness_tag, bbox_thickness_value)

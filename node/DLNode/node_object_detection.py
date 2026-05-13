@@ -465,6 +465,7 @@ class Node(Node):
     _opencv_setting_dict = None
 
     DEFAULT_DRAW_BBOX = True
+    DEFAULT_BBOX_THICKNESS = 3
 
     # All models (built-in + user-uploaded) populated from the registry at load time.
     _model_class: dict = {}           # name → CustomONNX factory callable
@@ -1025,7 +1026,7 @@ class Node(Node):
                 # Get bbox thickness from slider
                 bbox_thickness = dpg_get_value(self.tag_node_bbox_thickness_value_name)
                 if bbox_thickness is None:
-                    bbox_thickness = 3
+                    bbox_thickness = self.DEFAULT_BBOX_THICKNESS
 
                 # Separate displayed image from output image
                 # Display image: ALWAYS show bounding boxes for visualization
@@ -1103,7 +1104,7 @@ class Node(Node):
 
         bbox_thickness = dpg_get_value(bbox_thickness_tag)
         if bbox_thickness is None:
-            bbox_thickness = 3
+            bbox_thickness = self.DEFAULT_BBOX_THICKNESS
 
         pos = dpg.get_item_pos(self.tag_node_name)
 
@@ -1130,7 +1131,7 @@ class Node(Node):
         score_th = setting_dict[input_value03_tag]
         rejected_classes = setting_dict.get(rejected_classes_tag, "")
         draw_bbox = setting_dict.get(draw_bbox_tag, self.DEFAULT_DRAW_BBOX)
-        bbox_thickness = setting_dict.get(bbox_thickness_tag, 3)
+        bbox_thickness = setting_dict.get(bbox_thickness_tag, self.DEFAULT_BBOX_THICKNESS)
 
         # If model_name is a custom model saved in registry but not yet in memory, reload it
         if model_name and model_name not in self._model_class:
