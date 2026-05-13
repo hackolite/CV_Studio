@@ -12,6 +12,7 @@ The wrapper is initialised from the metadata returned by
 """
 
 import copy
+import logging
 import os
 
 import cv2
@@ -20,6 +21,8 @@ import onnxruntime
 
 # Disable cuDNN for safer operation (mirrors other YOLO wrappers in this project)
 os.environ["ORT_CUDA_USE_CUDNN"] = "0"
+
+logger = logging.getLogger(__name__)
 
 
 class CustomONNX:
@@ -53,6 +56,12 @@ class CustomONNX:
         self.nms_th = nms_th
         self.nms_score_th = nms_score_th
 
+        logger.info(
+            f"[CustomONNX] Loading model: {model_path} | "
+            f"format='{output_format}', input={input_width}x{input_height}, "
+            f"num_classes={num_classes}, providers={providers}"
+        )
+
         self.onnx_session = onnxruntime.InferenceSession(
             model_path, providers=providers
         )
@@ -64,6 +73,33 @@ class CustomONNX:
             self.input_name = self.onnx_session.get_inputs()[0].name
 
         self.output_name = self.onnx_session.get_outputs()[0].name
+
+        # Validate that the actual session input shape matches expected dimensions
+        actual_input = self.onnx_session.get_inputs()[0]
+        actual_shape = list(actual_input.shape)
+        if len(actual_shape) == 4:
+            actual_h = actual_shape[2]
+            actual_w = actual_shape[3]
+            if isinstance(actual_h, int) and actual_h > 0 and actual_h != input_height:
+                logger.warning(
+                    f"[CustomONNX] Height mismatch: model expects {actual_h}px "
+                    f"but wrapper was initialised with input_height={input_height}. "
+                    f"Updating to {actual_h}."
+                )
+                self.input_height = actual_h
+            if isinstance(actual_w, int) and actual_w > 0 and actual_w != input_width:
+                logger.warning(
+                    f"[CustomONNX] Width mismatch: model expects {actual_w}px "
+                    f"but wrapper was initialised with input_width={input_width}. "
+                    f"Updating to {actual_w}."
+                )
+                self.input_width = actual_w
+
+        logger.info(
+            f"[CustomONNX] Ready — input_name='{self.input_name}', "
+            f"output_name='{self.output_name}', "
+            f"effective input size: {self.input_width}x{self.input_height}"
+        )
 
     # ------------------------------------------------------------------
     # Public interface
@@ -79,19 +115,27 @@ class CustomONNX:
         class_ids: np.ndarray shape (N,)
         """
         orig_h, orig_w = image.shape[:2]
+        logger.debug(
+            f"[CustomONNX] Inference request — image size: {orig_w}x{orig_h} (WxH), "
+            f"model input: {self.input_width}x{self.input_height}"
+        )
         blob = self._preprocess(image)
         outputs = self.onnx_session.run(None, {self.input_name: blob})
 
+        raw_output = outputs[0]
+        logger.debug(f"[CustomONNX] Raw output shape: {raw_output.shape}")
+
         if self.output_format == "yolox":
             bboxes, scores, class_ids = self._postprocess_yolox(
-                outputs[0], orig_w, orig_h
+                raw_output, orig_w, orig_h
             )
         else:
             # Default: yolo11 / ultralytics
             bboxes, scores, class_ids = self._postprocess_yolo11(
-                outputs[0], orig_w, orig_h
+                raw_output, orig_w, orig_h
             )
 
+        logger.debug(f"[CustomONNX] Detections after NMS: {len(bboxes)}")
         return bboxes, scores, class_ids
 
     # ------------------------------------------------------------------
@@ -109,6 +153,7 @@ class CustomONNX:
         img = img.astype(np.float32) / 255.0
         img = np.transpose(img, (2, 0, 1))  # HWC → CHW
         img = np.expand_dims(img, axis=0)   # CHW → BCHW
+        logger.debug(f"[CustomONNX] Preprocessed blob shape: {img.shape}")
         return img
 
     # ------------------------------------------------------------------
@@ -123,12 +168,45 @@ class CustomONNX:
         # Squeeze batch dimension: (num_classes+4, num_anchors)
         output = np.squeeze(raw_output)
         if output.ndim != 2:
+            logger.warning(
+                f"[CustomONNX] yolo11 post-process: unexpected output ndim={output.ndim} "
+                f"after squeeze (raw shape={raw_output.shape}). Returning empty detections."
+            )
             return np.array([]), np.array([]), np.array([])
+
+        # output is (num_classes+4, num_anchors); check orientation
+        # Use num_classes when known, otherwise fall back to dimension comparison.
+        expected_channels = self.num_classes + 4 if self.num_classes > 0 else None
+        needs_transpose = False
+        if expected_channels is not None:
+            if output.shape[0] != expected_channels and output.shape[1] == expected_channels:
+                needs_transpose = True
+                logger.warning(
+                    f"[CustomONNX] yolo11 post-process: output shape {output.shape} does not "
+                    f"match expected [C+4={expected_channels}, anchors]. Transposing."
+                )
+        elif output.shape[0] > output.shape[1]:
+            # Heuristic: larger axis-0 suggests (anchors, C+4) orientation
+            needs_transpose = True
+            logger.warning(
+                f"[CustomONNX] yolo11 post-process: shape after squeeze is "
+                f"{output.shape} — axis-0 ({output.shape[0]}) > axis-1 ({output.shape[1]}). "
+                f"Expected [C+4, anchors]. Transposing to correct orientation."
+            )
+        if needs_transpose:
+            output = output.T
 
         # Transpose to (num_anchors, num_classes+4)
         output = output.T
 
-        boxes_xywh = output[:, :4]     # cx, cy, w, h (normalised to input size)
+        if output.shape[1] < 5:
+            logger.warning(
+                f"[CustomONNX] yolo11 post-process: too few columns ({output.shape[1]}) "
+                f"after transpose — need at least 5 (4 box + 1 class). Returning empty."
+            )
+            return np.array([]), np.array([]), np.array([])
+
+        boxes_xywh = output[:, :4]     # cx, cy, w, h (in input image pixels)
         class_scores = output[:, 4:]   # (num_anchors, num_classes)
 
         # Scale factors back to original image
@@ -141,11 +219,16 @@ class CustomONNX:
         # Filter by threshold
         mask = max_scores >= self.nms_score_th
         if not mask.any():
+            logger.debug("[CustomONNX] yolo11 post-process: no detections above score threshold.")
             return np.array([]), np.array([]), np.array([])
 
         boxes_xywh = boxes_xywh[mask]
         max_scores = max_scores[mask]
         class_ids_all = class_ids_all[mask]
+        logger.debug(
+            f"[CustomONNX] yolo11 post-process: {mask.sum()} candidates above threshold "
+            f"(scale_x={scale_x:.4f}, scale_y={scale_y:.4f})"
+        )
 
         # Convert cx,cy,w,h → x1,y1,x2,y2 scaled to original image
         cx, cy, bw, bh = (
@@ -167,9 +250,11 @@ class CustomONNX:
         )
 
         if len(indices) == 0:
+            logger.debug("[CustomONNX] yolo11 post-process: all candidates removed by NMS.")
             return np.array([]), np.array([]), np.array([])
 
         indices = np.array(indices).flatten()
+        logger.debug(f"[CustomONNX] yolo11 post-process: {len(indices)} detections after NMS.")
         return (
             np.array(boxes_xyxy)[indices],
             np.array(scores_list)[indices],
@@ -184,6 +269,39 @@ class CustomONNX:
         """
         output = np.squeeze(raw_output)
         if output.ndim != 2:
+            logger.warning(
+                f"[CustomONNX] yolox post-process: unexpected output ndim={output.ndim} "
+                f"after squeeze (raw shape={raw_output.shape}). Returning empty detections."
+            )
+            return np.array([]), np.array([]), np.array([])
+
+        # output is (num_anchors, num_classes+5); check orientation
+        # Use num_classes when known, otherwise fall back to dimension comparison.
+        expected_channels = self.num_classes + 5 if self.num_classes > 0 else None
+        needs_transpose = False
+        if expected_channels is not None:
+            if output.shape[1] != expected_channels and output.shape[0] == expected_channels:
+                needs_transpose = True
+                logger.warning(
+                    f"[CustomONNX] yolox post-process: output shape {output.shape} does not "
+                    f"match expected [anchors, C+5={expected_channels}]. Transposing."
+                )
+        elif output.shape[1] > output.shape[0]:
+            # Heuristic: larger axis-1 suggests (C+5, anchors) orientation
+            needs_transpose = True
+            logger.warning(
+                f"[CustomONNX] yolox post-process: shape after squeeze is "
+                f"{output.shape} — axis-1 ({output.shape[1]}) > axis-0 ({output.shape[0]}). "
+                f"Expected [anchors, C+5]. Transposing to correct orientation."
+            )
+        if needs_transpose:
+            output = output.T
+
+        if output.shape[1] < 6:
+            logger.warning(
+                f"[CustomONNX] yolox post-process: too few columns ({output.shape[1]}) "
+                f"— need at least 6 (4 box + 1 obj + 1 class). Returning empty."
+            )
             return np.array([]), np.array([]), np.array([])
 
         objectness = output[:, 4]
@@ -195,6 +313,7 @@ class CustomONNX:
 
         mask = max_scores >= self.nms_score_th
         if not mask.any():
+            logger.debug("[CustomONNX] yolox post-process: no detections above score threshold.")
             return np.array([]), np.array([]), np.array([])
 
         output = output[mask]
@@ -203,6 +322,10 @@ class CustomONNX:
 
         scale_x = orig_w / self.input_width
         scale_y = orig_h / self.input_height
+        logger.debug(
+            f"[CustomONNX] yolox post-process: {mask.sum()} candidates above threshold "
+            f"(scale_x={scale_x:.4f}, scale_y={scale_y:.4f})"
+        )
 
         cx = output[:, 0] * scale_x
         cy = output[:, 1] * scale_y
@@ -222,9 +345,11 @@ class CustomONNX:
         )
 
         if len(indices) == 0:
+            logger.debug("[CustomONNX] yolox post-process: all candidates removed by NMS.")
             return np.array([]), np.array([]), np.array([])
 
         indices = np.array(indices).flatten()
+        logger.debug(f"[CustomONNX] yolox post-process: {len(indices)} detections after NMS.")
         return (
             np.array(boxes_xyxy)[indices],
             np.array(scores_list)[indices],
