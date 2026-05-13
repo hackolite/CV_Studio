@@ -932,6 +932,7 @@ class Node:
         class_ids,
         class_names,
         track_id_dict,
+        bbox_thickness=None,
     ):
         # Calculate font scale based on image height
         # Reference height: 720px, base font scale: 0.5
@@ -939,10 +940,14 @@ class Node:
         image_height = image.shape[0]
         font_scale = max(0.3, min(1.0, (image_height / 720.0) * 0.5))
         
-        # Calculate vertical offset and thickness based on font scale
+        # Calculate vertical offset and text thickness based on font scale
         vertical_offset_1 = int(36 * (font_scale / 0.5))
         vertical_offset_2 = int(12 * (font_scale / 0.5))
-        thickness = max(1, int(2 * (font_scale / 0.5)))
+        text_thickness = max(1, int(2 * (font_scale / 0.5)))
+
+        # Use provided bbox_thickness or fall back to adaptive default
+        if bbox_thickness is None:
+            bbox_thickness = 2
         
         for id, bbox, score, class_id in zip(track_ids, bboxes, scores, class_ids):
             x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
@@ -954,7 +959,7 @@ class Node:
                 (x1, y1),
                 (x2, y2),
                 color,
-                thickness=2,
+                thickness=bbox_thickness,
             )
 
             score = "%.2f" % score
@@ -966,7 +971,7 @@ class Node:
                 cv2.FONT_HERSHEY_SIMPLEX,
                 font_scale,
                 color,
-                thickness=thickness,
+                thickness=text_thickness,
             )
 
             class_name = self.get_class_name(class_id, class_names)
@@ -978,7 +983,7 @@ class Node:
                 cv2.FONT_HERSHEY_SIMPLEX,
                 font_scale,
                 color,
-                thickness=thickness,
+                thickness=text_thickness,
             )
 
         return image

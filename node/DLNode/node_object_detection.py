@@ -173,6 +173,10 @@ class FactoryNode:
         node.tag_node_draw_bbox_name = node.tag_node_name + ':DrawBBox'
         node.tag_node_draw_bbox_value_name = node.tag_node_name + ':DrawBBoxValue'
 
+        # Tag for bounding box thickness slider
+        node.tag_node_bbox_thickness_name = node.tag_node_name + ':BBoxThickness'
+        node.tag_node_bbox_thickness_value_name = node.tag_node_name + ':BBoxThicknessValue'
+
         # Callback to update rejected classes dropdown when model changes
         def on_model_change(sender, app_data, user_data):
             """Update the rejected classes dropdown when model selection changes"""
@@ -378,6 +382,20 @@ class FactoryNode:
                     default_value=True,
                 )
 
+            # Bounding box thickness slider
+            with dpg.node_attribute(
+                    tag=node.tag_node_bbox_thickness_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_int(
+                    tag=node.tag_node_bbox_thickness_value_name,
+                    label="thickness",
+                    width=small_window_w - 80,
+                    default_value=3,
+                    min_value=1,
+                    max_value=10,
+                )
+
             if use_pref_counter:
                 with dpg.node_attribute(
                         tag=node.tag_node_output_result_name,
@@ -447,6 +465,7 @@ class Node(Node):
     _opencv_setting_dict = None
 
     DEFAULT_DRAW_BBOX = True
+    DEFAULT_BBOX_THICKNESS = 3
 
     # All models (built-in + user-uploaded) populated from the registry at load time.
     _model_class: dict = {}           # name → CustomONNX factory callable
@@ -1004,6 +1023,11 @@ class Node(Node):
                 if draw_bbox is None:
                     draw_bbox = self.DEFAULT_DRAW_BBOX
 
+                # Get bbox thickness from slider
+                bbox_thickness = dpg_get_value(self.tag_node_bbox_thickness_value_name)
+                if bbox_thickness is None:
+                    bbox_thickness = self.DEFAULT_BBOX_THICKNESS
+
                 # Separate displayed image from output image
                 # Display image: ALWAYS show bounding boxes for visualization
                 # Output image: Respect checkbox setting (for video saving vs tracking)
@@ -1020,6 +1044,7 @@ class Node(Node):
                         scores,
                         class_ids,
                         class_name_dict,
+                        thickness=bbox_thickness,
                     )
                     
                     # Output image: Respect checkbox setting
@@ -1033,6 +1058,7 @@ class Node(Node):
                             scores,
                             class_ids,
                             class_name_dict,
+                            thickness=bbox_thickness,
                         )
                     else:
                         # When unchecked: send clean frame (for tracking)
@@ -1063,6 +1089,7 @@ class Node(Node):
         input_value03_tag = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
         rejected_classes_tag = self.tag_node_name + ':RejectedClassesValue'
         draw_bbox_tag = self.tag_node_name + ':DrawBBoxValue'
+        bbox_thickness_tag = self.tag_node_name + ':BBoxThicknessValue'
 
 
         model_name = dpg_get_value(input_value02_tag)
@@ -1075,6 +1102,10 @@ class Node(Node):
         if draw_bbox is None:
             draw_bbox = self.DEFAULT_DRAW_BBOX
 
+        bbox_thickness = dpg_get_value(bbox_thickness_tag)
+        if bbox_thickness is None:
+            bbox_thickness = self.DEFAULT_BBOX_THICKNESS
+
         pos = dpg.get_item_pos(self.tag_node_name)
 
         setting_dict = {}
@@ -1084,6 +1115,7 @@ class Node(Node):
         setting_dict[input_value03_tag] = score_th
         setting_dict[rejected_classes_tag] = rejected_classes
         setting_dict[draw_bbox_tag] = draw_bbox
+        setting_dict[bbox_thickness_tag] = bbox_thickness
 
         return setting_dict
 
@@ -1093,11 +1125,13 @@ class Node(Node):
         input_value03_tag = self.tag_node_name + ':' + self.TYPE_FLOAT + ':Input03Value'
         rejected_classes_tag = self.tag_node_name + ':RejectedClassesValue'
         draw_bbox_tag = self.tag_node_name + ':DrawBBoxValue'
+        bbox_thickness_tag = self.tag_node_name + ':BBoxThicknessValue'
 
         model_name = setting_dict[input_value02_tag]
         score_th = setting_dict[input_value03_tag]
         rejected_classes = setting_dict.get(rejected_classes_tag, "")
         draw_bbox = setting_dict.get(draw_bbox_tag, self.DEFAULT_DRAW_BBOX)
+        bbox_thickness = setting_dict.get(bbox_thickness_tag, self.DEFAULT_BBOX_THICKNESS)
 
         # If model_name is a custom model saved in registry but not yet in memory, reload it
         if model_name and model_name not in self._model_class:
@@ -1154,6 +1188,12 @@ class Node(Node):
         # Set draw bounding boxes checkbox
         try:
             dpg_set_value(draw_bbox_tag, draw_bbox)
+        except:
+            pass  # Ignore if the UI element doesn't exist yet
+
+        # Set bbox thickness slider
+        try:
+            dpg_set_value(bbox_thickness_tag, bbox_thickness)
         except:
             pass  # Ignore if the UI element doesn't exist yet
 
