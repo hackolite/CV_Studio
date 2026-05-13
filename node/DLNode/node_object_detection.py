@@ -122,34 +122,6 @@ _BUILTIN_MODELS = [
 # ---------------------------------------------------------------------------
 
 
-def _parse_class_names_text(text: str) -> dict:
-    """Parse class names entered in the upload dialog textarea.
-
-    Accepts two formats (can be mixed):
-      * ``name``          – one name per line, index assigned automatically (0-based)
-      * ``id: name``      – explicit integer id followed by the class name
-
-    Returns a ``{int_id: str_name}`` dict, or an empty dict if *text* is blank.
-    """
-    result = {}
-    auto_idx = 0
-    for line in text.strip().split('\n'):
-        line = line.strip()
-        if not line:
-            continue
-        if ':' in line:
-            parts = line.split(':', 1)
-            try:
-                class_id = int(parts[0].strip())
-                result[class_id] = parts[1].strip()
-                auto_idx = class_id + 1
-                continue
-            except ValueError:
-                pass
-        result[auto_idx] = line
-        auto_idx += 1
-    return result
-
 
 def get_class_rejection_dropdown_items(class_name_dict):
     """Return sorted ``["id: name", ...]`` list for the rejection combo."""
@@ -255,6 +227,19 @@ class FactoryNode:
                 dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 153, 255))
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 153, 255))
+
+        onnx_file_dialog_tag = "onnx_select:" + str(node_id)
+        with dpg.file_dialog(
+            directory_selector=False,
+            show=False,
+            modal=True,
+            height=400,
+            callback=node._callback_onnx_select,
+            tag=onnx_file_dialog_tag,
+        ):
+            dpg.add_file_extension("ONNX (*.onnx){.onnx}")
+            dpg.add_file_extension("", color=(150, 255, 150, 255))
+        node.tag_upload_file_dialog = onnx_file_dialog_tag
 
         with dpg.node(
                 tag=node.tag_node_name,
@@ -385,8 +370,7 @@ class FactoryNode:
                     label=u"📂 Add Model",
                     tag=node.tag_upload_btn,
                     width=small_window_w,
-                    callback=lambda s, a, u: Node._open_upload_dialog(u),
-                    user_data=node,
+                    callback=lambda tag=onnx_file_dialog_tag: dpg.show_item(tag),
                 )
                 dpg.bind_item_theme(upload_btn, green_btn_theme)
 
@@ -415,9 +399,6 @@ class Node(Node):
     _model_class_name_list: dict = {} # name → {int_id: str_name}
 
     _model_instance: dict = {}
-
-    # Temporary storage for pending upload state (keyed by node tag)
-    _pending_upload: dict = {}
 
     def __init__(self):
         pass
@@ -515,192 +496,40 @@ class Node(Node):
         cls._model_class_name_list[name] = class_names
 
     # ------------------------------------------------------------------
-    # Upload dialog
+    # Upload callback
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _open_upload_dialog(node):
-        """Create and show the Add Model modal dialog.
+    def _callback_onnx_select(self, sender, data):
+        """Handle ONNX file selection from the file dialog.
 
-        The dialog contains:
-        * an ONNX file path input with a Browse button (opens a file dialog),
-        * an info label that shows detected format/dims after file selection,
-        * a multiline class names editor (pre-filled from embedded ONNX metadata
-          when available, empty otherwise so the user can type their own names),
-        * Cancel and Add Model buttons.
+        Inspects the selected ONNX file to extract metadata and class names
+        (from embedded ONNX metadata only), then registers the model.
         """
-        dialog_tag = node.tag_node_name + ':UploadModal'
-        file_dialog_tag = dialog_tag + ':FileDialog'
-        onnx_path_tag = dialog_tag + ':OnnxPath'
-        info_tag = dialog_tag + ':Info'
-        classes_tag = dialog_tag + ':ClassNames'
-
-        # Clean up any previous instance of the dialog
-        for tag in (dialog_tag, file_dialog_tag):
-            if dpg.does_item_exist(tag):
-                dpg.delete_item(tag)
-
-        # ---- file dialog (created lazily on Browse click for correct z-order) ---
-        def _on_browse_select(sender, app_data):
-            selections = app_data.get("selections", {})
-            if not selections:
-                return
-            onnx_path = list(selections.values())[0]
-            dpg.set_value(onnx_path_tag, onnx_path)
-            # Inspect and pre-fill
-            try:
-                meta = onnx_inspector.inspect_onnx_model(onnx_path)
-                fmt = meta.get("output_format", "unknown")
-                w = meta.get("input_width", 640)
-                h = meta.get("input_height", 640)
-                n = meta.get("num_classes", 0)
-                dpg.set_value(info_tag,
-                              f"Format: {fmt}  |  Input: {w}×{h}  |  Classes detected: {n}")
-                class_names = meta.get("class_names", {})
-                if class_names:
-                    lines = "\n".join(
-                        f"{k}: {v}" for k, v in sorted(class_names.items())
-                    )
-                    dpg.set_value(classes_tag, lines)
-                else:
-                    dpg.set_value(classes_tag, "")
-                Node._pending_upload[node.tag_node_name] = {
-                    "path": onnx_path, "meta": meta
-                }
-            except Exception as exc:
-                dpg.set_value(info_tag, f"Inspection error: {exc}")
-                logger.error(f"[Upload] ONNX inspection failed: {exc}")
-
-        def _open_file_dialog():
-            # Re-create the file dialog each time so it is rendered on top of
-            # the modal window (DearPyGui draws items in creation order).
-            if dpg.does_item_exist(file_dialog_tag):
-                dpg.delete_item(file_dialog_tag)
-            with dpg.file_dialog(
-                tag=file_dialog_tag,
-                label="Select ONNX model",
-                width=600,
-                height=400,
-                show=True,
-                modal=True,
-                callback=_on_browse_select,
-                cancel_callback=lambda s, a: None,
-            ):
-                dpg.add_file_extension(".onnx", color=(0, 200, 100, 255))
-                dpg.add_file_extension(".*")
-
-        # ---- modal window -----------------------------------------------
-        def _on_add_model():
-            onnx_path = dpg.get_value(onnx_path_tag).strip()
-            if not onnx_path or not os.path.isfile(onnx_path):
-                logger.warning("[Upload] No valid ONNX file path provided.")
-                return
-
-            # Re-inspect if no pending meta (e.g. path typed manually)
-            pending = Node._pending_upload.get(node.tag_node_name)
-            if not pending or pending.get("path") != onnx_path:
-                try:
-                    meta = onnx_inspector.inspect_onnx_model(onnx_path)
-                except Exception as exc:
-                    logger.error(f"[Upload] Inspection failed: {exc}")
-                    return
-                Node._pending_upload[node.tag_node_name] = {
-                    "path": onnx_path, "meta": meta
-                }
-
-            # Parse class names from the text area
-            classes_text = dpg.get_value(classes_tag).strip()
-            class_names = _parse_class_names_text(classes_text) if classes_text else {}
-
-            # Fall back to embedded names → generic names
-            if not class_names:
-                meta = Node._pending_upload[node.tag_node_name]["meta"]
-                class_names = meta.get("class_names", {})
-                if not class_names:
-                    num_classes = meta.get("num_classes", 0)
-                    if num_classes > 0:
-                        class_names = {i: f"class_{i}" for i in range(num_classes)}
-                    else:
-                        class_names = dict(coco_class_names)
-
-            dpg.delete_item(dialog_tag)
-            Node._finalise_upload(node, class_names)
-
-        try:
-            vp_w = dpg.get_viewport_width()
-            vp_h = dpg.get_viewport_height()
-        except Exception:
-            vp_w, vp_h = 1280, 720
-        dlg_w, dlg_h = 540, 440
-        dlg_x = max(0, (vp_w - dlg_w) // 2)
-        dlg_y = max(0, (vp_h - dlg_h) // 2)
-
-        with dpg.window(
-            tag=dialog_tag,
-            label="Add ONNX Model",
-            modal=True,
-            width=dlg_w,
-            height=dlg_h,
-            pos=[dlg_x, dlg_y],
-            no_resize=False,
-            on_close=lambda: (
-                dpg.delete_item(file_dialog_tag)
-                if dpg.does_item_exist(file_dialog_tag) else None
-            ),
-        ):
-            dpg.add_text("ONNX Model File:")
-            with dpg.group(horizontal=True):
-                dpg.add_input_text(
-                    tag=onnx_path_tag,
-                    width=390,
-                    hint="Path to .onnx file (or use Browse)",
-                )
-                dpg.add_button(
-                    label="Browse",
-                    callback=lambda: _open_file_dialog(),
-                )
-
-            dpg.add_text("", tag=info_tag)
-            dpg.add_separator()
-
-            dpg.add_text("Class names (optional — one per line):")
-            dpg.add_text(
-                "Formats accepted:  'person'  or  '0: person'",
-                color=(180, 180, 180, 255),
-            )
-            dpg.add_input_text(
-                tag=classes_tag,
-                multiline=True,
-                width=520,
-                height=160,
-                hint="0: person\n1: car\n2: truck\n...",
-            )
-
-            dpg.add_separator()
-            with dpg.group(horizontal=True):
-                dpg.add_button(
-                    label="Cancel",
-                    width=130,
-                    callback=lambda: dpg.delete_item(dialog_tag),
-                )
-                dpg.add_spacer(width=220)
-                dpg.add_button(
-                    label="Add Model",
-                    width=130,
-                    callback=lambda: _on_add_model(),
-                )
-
-    @staticmethod
-    def _finalise_upload(node, class_names: dict):
-        """Register the custom model and refresh the node UI dropdowns."""
-        pending = Node._pending_upload.pop(node.tag_node_name, None)
-        if pending is None:
-            logger.warning("[Upload] _finalise_upload called but no pending upload found.")
+        if data.get("file_name") == ".":
+            return
+        onnx_path = data.get("file_path_name", "")
+        if not onnx_path or not os.path.isfile(onnx_path):
+            logger.warning("[Upload] No valid ONNX file selected.")
             return
 
-        onnx_path = pending["path"]
-        meta = pending["meta"]
+        try:
+            meta = onnx_inspector.inspect_onnx_model(onnx_path)
+        except Exception as exc:
+            logger.error(f"[Upload] ONNX inspection failed: {exc}")
+            return
 
+        # Class names come exclusively from the ONNX file metadata
+        class_names = meta.get("class_names", {})
+        if not class_names:
+            num_classes = meta.get("num_classes", 0)
+            if num_classes > 0:
+                class_names = {i: f"class_{i}" for i in range(num_classes)}
+
+        Node._finalise_upload(self, onnx_path, meta, class_names)
+
+    @staticmethod
+    def _finalise_upload(node, onnx_path: str, meta: dict, class_names: dict):
+        """Register the custom model and refresh the node UI dropdowns."""
         # Display name = filename without extension, made unique
         base = os.path.splitext(os.path.basename(onnx_path))[0]
         name = base
