@@ -370,7 +370,7 @@ class FactoryNode:
                     label=u"📂 Add Model",
                     tag=node.tag_upload_btn,
                     width=small_window_w,
-                    callback=lambda tag=onnx_file_dialog_tag: dpg.show_item(tag),
+                    callback=lambda: dpg.show_item(onnx_file_dialog_tag),
                 )
                 dpg.bind_item_theme(upload_btn, green_btn_theme)
 
