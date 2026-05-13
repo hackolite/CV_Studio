@@ -117,9 +117,14 @@ class CustomONNX:
         orig_h, orig_w = image.shape[:2]
         logger.debug(
             f"[CustomONNX] Inference request — image size: {orig_w}x{orig_h} (WxH), "
-            f"model input: {self.input_width}x{self.input_height}"
+            f"model input: {self.input_width}x{self.input_height}, "
+            f"format: {self.output_format}"
         )
-        blob = self._preprocess(image)
+        blob, ratio = self._preprocess(image)
+        logger.debug(
+            f"[CustomONNX] Preprocessed blob shape: {blob.shape}, "
+            f"letterbox ratio: {ratio:.4f}"
+        )
         outputs = self.onnx_session.run(None, {self.input_name: blob})
 
         raw_output = outputs[0]
@@ -127,7 +132,7 @@ class CustomONNX:
 
         if self.output_format == "yolox":
             bboxes, scores, class_ids = self._postprocess_yolox(
-                raw_output, orig_w, orig_h
+                raw_output, orig_w, orig_h, ratio
             )
         else:
             # Default: yolo11 / ultralytics
@@ -143,7 +148,64 @@ class CustomONNX:
     # ------------------------------------------------------------------
 
     def _preprocess(self, image):
-        """Resize → RGB → HWC→CHW → float32 → batch."""
+        """Preprocess image for inference.
+
+        Returns
+        -------
+        blob  : np.ndarray  BCHW float32 blob ready for ONNX session
+        ratio : float       letterbox scale ratio (1.0 for non-letterbox formats)
+
+        Format-specific behaviour
+        --------------------------
+        yolox  — letterbox padding (value=114) preserving aspect ratio, raw
+                 pixel values in [0, 255]. ``ratio`` is the scale factor used
+                 to map model-space coordinates back to original image space.
+        yolo11 — simple stretch resize, normalised to [0, 1]. ``ratio`` is
+                 always 1.0 (coordinate mapping uses scale_x/scale_y instead).
+        """
+        if self.output_format == "yolox":
+            return self._preprocess_yolox(image)
+        return self._preprocess_yolo11(image)
+
+    def _preprocess_yolox(self, image):
+        """Letterbox preprocessing for YOLOX / FreeYOLO models.
+
+        YOLOX was trained with:
+          - Letterbox padding (value=114) maintaining aspect ratio.
+          - Raw pixel values in [0, 255] — **no** /255 normalisation.
+          - BGR→ no colour conversion (model expects BGR input).
+
+        Returns (blob, ratio) where ratio = resized / original.
+        """
+        orig_h, orig_w = image.shape[:2]
+        ratio = min(self.input_height / orig_h, self.input_width / orig_w)
+        new_h = int(orig_h * ratio)
+        new_w = int(orig_w * ratio)
+
+        # Letterbox canvas filled with 114 (YOLOX convention)
+        padded = np.full(
+            (self.input_height, self.input_width, 3), 114.0, dtype=np.float32
+        )
+        resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        padded[:new_h, :new_w] = resized.astype(np.float32)
+
+        logger.debug(
+            f"[CustomONNX/yolox preprocess] orig={orig_w}x{orig_h}, "
+            f"resized={new_w}x{new_h}, ratio={ratio:.4f}, "
+            f"input={self.input_width}x{self.input_height}"
+        )
+
+        blob = np.transpose(padded, (2, 0, 1))          # HWC → CHW
+        blob = np.ascontiguousarray(blob, dtype=np.float32)
+        blob = np.expand_dims(blob, axis=0)             # CHW → BCHW
+        return blob, ratio
+
+    def _preprocess_yolo11(self, image):
+        """Simple stretch-resize preprocessing for YOLO11/YOLOv8 models.
+
+        Returns (blob, 1.0).  Coordinate back-projection uses scale_x/scale_y
+        instead of a letterbox ratio.
+        """
         img = cv2.resize(
             image,
             (self.input_width, self.input_height),
@@ -153,8 +215,7 @@ class CustomONNX:
         img = img.astype(np.float32) / 255.0
         img = np.transpose(img, (2, 0, 1))  # HWC → CHW
         img = np.expand_dims(img, axis=0)   # CHW → BCHW
-        logger.debug(f"[CustomONNX] Preprocessed blob shape: {img.shape}")
-        return img
+        return img, 1.0
 
     # ------------------------------------------------------------------
     # Post-processing helpers
@@ -261,11 +322,18 @@ class CustomONNX:
             class_ids_all[indices],
         )
 
-    def _postprocess_yolox(self, raw_output, orig_w, orig_h):
+    def _postprocess_yolox(self, raw_output, orig_w, orig_h, ratio=1.0):
         """Post-process YOLOX output.
 
         Expected raw_output shape: (1, num_anchors, num_classes+5)
         The +5 columns are: cx, cy, w, h, objectness, class_scores...
+
+        Parameters
+        ----------
+        ratio : float
+            Letterbox ratio returned by ``_preprocess_yolox``.
+            Coordinates in model-input space are divided by this ratio to
+            recover original-image coordinates.
         """
         output = np.squeeze(raw_output)
         if output.ndim != 2:
@@ -274,6 +342,11 @@ class CustomONNX:
                 f"after squeeze (raw shape={raw_output.shape}). Returning empty detections."
             )
             return np.array([]), np.array([]), np.array([])
+
+        logger.debug(
+            f"[CustomONNX] yolox post-process: output shape after squeeze = {output.shape}, "
+            f"letterbox ratio={ratio:.4f}"
+        )
 
         # output is (num_anchors, num_classes+5); check orientation
         # Use num_classes when known, otherwise fall back to dimension comparison.
@@ -316,26 +389,27 @@ class CustomONNX:
             logger.debug("[CustomONNX] yolox post-process: no detections above score threshold.")
             return np.array([]), np.array([]), np.array([])
 
-        output = output[mask]
+        output_filtered = output[mask]
         max_scores = max_scores[mask]
         class_ids_all = class_ids_all[mask]
 
-        scale_x = orig_w / self.input_width
-        scale_y = orig_h / self.input_height
         logger.debug(
             f"[CustomONNX] yolox post-process: {mask.sum()} candidates above threshold "
-            f"(scale_x={scale_x:.4f}, scale_y={scale_y:.4f})"
+            f"(ratio={ratio:.4f}, orig={orig_w}x{orig_h})"
         )
 
-        cx = output[:, 0] * scale_x
-        cy = output[:, 1] * scale_y
-        bw = output[:, 2] * scale_x
-        bh = output[:, 3] * scale_y
+        # Coordinates are in letterboxed-input space; divide by ratio to recover
+        # original-image coordinates.  The letterbox places the resized image at
+        # the top-left corner (no centring offset), so a pure division is correct.
+        cx = output_filtered[:, 0] / ratio
+        cy = output_filtered[:, 1] / ratio
+        bw = output_filtered[:, 2] / ratio
+        bh = output_filtered[:, 3] / ratio
 
-        x1 = (cx - bw / 2).astype(int)
-        y1 = (cy - bh / 2).astype(int)
-        x2 = (cx + bw / 2).astype(int)
-        y2 = (cy + bh / 2).astype(int)
+        x1 = np.clip((cx - bw / 2).astype(int), 0, orig_w)
+        y1 = np.clip((cy - bh / 2).astype(int), 0, orig_h)
+        x2 = np.clip((cx + bw / 2).astype(int), 0, orig_w)
+        y2 = np.clip((cy + bh / 2).astype(int), 0, orig_h)
 
         boxes_xyxy = np.stack([x1, y1, x2, y2], axis=1).tolist()
         scores_list = max_scores.tolist()
