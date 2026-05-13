@@ -71,6 +71,10 @@ class FactoryNode:
         # Tag for enable/disable tracking checkbox
         node.tag_node_enable_checkbox_name = node.tag_node_name + ':EnableCheckbox'
 
+        # Tag for bounding box thickness slider
+        node.tag_node_bbox_thickness_name = node.tag_node_name + ':BBoxThickness'
+        node.tag_node_bbox_thickness_value_name = node.tag_node_name + ':BBoxThicknessValue'
+
 
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict['process_width']
@@ -180,6 +184,20 @@ class FactoryNode:
                     label="Enable Tracking",
                     default_value=True,
                     callback=None,
+                )
+
+            # Bounding box thickness slider
+            with dpg.node_attribute(
+                    tag=node.tag_node_bbox_thickness_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_int(
+                    tag=node.tag_node_bbox_thickness_value_name,
+                    label="thickness",
+                    width=small_window_w - 80,
+                    default_value=2,
+                    min_value=1,
+                    max_value=10,
                 )
 
             if use_pref_counter:
@@ -296,6 +314,7 @@ class Node(Node):
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         confidence_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':ConfThreshValue'
         enable_checkbox_tag = tag_node_name + ':EnableCheckbox'
+        bbox_thickness_tag = tag_node_name + ':BBoxThicknessValue'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
@@ -497,7 +516,11 @@ class Node(Node):
                 t_class_ids = result.get('class_ids', [])
                 od_class_names = result.get('class_names', [])
                 track_id_dict = result.get('track_id_dict', {})
-                
+
+                bbox_thickness = dpg_get_value(bbox_thickness_tag)
+                if bbox_thickness is None:
+                    bbox_thickness = 2
+
                 debug_frame = self.draw_multi_object_tracking_info(
                     debug_frame,
                     track_ids,
@@ -506,6 +529,7 @@ class Node(Node):
                     t_class_ids,
                     od_class_names,
                     track_id_dict,
+                    bbox_thickness=bbox_thickness,
                 )
                 # Return the frame with overlay for downstream nodes
                 output_frame = debug_frame
@@ -545,6 +569,7 @@ class Node(Node):
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         confidence_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':ConfThreshValue'
         enable_checkbox_tag = tag_node_name + ':EnableCheckbox'
+        bbox_thickness_tag = tag_node_name + ':BBoxThicknessValue'
 
         # 選択モデル
         model_name = dpg_get_value(input_value02_tag)
@@ -557,6 +582,11 @@ class Node(Node):
         if enable_checkbox is None:
             enable_checkbox = True
 
+        # Get bbox thickness value
+        bbox_thickness = dpg_get_value(bbox_thickness_tag)
+        if bbox_thickness is None:
+            bbox_thickness = 2
+
         pos = dpg.get_item_pos(tag_node_name)
 
         setting_dict = {}
@@ -565,6 +595,7 @@ class Node(Node):
         setting_dict[input_value02_tag] = model_name
         setting_dict[confidence_threshold_tag] = confidence_threshold
         setting_dict[enable_checkbox_tag] = enable_checkbox
+        setting_dict[bbox_thickness_tag] = bbox_thickness
 
         return setting_dict
 
@@ -573,6 +604,7 @@ class Node(Node):
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         confidence_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':ConfThreshValue'
         enable_checkbox_tag = tag_node_name + ':EnableCheckbox'
+        bbox_thickness_tag = tag_node_name + ':BBoxThicknessValue'
 
         model_name = setting_dict[input_value02_tag]
 
@@ -585,3 +617,7 @@ class Node(Node):
         # Set enable checkbox with default value for backward compatibility
         enable_checkbox_value = setting_dict.get(enable_checkbox_tag, True)
         dpg_set_value(enable_checkbox_tag, enable_checkbox_value)
+
+        # Set bbox thickness with default value for backward compatibility
+        bbox_thickness_value = setting_dict.get(bbox_thickness_tag, 2)
+        dpg_set_value(bbox_thickness_tag, bbox_thickness_value)
