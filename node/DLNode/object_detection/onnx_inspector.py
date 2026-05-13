@@ -11,9 +11,12 @@ Extracts metadata from an ONNX file:
 
 import ast
 import json
+import logging
 import os
 
 import onnxruntime
+
+logger = logging.getLogger(__name__)
 
 
 def inspect_onnx_model(model_path: str) -> dict:
@@ -41,6 +44,8 @@ def inspect_onnx_model(model_path: str) -> dict:
     if not os.path.isfile(model_path):
         raise FileNotFoundError(f"ONNX model not found: {model_path}")
 
+    logger.info(f"[ONNX Inspector] Loading model: {model_path}")
+
     session = onnxruntime.InferenceSession(
         model_path, providers=["CPUExecutionProvider"]
     )
@@ -49,19 +54,37 @@ def inspect_onnx_model(model_path: str) -> dict:
     input_detail = session.get_inputs()[0]
     input_name = input_detail.name
     input_shape = list(input_detail.shape)
+    logger.info(f"[ONNX Inspector] Input tensor: name='{input_name}', shape={input_shape}")
 
     input_height = 640
     input_width = 640
     if len(input_shape) == 4:
         if isinstance(input_shape[2], int) and input_shape[2] > 0:
             input_height = input_shape[2]
+        else:
+            logger.warning(
+                f"[ONNX Inspector] Height dimension is dynamic or invalid "
+                f"('{input_shape[2]}'); defaulting to {input_height}."
+            )
         if isinstance(input_shape[3], int) and input_shape[3] > 0:
             input_width = input_shape[3]
+        else:
+            logger.warning(
+                f"[ONNX Inspector] Width dimension is dynamic or invalid "
+                f"('{input_shape[3]}'); defaulting to {input_width}."
+            )
+    else:
+        logger.warning(
+            f"[ONNX Inspector] Unexpected input rank {len(input_shape)} "
+            f"(expected 4 for BCHW); defaulting to {input_height}x{input_width}."
+        )
+    logger.info(f"[ONNX Inspector] Effective input size: {input_width}x{input_height} (WxH)")
 
     # ---- Output info -------------------------------------------------------
     output_detail = session.get_outputs()[0]
     output_name = output_detail.name
     output_shape = list(output_detail.shape)
+    logger.info(f"[ONNX Inspector] Output tensor: name='{output_name}', shape={output_shape}")
 
     # ---- Format detection --------------------------------------------------
     # YOLO11 / YOLOv8 Ultralytics:  output shape [1, num_classes+4, num_anchors]
@@ -87,6 +110,28 @@ def inspect_onnx_model(model_path: str) -> dict:
                 # Edge case: exactly 4 dims on axis1 → treat as yolo11 with 0 classes
                 output_format = "yolo11"
                 num_classes = 0
+            else:
+                logger.warning(
+                    f"[ONNX Inspector] Cannot determine output format from shape "
+                    f"{output_shape} (dim1={dim1}, dim2={dim2}). "
+                    f"Will default to 'yolo11' at inference time."
+                )
+        else:
+            logger.warning(
+                f"[ONNX Inspector] Output shape has dynamic dimensions "
+                f"{output_shape}; format detection skipped."
+            )
+    else:
+        logger.warning(
+            f"[ONNX Inspector] Unexpected output rank {len(output_shape)} "
+            f"(expected 3); format detection skipped."
+        )
+
+    if output_format != "unknown":
+        logger.info(
+            f"[ONNX Inspector] Detected output format: '{output_format}', "
+            f"estimated num_classes={num_classes}"
+        )
 
     # ---- Embedded class names (Ultralytics) --------------------------------
     class_names: dict = {}
@@ -102,8 +147,14 @@ def inspect_onnx_model(model_path: str) -> dict:
                     class_names = {int(k): str(v) for k, v in parsed.items()}
                     if num_classes == 0:
                         num_classes = len(class_names)
-            except Exception:
-                pass
+                    logger.info(
+                        f"[ONNX Inspector] Found {len(class_names)} class names "
+                        f"in ONNX 'names' metadata."
+                    )
+            except Exception as exc:
+                logger.warning(
+                    f"[ONNX Inspector] Failed to parse 'names' metadata: {exc}"
+                )
         if not class_names and "labels" in custom_meta:
             raw = custom_meta["labels"]
             try:
@@ -114,12 +165,22 @@ def inspect_onnx_model(model_path: str) -> dict:
                     class_names = {i: str(v) for i, v in enumerate(parsed)}
                 if num_classes == 0:
                     num_classes = len(class_names)
-            except Exception:
-                pass
-    except Exception:
-        pass
+                logger.info(
+                    f"[ONNX Inspector] Found {len(class_names)} class names "
+                    f"in ONNX 'labels' metadata."
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"[ONNX Inspector] Failed to parse 'labels' metadata: {exc}"
+                )
+        if not class_names:
+            logger.info(
+                "[ONNX Inspector] No embedded class names found in ONNX metadata."
+            )
+    except Exception as exc:
+        logger.warning(f"[ONNX Inspector] Could not read model metadata: {exc}")
 
-    return {
+    result = {
         "input_name": input_name,
         "input_shape": input_shape,
         "output_name": output_name,
@@ -130,6 +191,12 @@ def inspect_onnx_model(model_path: str) -> dict:
         "input_width": input_width,
         "input_height": input_height,
     }
+    logger.info(
+        f"[ONNX Inspector] Inspection complete — "
+        f"format='{output_format}', classes={num_classes}, "
+        f"input={input_width}x{input_height}"
+    )
+    return result
 
 
 def load_class_names_from_file(filepath: str) -> dict:
@@ -141,6 +208,7 @@ def load_class_names_from_file(filepath: str) -> dict:
     Returns a dict {int_id: str_name} or empty dict on failure.
     """
     if not filepath or not os.path.isfile(filepath):
+        logger.warning(f"[ONNX Inspector] Class names file not found: '{filepath}'")
         return {}
 
     ext = os.path.splitext(filepath)[1].lower()
@@ -148,14 +216,23 @@ def load_class_names_from_file(filepath: str) -> dict:
         if ext == ".txt":
             with open(filepath, "r", encoding="utf-8") as f:
                 lines = [l.rstrip("\n") for l in f.readlines()]
-            return {i: name for i, name in enumerate(lines) if name}
+            result = {i: name for i, name in enumerate(lines) if name}
+            logger.info(f"[ONNX Inspector] Loaded {len(result)} class names from TXT: {filepath}")
+            return result
         elif ext == ".json":
             with open(filepath, "r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict):
-                return {int(k): str(v) for k, v in data.items()}
+                result = {int(k): str(v) for k, v in data.items()}
             elif isinstance(data, list):
-                return {i: str(v) for i, v in enumerate(data)}
-    except Exception:
-        pass
+                result = {i: str(v) for i, v in enumerate(data)}
+            else:
+                logger.warning(f"[ONNX Inspector] Unexpected JSON format in {filepath}")
+                return {}
+            logger.info(f"[ONNX Inspector] Loaded {len(result)} class names from JSON: {filepath}")
+            return result
+        else:
+            logger.warning(f"[ONNX Inspector] Unsupported class names file extension: '{ext}'")
+    except Exception as exc:
+        logger.warning(f"[ONNX Inspector] Failed to load class names from '{filepath}': {exc}")
     return {}

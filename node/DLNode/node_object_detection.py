@@ -399,6 +399,10 @@ class Node(Node):
                 continue
             if name in cls._model_class:
                 # Already registered (either built-in or previously loaded custom)
+                logger.warning(
+                    f"[ONNX Registry] Skipping custom model '{name}' — "
+                    f"a model with this name is already registered."
+                )
                 continue
             raw_classes = entry.get('class_names', {})
             class_names = {int(k): str(v) for k, v in raw_classes.items()}
@@ -455,18 +459,36 @@ class Node(Node):
         """Called when the user confirms an ONNX file selection."""
         selections = app_data.get("selections", {})
         if not selections:
+            logger.warning("[ONNX Upload] File dialog confirmed but no file was selected.")
             return
         onnx_path = list(selections.values())[0]
+        logger.info(f"[ONNX Upload] File selected: {onnx_path}")
         if not os.path.isfile(onnx_path):
-            logger.error(f"Selected ONNX path does not exist: {onnx_path}")
+            logger.error(f"[ONNX Upload] Selected ONNX path does not exist: {onnx_path}")
             return
 
         # Inspect the model
         try:
             meta = onnx_inspector.inspect_onnx_model(onnx_path)
         except Exception as exc:
-            logger.error(f"ONNX inspection failed: {exc}")
+            logger.error(f"[ONNX Upload] ONNX inspection failed for '{onnx_path}': {exc}")
             return
+
+        logger.info(
+            f"[ONNX Upload] Inspection result — "
+            f"format='{meta.get('output_format')}', "
+            f"input_shape={meta.get('input_shape')}, "
+            f"output_shape={meta.get('output_shape')}, "
+            f"num_classes={meta.get('num_classes')}, "
+            f"embedded_class_names={len(meta.get('class_names', {}))}"
+        )
+
+        if meta.get("output_format") == "unknown":
+            logger.warning(
+                f"[ONNX Upload] Output format could not be determined for '{onnx_path}'. "
+                f"Defaulting to 'yolo11' — inference may produce incorrect results if "
+                f"the model uses a different layout."
+            )
 
         # Store pending state on node (class names may still be needed)
         Node._pending_upload[node.tag_node_name] = {
@@ -481,13 +503,19 @@ class Node(Node):
             if num_classes > 0:
                 class_names = {i: f"class_{i}" for i in range(num_classes)}
                 logger.info(
-                    f"No class names found in ONNX metadata; generated {num_classes} generic class names."
+                    f"[ONNX Upload] No class names found in ONNX metadata; "
+                    f"generated {num_classes} generic class names."
                 )
             else:
                 class_names = dict(coco_class_names)
                 logger.info(
-                    "No class names or class count found in ONNX metadata; using COCO class names as fallback."
+                    "[ONNX Upload] No class names or class count found in ONNX metadata; "
+                    "using COCO class names as fallback."
                 )
+        else:
+            logger.info(
+                f"[ONNX Upload] Using {len(class_names)} class names from ONNX metadata."
+            )
         Node._finalise_upload(node, class_names)
 
     @staticmethod
@@ -495,6 +523,7 @@ class Node(Node):
         """Register the custom model and refresh the node UI dropdowns."""
         pending = Node._pending_upload.pop(node.tag_node_name, None)
         if pending is None:
+            logger.warning("[ONNX Upload] _finalise_upload called but no pending upload found.")
             return
 
         onnx_path = pending["path"]
@@ -509,10 +538,23 @@ class Node(Node):
             name = f"{base}_{counter}"
             counter += 1
 
+        if name != base:
+            logger.info(
+                f"[ONNX Upload] Model name '{base}' already registered; "
+                f"using unique name '{name}'."
+            )
+
         output_fmt = meta.get("output_format", "yolo11")
         in_w = meta.get("input_width", 640)
         in_h = meta.get("input_height", 640)
         num_classes = meta.get("num_classes", len(class_names))
+
+        logger.info(
+            f"[ONNX Upload] Registering model '{name}' — "
+            f"path='{onnx_path}', format='{output_fmt}', "
+            f"input={in_w}x{in_h}, num_classes={num_classes}, "
+            f"class_names_count={len(class_names)}"
+        )
 
         # Register in class-level dicts
         Node._register_custom_model(name, onnx_path, class_names, output_fmt, in_w, in_h)
@@ -529,8 +571,9 @@ class Node(Node):
         }
         try:
             custom_models_registry.save_entry(registry_entry)
+            logger.info(f"[ONNX Upload] Registry entry saved for '{name}'.")
         except Exception as exc:
-            logger.warning(f"Could not save registry entry: {exc}")
+            logger.warning(f"[ONNX Upload] Could not save registry entry for '{name}': {exc}")
 
         # --- Update the model dropdown in the node UI without restarting ---
         model_combo_tag = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input02Value'
@@ -539,8 +582,9 @@ class Node(Node):
             if name not in current_items:
                 current_items = list(current_items) + [name]
             dpg.configure_item(model_combo_tag, items=current_items, default_value=name)
+            logger.info(f"[ONNX Upload] Model dropdown updated; '{name}' is now selected.")
         except Exception as exc:
-            logger.warning(f"Could not update model dropdown: {exc}")
+            logger.warning(f"[ONNX Upload] Could not update model dropdown: {exc}")
 
         # Update rejected classes dropdown to show the new model's classes
         try:
@@ -548,10 +592,11 @@ class Node(Node):
             dpg.configure_item(node.tag_node_rejected_classes_value_name, items=class_items)
             dpg_set_value(node.tag_node_rejected_classes_value_name, "")
         except Exception as exc:
-            logger.warning(f"Could not update classes dropdown: {exc}")
+            logger.warning(f"[ONNX Upload] Could not update classes dropdown: {exc}")
 
         logger.info(
-            f"Custom ONNX model registered: name='{name}', format='{output_fmt}', "
+            f"[ONNX Upload] Custom ONNX model successfully registered: "
+            f"name='{name}', format='{output_fmt}', "
             f"input={in_w}x{in_h}, classes={num_classes}"
         )
 
