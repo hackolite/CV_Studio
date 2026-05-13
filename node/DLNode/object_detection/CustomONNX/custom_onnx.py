@@ -378,6 +378,15 @@ class CustomONNX:
             )
             return np.array([]), np.array([]), np.array([])
 
+        # Apply YOLOX grid decoding.
+        # The ONNX models store raw (undecoded) predictions:
+        #   - columns 0-1: offset within the grid cell  (range ~ -2 to 4)
+        #   - columns 2-3: log-scale width / height     (range ~ -1 to 3)
+        # Decoding formula (mirrors original yolox.py _postprocess):
+        #   cx_decoded = (raw_cx + grid_x) * stride
+        #   w_decoded  = exp(raw_w)         * stride
+        self._decode_yolox_output(output)
+
         objectness = output[:, 4]
         class_scores = output[:, 5:]
 
@@ -399,9 +408,8 @@ class CustomONNX:
             f"(ratio={ratio:.4f}, orig={orig_w}x{orig_h})"
         )
 
-        # Coordinates are in letterboxed-input space; divide by ratio to recover
-        # original-image coordinates.  The letterbox places the resized image at
-        # the top-left corner (no centring offset), so a pure division is correct.
+        # Coordinates are now in letterboxed-input space (decoded absolute pixels).
+        # Divide by ratio to recover original-image coordinates.
         cx = output_filtered[:, 0] / ratio
         cy = output_filtered[:, 1] / ratio
         bw = output_filtered[:, 2] / ratio
@@ -430,6 +438,50 @@ class CustomONNX:
             np.array(scores_list)[indices],
             class_ids_all[indices],
         )
+
+    # ------------------------------------------------------------------
+    # YOLOX grid decoding
+    # ------------------------------------------------------------------
+
+    def _decode_yolox_output(self, output):
+        """Apply YOLOX grid decoding to raw model output in-place.
+
+        YOLOX ONNX models export *undecoded* predictions:
+          - col 0-1: raw offset within the grid cell   (not absolute pixels)
+          - col 2-3: log-scale width / height           (not absolute pixels)
+
+        This method applies the decoding used by the original yolox.py,
+        **modifying columns 0-3 of the array in-place**:
+          cx = (raw_cx + grid_x) * stride
+          cy = (raw_cy + grid_y) * stride
+          w  = exp(raw_w)         * stride
+          h  = exp(raw_h)         * stride
+
+        After decoding, columns 0-3 hold absolute pixel coordinates in
+        letterboxed-input space ready for / ratio back-projection.
+
+        Parameters
+        ----------
+        output : np.ndarray  shape (num_anchors, num_classes + 5)
+            Raw squeezed model output — columns 0-3 are modified in-place.
+        """
+        strides = [8, 16, 32]
+        grids = []
+        expanded_strides = []
+        for stride in strides:
+            n_h = self.input_height // stride
+            n_w = self.input_width // stride
+            xv, yv = np.meshgrid(np.arange(n_w), np.arange(n_h))
+            grid = np.stack((xv, yv), axis=2).reshape(-1, 2)   # (n_h*n_w, 2)
+            grids.append(grid)
+            expanded_strides.append(
+                np.full((grid.shape[0], 1), stride, dtype=np.float32)
+            )
+        grids = np.concatenate(grids, axis=0)             # (num_anchors, 2)
+        expanded_strides = np.concatenate(expanded_strides, axis=0)  # (num_anchors, 1)
+
+        output[:, :2] = (output[:, :2] + grids) * expanded_strides
+        output[:, 2:4] = np.exp(output[:, 2:4]) * expanded_strides
 
     # ------------------------------------------------------------------
     # Drawing helper (optional, matches the interface of other wrappers)
