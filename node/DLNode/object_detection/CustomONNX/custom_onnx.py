@@ -118,10 +118,10 @@ class CustomONNX:
             f"model input: {self.input_width}x{self.input_height}, "
             f"format: {self.output_format}"
         )
-        blob, ratio = self._preprocess(image)
+        blob, ratio, pad_top, pad_left = self._preprocess(image)
         logger.debug(
             f"[CustomONNX] Preprocessed blob shape: {blob.shape}, "
-            f"letterbox ratio: {ratio:.4f}"
+            f"letterbox ratio: {ratio:.4f}, pad_top={pad_top}, pad_left={pad_left}"
         )
         outputs = self.onnx_session.run(None, {self.input_name: blob})
 
@@ -135,7 +135,7 @@ class CustomONNX:
         else:
             # Default: yolo11 / ultralytics
             bboxes, scores, class_ids = self._postprocess_yolo11(
-                raw_output, orig_w, orig_h
+                raw_output, orig_w, orig_h, ratio, pad_top, pad_left
             )
 
         logger.debug(f"[CustomONNX] Detections after NMS: {len(bboxes)}")
@@ -150,16 +150,13 @@ class CustomONNX:
 
         Returns
         -------
-        blob  : np.ndarray  BCHW float32 blob ready for ONNX session
-        ratio : float       letterbox scale ratio (1.0 for non-letterbox formats)
+        blob     : np.ndarray  BCHW float32 blob ready for ONNX session
+        ratio    : float       letterbox scale ratio (resized / original)
+        pad_top  : int         pixels of top-padding added during letterbox
+        pad_left : int         pixels of left-padding added during letterbox
 
-        Format-specific behaviour
-        --------------------------
-        yolox  — letterbox padding (value=114) preserving aspect ratio, raw
-                 pixel values in [0, 255]. ``ratio`` is the scale factor used
-                 to map model-space coordinates back to original image space.
-        yolo11 — simple stretch resize, normalised to [0, 1]. ``ratio`` is
-                 always 1.0 (coordinate mapping uses scale_x/scale_y instead).
+        Both yolo11 and yolox paths now use letterbox preprocessing so that
+        coordinate recovery is consistent: ``(coord - pad) / ratio``.
         """
         if self.output_format == "yolox":
             return self._preprocess_yolox(image)
@@ -173,7 +170,8 @@ class CustomONNX:
           - Raw pixel values in [0, 255] — **no** /255 normalisation.
           - BGR colour format (no colour space conversion needed).
 
-        Returns (blob, ratio) where ratio = resized / original.
+        Returns (blob, ratio, pad_top=0, pad_left=0).
+        The resized image is placed in the top-left corner so pad offsets are 0.
         """
         orig_h, orig_w = image.shape[:2]
         ratio = min(self.input_height / orig_h, self.input_width / orig_w)
@@ -197,33 +195,74 @@ class CustomONNX:
         blob = np.transpose(padded, (2, 0, 1))          # HWC → CHW
         blob = np.ascontiguousarray(blob, dtype=np.float32)
         blob = np.expand_dims(blob, axis=0)             # CHW → BCHW
-        return blob, ratio
+        return blob, ratio, 0, 0
 
     def _preprocess_yolo11(self, image):
-        """Simple stretch-resize preprocessing for YOLO11/YOLOv8 models.
+        """Letterbox preprocessing for YOLO11/YOLOv8 Ultralytics models.
 
-        Returns (blob, 1.0).  Coordinate back-projection uses scale_x/scale_y
-        instead of a letterbox ratio.
+        Ultralytics models are trained with:
+          - Centered letterbox padding (value=114) preserving aspect ratio.
+          - Normalised pixel values in [0, 1].
+          - RGB colour format.
+
+        Using stretch-resize instead of letterbox causes incorrect bbox
+        coordinates on non-square images because the model's coordinate
+        predictions are calibrated for the letterbox input distribution.
+
+        Returns (blob, ratio, pad_top, pad_left) for accurate coordinate
+        back-projection: ``coord_original = (coord_model - pad) / ratio``.
         """
-        img = cv2.resize(
-            image,
-            (self.input_width, self.input_height),
-            interpolation=cv2.INTER_LINEAR,
+        orig_h, orig_w = image.shape[:2]
+        ratio = min(self.input_height / orig_h, self.input_width / orig_w)
+        new_h = int(orig_h * ratio)
+        new_w = int(orig_w * ratio)
+
+        # Centered letterbox: compute padding so the resized image is centred.
+        pad_top = (self.input_height - new_h) // 2
+        pad_left = (self.input_width - new_w) // 2
+
+        # Letterbox canvas filled with 114 (Ultralytics default pad colour).
+        padded = np.full(
+            (self.input_height, self.input_width, 3), 114, dtype=np.uint8
         )
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        padded[pad_top:pad_top + new_h, pad_left:pad_left + new_w] = resized
+
+        logger.debug(
+            f"[CustomONNX/yolo11 preprocess] orig={orig_w}x{orig_h}, "
+            f"resized={new_w}x{new_h}, ratio={ratio:.4f}, "
+            f"pad_top={pad_top}, pad_left={pad_left}, "
+            f"input={self.input_width}x{self.input_height}"
+        )
+
+        img = cv2.cvtColor(padded, cv2.COLOR_BGR2RGB)
         img = img.astype(np.float32) / 255.0
         img = np.transpose(img, (2, 0, 1))  # HWC → CHW
         img = np.expand_dims(img, axis=0)   # CHW → BCHW
-        return img, 1.0
+        return img, ratio, pad_top, pad_left
 
     # ------------------------------------------------------------------
     # Post-processing helpers
     # ------------------------------------------------------------------
 
-    def _postprocess_yolo11(self, raw_output, orig_w, orig_h):
+    def _postprocess_yolo11(self, raw_output, orig_w, orig_h, ratio=1.0,
+                             pad_top=0, pad_left=0):
         """Post-process YOLO11/YOLOv8 Ultralytics output.
 
         Expected raw_output shape: (1, num_classes+4, num_anchors)
+
+        Parameters
+        ----------
+        ratio : float
+            Letterbox scale ratio returned by ``_preprocess_yolo11``.
+        pad_top : int
+            Top padding applied during letterbox preprocessing.
+        pad_left : int
+            Left padding applied during letterbox preprocessing.
+
+        Coordinate back-projection uses the letterbox inverse:
+            x_original = (cx_model - pad_left) / ratio
+            y_original = (cy_model - pad_top)  / ratio
         """
         # Squeeze batch dimension: (num_classes+4, num_anchors)
         output = np.squeeze(raw_output)
@@ -266,12 +305,8 @@ class CustomONNX:
             )
             return np.array([]), np.array([]), np.array([])
 
-        boxes_xywh = output[:, :4]     # cx, cy, w, h (in input image pixels)
+        boxes_xywh = output[:, :4]     # cx, cy, w, h (in letterboxed input pixels)
         class_scores = output[:, 4:]   # (num_anchors, num_classes)
-
-        # Scale factors back to original image
-        scale_x = orig_w / self.input_width
-        scale_y = orig_h / self.input_height
 
         max_scores = class_scores.max(axis=1)
         class_ids_all = class_scores.argmax(axis=1)
@@ -287,20 +322,20 @@ class CustomONNX:
         class_ids_all = class_ids_all[mask]
         logger.debug(
             f"[CustomONNX] yolo11 post-process: {mask.sum()} candidates above threshold "
-            f"(scale_x={scale_x:.4f}, scale_y={scale_y:.4f})"
+            f"(ratio={ratio:.4f}, pad_top={pad_top}, pad_left={pad_left})"
         )
 
-        # Convert cx,cy,w,h → x1,y1,x2,y2 scaled to original image
-        cx, cy, bw, bh = (
-            boxes_xywh[:, 0] * scale_x,
-            boxes_xywh[:, 1] * scale_y,
-            boxes_xywh[:, 2] * scale_x,
-            boxes_xywh[:, 3] * scale_y,
-        )
-        x1 = (cx - bw / 2).astype(int)
-        y1 = (cy - bh / 2).astype(int)
-        x2 = (cx + bw / 2).astype(int)
-        y2 = (cy + bh / 2).astype(int)
+        # Convert cx,cy,w,h (letterboxed space) → x1,y1,x2,y2 (original image)
+        # Letterbox inverse: coord_original = (coord_model - pad) / ratio
+        cx = (boxes_xywh[:, 0] - pad_left) / ratio
+        cy = (boxes_xywh[:, 1] - pad_top) / ratio
+        bw = boxes_xywh[:, 2] / ratio
+        bh = boxes_xywh[:, 3] / ratio
+
+        x1 = np.clip((cx - bw / 2).astype(int), 0, orig_w)
+        y1 = np.clip((cy - bh / 2).astype(int), 0, orig_h)
+        x2 = np.clip((cx + bw / 2).astype(int), 0, orig_w)
+        y2 = np.clip((cy + bh / 2).astype(int), 0, orig_h)
 
         boxes_xyxy = np.stack([x1, y1, x2, y2], axis=1).tolist()
         scores_list = max_scores.tolist()

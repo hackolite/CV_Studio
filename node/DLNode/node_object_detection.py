@@ -546,13 +546,16 @@ class Node(Node):
             output_fmt = entry.get('output_format', 'yolo11')
             in_w = int(entry.get('input_width', 640))
             in_h = int(entry.get('input_height', 640))
-            cls._register_custom_model(name, path, class_names, output_fmt, in_w, in_h)
+            nc = int(entry.get('num_classes', len(class_names)))
+            cls._register_custom_model(name, path, class_names, output_fmt, in_w, in_h,
+                                       num_classes=nc)
             logger.info(f"Loaded model from registry: {name}")
 
     @classmethod
-    def _register_custom_model(cls, name, path, class_names, output_fmt, in_w, in_h):
+    def _register_custom_model(cls, name, path, class_names, output_fmt, in_w, in_h,
+                                num_classes=0):
         """Add a model to the class-level runtime dictionaries."""
-        def _make_factory(p, fmt, w, h):
+        def _make_factory(p, fmt, w, h, nc):
             def factory(model_path, providers=None):
                 if providers is None:
                     providers = ['CPUExecutionProvider']
@@ -561,11 +564,12 @@ class Node(Node):
                     input_width=w,
                     input_height=h,
                     output_format=fmt,
+                    num_classes=nc,
                     providers=providers,
                 )
             return factory
 
-        cls._model_class[name] = _make_factory(path, output_fmt, in_w, in_h)
+        cls._model_class[name] = _make_factory(path, output_fmt, in_w, in_h, num_classes)
         cls._model_path_setting[name] = path
         cls._model_class_name_list[name] = class_names
 
@@ -770,7 +774,8 @@ class Node(Node):
             f"input={in_w}x{in_h}, classes={num_classes}"
         )
 
-        Node._register_custom_model(name, onnx_path, class_names, output_fmt, in_w, in_h)
+        Node._register_custom_model(name, onnx_path, class_names, output_fmt, in_w, in_h,
+                                    num_classes=num_classes)
 
         registry_entry = {
             "name": name,
@@ -1152,6 +1157,7 @@ class Node(Node):
                     entry.get('output_format', 'yolo11'),
                     int(entry.get('input_width', 640)),
                     int(entry.get('input_height', 640)),
+                    num_classes=int(entry.get('num_classes', len(class_names_restored))),
                 )
                 logger.info(f"Restored custom model from registry on set_setting_dict: {model_name}")
             else:
