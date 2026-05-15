@@ -703,8 +703,7 @@ class Node(Node):
         dpg.configure_item(self.tag_preview_quit, show=upload_succeeded)
 
     def _close_upload_preview(self):
-        """Close the upload preview dialog and restore its default action buttons."""
-        self._set_upload_preview_actions(upload_succeeded=False)
+        """Close the upload preview dialog."""
         dpg.hide_item(self.tag_preview_window)
 
     def _do_confirm_upload(self):

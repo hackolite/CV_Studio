@@ -2,43 +2,98 @@
 # -*- coding: utf-8 -*-
 """Tests for the object detection upload preview quit button."""
 
+import importlib.util
 import os
+import sys
+import types
+from unittest import mock
 
 
-def _read_object_detection_source():
-    file_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        'node', 'DLNode', 'node_object_detection.py'
-    )
-    with open(file_path, 'r') as f:
-        return f.read()
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODULE_PATH = os.path.join(REPO_ROOT, 'node', 'DLNode', 'node_object_detection.py')
 
 
-def test_upload_preview_defines_quit_button():
-    """The upload preview should define a dedicated Quit button."""
-    content = _read_object_detection_source()
+def _load_object_detection_module():
+    """Load the object detection module with lightweight dependency stubs."""
+    dpg_mock = mock.MagicMock()
 
-    assert 'preview_quit_tag' in content, "Should define a tag for the Quit button"
-    assert 'label="  Quit  "' in content, "Should create a Quit button in the preview dialog"
-    assert 'show=False' in content, "Quit button should stay hidden until upload succeeds"
+    mocked_modules = {
+        'cv2': mock.MagicMock(),
+        'numpy': mock.MagicMock(),
+        'dearpygui': types.ModuleType('dearpygui'),
+        'dearpygui.dearpygui': dpg_mock,
+        'node_editor': types.ModuleType('node_editor'),
+        'node_editor.util': types.SimpleNamespace(
+            dpg_get_value=mock.MagicMock(),
+            dpg_set_value=mock.MagicMock(),
+        ),
+        'node.basenode': types.SimpleNamespace(Node=type('BaseNode', (), {})),
+        'src': types.ModuleType('src'),
+        'src.utils': types.ModuleType('src.utils'),
+        'src.utils.logging': types.SimpleNamespace(get_logger=lambda name: mock.MagicMock()),
+        'src.utils.gpu_utils': types.SimpleNamespace(get_execution_providers=lambda: ['CPUExecutionProvider']),
+        'node.DLNode.object_detection.CustomONNX.custom_onnx': types.SimpleNamespace(CustomONNX=mock.MagicMock()),
+        'node.DLNode.object_detection.onnx_inspector': mock.MagicMock(),
+        'node.DLNode.object_detection.custom_models_registry': mock.MagicMock(),
+    }
+    mocked_modules['dearpygui'].dearpygui = dpg_mock
+    mocked_modules['node_editor'].util = mocked_modules['node_editor.util']
+    mocked_modules['src'].utils = mocked_modules['src.utils']
+
+    original_modules = {}
+    for name, module in mocked_modules.items():
+        original_modules[name] = sys.modules.get(name)
+        sys.modules[name] = module
+
+    spec = importlib.util.spec_from_file_location('test_node_object_detection_upload_dialog', MODULE_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    for name, original in original_modules.items():
+        if original is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = original
+
+    return module, dpg_mock
 
 
 def test_upload_preview_toggles_buttons_after_success():
-    """The dialog should switch from confirm/cancel to quit after success."""
-    content = _read_object_detection_source()
+    """Successful uploads should switch the dialog to Quit-only mode."""
+    module, dpg_mock = _load_object_detection_module()
+    node = module.Node()
+    node.tag_preview_confirm = 'confirm'
+    node.tag_preview_cancel = 'cancel'
+    node.tag_preview_quit = 'quit'
 
-    assert 'def _set_upload_preview_actions' in content, "Should centralize preview button visibility"
-    assert 'dpg.configure_item(self.tag_preview_confirm, show=not upload_succeeded)' in content
-    assert 'dpg.configure_item(self.tag_preview_cancel, show=not upload_succeeded)' in content
-    assert 'dpg.configure_item(self.tag_preview_quit, show=upload_succeeded)' in content
-    assert 'self._set_upload_preview_actions(upload_succeeded=True)' in content, \
-        "Successful uploads should expose the Quit button"
+    node._set_upload_preview_actions(upload_succeeded=True)
+
+    dpg_mock.configure_item.assert_any_call('confirm', show=False)
+    dpg_mock.configure_item.assert_any_call('cancel', show=False)
+    dpg_mock.configure_item.assert_any_call('quit', show=True)
+
+
+def test_upload_preview_toggles_buttons_before_success():
+    """Pending uploads should keep Confirm/Cancel visible and hide Quit."""
+    module, dpg_mock = _load_object_detection_module()
+    node = module.Node()
+    node.tag_preview_confirm = 'confirm'
+    node.tag_preview_cancel = 'cancel'
+    node.tag_preview_quit = 'quit'
+
+    node._set_upload_preview_actions(upload_succeeded=False)
+
+    dpg_mock.configure_item.assert_any_call('confirm', show=True)
+    dpg_mock.configure_item.assert_any_call('cancel', show=True)
+    dpg_mock.configure_item.assert_any_call('quit', show=False)
 
 
 def test_quit_button_closes_preview_dialog():
-    """The Quit action should reuse the preview close handler."""
-    content = _read_object_detection_source()
+    """Quit should close the preview dialog."""
+    module, dpg_mock = _load_object_detection_module()
+    node = module.Node()
+    node.tag_preview_window = 'preview'
 
-    assert 'def _close_upload_preview' in content, "Should provide a preview close helper"
-    assert 'dpg.hide_item(self.tag_preview_window)' in content, \
-        "Closing the dialog should hide the preview window"
+    node._close_upload_preview()
+
+    dpg_mock.hide_item.assert_called_once_with('preview')
