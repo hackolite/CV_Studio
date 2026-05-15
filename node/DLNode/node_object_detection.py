@@ -269,7 +269,7 @@ class FactoryNode:
         def _on_upload_confirm(sender, app_data, user_data):
             node._do_confirm_upload()
 
-        def _on_upload_close(sender, app_data, user_data):
+        def _on_close_preview(sender, app_data, user_data):
             node._close_upload_preview()
 
         with dpg.window(
@@ -298,13 +298,13 @@ class FactoryNode:
                 dpg.add_button(
                     label="  Cancel  ",
                     tag=preview_cancel_tag,
-                    callback=_on_upload_close,
+                    callback=_on_close_preview,
                 )
                 dpg.add_spacer(width=10)
                 dpg.add_button(
                     label="  Quit  ",
                     tag=preview_quit_tag,
-                    callback=_on_upload_close,
+                    callback=_on_close_preview,
                     show=False,
                 )
 
