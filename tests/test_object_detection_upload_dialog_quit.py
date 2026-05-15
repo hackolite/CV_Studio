@@ -45,7 +45,7 @@ def _load_object_detection_module():
         original_modules[name] = sys.modules.get(name)
         sys.modules[name] = module
 
-    spec = importlib.util.spec_from_file_location('test_node_object_detection_upload_dialog', MODULE_PATH)
+    spec = importlib.util.spec_from_file_location('node_object_detection_module', MODULE_PATH)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
