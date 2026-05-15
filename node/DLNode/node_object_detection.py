@@ -254,17 +254,23 @@ class FactoryNode:
         preview_name_tag    = "onnx_preview_name:"    + str(node_id)
         preview_details_tag = "onnx_preview_details:" + str(node_id)
         preview_status_tag  = "onnx_preview_status:"  + str(node_id)
+        preview_confirm_tag = "onnx_preview_confirm:" + str(node_id)
+        preview_cancel_tag  = "onnx_preview_cancel:"  + str(node_id)
+        preview_quit_tag    = "onnx_preview_quit:"    + str(node_id)
 
         node.tag_preview_window  = preview_window_tag
         node.tag_preview_name    = preview_name_tag
         node.tag_preview_details = preview_details_tag
         node.tag_preview_status  = preview_status_tag
+        node.tag_preview_confirm = preview_confirm_tag
+        node.tag_preview_cancel  = preview_cancel_tag
+        node.tag_preview_quit    = preview_quit_tag
 
         def _on_upload_confirm(sender, app_data, user_data):
             node._do_confirm_upload()
 
-        def _on_upload_cancel(sender, app_data, user_data):
-            dpg.hide_item(preview_window_tag)
+        def _on_upload_close(sender, app_data, user_data):
+            node._close_upload_preview()
 
         with dpg.window(
             label="ONNX Model Preview",
@@ -285,12 +291,21 @@ class FactoryNode:
             with dpg.group(horizontal=True):
                 dpg.add_button(
                     label="  Confirm Upload  ",
+                    tag=preview_confirm_tag,
                     callback=_on_upload_confirm,
                 )
                 dpg.add_spacer(width=10)
                 dpg.add_button(
                     label="  Cancel  ",
-                    callback=_on_upload_cancel,
+                    tag=preview_cancel_tag,
+                    callback=_on_upload_close,
+                )
+                dpg.add_spacer(width=10)
+                dpg.add_button(
+                    label="  Quit  ",
+                    tag=preview_quit_tag,
+                    callback=_on_upload_close,
+                    show=False,
                 )
 
         with dpg.node(
@@ -612,6 +627,7 @@ class Node(Node):
                     parent=self.tag_preview_details,
                     color=(255, 100, 100, 255),
                 )
+                self._set_upload_preview_actions(upload_succeeded=False)
                 dpg.set_value(self.tag_preview_status, "")
                 dpg.show_item(self.tag_preview_window)
             except Exception:
@@ -676,8 +692,20 @@ class Node(Node):
             )
 
         # Clear any previous status message and show the dialog
+        self._set_upload_preview_actions(upload_succeeded=False)
         dpg.set_value(self.tag_preview_status, "")
         dpg.show_item(self.tag_preview_window)
+
+    def _set_upload_preview_actions(self, upload_succeeded: bool):
+        """Show the appropriate action buttons for the current preview state."""
+        dpg.configure_item(self.tag_preview_confirm, show=not upload_succeeded)
+        dpg.configure_item(self.tag_preview_cancel, show=not upload_succeeded)
+        dpg.configure_item(self.tag_preview_quit, show=upload_succeeded)
+
+    def _close_upload_preview(self):
+        """Close the upload preview dialog and restore its default action buttons."""
+        self._set_upload_preview_actions(upload_succeeded=False)
+        dpg.hide_item(self.tag_preview_window)
 
     def _do_confirm_upload(self):
         """Called when the user clicks 'Confirm Upload' in the preview dialog.
@@ -722,6 +750,7 @@ class Node(Node):
                 self.tag_preview_status,
                 f"\u2713 Model '{custom_name}' uploaded successfully!",
             )
+            self._set_upload_preview_actions(upload_succeeded=True)
             logger.info(f"[Upload] Upload confirmed for '{custom_name}'.")
         except Exception as exc:
             logger.error(f"[Upload] Finalise failed: {exc}", exc_info=True)
@@ -729,6 +758,7 @@ class Node(Node):
                 self.tag_preview_status,
                 f"\u2717 Upload failed: {exc}",
             )
+            self._set_upload_preview_actions(upload_succeeded=False)
 
         # Clear pending state
         self._pending_onnx_path = None
