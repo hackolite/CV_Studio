@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import sys
 import os
+import importlib
 
 # Add the current directory to Python path to allow imports from src package
 # This is necessary when running main.py directly without installing the package
@@ -17,21 +18,135 @@ import argparse
 from collections import OrderedDict
 import time
 import multiprocessing
-import cv2
-import dearpygui.dearpygui as dpg
 
 from src.utils.logging import setup_logging, get_logger
-from src.utils.gpu_utils import log_gpu_info
-
-from node_editor.util import check_camera_connection
-from node_editor.node_main import DpgNodeEditor
-
-# Import timestamped queue system
-from node.timestamped_queue import NodeDataQueueManager
-from node.queue_adapter import QueueBackedDict
 
 # Setup logging
 logger = get_logger(__name__)
+
+cv2 = None
+dpg = None
+log_gpu_info = None
+check_camera_connection = None
+DpgNodeEditor = None
+NodeDataQueueManager = None
+QueueBackedDict = None
+
+DEPENDENCY_PACKAGE_MAP = {
+    "cv2": "opencv-contrib-python",
+    "dearpygui": "dearpygui",
+    "onnxruntime": "onnxruntime",
+    "numpy": "numpy",
+    "mediapipe": "mediapipe",
+    "filterpy": "filterpy",
+    "lap": "lap",
+    "motpy": "motpy",
+    "norfair": "norfair",
+    "scipy": "scipy",
+    "ffmpeg": "ffmpeg-python",
+    "rich": "rich",
+    "sklearn": "scikit-learn",
+    "serial": "pyserial",
+    "pymongo": "pymongo",
+    "PIL": "Pillow",
+    "librosa": "librosa",
+    "soundfile": "soundfile",
+    "sounddevice": "sounddevice",
+    "matplotlib": "matplotlib",
+    "requests": "requests",
+    "pafy": "pafy",
+    "yt_dlp": "yt-dlp",
+    "pytz": "pytz",
+    "streamlink": "streamlink",
+}
+
+
+def _get_package_name(module_name):
+    if not module_name:
+        return None
+
+    return DEPENDENCY_PACKAGE_MAP.get(
+        module_name,
+        DEPENDENCY_PACKAGE_MAP.get(module_name.split(".")[0]),
+    )
+
+
+def _format_missing_dependency_message(module_name, package_name, error=None):
+    message_lines = [
+        "CV_Studio could not start because a required dependency is missing.",
+        f"Missing Python module: {module_name}",
+        f"Install package: {package_name}",
+        "",
+        "Install the project dependencies and try again:",
+        f"  {sys.executable} -m pip install -r requirements.txt",
+    ]
+
+    if error:
+        message_lines.extend(["", f"Original error: {error}"])
+
+    return "\n".join(message_lines)
+
+
+def _import_runtime_module(import_name, package_name=None):
+    try:
+        return importlib.import_module(import_name)
+    except ModuleNotFoundError as exc:
+        resolved_package = package_name or _get_package_name(exc.name or import_name)
+        if resolved_package is None:
+            raise
+
+        raise SystemExit(
+            _format_missing_dependency_message(
+                exc.name or import_name,
+                resolved_package,
+                error=exc,
+            )
+        ) from exc
+    except (ImportError, OSError, RuntimeError) as exc:
+        resolved_package = package_name or _get_package_name(import_name) or import_name
+        raise SystemExit(
+            _format_missing_dependency_message(
+                import_name,
+                resolved_package,
+                error=exc,
+            )
+        ) from exc
+
+
+def bootstrap_runtime_dependencies():
+    global cv2
+    global dpg
+    global log_gpu_info
+    global check_camera_connection
+    global DpgNodeEditor
+    global NodeDataQueueManager
+    global QueueBackedDict
+
+    if all(
+        dependency is not None
+        for dependency in (
+            cv2,
+            dpg,
+            log_gpu_info,
+            check_camera_connection,
+            DpgNodeEditor,
+            NodeDataQueueManager,
+            QueueBackedDict,
+        )
+    ):
+        return
+
+    cv2 = _import_runtime_module("cv2")
+    dpg = _import_runtime_module("dearpygui.dearpygui", package_name="dearpygui")
+    log_gpu_info = _import_runtime_module("src.utils.gpu_utils").log_gpu_info
+    check_camera_connection = _import_runtime_module(
+        "node_editor.util"
+    ).check_camera_connection
+    DpgNodeEditor = _import_runtime_module("node_editor.node_main").DpgNodeEditor
+    NodeDataQueueManager = _import_runtime_module(
+        "node.timestamped_queue"
+    ).NodeDataQueueManager
+    QueueBackedDict = _import_runtime_module("node.queue_adapter").QueueBackedDict
 
 
 def get_resource_path(relative_path):
@@ -237,6 +352,8 @@ def main():
     logger.info("=" * 60)
     logger.info("CV_STUDIO Starting")
     logger.info("=" * 60)
+
+    bootstrap_runtime_dependencies()
     
     # Initialize timestamped buffer system
     logger.info("Initializing timestamped buffer system")
