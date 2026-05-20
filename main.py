@@ -18,6 +18,7 @@ import argparse
 from collections import OrderedDict
 import time
 import multiprocessing
+import threading
 
 from src.utils.logging import setup_logging, get_logger
 
@@ -31,7 +32,11 @@ check_camera_connection = None
 DpgNodeEditor = None
 NodeDataQueueManager = None
 QueueBackedDict = None
+RUNTIME_DEPENDENCIES_BOOTSTRAPPED = False
+RUNTIME_DEPENDENCIES_LOCK = threading.Lock()
 
+# Covers third-party modules that can surface while importing the core runtime
+# bootstrap modules (main UI, node editor, queue system, and node registry).
 DEPENDENCY_PACKAGE_MAP = {
     "cv2": "opencv-contrib-python",
     "dearpygui": "dearpygui",
@@ -65,10 +70,11 @@ def _get_package_name(module_name):
     if not module_name:
         return None
 
-    return DEPENDENCY_PACKAGE_MAP.get(
-        module_name,
-        DEPENDENCY_PACKAGE_MAP.get(module_name.split(".")[0]),
-    )
+    package_name = DEPENDENCY_PACKAGE_MAP.get(module_name)
+    if package_name is not None:
+        return package_name
+
+    return DEPENDENCY_PACKAGE_MAP.get(module_name.split(".")[0])
 
 
 def _format_missing_dependency_message(module_name, package_name, error=None):
@@ -91,19 +97,23 @@ def _import_runtime_module(import_name, package_name=None):
     try:
         return importlib.import_module(import_name)
     except ModuleNotFoundError as exc:
-        resolved_package = package_name or _get_package_name(exc.name or import_name)
+        missing_module = exc.name or import_name
+        resolved_package = package_name or _get_package_name(missing_module)
         if resolved_package is None:
             raise
 
         raise SystemExit(
             _format_missing_dependency_message(
-                exc.name or import_name,
+                missing_module,
                 resolved_package,
                 error=exc,
             )
         ) from exc
     except (ImportError, OSError, RuntimeError) as exc:
-        resolved_package = package_name or _get_package_name(import_name) or import_name
+        resolved_package = package_name or _get_package_name(import_name)
+        if resolved_package is None:
+            raise
+
         raise SystemExit(
             _format_missing_dependency_message(
                 import_name,
@@ -121,32 +131,24 @@ def bootstrap_runtime_dependencies():
     global DpgNodeEditor
     global NodeDataQueueManager
     global QueueBackedDict
+    global RUNTIME_DEPENDENCIES_BOOTSTRAPPED
 
-    if all(
-        dependency is not None
-        for dependency in (
-            cv2,
-            dpg,
-            log_gpu_info,
-            check_camera_connection,
-            DpgNodeEditor,
-            NodeDataQueueManager,
-            QueueBackedDict,
-        )
-    ):
-        return
+    with RUNTIME_DEPENDENCIES_LOCK:
+        if RUNTIME_DEPENDENCIES_BOOTSTRAPPED:
+            return
 
-    cv2 = _import_runtime_module("cv2")
-    dpg = _import_runtime_module("dearpygui.dearpygui", package_name="dearpygui")
-    log_gpu_info = _import_runtime_module("src.utils.gpu_utils").log_gpu_info
-    check_camera_connection = _import_runtime_module(
-        "node_editor.util"
-    ).check_camera_connection
-    DpgNodeEditor = _import_runtime_module("node_editor.node_main").DpgNodeEditor
-    NodeDataQueueManager = _import_runtime_module(
-        "node.timestamped_queue"
-    ).NodeDataQueueManager
-    QueueBackedDict = _import_runtime_module("node.queue_adapter").QueueBackedDict
+        cv2 = _import_runtime_module("cv2")
+        dpg = _import_runtime_module("dearpygui.dearpygui")
+        log_gpu_info = _import_runtime_module("src.utils.gpu_utils").log_gpu_info
+        check_camera_connection = _import_runtime_module(
+            "node_editor.util"
+        ).check_camera_connection
+        DpgNodeEditor = _import_runtime_module("node_editor.node_main").DpgNodeEditor
+        NodeDataQueueManager = _import_runtime_module(
+            "node.timestamped_queue"
+        ).NodeDataQueueManager
+        QueueBackedDict = _import_runtime_module("node.queue_adapter").QueueBackedDict
+        RUNTIME_DEPENDENCIES_BOOTSTRAPPED = True
 
 
 def get_resource_path(relative_path):
