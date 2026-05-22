@@ -280,6 +280,10 @@ def show_splash_screen(duration_seconds=1.8, steps=60):
         duration_seconds (float): Total splash duration in seconds.
         steps (int): Number of animation updates during the splash display (higher is smoother).
                      Values <= 0 are clamped to 1 to avoid division issues.
+
+    Side effects:
+        Creates a temporary DearPyGui splash window, renders frames for the animation,
+        blocks startup during the splash duration, then deletes the splash window.
     """
     steps = max(1, int(steps))
     _create_splash_theme()
@@ -333,6 +337,7 @@ def show_splash_screen(duration_seconds=1.8, steps=60):
 
     for step in range(steps):
         progress = float(step + 1) / float(steps)
+        # Intentionally cycles through 1..N dots for a continuous "loading" pulse.
         dots = "." * ((step % SPLASH_STATUS_DOT_CYCLE) + 1)
         dpg.set_value(SPLASH_PROGRESS_TAG, progress)
         dpg.configure_item(SPLASH_PROGRESS_TAG, overlay=f"{int(progress * 100)}%")
