@@ -12,7 +12,7 @@ from node.basenode import Node
 
 
 class FactoryNode:
-    node_label = 'Api'
+    node_label = 'API'
     node_tag = 'Api'
     
 
@@ -169,7 +169,7 @@ class FactoryNode:
 class ApiNode(Node):
     _ver = '0.0.1'
 
-    node_label = 'Api'
+    node_label = 'API'
     node_tag = 'Api'
 
     _opencv_setting_dict = None
@@ -213,7 +213,7 @@ class ApiNode(Node):
 
         self._start_label = "Start"
         self.node_tag = "Api"
-        self.node_label = "Api"
+        self.node_label = "API"
         
     def convert_cv_to_dpg(self, cv_img, w, h):
         return (np.zeros(w * h * 3, dtype=np.float32)).tobytes()
