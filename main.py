@@ -37,6 +37,8 @@ SPLASH_WINDOW_TAG = "cvstudio_splash_window"
 SPLASH_PROGRESS_TAG = "cvstudio_splash_progress"
 SPLASH_STATUS_TAG = "cvstudio_splash_status"
 SPLASH_THEME_TAG = "cvstudio_splash_theme"
+SPLASH_ACCENT_COLOR = (82, 196, 255, 255)
+SPLASH_DOT_CYCLE_LENGTH = 3
 
 
 def get_resource_path(relative_path):
@@ -250,7 +252,12 @@ def _create_splash_theme():
             )
             dpg.add_theme_color(
                 dpg.mvThemeCol_Border,
-                (82, 196, 255, 200),
+                (
+                    SPLASH_ACCENT_COLOR[0],
+                    SPLASH_ACCENT_COLOR[1],
+                    SPLASH_ACCENT_COLOR[2],
+                    200,
+                ),
                 category=dpg.mvThemeCat_Core,
             )
             dpg.add_theme_style(
@@ -271,9 +278,11 @@ def show_splash_screen(duration_seconds=1.8, steps=60):
 
     Args:
         duration_seconds (float): Total splash duration in seconds.
-        steps (int): Number of animation updates during the splash display.
+        steps (int): Number of animation updates during the splash display (higher is smoother).
+                     Values <= 0 are clamped to 1 to avoid division issues.
     """
     _create_splash_theme()
+    steps = max(1, int(steps))
 
     viewport_width = dpg.get_viewport_client_width()
     viewport_height = dpg.get_viewport_client_height()
@@ -305,7 +314,7 @@ def show_splash_screen(duration_seconds=1.8, steps=60):
         no_saved_settings=True,
     ):
         dpg.add_spacer(height=22)
-        dpg.add_text("CvStudio.dev", color=(82, 196, 255, 255))
+        dpg.add_text("CvStudio.dev", color=SPLASH_ACCENT_COLOR)
         dpg.add_spacer(height=6)
         dpg.add_text("Computer Vision Studio", color=(220, 228, 240, 255))
         dpg.add_spacer(height=16)
@@ -324,7 +333,7 @@ def show_splash_screen(duration_seconds=1.8, steps=60):
 
     for step in range(steps):
         progress = float(step + 1) / float(steps)
-        dots = "." * ((step % 3) + 1)
+        dots = "." * ((step % SPLASH_DOT_CYCLE_LENGTH) + 1)
         dpg.set_value(SPLASH_PROGRESS_TAG, progress)
         dpg.configure_item(SPLASH_PROGRESS_TAG, overlay=f"{int(progress * 100)}%")
         dpg.set_value(SPLASH_STATUS_TAG, f"Initialization{dots}")
@@ -427,6 +436,7 @@ def main():
     # Using default DearPyGui font (no custom font needed)
     # DearPyGui will use its built-in default font automatically
 
+    # Viewport must be visible before rendering splash frames.
     dpg.show_viewport(maximized=True)
     show_splash_screen()
 
