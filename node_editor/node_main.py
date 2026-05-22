@@ -352,6 +352,8 @@ class DpgNodeEditor(object):
                             try:
                                 module = import_module(import_path)
                                 factorynode = module.FactoryNode()
+                                if menu_label == "DataProcess" and factorynode.node_tag == "BAR":
+                                    continue
                                 # print("Factory Instance :", factorynode.node_tag)
                                 dpg.add_menu_item(
                                     tag="Menu_" + factorynode.node_tag,
