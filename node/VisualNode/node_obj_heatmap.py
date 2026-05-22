@@ -14,7 +14,7 @@ from node.VisualNode.heatmap_utils import get_colormap, ensure_odd_blur_size, CO
 
 
 class FactoryNode:
-    node_label = 'ObjHeatmap'
+    node_label = 'ObjHeatMap'
     node_tag = 'ObjHeatmap'
     
 
@@ -200,7 +200,7 @@ class FactoryNode:
 class Node(Node):
     _ver = '0.0.1'
 
-    node_label = 'ObjHeatmap'
+    node_label = 'ObjHeatMap'
     node_tag = 'ObjHeatmap'
 
     
