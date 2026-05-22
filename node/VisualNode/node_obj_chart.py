@@ -30,7 +30,7 @@ def get_class_dropdown_items():
 
 
 class FactoryNode:
-    node_label = 'ObjChart'
+    node_label = 'Chart'
     node_tag = 'ObjChart'
     
 
@@ -223,7 +223,7 @@ class FactoryNode:
 class Node(Chart):
     _ver = '0.0.1'
 
-    node_label = 'ObjChart'
+    node_label = 'Chart'
     node_tag = 'ObjChart'
     
     # Class variable to store node instances for file dialog callbacks
