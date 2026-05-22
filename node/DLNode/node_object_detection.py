@@ -570,7 +570,7 @@ class Node(Node):
         def _make_factory(p, fmt, w, h):
             def factory(model_path, providers=None):
                 if providers is None:
-                    providers = ['CPUExecutionProvider']
+                    providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
                 return CustomONNX(
                     model_path=p,
                     input_width=w,
@@ -956,8 +956,12 @@ class Node(Node):
                                     providers=providers,
                                 )
                         else:
+                            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
                             self._model_instance[
-                                model_name_with_provider] = model_class(model_path)
+                                model_name_with_provider] = model_class(
+                                    model_path,
+                                    providers=providers,
+                                )
 
 
                 if frame is not None and use_pref_counter:
