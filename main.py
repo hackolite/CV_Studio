@@ -278,6 +278,7 @@ def show_splash_screen(duration_seconds=1.8, steps=60):
 
     Args:
         duration_seconds (float): Total splash duration in seconds.
+                                  Values <= 0 skip waiting between animation frames.
         steps (int): Number of animation updates during the splash display (higher is smoother).
                      Values <= 0 are clamped to 1 to avoid division issues.
 
@@ -286,6 +287,7 @@ def show_splash_screen(duration_seconds=1.8, steps=60):
         blocks startup during the splash duration, then deletes the splash window.
     """
     steps = max(1, int(steps))
+    duration_seconds = max(0.0, float(duration_seconds))
     _create_splash_theme()
 
     viewport_width = dpg.get_viewport_client_width()
