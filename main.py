@@ -230,6 +230,7 @@ def update_node_info(
 
 
 def _centered_position(viewport_width, viewport_height, window_width, window_height):
+    """Return centered [x, y] coordinates for a child window inside a viewport."""
     return [
         max(0, int((viewport_width - window_width) / 2)),
         max(0, int((viewport_height - window_height) / 2)),
@@ -264,7 +265,14 @@ def _create_splash_theme():
             )
 
 
-def show_splash_screen(duration_seconds=1.8, steps=90):
+def show_splash_screen(duration_seconds=1.8, steps=60):
+    """
+    Show a startup splash window with an animated progress bar.
+
+    Args:
+        duration_seconds (float): Total splash duration in seconds.
+        steps (int): Number of animation updates during the splash display.
+    """
     _create_splash_theme()
 
     viewport_width = dpg.get_viewport_client_width()
@@ -303,7 +311,7 @@ def show_splash_screen(duration_seconds=1.8, steps=90):
         dpg.add_spacer(height=16)
         dpg.add_separator()
         dpg.add_spacer(height=12)
-        dpg.add_text("Initialisation...", tag=SPLASH_STATUS_TAG, color=(168, 176, 192, 255))
+        dpg.add_text("Initialization...", tag=SPLASH_STATUS_TAG, color=(168, 176, 192, 255))
         dpg.add_spacer(height=8)
         dpg.add_progress_bar(
             default_value=0.0,
@@ -319,7 +327,7 @@ def show_splash_screen(duration_seconds=1.8, steps=90):
         dots = "." * ((step % 3) + 1)
         dpg.set_value(SPLASH_PROGRESS_TAG, progress)
         dpg.configure_item(SPLASH_PROGRESS_TAG, overlay=f"{int(progress * 100)}%")
-        dpg.set_value(SPLASH_STATUS_TAG, f"Initialisation{dots}")
+        dpg.set_value(SPLASH_STATUS_TAG, f"Initialization{dots}")
         dpg.render_dearpygui_frame()
         time.sleep(duration_seconds / float(steps))
 
