@@ -33,6 +33,13 @@ from node.queue_adapter import QueueBackedDict
 # Setup logging
 logger = get_logger(__name__)
 
+SPLASH_WINDOW_TAG = "cvstudio_splash_window"
+SPLASH_PROGRESS_TAG = "cvstudio_splash_progress"
+SPLASH_STATUS_TAG = "cvstudio_splash_status"
+SPLASH_THEME_TAG = "cvstudio_splash_theme"
+SPLASH_ACCENT_COLOR = (82, 196, 255, 255)
+SPLASH_STATUS_DOT_CYCLE = 3
+
 
 def get_resource_path(relative_path):
     """
@@ -224,6 +231,126 @@ def update_node_info(
             logger.error(f"Error processing node {node_id_name} results: {e}")
 
 
+def _centered_position(viewport_width, viewport_height, window_width, window_height):
+    """Return centered [x, y] coordinates for a child window inside a viewport."""
+    return [
+        max(0, int((viewport_width - window_width) / 2)),
+        max(0, int((viewport_height - window_height) / 2)),
+    ]
+
+
+def _create_splash_theme():
+    if dpg.does_item_exist(SPLASH_THEME_TAG):
+        return
+
+    with dpg.theme(tag=SPLASH_THEME_TAG):
+        with dpg.theme_component(dpg.mvWindowAppItem):
+            dpg.add_theme_color(
+                dpg.mvThemeCol_WindowBg,
+                (16, 18, 24, 245),
+                category=dpg.mvThemeCat_Core,
+            )
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Border,
+                (
+                    SPLASH_ACCENT_COLOR[0],
+                    SPLASH_ACCENT_COLOR[1],
+                    SPLASH_ACCENT_COLOR[2],
+                    200,
+                ),
+                category=dpg.mvThemeCat_Core,
+            )
+            dpg.add_theme_style(
+                dpg.mvStyleVar_WindowRounding,
+                12,
+                category=dpg.mvThemeCat_Core,
+            )
+            dpg.add_theme_style(
+                dpg.mvStyleVar_WindowBorderSize,
+                1.0,
+                category=dpg.mvThemeCat_Core,
+            )
+
+
+def show_splash_screen(duration_seconds=1.8, steps=60):
+    """
+    Show a startup splash window with an animated progress bar.
+
+    Args:
+        duration_seconds (float): Total splash duration in seconds.
+                                  Values <= 0 skip waiting between animation frames.
+        steps (int): Number of animation updates during the splash display (higher is smoother).
+                     Values <= 0 are clamped to 1 to avoid division issues.
+
+    Side effects:
+        Creates a temporary DearPyGui splash window, renders frames for the animation,
+        blocks startup during the splash duration, then deletes the splash window.
+    """
+    steps = max(1, int(steps))
+    duration_seconds = max(0.0, float(duration_seconds))
+    _create_splash_theme()
+
+    viewport_width = dpg.get_viewport_client_width()
+    viewport_height = dpg.get_viewport_client_height()
+    if viewport_width <= 0 or viewport_height <= 0:
+        viewport_width = dpg.get_viewport_width()
+        viewport_height = dpg.get_viewport_height()
+
+    splash_width = 560
+    splash_height = 260
+    splash_pos = _centered_position(
+        viewport_width,
+        viewport_height,
+        splash_width,
+        splash_height,
+    )
+
+    with dpg.window(
+        tag=SPLASH_WINDOW_TAG,
+        label="CvStudio.dev",
+        pos=splash_pos,
+        width=splash_width,
+        height=splash_height,
+        no_title_bar=True,
+        no_move=True,
+        no_resize=True,
+        no_close=True,
+        no_collapse=True,
+        no_scrollbar=True,
+        no_saved_settings=True,
+    ):
+        dpg.add_spacer(height=22)
+        dpg.add_text("CvStudio.dev", color=SPLASH_ACCENT_COLOR)
+        dpg.add_spacer(height=6)
+        dpg.add_text("Computer Vision Studio", color=(220, 228, 240, 255))
+        dpg.add_spacer(height=16)
+        dpg.add_separator()
+        dpg.add_spacer(height=12)
+        dpg.add_text("Initialization…", tag=SPLASH_STATUS_TAG, color=(168, 176, 192, 255))
+        dpg.add_spacer(height=8)
+        dpg.add_progress_bar(
+            default_value=0.0,
+            width=splash_width - 60,
+            tag=SPLASH_PROGRESS_TAG,
+            overlay="0%",
+        )
+
+    dpg.bind_item_theme(SPLASH_WINDOW_TAG, SPLASH_THEME_TAG)
+
+    for step in range(steps):
+        progress = float(step + 1) / float(steps)
+        # Intentionally cycles through 1..N dots for a continuous "loading" pulse.
+        dots = "." * ((step % SPLASH_STATUS_DOT_CYCLE) + 1)
+        dpg.set_value(SPLASH_PROGRESS_TAG, progress)
+        dpg.configure_item(SPLASH_PROGRESS_TAG, overlay=f"{int(progress * 100)}%")
+        dpg.set_value(SPLASH_STATUS_TAG, f"Initialization{dots}")
+        dpg.render_dearpygui_frame()
+        time.sleep(duration_seconds / float(steps))
+
+    if dpg.does_item_exist(SPLASH_WINDOW_TAG):
+        dpg.delete_item(SPLASH_WINDOW_TAG)
+
+
 def main():
     args = get_args()
     setting = args.setting
@@ -316,6 +443,10 @@ def main():
     # Using default DearPyGui font (no custom font needed)
     # DearPyGui will use its built-in default font automatically
 
+    # Viewport must be visible before rendering splash frames.
+    dpg.show_viewport(maximized=True)
+    show_splash_screen()
+
     logger.info("Creating Node Editor")
     menu_dict = OrderedDict(
         {
@@ -337,8 +468,6 @@ def main():
             "System": "SystemNode",
         }
     )
-
-    dpg.show_viewport(maximized=True)
 
     current_path = os.path.dirname(os.path.abspath(__file__))
 
