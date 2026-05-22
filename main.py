@@ -38,7 +38,7 @@ SPLASH_PROGRESS_TAG = "cvstudio_splash_progress"
 SPLASH_STATUS_TAG = "cvstudio_splash_status"
 SPLASH_THEME_TAG = "cvstudio_splash_theme"
 SPLASH_ACCENT_COLOR = (82, 196, 255, 255)
-SPLASH_DOT_CYCLE_LENGTH = 3
+SPLASH_STATUS_DOT_CYCLE = 3
 
 
 def get_resource_path(relative_path):
@@ -281,8 +281,8 @@ def show_splash_screen(duration_seconds=1.8, steps=60):
         steps (int): Number of animation updates during the splash display (higher is smoother).
                      Values <= 0 are clamped to 1 to avoid division issues.
     """
-    _create_splash_theme()
     steps = max(1, int(steps))
+    _create_splash_theme()
 
     viewport_width = dpg.get_viewport_client_width()
     viewport_height = dpg.get_viewport_client_height()
@@ -320,7 +320,7 @@ def show_splash_screen(duration_seconds=1.8, steps=60):
         dpg.add_spacer(height=16)
         dpg.add_separator()
         dpg.add_spacer(height=12)
-        dpg.add_text("Initialization...", tag=SPLASH_STATUS_TAG, color=(168, 176, 192, 255))
+        dpg.add_text("Initialization…", tag=SPLASH_STATUS_TAG, color=(168, 176, 192, 255))
         dpg.add_spacer(height=8)
         dpg.add_progress_bar(
             default_value=0.0,
@@ -333,7 +333,7 @@ def show_splash_screen(duration_seconds=1.8, steps=60):
 
     for step in range(steps):
         progress = float(step + 1) / float(steps)
-        dots = "." * ((step % SPLASH_DOT_CYCLE_LENGTH) + 1)
+        dots = "." * ((step % SPLASH_STATUS_DOT_CYCLE) + 1)
         dpg.set_value(SPLASH_PROGRESS_TAG, progress)
         dpg.configure_item(SPLASH_PROGRESS_TAG, overlay=f"{int(progress * 100)}%")
         dpg.set_value(SPLASH_STATUS_TAG, f"Initialization{dots}")
