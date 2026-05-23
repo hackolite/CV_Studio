@@ -28,9 +28,7 @@ class PortType:
 
 class Node:
     _ver = "0.0.1"
-    # Note: node_label set to "Weather" as per requirement to rename basenode
-    # Child classes override this with their specific labels
-    node_label = "Weather"
+    node_label = "BaseNode"
     node_tag = "BaseNode"
     node_data = None
 
@@ -47,8 +45,8 @@ class Node:
 
     def __init__(self, node_id=1, connection_dict=None, opencv_setting_dict=None):
         self.id = self.generate_id()
-        self.node_label = "Weather"
-        self.node_tag = "BaseNode"
+        self.node_label = self.__class__.node_label
+        self.node_tag = self.__class__.node_tag
         self.tag_node_name = f"{node_id}:{self.node_tag}"
         # Générer les tags dynamiquement en fonction du dictionnaire
         # self.tags = self.generate_tags(connection_dict)
