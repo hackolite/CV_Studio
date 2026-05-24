@@ -309,6 +309,7 @@ class RtspNode(Node):
                 self._request[rtsp_url].value = 0
                 if self._process[rtsp_url].is_alive():
                     self._process[rtsp_url].terminate()
+                    self._process[rtsp_url].join(timeout=2.0)
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag

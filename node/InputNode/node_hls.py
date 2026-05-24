@@ -303,6 +303,7 @@ class HlsNode(Node):
                 self._request[hls_url].value = 0
                 if self._process[hls_url].is_alive():
                     self._process[hls_url].terminate()
+                    self._process[hls_url].join(timeout=2.0)
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag

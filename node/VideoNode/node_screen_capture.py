@@ -198,6 +198,7 @@ class CaptureNode(Node):
         if self._request is not None:
             self._request.value = 0
             self._process.terminate()
+            self._process.join(timeout=2.0)
 
             self._image_queue = None
             self._request = None
