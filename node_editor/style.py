@@ -17,7 +17,7 @@ MODEL = [
 AUDIO_PROCESS = [
     "Spectrogram"
 ]
-AUDIO_MODEL = []
+AUDIO_MODEL = ["AudioClassification"]
 STATS = []
 TRIGGER = ["Count", "OnOffSwitch"]
 ROUTER = ["SimpleRouter"]
