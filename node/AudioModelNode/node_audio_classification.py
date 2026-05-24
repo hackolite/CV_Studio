@@ -62,7 +62,7 @@ def _get_librosa():
 _DEFAULT_SR = 22050
 _DEFAULT_N_MELS = 128
 _DEFAULT_MAX_SEC = 5
-_DEFAULT_TOP_K = 5
+_DEFAULT_TOP_K = 3
 _DEFAULT_HOP_LENGTH = 512   # must match training (librosa default but made explicit)
 _DEFAULT_N_FFT = 2048        # must match training (librosa default but made explicit)
 
@@ -811,6 +811,7 @@ class Node(BaseNode):
     ):
         _tn = str(node_id) + ":" + self.node_tag
         output_img_tag = _tn + ":" + self.TYPE_IMAGE + ":Output01Value"
+        output_json_tag = _tn + ":" + self.TYPE_JSON + ":OutputJsonValue"
         output_time_tag = _tn + ":" + self.TYPE_TIME_MS + ":Output02Value"
 
         if self._opencv_setting_dict is None:
@@ -930,6 +931,18 @@ class Node(BaseNode):
                     "n_mels": n_mels,
                     "sample_rate": sample_rate,
                 }
+
+                # Update JSON button label with top-1 result summary
+                top_label = class_names.get(int(top_ids[0]), f"class_{top_ids[0]}")
+                top_score = float(top_scores[0])
+                try:
+                    dpg.configure_item(
+                        output_json_tag,
+                        label=f"{top_label} ({top_score:.2f})",
+                    )
+                except Exception:
+                    pass
+
             except Exception as exc:
                 logger.error(f"[AudioClassification] Inference error: {exc}", exc_info=True)
 
