@@ -72,12 +72,17 @@ _TOP_K_OPTIONS = [1, 3, 5, 10]
 
 
 # ---------------------------------------------------------------------------
-# ESC-50 class labels (used when no labels are embedded in the ONNX file)
+# Built-in class label sets
 # ---------------------------------------------------------------------------
 try:
     from node.DLNode.classification.esc50_class_names import esc50_class_names as _ESC50_NAMES
 except Exception:
     _ESC50_NAMES = {i: f"class_{i}" for i in range(50)}
+
+try:
+    from node.DLNode.classification.yamnet_class_names import yamnet_class_names as _YAMNET_NAMES
+except Exception:
+    _YAMNET_NAMES = {i: f"class_{i}" for i in range(521)}
 
 
 # ---------------------------------------------------------------------------
@@ -481,7 +486,7 @@ class FactoryNode:
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_combo(
-                    items=["ONNX metadata", "ESC-50 (built-in)"],
+                    items=["ONNX metadata", "ESC-50 (built-in)", "YAMNet (built-in)"],
                     default_value="ONNX metadata",
                     width=small_window_w,
                     label="Labels",
@@ -882,6 +887,8 @@ class Node(BaseNode):
         model_class_names = Node._model_class_names.get(model_name, {})
         if label_source == "ONNX metadata" and model_class_names:
             class_names = model_class_names
+        elif label_source == "YAMNet (built-in)":
+            class_names = _YAMNET_NAMES
         else:
             class_names = _ESC50_NAMES
 
