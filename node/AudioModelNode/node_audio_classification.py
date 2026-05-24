@@ -63,6 +63,8 @@ _DEFAULT_SR = 22050
 _DEFAULT_N_MELS = 128
 _DEFAULT_MAX_SEC = 5
 _DEFAULT_TOP_K = 5
+_DEFAULT_HOP_LENGTH = 512   # must match training (librosa default but made explicit)
+_DEFAULT_N_FFT = 2048        # must match training (librosa default but made explicit)
 
 _N_MELS_OPTIONS = [64, 128, 256]
 _MAX_SEC_OPTIONS = [1, 2, 3, 5, 10]
@@ -182,7 +184,10 @@ def audio_to_mel_array(audio_data: np.ndarray, sample_rate: int,
     else:
         y = y[:max_len]
 
-    mel = librosa.feature.melspectrogram(y=y, sr=sample_rate, n_mels=n_mels)
+    mel = librosa.feature.melspectrogram(
+        y=y, sr=sample_rate, n_mels=n_mels,
+        n_fft=_DEFAULT_N_FFT, hop_length=_DEFAULT_HOP_LENGTH,
+    )
     mel_db = librosa.power_to_db(mel).astype(np.float32)
 
     return mel_db[np.newaxis]  # (1, n_mels, T)
