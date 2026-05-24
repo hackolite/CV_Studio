@@ -66,7 +66,7 @@ _DEFAULT_TOP_K = 3
 _DEFAULT_HOP_LENGTH = 512   # must match training (librosa default but made explicit)
 _DEFAULT_N_FFT = 2048        # must match training (librosa default but made explicit)
 
-_N_MELS_OPTIONS = [64, 128, 256]
+_N_MELS_OPTIONS = [64, 96, 128, 256]
 _MAX_SEC_OPTIONS = [1, 2, 3, 5, 10]
 _TOP_K_OPTIONS = [1, 3, 5, 10]
 
@@ -179,10 +179,17 @@ def inspect_audio_onnx(model_path: str) -> dict:
         f"output={output_shape}, n_mels={n_mels}, num_classes={num_classes}, "
         f"embedded_labels={len(class_names)}, model_type={model_type}"
     )
+
+    # Detect fixed time axis: dim[3] if 4-D and concrete integer (not a string/symbol)
+    fixed_time = 0
+    if ndim == 4 and isinstance(input_shape[3], int) and input_shape[3] > 0:
+        fixed_time = input_shape[3]
+
     return {
         "input_name": inp.name,
         "input_shape": input_shape,
         "n_mels": n_mels,
+        "fixed_time": fixed_time,
         "output_name": out.name,
         "output_shape": output_shape,
         "num_classes": num_classes,
@@ -574,6 +581,7 @@ class Node(BaseNode):
     _model_class_names: dict = {}    # name → {int: str}
     _model_n_mels: dict = {}         # name → int (0 = use UI value)
     _model_type: dict = {}           # name → "mel_cnn" | "waveform"
+    _model_fixed_time: dict = {}     # name → int (0 = dynamic / no constraint)
 
     # -----------------------------------------------------------------------
     # Per-instance inference state
@@ -593,12 +601,13 @@ class Node(BaseNode):
 
     @classmethod
     def _register_model(cls, name: str, path: str, class_names: dict, n_mels: int,
-                         model_type: str = "mel_cnn"):
+                         model_type: str = "mel_cnn", fixed_time: int = 0):
         """Add one model to the class-level runtime dictionaries."""
         cls._model_path_setting[name] = path
         cls._model_class_names[name] = class_names
         cls._model_n_mels[name] = n_mels
         cls._model_type[name] = model_type
+        cls._model_fixed_time[name] = fixed_time
 
     @classmethod
     def _load_models_from_registry(cls):
@@ -619,7 +628,8 @@ class Node(BaseNode):
             class_names = {int(k): str(v) for k, v in raw_classes.items()}
             n_mels = int(entry.get("n_mels", 0))
             model_type = entry.get("model_type", "mel_cnn")
-            cls._register_model(name, path, class_names, n_mels, model_type)
+            fixed_time = int(entry.get("fixed_time", 0))
+            cls._register_model(name, path, class_names, n_mels, model_type, fixed_time)
             logger.info(f"[AudioUpload] Loaded model from registry: {name}")
 
     @classmethod
@@ -656,9 +666,10 @@ class Node(BaseNode):
             class_names = info.get("class_names") or meta.get("class_names", {})
             n_mels = info.get("n_mels", 0)
             model_type = info.get("model_type", "mel_cnn")
+            fixed_time = info.get("fixed_time", 0)
 
             # Always refresh in-memory registration
-            cls._register_model(name, path, class_names, n_mels, model_type)
+            cls._register_model(name, path, class_names, n_mels, model_type, fixed_time)
 
             if name in existing:
                 continue  # already persisted — no need to rewrite
@@ -667,6 +678,7 @@ class Node(BaseNode):
                 "name": name,
                 "path": path,
                 "n_mels": n_mels,
+                "fixed_time": fixed_time,
                 "num_classes": info.get("num_classes", len(class_names)),
                 "model_type": model_type,
                 "class_names": {str(k): v for k, v in class_names.items()},
@@ -830,19 +842,22 @@ class Node(BaseNode):
         n_mels = meta.get("n_mels", 0)
         num_classes = meta.get("num_classes", len(class_names))
         model_type = meta.get("model_type", "mel_cnn")
+        fixed_time = meta.get("fixed_time", 0)
 
         logger.info(
             f"[AudioUpload] Registering '{name}' — "
-            f"n_mels={n_mels}, classes={num_classes}, model_type={model_type}"
+            f"n_mels={n_mels}, classes={num_classes}, model_type={model_type}, "
+            f"fixed_time={fixed_time}"
         )
 
-        Node._register_model(name, onnx_path, class_names, n_mels, model_type)
+        Node._register_model(name, onnx_path, class_names, n_mels, model_type, fixed_time)
 
         registry_entry = {
             "name": name,
             "path": onnx_path,
             "class_names": {str(k): v for k, v in class_names.items()},
             "n_mels": n_mels,
+            "fixed_time": fixed_time,
             "num_classes": num_classes,
             "model_type": model_type,
         }
@@ -1013,6 +1028,15 @@ class Node(BaseNode):
                 else:
                     # mel_cnn pipeline (default)
                     x = mel_arr[np.newaxis].astype(np.float32)  # (1, 1, n_mels, T)
+                    # Crop or pad the time axis when the model requires a fixed T
+                    fixed_t = Node._model_fixed_time.get(model_name, 0)
+                    if fixed_t > 0:
+                        t_actual = x.shape[3]
+                        if t_actual > fixed_t:
+                            x = x[:, :, :, :fixed_t]
+                        elif t_actual < fixed_t:
+                            pad_w = fixed_t - t_actual
+                            x = np.pad(x, ((0, 0), (0, 0), (0, 0), (0, pad_w)), mode="constant")
                     outputs = self._session.run(None, {self._input_name: x})
                     logits = outputs[0].flatten().astype(np.float32)
 
