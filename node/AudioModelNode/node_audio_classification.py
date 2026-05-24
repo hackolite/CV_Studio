@@ -116,20 +116,24 @@ def inspect_audio_onnx(model_path: str) -> dict:
     if len(output_shape) >= 2 and isinstance(output_shape[-1], int) and output_shape[-1] > 0:
         num_classes = output_shape[-1]
 
-    # Embedded class names (try "names" or "labels" metadata keys)
+    # Embedded class names (try "names", "labels", or "classes" metadata keys)
     class_names: dict = {}
     try:
         meta = session.get_modelmeta().custom_metadata_map
-        for key in ("names", "labels"):
+        for key in ("names", "labels", "classes"):
             if key in meta:
                 raw = meta[key]
+                parsed = None
                 try:
                     parsed = ast.literal_eval(raw)
                 except Exception:
                     try:
                         parsed = json.loads(raw)
                     except Exception:
-                        parsed = None
+                        # "classes" key: comma-separated string (e.g. "dog,cat,bird")
+                        items = [s.strip() for s in raw.split(",") if s.strip()]
+                        if items:
+                            parsed = items
                 if isinstance(parsed, dict):
                     class_names = {int(k): str(v) for k, v in parsed.items()}
                 elif isinstance(parsed, list):
