@@ -65,6 +65,9 @@ _DEFAULT_MAX_SEC = 5
 _DEFAULT_TOP_K = 3
 _DEFAULT_HOP_LENGTH = 512   # must match training (librosa default but made explicit)
 _DEFAULT_N_FFT = 2048        # must match training (librosa default but made explicit)
+# Z-score normalization constants — must match the training script (MEL_MEAN / MEL_STD)
+_DEFAULT_MEL_MEAN = -40.0
+_DEFAULT_MEL_STD = 20.0
 
 _N_MELS_OPTIONS = [64, 128, 256]
 _MAX_SEC_OPTIONS = [1, 2, 3, 5, 10]
@@ -118,11 +121,14 @@ def inspect_audio_onnx(model_path: str) -> dict:
 
     # Embedded class names (try "names", "labels", or "classes" metadata keys)
     class_names: dict = {}
+    input_sr = _DEFAULT_SR
+    mel_mean = _DEFAULT_MEL_MEAN
+    mel_std = _DEFAULT_MEL_STD
     try:
-        meta = session.get_modelmeta().custom_metadata_map
+        onnx_meta = session.get_modelmeta().custom_metadata_map
         for key in ("names", "labels", "classes"):
-            if key in meta:
-                raw = meta[key]
+            if key in onnx_meta:
+                raw = onnx_meta[key]
                 parsed = None
                 try:
                     parsed = ast.literal_eval(raw)
@@ -142,13 +148,31 @@ def inspect_audio_onnx(model_path: str) -> dict:
                     if num_classes == 0:
                         num_classes = len(class_names)
                     break
+
+        # Read normalization / resampling parameters baked in by the training script
+        if "input_sr" in onnx_meta:
+            try:
+                input_sr = int(onnx_meta["input_sr"])
+            except (ValueError, TypeError):
+                pass
+        if "mel_mean" in onnx_meta:
+            try:
+                mel_mean = float(onnx_meta["mel_mean"])
+            except (ValueError, TypeError):
+                pass
+        if "mel_std" in onnx_meta:
+            try:
+                mel_std = float(onnx_meta["mel_std"])
+            except (ValueError, TypeError):
+                pass
     except Exception as exc:
         logger.debug(f"[AudioClassification] Could not read ONNX metadata: {exc}")
 
     logger.info(
         f"[AudioClassification] ONNX inspected: input={input_shape}, "
         f"output={output_shape}, n_mels={n_mels}, num_classes={num_classes}, "
-        f"embedded_labels={len(class_names)}"
+        f"embedded_labels={len(class_names)}, "
+        f"input_sr={input_sr}, mel_mean={mel_mean}, mel_std={mel_std}"
     )
     return {
         "input_name": inp.name,
@@ -158,6 +182,9 @@ def inspect_audio_onnx(model_path: str) -> dict:
         "output_shape": output_shape,
         "num_classes": num_classes,
         "class_names": class_names,
+        "input_sr": input_sr,
+        "mel_mean": mel_mean,
+        "mel_std": mel_std,
     }
 
 
@@ -166,22 +193,31 @@ def inspect_audio_onnx(model_path: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def audio_to_mel_array(audio_data: np.ndarray, sample_rate: int,
-                        n_mels: int, max_sec: int) -> np.ndarray:
+                        n_mels: int, max_sec: int,
+                        target_sr: int = _DEFAULT_SR,
+                        mel_mean: float = _DEFAULT_MEL_MEAN,
+                        mel_std: float = _DEFAULT_MEL_STD) -> np.ndarray:
     """Convert 1-D float32 audio → (1, n_mels, T) float32 numpy array.
 
     Matches the ESC-50 training pre-processing:
-      - pad / crop to `max_sec * sample_rate` samples
+      - resample to `target_sr` if the source `sample_rate` differs
+      - pad / crop to `max_sec * target_sr` samples
       - librosa.feature.melspectrogram → power_to_db
+      - z-score normalisation: (mel_db - mel_mean) / mel_std
     """
     librosa = _get_librosa()
     if librosa is None:
         return None
 
-    max_len = sample_rate * max_sec
-
     y = np.asarray(audio_data, dtype=np.float32)
     if y.ndim > 1:
         y = np.mean(y, axis=-1)
+
+    # Resample to target_sr so time-frame count matches the trained model
+    if sample_rate != target_sr:
+        y = librosa.resample(y, orig_sr=sample_rate, target_sr=target_sr)
+
+    max_len = target_sr * max_sec
 
     if len(y) < max_len:
         y = np.pad(y, (0, max_len - len(y)))
@@ -189,10 +225,13 @@ def audio_to_mel_array(audio_data: np.ndarray, sample_rate: int,
         y = y[:max_len]
 
     mel = librosa.feature.melspectrogram(
-        y=y, sr=sample_rate, n_mels=n_mels,
+        y=y, sr=target_sr, n_mels=n_mels,
         n_fft=_DEFAULT_N_FFT, hop_length=_DEFAULT_HOP_LENGTH,
     )
     mel_db = librosa.power_to_db(mel).astype(np.float32)
+
+    # Z-score normalisation — must match MEL_MEAN / MEL_STD used during training
+    mel_db = (mel_db - mel_mean) / mel_std
 
     return mel_db[np.newaxis]  # (1, n_mels, T)
 
@@ -543,6 +582,9 @@ class Node(BaseNode):
     _model_path_setting: dict = {}   # name → onnx file path (str)
     _model_class_names: dict = {}    # name → {int: str}
     _model_n_mels: dict = {}         # name → int (0 = use UI value)
+    _model_input_sr: dict = {}       # name → int (target sample rate for resampling)
+    _model_mel_mean: dict = {}       # name → float (z-score mean used at training time)
+    _model_mel_std: dict = {}        # name → float (z-score std used at training time)
 
     # -----------------------------------------------------------------------
     # Per-instance inference state
@@ -561,11 +603,17 @@ class Node(BaseNode):
     # ------------------------------------------------------------------
 
     @classmethod
-    def _register_model(cls, name: str, path: str, class_names: dict, n_mels: int):
+    def _register_model(cls, name: str, path: str, class_names: dict, n_mels: int,
+                         input_sr: int = _DEFAULT_SR,
+                         mel_mean: float = _DEFAULT_MEL_MEAN,
+                         mel_std: float = _DEFAULT_MEL_STD):
         """Add one model to the class-level runtime dictionaries."""
         cls._model_path_setting[name] = path
         cls._model_class_names[name] = class_names
         cls._model_n_mels[name] = n_mels
+        cls._model_input_sr[name] = input_sr
+        cls._model_mel_mean[name] = mel_mean
+        cls._model_mel_std[name] = mel_std
 
     @classmethod
     def _load_models_from_registry(cls):
@@ -585,7 +633,11 @@ class Node(BaseNode):
             raw_classes = entry.get("class_names", {})
             class_names = {int(k): str(v) for k, v in raw_classes.items()}
             n_mels = int(entry.get("n_mels", 0))
-            cls._register_model(name, path, class_names, n_mels)
+            input_sr = int(entry.get("input_sr", _DEFAULT_SR))
+            mel_mean = float(entry.get("mel_mean", _DEFAULT_MEL_MEAN))
+            mel_std = float(entry.get("mel_std", _DEFAULT_MEL_STD))
+            cls._register_model(name, path, class_names, n_mels,
+                                 input_sr=input_sr, mel_mean=mel_mean, mel_std=mel_std)
             logger.info(f"[AudioUpload] Loaded model from registry: {name}")
 
     # ------------------------------------------------------------------
@@ -738,13 +790,18 @@ class Node(BaseNode):
 
         n_mels = meta.get("n_mels", 0)
         num_classes = meta.get("num_classes", len(class_names))
+        input_sr = int(meta.get("input_sr", _DEFAULT_SR))
+        mel_mean = float(meta.get("mel_mean", _DEFAULT_MEL_MEAN))
+        mel_std = float(meta.get("mel_std", _DEFAULT_MEL_STD))
 
         logger.info(
             f"[AudioUpload] Registering '{name}' — "
-            f"n_mels={n_mels}, classes={num_classes}"
+            f"n_mels={n_mels}, classes={num_classes}, "
+            f"input_sr={input_sr}, mel_mean={mel_mean}, mel_std={mel_std}"
         )
 
-        Node._register_model(name, onnx_path, class_names, n_mels)
+        Node._register_model(name, onnx_path, class_names, n_mels,
+                              input_sr=input_sr, mel_mean=mel_mean, mel_std=mel_std)
 
         registry_entry = {
             "name": name,
@@ -752,6 +809,9 @@ class Node(BaseNode):
             "class_names": {str(k): v for k, v in class_names.items()},
             "n_mels": n_mels,
             "num_classes": num_classes,
+            "input_sr": input_sr,
+            "mel_mean": mel_mean,
+            "mel_std": mel_std,
         }
         try:
             audio_models_registry.save_entry(registry_entry)
@@ -847,6 +907,11 @@ class Node(BaseNode):
         n_mels_model = Node._model_n_mels.get(model_name, 0)
         n_mels = n_mels_model if n_mels_model > 0 else n_mels_ui
 
+        # Normalization / resampling params: prefer values stored with the model
+        target_sr = Node._model_input_sr.get(model_name, _DEFAULT_SR)
+        mel_mean = Node._model_mel_mean.get(model_name, _DEFAULT_MEL_MEAN)
+        mel_std = Node._model_mel_std.get(model_name, _DEFAULT_MEL_STD)
+
         # Sync N_Mels UI to match model
         if n_mels_model > 0 and str(n_mels_model) in [str(v) for v in _N_MELS_OPTIONS]:
             try:
@@ -888,7 +953,9 @@ class Node(BaseNode):
             start_time = time.monotonic()
 
         # ---- Build mel array ----
-        mel_arr = audio_to_mel_array(audio_data, sample_rate, n_mels, max_sec)
+        mel_arr = audio_to_mel_array(audio_data, sample_rate, n_mels, max_sec,
+                                     target_sr=target_sr, mel_mean=mel_mean,
+                                     mel_std=mel_std)
         if mel_arr is None:
             return {"image": None, "json": None, "audio": None}
 
