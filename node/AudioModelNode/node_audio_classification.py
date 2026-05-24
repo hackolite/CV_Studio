@@ -8,10 +8,17 @@ Takes raw audio (from AUDIO connection) → mel spectrogram → ONNX model
 
 Model format: ONNX (.onnx), expected input shape (1, 1, n_mels, T) float32.
 Inference is performed via onnxruntime — no PyTorch required at runtime.
+
+Model management mirrors the ObjectDetection node:
+  - Models are stored in a persistent registry (audio_models_registry.json).
+  - Users add models via a yellow "Add Model" button → file dialog → preview/confirm
+    modal → the model is copied to node/AudioModelNode/models/ and registered.
+  - All registered models appear in a combo dropdown for selection.
 """
 import ast
 import json
 import os
+import shutil
 import time
 import copy
 
@@ -23,9 +30,16 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node as BaseNode
 from node.DLNode.object_detection.onnx_session_utils import make_session
+from node.AudioModelNode import audio_models_registry
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+_AUDIO_MODEL_BASE = os.path.dirname(os.path.abspath(__file__))
+_UPLOADS_DIR = os.path.join(_AUDIO_MODEL_BASE, "models")
 
 # librosa is imported lazily so the app starts even when it is not installed
 _librosa = None
@@ -226,6 +240,9 @@ class FactoryNode:
         if pos is None:
             pos = [0, 0]
 
+        # Ensure the registry is loaded before building UI
+        Node._load_models_from_registry()
+
         node = Node()
         node.tag_node_name = str(node_id) + ":" + self.node_tag
 
@@ -245,12 +262,28 @@ class FactoryNode:
         node.tag_node_output02_value_name = _tn + ":" + node.TYPE_TIME_MS + ":Output02Value"
 
         # Option tags
+        node.tag_model_combo = _tn + ":OPT:ModelCombo"
         node.tag_n_mels = _tn + ":OPT:NMels"
         node.tag_max_sec = _tn + ":OPT:MaxSec"
         node.tag_top_k = _tn + ":OPT:TopK"
-        node.tag_model_path_text = _tn + ":OPT:ModelPathText"
-        node.tag_model_info_text = _tn + ":OPT:ModelInfoText"
         node.tag_label_source = _tn + ":OPT:LabelSource"
+
+        # Preview dialog tags
+        preview_window_tag  = "audio_preview_window:"  + str(node_id)
+        preview_name_tag    = "audio_preview_name:"    + str(node_id)
+        preview_details_tag = "audio_preview_details:" + str(node_id)
+        preview_status_tag  = "audio_preview_status:"  + str(node_id)
+        preview_confirm_tag = "audio_preview_confirm:" + str(node_id)
+        preview_cancel_tag  = "audio_preview_cancel:"  + str(node_id)
+        preview_quit_tag    = "audio_preview_quit:"    + str(node_id)
+
+        node.tag_preview_window  = preview_window_tag
+        node.tag_preview_name    = preview_name_tag
+        node.tag_preview_details = preview_details_tag
+        node.tag_preview_status  = preview_status_tag
+        node.tag_preview_confirm = preview_confirm_tag
+        node.tag_preview_cancel  = preview_cancel_tag
+        node.tag_preview_quit    = preview_quit_tag
 
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict["process_width"]
@@ -270,35 +303,61 @@ class FactoryNode:
                 format=dpg.mvFormat_Float_rgb,
             )
 
-        # ---- File dialog for ONNX model ----
-        onnx_dialog_tag = _tn + ":OnnxDialog"
+        # ---- File dialog for ONNX model (shown when Add Model is clicked) ----
+        onnx_dialog_tag = "audio_onnx_select:" + str(node_id)
         with dpg.file_dialog(
             directory_selector=False,
             show=False,
             modal=True,
             height=400,
-            callback=node._callback_model_select,
-            user_data=node,
+            callback=node._callback_onnx_select,
             tag=onnx_dialog_tag,
         ):
             dpg.add_file_extension("ONNX model (*.onnx){.onnx}")
             dpg.add_file_extension("", color=(150, 255, 150, 255))
-        node.tag_onnx_dialog = onnx_dialog_tag
+        node.tag_upload_file_dialog = onnx_dialog_tag
 
-        # ---- File dialog for custom label JSON ----
-        lbl_dialog_tag = _tn + ":LblDialog"
-        with dpg.file_dialog(
-            directory_selector=False,
-            show=False,
+        # ---- Preview / confirmation modal ----
+        def _on_upload_confirm(sender, app_data, user_data):
+            node._do_confirm_upload()
+
+        def _on_close_preview(sender, app_data, user_data):
+            node._close_upload_preview()
+
+        with dpg.window(
+            label="Audio ONNX Model Preview",
+            tag=preview_window_tag,
             modal=True,
-            height=400,
-            callback=node._callback_label_select,
-            user_data=node,
-            tag=lbl_dialog_tag,
+            show=False,
+            width=430,
+            no_close=True,
         ):
-            dpg.add_file_extension("JSON (*.json){.json}")
-            dpg.add_file_extension("", color=(150, 255, 150, 255))
-        node.tag_lbl_dialog = lbl_dialog_tag
+            dpg.add_text("Model name (editable):")
+            dpg.add_input_text(tag=preview_name_tag, width=410)
+            dpg.add_separator()
+            dpg.add_group(tag=preview_details_tag)
+            dpg.add_separator()
+            dpg.add_text("", tag=preview_status_tag)
+            dpg.add_spacer(height=4)
+            with dpg.group(horizontal=True):
+                dpg.add_button(
+                    label="  Confirm Upload  ",
+                    tag=preview_confirm_tag,
+                    callback=_on_upload_confirm,
+                )
+                dpg.add_spacer(width=10)
+                dpg.add_button(
+                    label="  Cancel  ",
+                    tag=preview_cancel_tag,
+                    callback=_on_close_preview,
+                )
+                dpg.add_spacer(width=10)
+                dpg.add_button(
+                    label="  Quit  ",
+                    tag=preview_quit_tag,
+                    callback=_on_close_preview,
+                    show=False,
+                )
 
         # ---- Yellow button theme ----
         with dpg.theme() as yellow_btn_theme:
@@ -308,7 +367,17 @@ class FactoryNode:
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (220, 190, 0, 255))
                 dpg.add_theme_color(dpg.mvThemeCol_Text, (0, 0, 0, 255))
 
+        # ---- Yellow JSON output theme ----
+        with dpg.theme() as yellow_out_theme:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 153, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 153, 255))
+
         # ---- Node UI ----
+        model_names = list(Node._model_path_setting.keys())
+        default_model = model_names[0] if model_names else ""
+
         with dpg.node(tag=_tn, parent=parent, label=self.node_label, pos=pos):
 
             # Audio input
@@ -327,6 +396,20 @@ class FactoryNode:
                 attribute_type=dpg.mvNode_Attr_Output,
             ):
                 dpg.add_image(node.tag_node_output01_value_name)
+
+            # ---- Model selector combo ----
+            with dpg.node_attribute(
+                tag=_tn + ":Attr:ModelCombo",
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    items=model_names,
+                    default_value=default_model,
+                    width=small_window_w,
+                    label="Model",
+                    tag=node.tag_model_combo,
+                    callback=callback,
+                )
 
             # ---- Option: N_Mels ----
             with dpg.node_attribute(
@@ -376,7 +459,7 @@ class FactoryNode:
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_combo(
-                    items=["ONNX metadata", "ESC-50 (built-in)", "Custom JSON"],
+                    items=["ONNX metadata", "ESC-50 (built-in)"],
                     default_value="ONNX metadata",
                     width=small_window_w,
                     label="Labels",
@@ -384,71 +467,11 @@ class FactoryNode:
                     callback=callback,
                 )
 
-            # ---- Model path display ----
-            with dpg.node_attribute(
-                tag=_tn + ":Attr:ModelPath",
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_input_text(
-                    default_value="(no model loaded)",
-                    width=small_window_w,
-                    readonly=True,
-                    tag=node.tag_model_path_text,
-                )
-
-            # ---- Model info (auto-populated after ONNX load) ----
-            with dpg.node_attribute(
-                tag=_tn + ":Attr:ModelInfo",
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_input_text(
-                    default_value="",
-                    width=small_window_w,
-                    readonly=True,
-                    tag=node.tag_model_info_text,
-                )
-
-            # ---- Load ONNX model button ----
-            with dpg.node_attribute(
-                tag=_tn + ":Attr:LoadModel",
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                def _open_onnx_dialog(sender, app_data, user_data):
-                    dpg.show_item(onnx_dialog_tag)
-
-                load_btn = dpg.add_button(
-                    label=u"📂 Load ONNX model",
-                    width=small_window_w,
-                    callback=_open_onnx_dialog,
-                )
-                dpg.bind_item_theme(load_btn, yellow_btn_theme)
-
-            # ---- Load labels button ----
-            with dpg.node_attribute(
-                tag=_tn + ":Attr:LoadLabels",
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                def _open_lbl_dialog(sender, app_data, user_data):
-                    dpg.show_item(lbl_dialog_tag)
-
-                lbl_btn = dpg.add_button(
-                    label=u"📋 Load labels (JSON)",
-                    width=small_window_w,
-                    callback=_open_lbl_dialog,
-                )
-                dpg.bind_item_theme(lbl_btn, yellow_btn_theme)
-
             # ---- JSON output ----
             with dpg.node_attribute(
                 tag=node.tag_node_output_json_name,
                 attribute_type=dpg.mvNode_Attr_Output,
             ):
-                with dpg.theme() as yellow_out_theme:
-                    with dpg.theme_component(dpg.mvButton):
-                        dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))
-                        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 153, 255))
-                        dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 153, 255))
-
                 json_btn = dpg.add_button(
                     label="JSON",
                     tag=node.tag_node_output_json_value_name,
@@ -468,107 +491,286 @@ class FactoryNode:
                         default_value="elapsed time(ms)",
                     )
 
+            # ---- Add Model button (yellow, opens upload file dialog) ----
+            node.tag_upload_btn = _tn + ":UploadONNX"
+
+            def _on_add_model_clicked(sender, app_data, user_data):
+                logger.info(
+                    f"[AudioUpload] 'Add Model' clicked — "
+                    f"showing file dialog '{onnx_dialog_tag}'"
+                )
+                dpg.show_item(onnx_dialog_tag)
+
+            with dpg.node_attribute(
+                tag=_tn + ":UploadAttr",
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                upload_btn = dpg.add_button(
+                    label=u"📂 Add Model",
+                    tag=node.tag_upload_btn,
+                    width=small_window_w,
+                    callback=_on_add_model_clicked,
+                )
+                dpg.bind_item_theme(upload_btn, yellow_btn_theme)
+
         return node
 
 
 # ===========================================================================
-# Node — ONNX inference + update logic
+# Node — registry, upload workflow, ONNX inference + update logic
 # ===========================================================================
 
 class Node(BaseNode):
-    _ver = "0.0.2"
+    _ver = "0.0.3"
 
     node_label = "AudioClassification"
     node_tag = "AudioClassification"
 
     _opencv_setting_dict = None
 
-    # Runtime state (per-instance)
+    # -----------------------------------------------------------------------
+    # Class-level model registry (shared across all instances)
+    # -----------------------------------------------------------------------
+    _model_path_setting: dict = {}   # name → onnx file path (str)
+    _model_class_names: dict = {}    # name → {int: str}
+    _model_n_mels: dict = {}         # name → int (0 = use UI value)
+
+    # -----------------------------------------------------------------------
+    # Per-instance inference state
+    # -----------------------------------------------------------------------
     _session = None          # onnxruntime.InferenceSession
     _input_name = None       # str
-    _model_path = None       # str
-    _onnx_num_classes = 0    # int, detected from ONNX output shape
-    _onnx_n_mels = 0         # int, detected from ONNX input shape
-    _onnx_class_names = None # dict {int: str} from ONNX metadata
-    _custom_class_names = None  # dict loaded from custom JSON file
+    _active_model_name = None  # str  — name of the currently-loaded model
 
     def __init__(self):
         self._session = None
         self._input_name = None
-        self._model_path = None
-        self._onnx_num_classes = 0
-        self._onnx_n_mels = 0
-        self._onnx_class_names = None
-        self._custom_class_names = None
+        self._active_model_name = None
 
     # ------------------------------------------------------------------
-    # File-dialog callbacks
+    # Registry helpers
     # ------------------------------------------------------------------
 
-    def _callback_model_select(self, sender, data, user_data=None):
+    @classmethod
+    def _register_model(cls, name: str, path: str, class_names: dict, n_mels: int):
+        """Add one model to the class-level runtime dictionaries."""
+        cls._model_path_setting[name] = path
+        cls._model_class_names[name] = class_names
+        cls._model_n_mels[name] = n_mels
+
+    @classmethod
+    def _load_models_from_registry(cls):
+        """Populate runtime dicts from the persistent registry (idempotent)."""
+        try:
+            entries = audio_models_registry.load_registry()
+        except Exception as exc:
+            logger.warning(f"[AudioUpload] Could not read registry: {exc}")
+            return
+        for entry in entries:
+            name = entry.get("name", "")
+            path = entry.get("path", "")
+            if not name or not path:
+                continue
+            if name in cls._model_path_setting:
+                continue  # already loaded
+            raw_classes = entry.get("class_names", {})
+            class_names = {int(k): str(v) for k, v in raw_classes.items()}
+            n_mels = int(entry.get("n_mels", 0))
+            cls._register_model(name, path, class_names, n_mels)
+            logger.info(f"[AudioUpload] Loaded model from registry: {name}")
+
+    # ------------------------------------------------------------------
+    # Upload callbacks (mirrors ObjectDetection node)
+    # ------------------------------------------------------------------
+
+    def _callback_onnx_select(self, sender, data, user_data=None):
+        """Handle ONNX file selection — inspect and show preview dialog."""
+        logger.info(f"[AudioUpload] File dialog callback — data={data}")
         if data.get("file_name") == ".":
             return
-        path = data.get("file_path_name", "")
-        if not path or not os.path.isfile(path):
+        onnx_path = data.get("file_path_name", "")
+        if not onnx_path or not os.path.isfile(onnx_path):
+            logger.warning(f"[AudioUpload] No valid file: '{onnx_path}'")
             return
 
-        # Inspect the ONNX model
         try:
-            meta = inspect_audio_onnx(path)
+            meta = inspect_audio_onnx(onnx_path)
         except Exception as exc:
-            logger.error(f"[AudioClassification] ONNX inspection failed: {exc}")
+            logger.error(f"[AudioUpload] Inspection failed: {exc}", exc_info=True)
+            try:
+                dpg.delete_item(self.tag_preview_details, children_only=True)
+                dpg.add_text(
+                    f"Inspection error: {exc}",
+                    parent=self.tag_preview_details,
+                    color=(255, 100, 100, 255),
+                )
+                self._set_upload_preview_actions(upload_succeeded=False)
+                dpg.set_value(self.tag_preview_status, "")
+                dpg.show_item(self.tag_preview_window)
+            except Exception:
+                pass
             return
 
-        # Update UI
-        try:
-            dpg_set_value(self.tag_model_path_text, path)
-            info = f"In:{meta['input_shape']}  Out:{meta['output_shape']}"
-            dpg_set_value(self.tag_model_info_text, info)
-            # Auto-populate N_Mels from ONNX input shape
-            if meta["n_mels"] > 0:
-                dpg_set_value(self.tag_n_mels, str(meta["n_mels"]))
-        except Exception:
-            pass
+        class_names = meta.get("class_names", {})
+        if not class_names:
+            num_classes = meta.get("num_classes", 0)
+            if num_classes > 0:
+                class_names = {i: f"class_{i}" for i in range(num_classes)}
 
-        # Store metadata and invalidate session
-        self._model_path = path
-        self._onnx_num_classes = meta["num_classes"]
-        self._onnx_n_mels = meta["n_mels"]
-        self._onnx_class_names = meta["class_names"] if meta["class_names"] else None
-        self._session = None  # force reload on next update
+        self._pending_onnx_path = onnx_path
+        self._pending_meta = meta
+        self._pending_class_names = class_names
+
+        # Populate preview dialog
+        base_name = os.path.splitext(os.path.basename(onnx_path))[0]
+        dpg.set_value(self.tag_preview_name, base_name)
+        dpg.delete_item(self.tag_preview_details, children_only=True)
+
+        n_mels = meta.get("n_mels", 0)
+        num_cls = meta.get("num_classes", len(class_names))
+        in_shape = meta.get("input_shape", [])
+        out_shape = meta.get("output_shape", [])
+
+        dpg.add_text(f"Input shape  : {in_shape}", parent=self.tag_preview_details)
+        dpg.add_text(f"Output shape : {out_shape}", parent=self.tag_preview_details)
+        dpg.add_text(
+            f"N Mels       : {n_mels if n_mels > 0 else '(dynamic — use UI value)'}",
+            parent=self.tag_preview_details,
+        )
+        dpg.add_text(f"Num classes  : {num_cls}", parent=self.tag_preview_details)
+
+        if class_names:
+            dpg.add_text("Class list:", parent=self.tag_preview_details)
+            max_show = 40
+            for cid, cname in sorted(class_names.items(), key=lambda x: x[0])[:max_show]:
+                dpg.add_text(f"  {cid}: {cname}", parent=self.tag_preview_details)
+            if len(class_names) > max_show:
+                dpg.add_text(
+                    f"  … and {len(class_names) - max_show} more classes",
+                    parent=self.tag_preview_details,
+                )
+        else:
+            dpg.add_text(
+                "(No class names found — ESC-50 labels will be used)",
+                parent=self.tag_preview_details,
+                color=(255, 200, 100, 255),
+            )
+
+        self._set_upload_preview_actions(upload_succeeded=False)
+        dpg.set_value(self.tag_preview_status, "")
+        dpg.show_item(self.tag_preview_window)
+
+    def _set_upload_preview_actions(self, upload_succeeded: bool):
+        """Toggle confirm/cancel ↔ quit buttons."""
+        dpg.configure_item(self.tag_preview_confirm, show=not upload_succeeded)
+        dpg.configure_item(self.tag_preview_cancel, show=not upload_succeeded)
+        dpg.configure_item(self.tag_preview_quit, show=upload_succeeded)
+
+    def _close_upload_preview(self):
+        dpg.hide_item(self.tag_preview_window)
+
+    def _do_confirm_upload(self):
+        """Copy ONNX to models/ dir, register, update combobox."""
+        onnx_path = getattr(self, "_pending_onnx_path", None)
+        meta = getattr(self, "_pending_meta", None)
+        class_names = getattr(self, "_pending_class_names", None)
+
+        if not onnx_path or meta is None:
+            dpg.set_value(self.tag_preview_status, "No pending upload — select a file first.")
+            return
+
+        custom_name = dpg.get_value(self.tag_preview_name).strip()
+        if not custom_name:
+            custom_name = os.path.splitext(os.path.basename(onnx_path))[0]
+
+        # Copy ONNX file to local models/ directory
+        os.makedirs(_UPLOADS_DIR, exist_ok=True)
+        dest_path = onnx_path
+        try:
+            basename = os.path.basename(onnx_path)
+            candidate = os.path.join(_UPLOADS_DIR, basename)
+            if os.path.abspath(onnx_path) != os.path.abspath(candidate):
+                shutil.copy2(onnx_path, candidate)
+                dest_path = candidate
+                logger.info(f"[AudioUpload] Copied ONNX to: {dest_path}")
+            else:
+                logger.info("[AudioUpload] Source and destination are the same — skipping copy.")
+        except Exception as exc:
+            logger.warning(f"[AudioUpload] Could not copy ONNX: {exc}")
+            dest_path = onnx_path
+
+        try:
+            Node._finalise_upload(self, dest_path, meta, class_names, custom_name=custom_name)
+            dpg.set_value(
+                self.tag_preview_status,
+                f"\u2713 Model '{custom_name}' added successfully!",
+            )
+            self._set_upload_preview_actions(upload_succeeded=True)
+            logger.info(f"[AudioUpload] Upload confirmed for '{custom_name}'.")
+        except Exception as exc:
+            logger.error(f"[AudioUpload] Finalise failed: {exc}", exc_info=True)
+            dpg.set_value(self.tag_preview_status, f"\u2717 Upload failed: {exc}")
+            self._set_upload_preview_actions(upload_succeeded=False)
+
+        self._pending_onnx_path = None
+        self._pending_meta = None
+        self._pending_class_names = None
+
+    @staticmethod
+    def _finalise_upload(node, onnx_path: str, meta: dict, class_names: dict,
+                          custom_name: str = None):
+        """Register model in runtime dicts + persistent registry + update combobox."""
+        base = custom_name if custom_name else os.path.splitext(os.path.basename(onnx_path))[0]
+        name = base
+        counter = 1
+        while name in Node._model_path_setting:
+            name = f"{base}_{counter}"
+            counter += 1
+
+        n_mels = meta.get("n_mels", 0)
+        num_classes = meta.get("num_classes", len(class_names))
+
         logger.info(
-            f"[AudioClassification] ONNX model selected: {path} "
-            f"(n_mels={meta['n_mels']}, num_classes={meta['num_classes']}, "
-            f"embedded_labels={len(meta['class_names'])})"
+            f"[AudioUpload] Registering '{name}' — "
+            f"n_mels={n_mels}, classes={num_classes}"
         )
 
-    def _callback_label_select(self, sender, data, user_data=None):
-        if data.get("file_name") == ".":
-            return
-        path = data.get("file_path_name", "")
-        if not path or not os.path.isfile(path):
-            return
+        Node._register_model(name, onnx_path, class_names, n_mels)
+
+        registry_entry = {
+            "name": name,
+            "path": onnx_path,
+            "class_names": {str(k): v for k, v in class_names.items()},
+            "n_mels": n_mels,
+            "num_classes": num_classes,
+        }
         try:
-            with open(path, "r", encoding="utf-8") as fh:
-                raw = json.load(fh)
-            if isinstance(raw, dict):
-                self._custom_class_names = {int(k): str(v) for k, v in raw.items()}
-            elif isinstance(raw, list):
-                self._custom_class_names = {i: str(v) for i, v in enumerate(raw)}
-            logger.info(f"[AudioClassification] Loaded {len(self._custom_class_names)} labels from {path}")
+            audio_models_registry.save_entry(registry_entry)
+            logger.info(f"[AudioUpload] Registry entry saved for '{name}'.")
         except Exception as exc:
-            logger.error(f"[AudioClassification] Failed to load labels: {exc}")
+            logger.warning(f"[AudioUpload] Could not save registry entry for '{name}': {exc}")
+
+        # Update the model combobox
+        try:
+            current_items = dpg.get_item_configuration(node.tag_model_combo).get("items", [])
+            if name not in current_items:
+                current_items = list(current_items) + [name]
+            dpg.configure_item(node.tag_model_combo, items=current_items, default_value=name)
+            logger.info(f"[AudioUpload] Model combo updated — '{name}' selected.")
+        except Exception as exc:
+            logger.warning(f"[AudioUpload] Could not update model combo: {exc}")
 
     # ------------------------------------------------------------------
-    # ONNX session loading
+    # ONNX session management
     # ------------------------------------------------------------------
 
-    def _ensure_session(self, model_path: str, use_gpu: bool = False) -> bool:
-        """Load (or reuse) an onnxruntime InferenceSession."""
-        if self._session is not None and model_path == self._model_path:
+    def _ensure_session(self, model_name: str, use_gpu: bool = False) -> bool:
+        """Load (or reuse) an onnxruntime session for the named model."""
+        if self._session is not None and model_name == self._active_model_name:
             return True
 
-        if not model_path or not os.path.isfile(model_path):
+        path = Node._model_path_setting.get(model_name, "")
+        if not path or not os.path.isfile(path):
             return False
 
         providers = (
@@ -577,13 +779,16 @@ class Node(BaseNode):
             ["CPUExecutionProvider"]
         )
         try:
-            self._session = make_session(model_path, providers=providers)
+            self._session = make_session(path, providers=providers)
             self._input_name = self._session.get_inputs()[0].name
-            self._model_path = model_path
-            logger.info(f"[AudioClassification] ONNX session ready: {model_path}")
+            self._active_model_name = model_name
+            logger.info(f"[AudioClassification] Session ready: {model_name}")
             return True
         except Exception as exc:
-            logger.error(f"[AudioClassification] Failed to create ONNX session: {exc}", exc_info=True)
+            logger.error(
+                f"[AudioClassification] Failed to create session for '{model_name}': {exc}",
+                exc_info=True,
+            )
             self._session = None
             return False
 
@@ -615,31 +820,34 @@ class Node(BaseNode):
 
         # ---- Read options ----
         try:
-            n_mels = int(dpg_get_value(_tn + ":OPT:NMels") or _DEFAULT_N_MELS)
+            model_name = dpg_get_value(_tn + ":OPT:ModelCombo") or ""
+            n_mels_ui = int(dpg_get_value(_tn + ":OPT:NMels") or _DEFAULT_N_MELS)
             max_sec = int(dpg_get_value(_tn + ":OPT:MaxSec") or _DEFAULT_MAX_SEC)
             top_k = int(dpg_get_value(_tn + ":OPT:TopK") or _DEFAULT_TOP_K)
             label_source = dpg_get_value(_tn + ":OPT:LabelSource") or "ONNX metadata"
-            model_path_ui = dpg_get_value(_tn + ":OPT:ModelPathText") or ""
         except Exception as exc:
             logger.debug(f"[AudioClassification] Could not read DPG values: {exc}")
-            n_mels = _DEFAULT_N_MELS
+            model_name = ""
+            n_mels_ui = _DEFAULT_N_MELS
             max_sec = _DEFAULT_MAX_SEC
             top_k = _DEFAULT_TOP_K
             label_source = "ONNX metadata"
-            model_path_ui = ""
 
-        if model_path_ui in ("(no model loaded)", ""):
-            model_path_ui = ""
+        # Determine effective n_mels: prefer the value baked into the model
+        n_mels_model = Node._model_n_mels.get(model_name, 0)
+        n_mels = n_mels_model if n_mels_model > 0 else n_mels_ui
 
-        # Sync model path from UI on session restore
-        if model_path_ui and model_path_ui != self._model_path:
-            self._session = None
+        # Sync N_Mels UI to match model
+        if n_mels_model > 0 and str(n_mels_model) in [str(v) for v in _N_MELS_OPTIONS]:
+            try:
+                dpg_set_value(_tn + ":OPT:NMels", str(n_mels_model))
+            except Exception:
+                pass
 
         # ---- Choose class-name dict ----
-        if label_source == "Custom JSON" and self._custom_class_names:
-            class_names = self._custom_class_names
-        elif label_source == "ONNX metadata" and self._onnx_class_names:
-            class_names = self._onnx_class_names
+        model_class_names = Node._model_class_names.get(model_name, {})
+        if label_source == "ONNX metadata" and model_class_names:
+            class_names = model_class_names
         else:
             class_names = _ESC50_NAMES
 
@@ -674,14 +882,13 @@ class Node(BaseNode):
         if mel_arr is None:
             return {"image": None, "json": None, "audio": None}
 
-        # ---- Render mel as preview image (shown even without a model) ----
+        # ---- Render mel as preview (shown even without a model) ----
         bgr_preview = mel_array_to_bgr_image(mel_arr, small_window_w, small_window_h)
         result_json = None
 
         # ---- ONNX inference ----
-        if model_path_ui and self._ensure_session(model_path_ui, use_gpu=use_gpu):
+        if model_name and self._ensure_session(model_name, use_gpu=use_gpu):
             try:
-                # Input shape expected by the model: (1, 1, n_mels, T)
                 x = mel_arr[np.newaxis].astype(np.float32)  # (1, 1, n_mels, T)
 
                 outputs = self._session.run(None, {self._input_name: x})
@@ -714,6 +921,7 @@ class Node(BaseNode):
                         }
                         for r in range(actual_k)
                     ],
+                    "model": model_name,
                     "n_mels": n_mels,
                     "sample_rate": sample_rate,
                 }
@@ -760,11 +968,11 @@ class Node(BaseNode):
         return {
             "ver": self._ver,
             "pos": pos,
+            "model_name": _safe(_tn + ":OPT:ModelCombo", ""),
             "n_mels": _safe(_tn + ":OPT:NMels", str(_DEFAULT_N_MELS)),
             "max_sec": _safe(_tn + ":OPT:MaxSec", str(_DEFAULT_MAX_SEC)),
             "top_k": _safe(_tn + ":OPT:TopK", str(_DEFAULT_TOP_K)),
             "label_source": _safe(_tn + ":OPT:LabelSource", "ONNX metadata"),
-            "model_path": _safe(_tn + ":OPT:ModelPathText", ""),
         }
 
     def set_setting_dict(self, node_id, setting_dict):
@@ -776,10 +984,19 @@ class Node(BaseNode):
             except Exception:
                 pass
 
+        # Reload registry so previously-registered models are available
+        Node._load_models_from_registry()
+
+        model_name = setting_dict.get("model_name", "")
+        if model_name and model_name in Node._model_path_setting:
+            _safe_set(_tn + ":OPT:ModelCombo", model_name)
         _safe_set(_tn + ":OPT:NMels", setting_dict.get("n_mels", str(_DEFAULT_N_MELS)))
         _safe_set(_tn + ":OPT:MaxSec", setting_dict.get("max_sec", str(_DEFAULT_MAX_SEC)))
         _safe_set(_tn + ":OPT:TopK", setting_dict.get("top_k", str(_DEFAULT_TOP_K)))
         _safe_set(_tn + ":OPT:LabelSource", setting_dict.get("label_source", "ONNX metadata"))
-        model_path = setting_dict.get("model_path", "")
-        if model_path and model_path != "(no model loaded)":
-            _safe_set(_tn + ":OPT:ModelPathText", model_path)
+
+
+# Load registry entries at module-import time so models appear in the combo
+# even before the first node is added.
+Node._load_models_from_registry()
+
