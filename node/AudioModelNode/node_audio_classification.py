@@ -145,10 +145,22 @@ def inspect_audio_onnx(model_path: str) -> dict:
     except Exception as exc:
         logger.debug(f"[AudioClassification] Could not read ONNX metadata: {exc}")
 
+    # Implicit model_type detection from input shape:
+    #   4-D (batch, channels, n_mels, time) → mel_cnn  (current default pipeline)
+    #   1-D or 2-D (batch, samples) or (samples,)      → waveform  (e.g. YAMNet)
+    ndim = len(input_shape)
+    if ndim == 4:
+        model_type = "mel_cnn"
+    elif ndim in (1, 2):
+        model_type = "waveform"
+    else:
+        # Fallback: treat any other rank as mel_cnn (safest default)
+        model_type = "mel_cnn"
+
     logger.info(
         f"[AudioClassification] ONNX inspected: input={input_shape}, "
         f"output={output_shape}, n_mels={n_mels}, num_classes={num_classes}, "
-        f"embedded_labels={len(class_names)}"
+        f"embedded_labels={len(class_names)}, model_type={model_type}"
     )
     return {
         "input_name": inp.name,
@@ -158,6 +170,7 @@ def inspect_audio_onnx(model_path: str) -> dict:
         "output_shape": output_shape,
         "num_classes": num_classes,
         "class_names": class_names,
+        "model_type": model_type,
     }
 
 
@@ -543,6 +556,7 @@ class Node(BaseNode):
     _model_path_setting: dict = {}   # name → onnx file path (str)
     _model_class_names: dict = {}    # name → {int: str}
     _model_n_mels: dict = {}         # name → int (0 = use UI value)
+    _model_type: dict = {}           # name → "mel_cnn" | "waveform"
 
     # -----------------------------------------------------------------------
     # Per-instance inference state
@@ -561,11 +575,13 @@ class Node(BaseNode):
     # ------------------------------------------------------------------
 
     @classmethod
-    def _register_model(cls, name: str, path: str, class_names: dict, n_mels: int):
+    def _register_model(cls, name: str, path: str, class_names: dict, n_mels: int,
+                         model_type: str = "mel_cnn"):
         """Add one model to the class-level runtime dictionaries."""
         cls._model_path_setting[name] = path
         cls._model_class_names[name] = class_names
         cls._model_n_mels[name] = n_mels
+        cls._model_type[name] = model_type
 
     @classmethod
     def _load_models_from_registry(cls):
@@ -585,7 +601,8 @@ class Node(BaseNode):
             raw_classes = entry.get("class_names", {})
             class_names = {int(k): str(v) for k, v in raw_classes.items()}
             n_mels = int(entry.get("n_mels", 0))
-            cls._register_model(name, path, class_names, n_mels)
+            model_type = entry.get("model_type", "mel_cnn")
+            cls._register_model(name, path, class_names, n_mels, model_type)
             logger.info(f"[AudioUpload] Loaded model from registry: {name}")
 
     # ------------------------------------------------------------------
@@ -640,6 +657,8 @@ class Node(BaseNode):
         in_shape = meta.get("input_shape", [])
         out_shape = meta.get("output_shape", [])
 
+        model_type = meta.get("model_type", "mel_cnn")
+        dpg.add_text(f"Model type   : {model_type}  (auto-detected)", parent=self.tag_preview_details)
         dpg.add_text(f"Input shape  : {in_shape}", parent=self.tag_preview_details)
         dpg.add_text(f"Output shape : {out_shape}", parent=self.tag_preview_details)
         dpg.add_text(
@@ -738,13 +757,14 @@ class Node(BaseNode):
 
         n_mels = meta.get("n_mels", 0)
         num_classes = meta.get("num_classes", len(class_names))
+        model_type = meta.get("model_type", "mel_cnn")
 
         logger.info(
             f"[AudioUpload] Registering '{name}' — "
-            f"n_mels={n_mels}, classes={num_classes}"
+            f"n_mels={n_mels}, classes={num_classes}, model_type={model_type}"
         )
 
-        Node._register_model(name, onnx_path, class_names, n_mels)
+        Node._register_model(name, onnx_path, class_names, n_mels, model_type)
 
         registry_entry = {
             "name": name,
@@ -752,6 +772,7 @@ class Node(BaseNode):
             "class_names": {str(k): v for k, v in class_names.items()},
             "n_mels": n_mels,
             "num_classes": num_classes,
+            "model_type": model_type,
         }
         try:
             audio_models_registry.save_entry(registry_entry)
@@ -847,6 +868,9 @@ class Node(BaseNode):
         n_mels_model = Node._model_n_mels.get(model_name, 0)
         n_mels = n_mels_model if n_mels_model > 0 else n_mels_ui
 
+        # Implicit model type — read from registry (no UI combo)
+        model_type = Node._model_type.get(model_name, "mel_cnn")
+
         # Sync N_Mels UI to match model
         if n_mels_model > 0 and str(n_mels_model) in [str(v) for v in _N_MELS_OPTIONS]:
             try:
@@ -899,10 +923,24 @@ class Node(BaseNode):
         # ---- ONNX inference ----
         if model_name and self._ensure_session(model_name, use_gpu=use_gpu):
             try:
-                x = mel_arr[np.newaxis].astype(np.float32)  # (1, 1, n_mels, T)
-
-                outputs = self._session.run(None, {self._input_name: x})
-                logits = outputs[0].flatten().astype(np.float32)
+                if model_type == "waveform":
+                    # Waveform pipeline: flatten audio, feed as (1, N) or (N,) float32
+                    y = np.asarray(audio_data, dtype=np.float32)
+                    if y.ndim > 1:
+                        y = np.mean(y, axis=-1)
+                    inp_shape = self._session.get_inputs()[0].shape
+                    # If model expects 2-D (batch, samples) wrap accordingly
+                    if len(inp_shape) == 2:
+                        x = y[np.newaxis].astype(np.float32)  # (1, N)
+                    else:
+                        x = y.astype(np.float32)              # (N,)
+                    outputs = self._session.run(None, {self._input_name: x})
+                    logits = outputs[0].flatten().astype(np.float32)
+                else:
+                    # mel_cnn pipeline (default)
+                    x = mel_arr[np.newaxis].astype(np.float32)  # (1, 1, n_mels, T)
+                    outputs = self._session.run(None, {self._input_name: x})
+                    logits = outputs[0].flatten().astype(np.float32)
 
                 # Softmax
                 logits -= logits.max()
