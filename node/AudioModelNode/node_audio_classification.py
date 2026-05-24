@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-AudioClassification node — ESC-50 / ResNet18 pipeline.
+AudioClassification node — ONNX audio classification pipeline.
 
-Takes raw audio (from AUDIO connection) → mel spectrogram → PyTorch ResNet
+Takes raw audio (from AUDIO connection) → mel spectrogram → ONNX model
 → top-K class predictions output as JSON + spectrogram overlay image.
 
-Supported backbones (1-channel input, same as ESC-50 training):
-  ResNet18 / ResNet34 / ResNet50
-
-Model file format: PyTorch state-dict (.pth) saved with torch.save(model.state_dict(), …)
+Model format: ONNX (.onnx), expected input shape (1, 1, n_mels, T) float32.
+Inference is performed via onnxruntime — no PyTorch required at runtime.
 """
+import ast
+import json
 import os
 import time
 import copy
@@ -22,56 +22,41 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node as BaseNode
+from node.DLNode.object_detection.onnx_session_utils import make_session
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Optional heavy imports — loaded lazily so the app starts even without them
-_torch = None
-_torchvision_models = None
+# librosa is imported lazily so the app starts even when it is not installed
 _librosa = None
 
 
-def _lazy_imports():
-    global _torch, _torchvision_models, _librosa
-    if _torch is None:
-        try:
-            import torch
-            _torch = torch
-        except ImportError:
-            logger.error("PyTorch is not installed. AudioClassification node requires torch.")
-    if _torchvision_models is None:
-        try:
-            from torchvision import models
-            _torchvision_models = models
-        except ImportError:
-            logger.error("torchvision is not installed. AudioClassification node requires torchvision.")
+def _get_librosa():
+    global _librosa
     if _librosa is None:
         try:
             import librosa
             _librosa = librosa
         except ImportError:
-            logger.error("librosa is not installed. AudioClassification node requires librosa.")
+            logger.error("[AudioClassification] librosa is not installed.")
+    return _librosa
 
 
 # ---------------------------------------------------------------------------
-# Default hyper-parameters — match the ESC-50 + ResNet18 Colab notebook
+# Default hyper-parameters — match the ESC-50 Colab training script
 # ---------------------------------------------------------------------------
 _DEFAULT_SR = 22050
 _DEFAULT_N_MELS = 128
 _DEFAULT_MAX_SEC = 5
-_DEFAULT_NUM_CLASSES = 50
 _DEFAULT_TOP_K = 5
-_DEFAULT_BACKBONE = "ResNet18"
 
-_BACKBONES = ["ResNet18", "ResNet34", "ResNet50"]
 _N_MELS_OPTIONS = [64, 128, 256]
 _MAX_SEC_OPTIONS = [1, 2, 3, 5, 10]
 _TOP_K_OPTIONS = [1, 3, 5, 10]
 
 
 # ---------------------------------------------------------------------------
-# ESC-50 class labels (used when no custom label file is loaded)
+# ESC-50 class labels (used when no labels are embedded in the ONNX file)
 # ---------------------------------------------------------------------------
 try:
     from node.DLNode.classification.esc50_class_names import esc50_class_names as _ESC50_NAMES
@@ -80,24 +65,100 @@ except Exception:
 
 
 # ---------------------------------------------------------------------------
-# Mel spectrogram helper
+# Audio-specific ONNX inspector
 # ---------------------------------------------------------------------------
 
-def audio_to_mel_tensor(audio_data: np.ndarray, sample_rate: int,
-                         n_mels: int, max_sec: int):
-    """Convert 1-D float32 audio → (1, n_mels, T) float32 PyTorch tensor.
+def inspect_audio_onnx(model_path: str) -> dict:
+    """Inspect an ONNX audio classification model.
+
+    Returns a dict with:
+      input_name   (str)  – first input tensor name
+      input_shape  (list) – e.g. [1, 1, 128, 431]
+      n_mels       (int)  – detected from input_shape[2], 0 if dynamic
+      output_name  (str)  – first output tensor name
+      output_shape (list) – e.g. [1, 50]
+      num_classes  (int)  – detected from output_shape[1], 0 if unknown
+      class_names  (dict) – {int: str} from ONNX metadata, or empty dict
+    """
+    if not os.path.isfile(model_path):
+        raise FileNotFoundError(f"ONNX model not found: {model_path}")
+
+    session = make_session(model_path, providers=["CPUExecutionProvider"])
+
+    inp = session.get_inputs()[0]
+    out = session.get_outputs()[0]
+    input_shape = list(inp.shape)
+    output_shape = list(out.shape)
+
+    # n_mels from input shape: (batch, channels, n_mels, time)
+    n_mels = 0
+    if len(input_shape) == 4 and isinstance(input_shape[2], int) and input_shape[2] > 0:
+        n_mels = input_shape[2]
+
+    # num_classes from output shape: (batch, num_classes)
+    num_classes = 0
+    if len(output_shape) >= 2 and isinstance(output_shape[-1], int) and output_shape[-1] > 0:
+        num_classes = output_shape[-1]
+
+    # Embedded class names (try "names" or "labels" metadata keys)
+    class_names: dict = {}
+    try:
+        meta = session.get_modelmeta().custom_metadata_map
+        for key in ("names", "labels"):
+            if key in meta:
+                raw = meta[key]
+                try:
+                    parsed = ast.literal_eval(raw)
+                except Exception:
+                    try:
+                        parsed = json.loads(raw)
+                    except Exception:
+                        parsed = None
+                if isinstance(parsed, dict):
+                    class_names = {int(k): str(v) for k, v in parsed.items()}
+                elif isinstance(parsed, list):
+                    class_names = {i: str(v) for i, v in enumerate(parsed)}
+                if class_names:
+                    if num_classes == 0:
+                        num_classes = len(class_names)
+                    break
+    except Exception as exc:
+        logger.debug(f"[AudioClassification] Could not read ONNX metadata: {exc}")
+
+    logger.info(
+        f"[AudioClassification] ONNX inspected: input={input_shape}, "
+        f"output={output_shape}, n_mels={n_mels}, num_classes={num_classes}, "
+        f"embedded_labels={len(class_names)}"
+    )
+    return {
+        "input_name": inp.name,
+        "input_shape": input_shape,
+        "n_mels": n_mels,
+        "output_name": out.name,
+        "output_shape": output_shape,
+        "num_classes": num_classes,
+        "class_names": class_names,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Mel spectrogram helper — pure numpy, no PyTorch
+# ---------------------------------------------------------------------------
+
+def audio_to_mel_array(audio_data: np.ndarray, sample_rate: int,
+                        n_mels: int, max_sec: int) -> np.ndarray:
+    """Convert 1-D float32 audio → (1, n_mels, T) float32 numpy array.
 
     Matches the ESC-50 training pre-processing:
       - pad / crop to `max_sec * sample_rate` samples
       - librosa.feature.melspectrogram → power_to_db
     """
-    _lazy_imports()
-    if _torch is None or _librosa is None:
+    librosa = _get_librosa()
+    if librosa is None:
         return None
 
     max_len = sample_rate * max_sec
 
-    # Ensure float32 mono
     y = np.asarray(audio_data, dtype=np.float32)
     if y.ndim > 1:
         y = np.mean(y, axis=-1)
@@ -107,59 +168,28 @@ def audio_to_mel_tensor(audio_data: np.ndarray, sample_rate: int,
     else:
         y = y[:max_len]
 
-    mel = _librosa.feature.melspectrogram(y=y, sr=sample_rate, n_mels=n_mels)
-    mel_db = _librosa.power_to_db(mel).astype(np.float32)
+    mel = librosa.feature.melspectrogram(y=y, sr=sample_rate, n_mels=n_mels)
+    mel_db = librosa.power_to_db(mel).astype(np.float32)
 
-    tensor = _torch.tensor(mel_db).unsqueeze(0)  # (1, n_mels, T)
-    return tensor
-
-
-# ---------------------------------------------------------------------------
-# Model builder — mirrors ESC-50 training architecture
-# ---------------------------------------------------------------------------
-
-def build_resnet_audio(backbone: str, num_classes: int):
-    """Return a ResNet with 1-channel first conv (for mel spectrogram input)."""
-    _lazy_imports()
-    if _torch is None or _torchvision_models is None:
-        return None
-
-    import torch.nn as nn
-
-    if backbone == "ResNet18":
-        model = _torchvision_models.resnet18(weights=None)
-    elif backbone == "ResNet34":
-        model = _torchvision_models.resnet34(weights=None)
-    elif backbone == "ResNet50":
-        model = _torchvision_models.resnet50(weights=None)
-    else:
-        model = _torchvision_models.resnet18(weights=None)
-
-    # Replace first conv: 3-channel → 1-channel (greyscale mel)
-    model.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
-    # Replace final FC for the chosen number of classes
-    model.fc = nn.Linear(model.fc.in_features, num_classes)
-    return model
+    return mel_db[np.newaxis]  # (1, n_mels, T)
 
 
 # ---------------------------------------------------------------------------
-# Visualization helper
+# Visualization helpers
 # ---------------------------------------------------------------------------
 
-def mel_tensor_to_bgr_image(tensor, width: int, height: int) -> np.ndarray:
-    """Render a (1, H, W) mel tensor as a BGR image for DearPyGui display."""
-    mel = tensor.squeeze(0).numpy()  # (H, W)
-    # Normalize to 0-255
-    vmin, vmax = mel.min(), mel.max()
+def mel_array_to_bgr_image(mel_2d: np.ndarray, width: int, height: int) -> np.ndarray:
+    """Render a (n_mels, T) or (1, n_mels, T) mel array as a BGR image."""
+    arr = mel_2d.squeeze() if mel_2d.ndim == 3 else mel_2d
+    vmin, vmax = arr.min(), arr.max()
     if vmax > vmin:
-        mel_norm = ((mel - vmin) / (vmax - vmin) * 255).astype(np.uint8)
+        norm = ((arr - vmin) / (vmax - vmin) * 255).astype(np.uint8)
     else:
-        mel_norm = np.zeros_like(mel, dtype=np.uint8)
-    # Apply INFERNO colormap like the Spectrogram node
-    mel_bgr = cv2.applyColorMap(mel_norm, cv2.COLORMAP_INFERNO)
-    mel_bgr = np.flipud(mel_bgr)
-    mel_bgr = cv2.resize(mel_bgr, (width, height), interpolation=cv2.INTER_LINEAR)
-    return mel_bgr
+        norm = np.zeros_like(arr, dtype=np.uint8)
+    bgr = cv2.applyColorMap(norm, cv2.COLORMAP_INFERNO)
+    bgr = np.flipud(bgr)
+    bgr = cv2.resize(bgr, (width, height), interpolation=cv2.INTER_LINEAR)
+    return bgr
 
 
 def overlay_predictions(bgr_image: np.ndarray, predictions: list) -> np.ndarray:
@@ -214,13 +244,12 @@ class FactoryNode:
         node.tag_node_output02_name = _tn + ":" + node.TYPE_TIME_MS + ":Output02"
         node.tag_node_output02_value_name = _tn + ":" + node.TYPE_TIME_MS + ":Output02Value"
 
-        # Option tags (all TYPE_TEXT for simplicity)
-        node.tag_backbone = _tn + ":OPT:Backbone"
+        # Option tags
         node.tag_n_mels = _tn + ":OPT:NMels"
         node.tag_max_sec = _tn + ":OPT:MaxSec"
-        node.tag_num_classes = _tn + ":OPT:NumClasses"
         node.tag_top_k = _tn + ":OPT:TopK"
         node.tag_model_path_text = _tn + ":OPT:ModelPathText"
+        node.tag_model_info_text = _tn + ":OPT:ModelInfoText"
         node.tag_label_source = _tn + ":OPT:LabelSource"
 
         node._opencv_setting_dict = opencv_setting_dict
@@ -241,8 +270,8 @@ class FactoryNode:
                 format=dpg.mvFormat_Float_rgb,
             )
 
-        # ---- File dialog for .pth model ----
-        pth_dialog_tag = _tn + ":PthDialog"
+        # ---- File dialog for ONNX model ----
+        onnx_dialog_tag = _tn + ":OnnxDialog"
         with dpg.file_dialog(
             directory_selector=False,
             show=False,
@@ -250,11 +279,11 @@ class FactoryNode:
             height=400,
             callback=node._callback_model_select,
             user_data=node,
-            tag=pth_dialog_tag,
+            tag=onnx_dialog_tag,
         ):
-            dpg.add_file_extension("PyTorch model (*.pth){.pth}")
+            dpg.add_file_extension("ONNX model (*.onnx){.onnx}")
             dpg.add_file_extension("", color=(150, 255, 150, 255))
-        node.tag_pth_dialog = pth_dialog_tag
+        node.tag_onnx_dialog = onnx_dialog_tag
 
         # ---- File dialog for custom label JSON ----
         lbl_dialog_tag = _tn + ":LblDialog"
@@ -299,20 +328,6 @@ class FactoryNode:
             ):
                 dpg.add_image(node.tag_node_output01_value_name)
 
-            # ---- Option: Backbone ----
-            with dpg.node_attribute(
-                tag=_tn + ":Attr:Backbone",
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_combo(
-                    items=_BACKBONES,
-                    default_value=_DEFAULT_BACKBONE,
-                    width=small_window_w,
-                    label="Backbone",
-                    tag=node.tag_backbone,
-                    callback=callback,
-                )
-
             # ---- Option: N_Mels ----
             with dpg.node_attribute(
                 tag=_tn + ":Attr:NMels",
@@ -341,21 +356,6 @@ class FactoryNode:
                     callback=callback,
                 )
 
-            # ---- Option: Num classes ----
-            with dpg.node_attribute(
-                tag=_tn + ":Attr:NumClasses",
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_input_int(
-                    default_value=_DEFAULT_NUM_CLASSES,
-                    min_value=2,
-                    max_value=1000,
-                    width=small_window_w,
-                    label="Num classes",
-                    tag=node.tag_num_classes,
-                    callback=callback,
-                )
-
             # ---- Option: Top-K ----
             with dpg.node_attribute(
                 tag=_tn + ":Attr:TopK",
@@ -370,14 +370,14 @@ class FactoryNode:
                     callback=callback,
                 )
 
-            # ---- Option: Label source (ESC-50 built-in or custom JSON) ----
+            # ---- Option: Label source ----
             with dpg.node_attribute(
                 tag=_tn + ":Attr:LabelSource",
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_combo(
-                    items=["ESC-50 (built-in)", "Custom JSON"],
-                    default_value="ESC-50 (built-in)",
+                    items=["ONNX metadata", "ESC-50 (built-in)", "Custom JSON"],
+                    default_value="ONNX metadata",
                     width=small_window_w,
                     label="Labels",
                     tag=node.tag_label_source,
@@ -396,18 +396,30 @@ class FactoryNode:
                     tag=node.tag_model_path_text,
                 )
 
-            # ---- Load model button ----
+            # ---- Model info (auto-populated after ONNX load) ----
+            with dpg.node_attribute(
+                tag=_tn + ":Attr:ModelInfo",
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_input_text(
+                    default_value="",
+                    width=small_window_w,
+                    readonly=True,
+                    tag=node.tag_model_info_text,
+                )
+
+            # ---- Load ONNX model button ----
             with dpg.node_attribute(
                 tag=_tn + ":Attr:LoadModel",
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
-                def _open_pth_dialog(sender, app_data, user_data):
-                    dpg.show_item(pth_dialog_tag)
+                def _open_onnx_dialog(sender, app_data, user_data):
+                    dpg.show_item(onnx_dialog_tag)
 
                 load_btn = dpg.add_button(
-                    label=u"📂 Load .pth model",
+                    label=u"📂 Load ONNX model",
                     width=small_window_w,
-                    callback=_open_pth_dialog,
+                    callback=_open_onnx_dialog,
                 )
                 dpg.bind_item_theme(load_btn, yellow_btn_theme)
 
@@ -460,11 +472,11 @@ class FactoryNode:
 
 
 # ===========================================================================
-# Node — update logic and settings persistence
+# Node — ONNX inference + update logic
 # ===========================================================================
 
 class Node(BaseNode):
-    _ver = "0.0.1"
+    _ver = "0.0.2"
 
     node_label = "AudioClassification"
     node_tag = "AudioClassification"
@@ -472,19 +484,22 @@ class Node(BaseNode):
     _opencv_setting_dict = None
 
     # Runtime state (per-instance)
-    _model = None
-    _model_device = "cpu"
-    _model_backbone = None
-    _model_num_classes = None
-    _model_path = None
-    _class_names = None  # dict {int: str}
+    _session = None          # onnxruntime.InferenceSession
+    _input_name = None       # str
+    _model_path = None       # str
+    _onnx_num_classes = 0    # int, detected from ONNX output shape
+    _onnx_n_mels = 0         # int, detected from ONNX input shape
+    _onnx_class_names = None # dict {int: str} from ONNX metadata
+    _custom_class_names = None  # dict loaded from custom JSON file
 
     def __init__(self):
-        self._model = None
-        self._model_backbone = None
-        self._model_num_classes = None
+        self._session = None
+        self._input_name = None
         self._model_path = None
-        self._class_names = None
+        self._onnx_num_classes = 0
+        self._onnx_n_mels = 0
+        self._onnx_class_names = None
+        self._custom_class_names = None
 
     # ------------------------------------------------------------------
     # File-dialog callbacks
@@ -496,14 +511,36 @@ class Node(BaseNode):
         path = data.get("file_path_name", "")
         if not path or not os.path.isfile(path):
             return
+
+        # Inspect the ONNX model
+        try:
+            meta = inspect_audio_onnx(path)
+        except Exception as exc:
+            logger.error(f"[AudioClassification] ONNX inspection failed: {exc}")
+            return
+
+        # Update UI
         try:
             dpg_set_value(self.tag_model_path_text, path)
+            info = f"In:{meta['input_shape']}  Out:{meta['output_shape']}"
+            dpg_set_value(self.tag_model_info_text, info)
+            # Auto-populate N_Mels from ONNX input shape
+            if meta["n_mels"] > 0:
+                dpg_set_value(self.tag_n_mels, str(meta["n_mels"]))
         except Exception:
             pass
-        # Invalidate cached model so it is reloaded on next update
-        self._model = None
+
+        # Store metadata and invalidate session
         self._model_path = path
-        logger.info(f"[AudioClassification] Model path set to: {path}")
+        self._onnx_num_classes = meta["num_classes"]
+        self._onnx_n_mels = meta["n_mels"]
+        self._onnx_class_names = meta["class_names"] if meta["class_names"] else None
+        self._session = None  # force reload on next update
+        logger.info(
+            f"[AudioClassification] ONNX model selected: {path} "
+            f"(n_mels={meta['n_mels']}, num_classes={meta['num_classes']}, "
+            f"embedded_labels={len(meta['class_names'])})"
+        )
 
     def _callback_label_select(self, sender, data, user_data=None):
         if data.get("file_name") == ".":
@@ -512,65 +549,42 @@ class Node(BaseNode):
         if not path or not os.path.isfile(path):
             return
         try:
-            import json
             with open(path, "r", encoding="utf-8") as fh:
                 raw = json.load(fh)
-            # Accept {int: str} or {"0": "cat", …}
-            self._class_names = {int(k): str(v) for k, v in raw.items()}
-            logger.info(f"[AudioClassification] Loaded {len(self._class_names)} labels from {path}")
+            if isinstance(raw, dict):
+                self._custom_class_names = {int(k): str(v) for k, v in raw.items()}
+            elif isinstance(raw, list):
+                self._custom_class_names = {i: str(v) for i, v in enumerate(raw)}
+            logger.info(f"[AudioClassification] Loaded {len(self._custom_class_names)} labels from {path}")
         except Exception as exc:
             logger.error(f"[AudioClassification] Failed to load labels: {exc}")
 
     # ------------------------------------------------------------------
-    # Model loading
+    # ONNX session loading
     # ------------------------------------------------------------------
 
-    def _ensure_model(self, backbone: str, num_classes: int, model_path: str):
-        """Load (or reload) the PyTorch model if parameters changed."""
-        _lazy_imports()
-        if _torch is None or _torchvision_models is None:
-            return False
-
-        params_changed = (
-            backbone != self._model_backbone
-            or num_classes != self._model_num_classes
-            or model_path != self._model_path
-        )
-
-        if self._model is not None and not params_changed:
-            return True  # already loaded, nothing to do
+    def _ensure_session(self, model_path: str, use_gpu: bool = False) -> bool:
+        """Load (or reuse) an onnxruntime InferenceSession."""
+        if self._session is not None and model_path == self._model_path:
+            return True
 
         if not model_path or not os.path.isfile(model_path):
             return False
 
+        providers = (
+            ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            if use_gpu else
+            ["CPUExecutionProvider"]
+        )
         try:
-            model = build_resnet_audio(backbone, num_classes)
-            if model is None:
-                return False
-
-            device = "cuda" if _torch.cuda.is_available() else "cpu"
-            state = _torch.load(model_path, map_location=device)
-
-            # Support both raw state-dict and checkpoint dicts
-            if isinstance(state, dict) and "state_dict" in state:
-                state = state["state_dict"]
-            elif isinstance(state, dict) and "model_state_dict" in state:
-                state = state["model_state_dict"]
-
-            model.load_state_dict(state, strict=False)
-            model.to(device)
-            model.eval()
-
-            self._model = model
-            self._model_device = device
-            self._model_backbone = backbone
-            self._model_num_classes = num_classes
+            self._session = make_session(model_path, providers=providers)
+            self._input_name = self._session.get_inputs()[0].name
             self._model_path = model_path
-            logger.info(f"[AudioClassification] Model loaded: {backbone}, {num_classes} classes, device={device}")
+            logger.info(f"[AudioClassification] ONNX session ready: {model_path}")
             return True
         except Exception as exc:
-            logger.error(f"[AudioClassification] Model load error: {exc}", exc_info=True)
-            self._model = None
+            logger.error(f"[AudioClassification] Failed to create ONNX session: {exc}", exc_info=True)
+            self._session = None
             return False
 
     # ------------------------------------------------------------------
@@ -592,42 +606,40 @@ class Node(BaseNode):
         if self._opencv_setting_dict is None:
             small_window_w, small_window_h = 240, 135
             use_pref_counter = False
+            use_gpu = False
         else:
             small_window_w = self._opencv_setting_dict["process_width"]
             small_window_h = self._opencv_setting_dict["process_height"]
             use_pref_counter = self._opencv_setting_dict["use_pref_counter"]
+            use_gpu = self._opencv_setting_dict.get("use_gpu", False)
 
         # ---- Read options ----
         try:
-            backbone = dpg_get_value(_tn + ":OPT:Backbone") or _DEFAULT_BACKBONE
             n_mels = int(dpg_get_value(_tn + ":OPT:NMels") or _DEFAULT_N_MELS)
             max_sec = int(dpg_get_value(_tn + ":OPT:MaxSec") or _DEFAULT_MAX_SEC)
-            num_classes = int(dpg_get_value(_tn + ":OPT:NumClasses") or _DEFAULT_NUM_CLASSES)
             top_k = int(dpg_get_value(_tn + ":OPT:TopK") or _DEFAULT_TOP_K)
-            label_source = dpg_get_value(_tn + ":OPT:LabelSource") or "ESC-50 (built-in)"
+            label_source = dpg_get_value(_tn + ":OPT:LabelSource") or "ONNX metadata"
             model_path_ui = dpg_get_value(_tn + ":OPT:ModelPathText") or ""
         except Exception as exc:
             logger.debug(f"[AudioClassification] Could not read DPG values: {exc}")
-            backbone = _DEFAULT_BACKBONE
             n_mels = _DEFAULT_N_MELS
             max_sec = _DEFAULT_MAX_SEC
-            num_classes = _DEFAULT_NUM_CLASSES
             top_k = _DEFAULT_TOP_K
-            label_source = "ESC-50 (built-in)"
+            label_source = "ONNX metadata"
             model_path_ui = ""
 
-        # Normalise "(no model loaded)" placeholder
-        if model_path_ui == "(no model loaded)":
+        if model_path_ui in ("(no model loaded)", ""):
             model_path_ui = ""
 
-        # Sync model_path from UI (handles session restore)
+        # Sync model path from UI on session restore
         if model_path_ui and model_path_ui != self._model_path:
-            self._model_path = model_path_ui
-            self._model = None  # force reload
+            self._session = None
 
         # ---- Choose class-name dict ----
-        if label_source == "Custom JSON" and self._class_names is not None:
-            class_names = self._class_names
+        if label_source == "Custom JSON" and self._custom_class_names:
+            class_names = self._custom_class_names
+        elif label_source == "ONNX metadata" and self._onnx_class_names:
+            class_names = self._onnx_class_names
         else:
             class_names = _ESC50_NAMES
 
@@ -657,48 +669,51 @@ class Node(BaseNode):
         if use_pref_counter:
             start_time = time.monotonic()
 
-        # ---- Build mel tensor ----
-        mel_tensor = audio_to_mel_tensor(audio_data, sample_rate, n_mels, max_sec)
-        if mel_tensor is None:
+        # ---- Build mel array ----
+        mel_arr = audio_to_mel_array(audio_data, sample_rate, n_mels, max_sec)
+        if mel_arr is None:
             return {"image": None, "json": None, "audio": None}
 
-        # ---- Render mel as preview image (done even without a model) ----
-        bgr_preview = mel_tensor_to_bgr_image(mel_tensor, small_window_w, small_window_h)
+        # ---- Render mel as preview image (shown even without a model) ----
+        bgr_preview = mel_array_to_bgr_image(mel_arr, small_window_w, small_window_h)
         result_json = None
 
-        # ---- Inference ----
-        model_loaded = self._ensure_model(backbone, num_classes, model_path_ui)
-        if model_loaded and self._model is not None:
+        # ---- ONNX inference ----
+        if model_path_ui and self._ensure_session(model_path_ui, use_gpu=use_gpu):
             try:
-                _lazy_imports()
-                import torch
+                # Input shape expected by the model: (1, 1, n_mels, T)
+                x = mel_arr[np.newaxis].astype(np.float32)  # (1, 1, n_mels, T)
 
-                # Add batch dimension: (1, 1, n_mels, T)
-                x = mel_tensor.unsqueeze(0).to(self._model_device)
+                outputs = self._session.run(None, {self._input_name: x})
+                logits = outputs[0].flatten().astype(np.float32)
 
-                with torch.no_grad():
-                    logits = self._model(x)  # (1, num_classes)
-                    probs = torch.softmax(logits, dim=1).squeeze(0)  # (num_classes,)
+                # Softmax
+                logits -= logits.max()
+                probs = np.exp(logits)
+                probs /= probs.sum()
 
+                num_classes = len(probs)
                 actual_k = min(top_k, num_classes)
-                scores, indices = torch.topk(probs, actual_k)
+                top_ids = np.argsort(probs)[::-1][:actual_k]
+                top_scores = probs[top_ids]
 
-                predictions = []
-                for score, idx in zip(scores.cpu().numpy(), indices.cpu().numpy()):
-                    label = class_names.get(int(idx), f"class_{idx}")
-                    predictions.append((label, float(score)))
+                predictions = [
+                    (class_names.get(int(idx), f"class_{idx}"), float(score))
+                    for idx, score in zip(top_ids, top_scores)
+                ]
 
-                # Overlay predictions on preview
                 bgr_preview = overlay_predictions(bgr_preview, predictions)
 
                 result_json = {
                     "predictions": [
-                        {"rank": r + 1, "class_id": int(indices[r].cpu()),
-                         "class_name": class_names.get(int(indices[r].cpu()), f"class_{int(indices[r].cpu())}"),
-                         "score": float(scores[r].cpu())}
+                        {
+                            "rank": r + 1,
+                            "class_id": int(top_ids[r]),
+                            "class_name": class_names.get(int(top_ids[r]), f"class_{top_ids[r]}"),
+                            "score": float(top_scores[r]),
+                        }
                         for r in range(actual_k)
                     ],
-                    "backbone": backbone,
                     "n_mels": n_mels,
                     "sample_rate": sample_rate,
                 }
@@ -745,12 +760,10 @@ class Node(BaseNode):
         return {
             "ver": self._ver,
             "pos": pos,
-            "backbone": _safe(_tn + ":OPT:Backbone", _DEFAULT_BACKBONE),
             "n_mels": _safe(_tn + ":OPT:NMels", str(_DEFAULT_N_MELS)),
             "max_sec": _safe(_tn + ":OPT:MaxSec", str(_DEFAULT_MAX_SEC)),
-            "num_classes": _safe(_tn + ":OPT:NumClasses", _DEFAULT_NUM_CLASSES),
             "top_k": _safe(_tn + ":OPT:TopK", str(_DEFAULT_TOP_K)),
-            "label_source": _safe(_tn + ":OPT:LabelSource", "ESC-50 (built-in)"),
+            "label_source": _safe(_tn + ":OPT:LabelSource", "ONNX metadata"),
             "model_path": _safe(_tn + ":OPT:ModelPathText", ""),
         }
 
@@ -763,13 +776,10 @@ class Node(BaseNode):
             except Exception:
                 pass
 
-        _safe_set(_tn + ":OPT:Backbone", setting_dict.get("backbone", _DEFAULT_BACKBONE))
         _safe_set(_tn + ":OPT:NMels", setting_dict.get("n_mels", str(_DEFAULT_N_MELS)))
         _safe_set(_tn + ":OPT:MaxSec", setting_dict.get("max_sec", str(_DEFAULT_MAX_SEC)))
-        num_cls = setting_dict.get("num_classes", _DEFAULT_NUM_CLASSES)
-        _safe_set(_tn + ":OPT:NumClasses", int(num_cls) if isinstance(num_cls, str) else num_cls)
         _safe_set(_tn + ":OPT:TopK", setting_dict.get("top_k", str(_DEFAULT_TOP_K)))
-        _safe_set(_tn + ":OPT:LabelSource", setting_dict.get("label_source", "ESC-50 (built-in)"))
+        _safe_set(_tn + ":OPT:LabelSource", setting_dict.get("label_source", "ONNX metadata"))
         model_path = setting_dict.get("model_path", "")
-        if model_path:
+        if model_path and model_path != "(no model loaded)":
             _safe_set(_tn + ":OPT:ModelPathText", model_path)
