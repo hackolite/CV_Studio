@@ -58,3 +58,11 @@ def remove_entry(name: str) -> None:
     entries = _load_raw()
     entries = [e for e in entries if not (isinstance(e, dict) and e.get("name") == name)]
     _save_raw(entries)
+
+
+def entry_exists(name: str) -> bool:
+    """Return True if a registry entry with this name already exists."""
+    for e in _load_raw():
+        if isinstance(e, dict) and e.get("name") == name:
+            return True
+    return False

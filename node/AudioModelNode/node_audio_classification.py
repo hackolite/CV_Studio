@@ -151,11 +151,24 @@ def inspect_audio_onnx(model_path: str) -> dict:
         logger.debug(f"[AudioClassification] Could not read ONNX metadata: {exc}")
 
     # Implicit model_type detection from input shape:
-    #   4-D (batch, channels, n_mels, time) → mel_cnn  (current default pipeline)
-    #   1-D or 2-D (batch, samples) or (samples,)      → waveform  (e.g. YAMNet)
+    #   4-D all-static (batch, channels, time, mel_bins) → yamnet
+    #       e.g. [1, 1, 96, 64]  — YAMNet-style fixed-patch mel spectrogram
+    #   4-D with dynamic T      (batch, channels, n_mels, time) → mel_cnn
+    #       e.g. [1, 1, 128, None]
+    #   1-D or 2-D (batch, samples) or (samples,)               → waveform
     ndim = len(input_shape)
+    fixed_time = 0
     if ndim == 4:
-        model_type = "mel_cnn"
+        # If the last dimension is also a static integer the model expects a
+        # fixed-size patch laid out as (batch, ch, time_frames, mel_bins) —
+        # the YAMNet convention — rather than the (batch, ch, n_mels, T) layout
+        # used by the standard mel_cnn pipeline.
+        if isinstance(input_shape[3], int) and input_shape[3] > 0:
+            model_type = "yamnet"
+            fixed_time = input_shape[2]   # actual time-frame axis
+            n_mels = input_shape[3]       # actual mel-bin axis
+        else:
+            model_type = "mel_cnn"
     elif ndim in (1, 2):
         model_type = "waveform"
     else:
@@ -166,11 +179,13 @@ def inspect_audio_onnx(model_path: str) -> dict:
         f"[AudioClassification] ONNX inspected: input={input_shape}, "
         f"output={output_shape}, n_mels={n_mels}, num_classes={num_classes}, "
         f"embedded_labels={len(class_names)}, model_type={model_type}"
+        + (f", fixed_time={fixed_time}" if model_type == "yamnet" else "")
     )
     return {
         "input_name": inp.name,
         "input_shape": input_shape,
         "n_mels": n_mels,
+        "fixed_time": fixed_time,
         "output_name": out.name,
         "output_shape": output_shape,
         "num_classes": num_classes,
@@ -213,6 +228,45 @@ def audio_to_mel_array(audio_data: np.ndarray, sample_rate: int,
     mel_db = librosa.power_to_db(mel).astype(np.float32)
 
     return mel_db[np.newaxis]  # (1, n_mels, T)
+
+
+def audio_to_yamnet_array(audio_data: np.ndarray, sample_rate: int,
+                           n_mels: int, fixed_time: int) -> np.ndarray:
+    """Convert 1-D float32 audio → (1, 1, fixed_time, n_mels) float32 array.
+
+    Used for YAMNet-style models whose input layout is
+    (batch, channels, time_frames, mel_bins) rather than the
+    (batch, channels, n_mels, time) convention of the standard mel_cnn pipeline.
+    The mel spectrogram is cropped or zero-padded along the time axis so that
+    the output exactly matches (1, 1, fixed_time, n_mels).
+    """
+    librosa = _get_librosa()
+    if librosa is None:
+        return None
+
+    y = np.asarray(audio_data, dtype=np.float32)
+    if y.ndim > 1:
+        y = np.mean(y, axis=-1)
+
+    mel = librosa.feature.melspectrogram(
+        y=y, sr=sample_rate, n_mels=n_mels,
+        n_fft=_DEFAULT_N_FFT, hop_length=_DEFAULT_HOP_LENGTH,
+    )
+    mel_db = librosa.power_to_db(mel).astype(np.float32)  # (n_mels, T)
+
+    # Crop or zero-pad the time axis to match the fixed model input size
+    T = mel_db.shape[1]
+    if T < fixed_time:
+        pad_width = fixed_time - T
+        mel_db = np.pad(mel_db, ((0, 0), (0, pad_width)))
+    else:
+        mel_db = mel_db[:, :fixed_time]
+
+    # Transpose from (n_mels, fixed_time) → (fixed_time, n_mels)
+    patch = mel_db.T  # (fixed_time, n_mels)
+
+    # Add batch and channel dims → (1, 1, fixed_time, n_mels)
+    return patch[np.newaxis, np.newaxis]
 
 
 # ---------------------------------------------------------------------------
@@ -561,7 +615,8 @@ class Node(BaseNode):
     _model_path_setting: dict = {}   # name → onnx file path (str)
     _model_class_names: dict = {}    # name → {int: str}
     _model_n_mels: dict = {}         # name → int (0 = use UI value)
-    _model_type: dict = {}           # name → "mel_cnn" | "waveform"
+    _model_type: dict = {}           # name → "mel_cnn" | "waveform" | "yamnet"
+    _model_fixed_time: dict = {}     # name → int (0 = N/A; >0 for yamnet)
 
     # -----------------------------------------------------------------------
     # Per-instance inference state
@@ -581,12 +636,13 @@ class Node(BaseNode):
 
     @classmethod
     def _register_model(cls, name: str, path: str, class_names: dict, n_mels: int,
-                         model_type: str = "mel_cnn"):
+                         model_type: str = "mel_cnn", fixed_time: int = 0):
         """Add one model to the class-level runtime dictionaries."""
         cls._model_path_setting[name] = path
         cls._model_class_names[name] = class_names
         cls._model_n_mels[name] = n_mels
         cls._model_type[name] = model_type
+        cls._model_fixed_time[name] = fixed_time
 
     @classmethod
     def _load_models_from_registry(cls):
@@ -607,7 +663,8 @@ class Node(BaseNode):
             class_names = {int(k): str(v) for k, v in raw_classes.items()}
             n_mels = int(entry.get("n_mels", 0))
             model_type = entry.get("model_type", "mel_cnn")
-            cls._register_model(name, path, class_names, n_mels, model_type)
+            fixed_time = int(entry.get("fixed_time", 0))
+            cls._register_model(name, path, class_names, n_mels, model_type, fixed_time)
             logger.info(f"[AudioUpload] Loaded model from registry: {name}")
 
     # ------------------------------------------------------------------
@@ -763,13 +820,15 @@ class Node(BaseNode):
         n_mels = meta.get("n_mels", 0)
         num_classes = meta.get("num_classes", len(class_names))
         model_type = meta.get("model_type", "mel_cnn")
+        fixed_time = int(meta.get("fixed_time", 0))
 
         logger.info(
             f"[AudioUpload] Registering '{name}' — "
             f"n_mels={n_mels}, classes={num_classes}, model_type={model_type}"
+            + (f", fixed_time={fixed_time}" if model_type == "yamnet" else "")
         )
 
-        Node._register_model(name, onnx_path, class_names, n_mels, model_type)
+        Node._register_model(name, onnx_path, class_names, n_mels, model_type, fixed_time)
 
         registry_entry = {
             "name": name,
@@ -778,6 +837,7 @@ class Node(BaseNode):
             "n_mels": n_mels,
             "num_classes": num_classes,
             "model_type": model_type,
+            "fixed_time": fixed_time,
         }
         try:
             audio_models_registry.save_entry(registry_entry)
@@ -875,6 +935,7 @@ class Node(BaseNode):
 
         # Implicit model type — read from registry (no UI combo)
         model_type = Node._model_type.get(model_name, "mel_cnn")
+        fixed_time = Node._model_fixed_time.get(model_name, 0)
 
         # Sync N_Mels UI to match model
         if n_mels_model > 0 and str(n_mels_model) in [str(v) for v in _N_MELS_OPTIONS]:
@@ -918,7 +979,7 @@ class Node(BaseNode):
         if use_pref_counter:
             start_time = time.monotonic()
 
-        # ---- Build mel array ----
+        # ---- Build mel array (used for preview and mel_cnn inference) ----
         mel_arr = audio_to_mel_array(audio_data, sample_rate, n_mels, max_sec)
         if mel_arr is None:
             return {"image": None, "json": None, "audio": None}
@@ -941,6 +1002,14 @@ class Node(BaseNode):
                         x = y[np.newaxis].astype(np.float32)  # (1, N)
                     else:
                         x = y.astype(np.float32)              # (N,)
+                    outputs = self._session.run(None, {self._input_name: x})
+                    logits = outputs[0].flatten().astype(np.float32)
+                elif model_type == "yamnet":
+                    # YAMNet pipeline: (batch, ch, fixed_time, n_mels)
+                    # The mel layout is transposed vs. standard mel_cnn.
+                    x = audio_to_yamnet_array(audio_data, sample_rate, n_mels, fixed_time)
+                    if x is None:
+                        return {"image": None, "json": None, "audio": None}
                     outputs = self._session.run(None, {self._input_name: x})
                     logits = outputs[0].flatten().astype(np.float32)
                 else:
@@ -1066,4 +1135,37 @@ class Node(BaseNode):
 # Load registry entries at module-import time so models appear in the combo
 # even before the first node is added.
 Node._load_models_from_registry()
+
+
+def _ensure_builtin_models() -> None:
+    """Seed built-in ONNX models into the registry if not already present.
+
+    Currently seeds yamnet.onnx, which ships with the repository at
+    node/AudioModelNode/models/yamnet.onnx.
+    """
+    builtin_path = os.path.join(_UPLOADS_DIR, "yamnet.onnx")
+    if not os.path.isfile(builtin_path):
+        return
+
+    builtin_name = "yamnet"
+    if audio_models_registry.entry_exists(builtin_name):
+        return  # already registered — nothing to do
+
+    try:
+        meta = inspect_audio_onnx(builtin_path)
+    except Exception as exc:
+        logger.warning(f"[AudioBuiltin] Could not inspect {builtin_path}: {exc}")
+        return
+
+    class_names = meta.get("class_names", {})
+    if not class_names:
+        # Fall back to the built-in YAMNet label set
+        class_names = _YAMNET_NAMES
+
+    Node._finalise_upload(None, builtin_path, meta, class_names,
+                          custom_name=builtin_name)
+    logger.info(f"[AudioBuiltin] Seeded built-in model '{builtin_name}'.")
+
+
+_ensure_builtin_models()
 
