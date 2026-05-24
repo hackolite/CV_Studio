@@ -66,6 +66,10 @@ _DEFAULT_TOP_K = 3
 _DEFAULT_HOP_LENGTH = 512   # must match training (librosa default but made explicit)
 _DEFAULT_N_FFT = 2048        # must match training (librosa default but made explicit)
 
+# YAMNet was trained on 16 kHz mono audio (Google AudioSet / YAMNet paper).
+# The mel-CNN ONNX exported here expects the same 16 kHz pre-processing.
+_YAMNET_TARGET_SR = 16000
+
 _N_MELS_OPTIONS = [64, 96, 128, 256]
 _MAX_SEC_OPTIONS = [1, 2, 3, 5, 10]
 _TOP_K_OPTIONS = [1, 3, 5, 10]
@@ -93,6 +97,9 @@ _BUILTIN_AUDIO_MODELS = [
         "name": "YAMNet",
         "path": os.path.join(_UPLOADS_DIR, "yamnet.onnx"),
         "class_names": _YAMNET_NAMES,
+        # YAMNet was originally trained on 16 kHz audio; set target_sr so the
+        # pipeline automatically resamples any incoming audio to this rate.
+        "target_sr": _YAMNET_TARGET_SR,
     },
 ]
 
@@ -174,10 +181,25 @@ def inspect_audio_onnx(model_path: str) -> dict:
         # Fallback: treat any other rank as mel_cnn (safest default)
         model_type = "mel_cnn"
 
+    # Extract target_sr from ONNX metadata if the exporter embedded it
+    target_sr = 0
+    try:
+        meta = session.get_modelmeta().custom_metadata_map
+        for key in ("sample_rate", "sr", "target_sr", "samplerate"):
+            if key in meta:
+                try:
+                    target_sr = int(meta[key])
+                    break
+                except (ValueError, TypeError):
+                    pass
+    except Exception:
+        pass
+
     logger.info(
         f"[AudioClassification] ONNX inspected: input={input_shape}, "
         f"output={output_shape}, n_mels={n_mels}, num_classes={num_classes}, "
-        f"embedded_labels={len(class_names)}, model_type={model_type}"
+        f"embedded_labels={len(class_names)}, model_type={model_type}, "
+        f"target_sr={target_sr if target_sr > 0 else '(not set)'}"
     )
 
     # Detect fixed time axis: dim[3] if 4-D and concrete integer (not a string/symbol)
@@ -195,6 +217,7 @@ def inspect_audio_onnx(model_path: str) -> dict:
         "num_classes": num_classes,
         "class_names": class_names,
         "model_type": model_type,
+        "target_sr": target_sr,
     }
 
 
@@ -582,6 +605,7 @@ class Node(BaseNode):
     _model_n_mels: dict = {}         # name → int (0 = use UI value)
     _model_type: dict = {}           # name → "mel_cnn" | "waveform"
     _model_fixed_time: dict = {}     # name → int (0 = dynamic / no constraint)
+    _model_target_sr: dict = {}      # name → int (0 = use incoming SR as-is / no resample)
 
     # -----------------------------------------------------------------------
     # Per-instance inference state
@@ -601,13 +625,21 @@ class Node(BaseNode):
 
     @classmethod
     def _register_model(cls, name: str, path: str, class_names: dict, n_mels: int,
-                         model_type: str = "mel_cnn", fixed_time: int = 0):
-        """Add one model to the class-level runtime dictionaries."""
+                         model_type: str = "mel_cnn", fixed_time: int = 0,
+                         target_sr: int = 0):
+        """Add one model to the class-level runtime dictionaries.
+
+        Args:
+            target_sr: Expected input sample rate for this model (Hz).
+                       0 means "use whatever SR the audio source provides" (no resampling).
+                       For YAMNet this should be 16000; for ESC-50 models it is 22050.
+        """
         cls._model_path_setting[name] = path
         cls._model_class_names[name] = class_names
         cls._model_n_mels[name] = n_mels
         cls._model_type[name] = model_type
         cls._model_fixed_time[name] = fixed_time
+        cls._model_target_sr[name] = target_sr
 
     @classmethod
     def _load_models_from_registry(cls):
@@ -629,7 +661,9 @@ class Node(BaseNode):
             n_mels = int(entry.get("n_mels", 0))
             model_type = entry.get("model_type", "mel_cnn")
             fixed_time = int(entry.get("fixed_time", 0))
-            cls._register_model(name, path, class_names, n_mels, model_type, fixed_time)
+            target_sr = int(entry.get("target_sr", 0))
+            cls._register_model(name, path, class_names, n_mels, model_type, fixed_time,
+                                 target_sr=target_sr)
             logger.info(f"[AudioUpload] Loaded model from registry: {name}")
 
     @classmethod
@@ -667,9 +701,13 @@ class Node(BaseNode):
             n_mels = info.get("n_mels", 0)
             model_type = info.get("model_type", "mel_cnn")
             fixed_time = info.get("fixed_time", 0)
+            # target_sr: ONNX metadata has highest priority, then the catalogue
+            # hint, then 0 (= no forced resampling).
+            target_sr = info.get("target_sr", 0) or int(meta.get("target_sr", 0))
 
             # Always refresh in-memory registration
-            cls._register_model(name, path, class_names, n_mels, model_type, fixed_time)
+            cls._register_model(name, path, class_names, n_mels, model_type, fixed_time,
+                                 target_sr=target_sr)
 
             if name in existing:
                 continue  # already persisted — no need to rewrite
@@ -679,13 +717,15 @@ class Node(BaseNode):
                 "path": path,
                 "n_mels": n_mels,
                 "fixed_time": fixed_time,
+                "target_sr": target_sr,
                 "num_classes": info.get("num_classes", len(class_names)),
                 "model_type": model_type,
                 "class_names": {str(k): v for k, v in class_names.items()},
             }
             try:
                 audio_models_registry.save_entry(entry)
-                logger.info(f"[AudioBuiltin] Registered built-in model: {name} (model_type={model_type})")
+                logger.info(f"[AudioBuiltin] Registered built-in model: {name} "
+                            f"(model_type={model_type}, target_sr={target_sr if target_sr > 0 else 'none'})")
             except Exception as exc:
                 logger.warning(f"[AudioBuiltin] Could not persist '{name}': {exc}")
 
@@ -740,6 +780,7 @@ class Node(BaseNode):
         num_cls = meta.get("num_classes", len(class_names))
         in_shape = meta.get("input_shape", [])
         out_shape = meta.get("output_shape", [])
+        target_sr_val = int(meta.get("target_sr", 0))
 
         model_type = meta.get("model_type", "mel_cnn")
         dpg.add_text(f"Model type   : {model_type}  (auto-detected)", parent=self.tag_preview_details)
@@ -747,6 +788,10 @@ class Node(BaseNode):
         dpg.add_text(f"Output shape : {out_shape}", parent=self.tag_preview_details)
         dpg.add_text(
             f"N Mels       : {n_mels if n_mels > 0 else '(dynamic — use UI value)'}",
+            parent=self.tag_preview_details,
+        )
+        dpg.add_text(
+            f"Target SR    : {target_sr_val if target_sr_val > 0 else '(not set — no resampling)'}",
             parent=self.tag_preview_details,
         )
         dpg.add_text(f"Num classes  : {num_cls}", parent=self.tag_preview_details)
@@ -843,14 +888,16 @@ class Node(BaseNode):
         num_classes = meta.get("num_classes", len(class_names))
         model_type = meta.get("model_type", "mel_cnn")
         fixed_time = meta.get("fixed_time", 0)
+        target_sr = int(meta.get("target_sr", 0))
 
         logger.info(
             f"[AudioUpload] Registering '{name}' — "
             f"n_mels={n_mels}, classes={num_classes}, model_type={model_type}, "
-            f"fixed_time={fixed_time}"
+            f"fixed_time={fixed_time}, target_sr={target_sr if target_sr > 0 else 'none'}"
         )
 
-        Node._register_model(name, onnx_path, class_names, n_mels, model_type, fixed_time)
+        Node._register_model(name, onnx_path, class_names, n_mels, model_type, fixed_time,
+                              target_sr=target_sr)
 
         registry_entry = {
             "name": name,
@@ -858,6 +905,7 @@ class Node(BaseNode):
             "class_names": {str(k): v for k, v in class_names.items()},
             "n_mels": n_mels,
             "fixed_time": fixed_time,
+            "target_sr": target_sr,
             "num_classes": num_classes,
             "model_type": model_type,
         }
@@ -999,6 +1047,29 @@ class Node(BaseNode):
         # ---- Performance timer start ----
         if use_pref_counter:
             start_time = time.monotonic()
+
+        # ---- Resample audio to match the model's expected sample rate ----
+        # When the microphone (or other audio source) runs at a different rate from
+        # the SR used during model training, the mel spectrogram will have different
+        # frequency-time characteristics → wrong predictions.  We transparently
+        # resample so the model always receives audio at its expected rate.
+        target_sr_for_model = Node._model_target_sr.get(model_name, 0)
+        if target_sr_for_model > 0 and int(sample_rate) != target_sr_for_model:
+            librosa = _get_librosa()
+            if librosa is not None:
+                y_rs = np.asarray(audio_data, dtype=np.float32)
+                if y_rs.ndim > 1:
+                    y_rs = np.mean(y_rs, axis=-1)
+                audio_data = librosa.resample(
+                    y_rs,
+                    orig_sr=int(sample_rate),
+                    target_sr=target_sr_for_model,
+                )
+                sample_rate = target_sr_for_model
+                logger.debug(
+                    f"[AudioClassification] Resampled audio "
+                    f"{int(sample_rate)} → {target_sr_for_model} Hz for model '{model_name}'"
+                )
 
         # ---- Build mel array ----
         mel_arr = audio_to_mel_array(audio_data, sample_rate, n_mels, max_sec)

@@ -149,7 +149,7 @@ class FactoryNode:
                     width=node.small_window_w - 20,
                     label="Sample Rate",
                     tag=node.tag_node_input02_value_name,
-                    default_value='44100',
+                    default_value='16000',
                 )
 
             # Chunk duration (in seconds)
@@ -284,7 +284,7 @@ class MicrophoneNode(Node):
         # Non-blocking audio stream
         self._audio_stream = None
         self._audio_buffer = queue.Queue(maxsize=10)  # Limit buffer size to prevent memory issues
-        self._current_sample_rate = 44100
+        self._current_sample_rate = 16000
         self._current_channels = 1
         self._current_chunk_duration = 1.0
         self._current_slide_duration = 0.5
@@ -463,7 +463,7 @@ class MicrophoneNode(Node):
         slide_duration = dpg_get_value(input_value06_tag)
 
         audio_data = None
-        sample_rate = 44100  # Default
+        sample_rate = 16000  # Default (matches YAMNet and most audio-classification models)
         
         if not SOUNDDEVICE_AVAILABLE:
             return {"image": None, "json": None, "audio": None}
