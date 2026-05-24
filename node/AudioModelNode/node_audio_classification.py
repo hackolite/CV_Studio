@@ -86,6 +86,18 @@ except Exception:
 
 
 # ---------------------------------------------------------------------------
+# Built-in model catalogue
+# ---------------------------------------------------------------------------
+_BUILTIN_AUDIO_MODELS = [
+    {
+        "name": "YAMNet",
+        "path": os.path.join(_UPLOADS_DIR, "yamnet.onnx"),
+        "class_names": _YAMNET_NAMES,
+    },
+]
+
+
+# ---------------------------------------------------------------------------
 # Audio-specific ONNX inspector
 # ---------------------------------------------------------------------------
 
@@ -610,6 +622,61 @@ class Node(BaseNode):
             cls._register_model(name, path, class_names, n_mels, model_type)
             logger.info(f"[AudioUpload] Loaded model from registry: {name}")
 
+    @classmethod
+    def _ensure_builtin_models(cls):
+        """Seed built-in ONNX models (e.g. yamnet.onnx) into the registry if present on disk.
+
+        Runs once at module load time so that built-in models appear in the combo
+        without requiring the user to upload them manually.  Entries whose ONNX
+        file is not yet on disk are silently skipped (e.g. stripped builds).
+        The model_type is auto-detected via inspect_audio_onnx:
+          4-D input  → "mel_cnn"
+          1-D/2-D    → "waveform"
+        """
+        try:
+            existing = {e.get("name") for e in audio_models_registry.load_registry()}
+        except Exception as exc:
+            logger.warning(f"[AudioBuiltin] Could not read registry: {exc}")
+            return
+
+        for meta in _BUILTIN_AUDIO_MODELS:
+            name = meta["name"]
+            path = meta["path"]
+            if not os.path.isfile(path):
+                logger.debug(f"[AudioBuiltin] Skipping '{name}' — ONNX not found: {path}")
+                continue
+
+            try:
+                info = inspect_audio_onnx(path)
+            except Exception as exc:
+                logger.warning(f"[AudioBuiltin] Could not inspect '{name}': {exc}")
+                continue
+
+            # Prefer labels embedded in the ONNX; fall back to built-in list
+            class_names = info.get("class_names") or meta.get("class_names", {})
+            n_mels = info.get("n_mels", 0)
+            model_type = info.get("model_type", "mel_cnn")
+
+            # Always refresh in-memory registration
+            cls._register_model(name, path, class_names, n_mels, model_type)
+
+            if name in existing:
+                continue  # already persisted — no need to rewrite
+
+            entry = {
+                "name": name,
+                "path": path,
+                "n_mels": n_mels,
+                "num_classes": info.get("num_classes", len(class_names)),
+                "model_type": model_type,
+                "class_names": {str(k): v for k, v in class_names.items()},
+            }
+            try:
+                audio_models_registry.save_entry(entry)
+                logger.info(f"[AudioBuiltin] Registered built-in model: {name} (model_type={model_type})")
+            except Exception as exc:
+                logger.warning(f"[AudioBuiltin] Could not persist '{name}': {exc}")
+
     # ------------------------------------------------------------------
     # Upload callbacks (mirrors ObjectDetection node)
     # ------------------------------------------------------------------
@@ -1065,5 +1132,6 @@ class Node(BaseNode):
 
 # Load registry entries at module-import time so models appear in the combo
 # even before the first node is added.
+Node._ensure_builtin_models()
 Node._load_models_from_registry()
 
