@@ -481,6 +481,7 @@ def main():
     )
 
     logger.info("Starting main event loop")
+    event_loop = None
     if not unuse_async_draw:
         logger.info("Async draw is enabled")
         event_loop = asyncio.get_event_loop()
@@ -506,20 +507,26 @@ def main():
 
     logger.info("Terminating process")
 
+    # Signal async loop to stop before closing nodes so update calls cease
+    node_editor.set_terminate_flag()
+
     logger.info("Closing all nodes")
     node_list = node_editor.get_node_list()
     for node_id_name in node_list:
-        node_id, node_name = node_id_name.split(":")
-        node_instance = node_editor.get_node_instances(node_name)
-        node_instance.close(node_id)
+        node_id, _ = node_id_name.split(":")
+        node_instance = node_editor.get_node_instances(node_id_name)
+        if node_instance is not None:
+            node_instance.close(node_id)
+        else:
+            logger.warning(f"No instance found for node {node_id_name}, skipping close")
 
     logger.info("Releasing all video captures")
     for camera_capture in camera_capture_list:
         camera_capture.release()
 
-    logger.info("Stopping event loop")
-    node_editor.set_terminate_flag()
-    event_loop.stop()
+    if event_loop is not None:
+        logger.info("Stopping event loop")
+        event_loop.stop()
 
     logger.info("Destroying DearPyGui context")
     dpg.destroy_context()
