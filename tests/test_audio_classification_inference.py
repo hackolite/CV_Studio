@@ -364,55 +364,54 @@ class TestJsonOutputStructure(unittest.TestCase):
         top_scores = probs[top_ids]
 
         return {
-            "predictions": [
-                {
-                    "rank": r + 1,
-                    "class_id": int(top_ids[r]),
-                    "class_name": class_names.get(int(top_ids[r]), f"class_{top_ids[r]}"),
-                    "score": float(top_scores[r]),
-                }
+            "scores": [float(top_scores[r]) for r in range(actual_k)],
+            "class_ids": [int(top_ids[r]) for r in range(actual_k)],
+            "class_names": {
+                str(int(top_ids[r])): class_names.get(int(top_ids[r]), f"class_{top_ids[r]}")
                 for r in range(actual_k)
-            ],
+            },
+            "score_th": 0.0,
             "model": "test_model",
             "n_mels": 128,
             "sample_rate": 22050,
         }
 
-    def test_top3_predictions_in_json(self):
-        """Default top-3 must produce exactly 3 prediction entries."""
+    def test_top3_scores_in_json(self):
+        """Default top-3 must produce exactly 3 score entries."""
         logits = np.zeros(50, dtype=np.float32)
         logits[5] = 3.0
         logits[10] = 2.0
         logits[20] = 1.0
         class_names = {i: f"class_{i}" for i in range(50)}
         result = self._build_result_json(logits, class_names, top_k=_DEFAULT_TOP_K)
-        self.assertEqual(len(result["predictions"]), 3,
-                         f"Expected 3 predictions, got {len(result['predictions'])}")
+        self.assertEqual(len(result["scores"]), 3,
+                         f"Expected 3 scores, got {len(result['scores'])}")
+        self.assertEqual(len(result["class_ids"]), 3,
+                         f"Expected 3 class_ids, got {len(result['class_ids'])}")
 
-    def test_predictions_have_class_name_and_score(self):
-        """Each prediction must have 'class_name' (classe) and 'score' (confiance) keys."""
+    def test_scores_are_valid_probabilities(self):
+        """Each score must be a valid probability in [0, 1]."""
         rng = np.random.default_rng(0)
         logits = rng.standard_normal(50).astype(np.float32)
         class_names = {i: f"snd_{i}" for i in range(50)}
         result = self._build_result_json(logits, class_names, top_k=3)
-        for pred in result["predictions"]:
-            self.assertIn("class_name", pred, "Prediction must have 'class_name' key")
-            self.assertIn("score", pred, "Prediction must have 'score' key (confidence)")
-            self.assertIsInstance(pred["class_name"], str)
-            self.assertIsInstance(pred["score"], float)
-            self.assertGreaterEqual(pred["score"], 0.0)
-            self.assertLessEqual(pred["score"], 1.0)
+        for score in result["scores"]:
+            self.assertIsInstance(score, float)
+            self.assertGreaterEqual(score, 0.0)
+            self.assertLessEqual(score, 1.0)
+        for cid in result["class_ids"]:
+            self.assertIsInstance(cid, int)
 
-    def test_predictions_sorted_descending_by_score(self):
-        """Predictions must appear in descending score order (best first)."""
+    def test_scores_sorted_descending(self):
+        """Scores must appear in descending order (best first)."""
         rng = np.random.default_rng(7)
         logits = rng.standard_normal(50).astype(np.float32)
         class_names = {i: f"c{i}" for i in range(50)}
         result = self._build_result_json(logits, class_names, top_k=3)
-        scores = [p["score"] for p in result["predictions"]]
+        scores = result["scores"]
         for i in range(len(scores) - 1):
             self.assertGreaterEqual(scores[i], scores[i + 1],
-                                    "Predictions should be sorted by descending confidence")
+                                    "Scores should be sorted by descending confidence")
 
     def test_top1_label_format_for_json_button(self):
         """The JSON button label should be formatted as 'ClassName (0.XX)'."""
@@ -441,7 +440,7 @@ class TestJsonOutputStructure(unittest.TestCase):
         logits = rng.standard_normal(50).astype(np.float32)
         class_names = {i: f"c{i}" for i in range(50)}
         result = self._build_result_json(logits, class_names, top_k=3)
-        total = sum(p["score"] for p in result["predictions"])
+        total = sum(result["scores"])
         # total ≤ 1.0 since these are top-3 out of 50 probabilities
         self.assertLessEqual(total, 1.0 + 1e-5,
                              "Sum of top-3 scores should not exceed 1.0")
