@@ -508,6 +508,9 @@ class FactoryNode:
         node.tag_node_output_json_name = _tn + ":" + node.TYPE_JSON + ":OutputJson"
         node.tag_node_output_json_value_name = _tn + ":" + node.TYPE_JSON + ":OutputJsonValue"
 
+        node.tag_node_output_audio_name = _tn + ":" + node.TYPE_AUDIO + ":OutputAudio"
+        node.tag_node_output_audio_value_name = _tn + ":" + node.TYPE_AUDIO + ":OutputAudioValue"
+
         node.tag_node_output02_name = _tn + ":" + node.TYPE_TIME_MS + ":Output02"
         node.tag_node_output02_value_name = _tn + ":" + node.TYPE_TIME_MS + ":Output02Value"
 
@@ -729,6 +732,19 @@ class FactoryNode:
                     enabled=False,
                 )
                 dpg.bind_item_theme(json_btn, yellow_out_theme)
+
+            # ---- Audio passthrough output ----
+            with dpg.node_attribute(
+                tag=node.tag_node_output_audio_name,
+                attribute_type=dpg.mvNode_Attr_Output,
+            ):
+                audio_btn = dpg.add_button(
+                    label="Audio",
+                    tag=node.tag_node_output_audio_value_name,
+                    width=small_window_w,
+                    enabled=False,
+                )
+                dpg.bind_item_theme(audio_btn, yellow_out_theme)
 
             # ---- Performance counter ----
             if use_pref_counter:
@@ -1589,7 +1605,7 @@ class Node(BaseNode):
             except Exception:
                 pass
 
-        return {"image": bgr_preview, "json": result_json, "audio": None}
+        return {"image": bgr_preview, "json": result_json, "audio": {"data": audio_data, "sample_rate": sample_rate} if audio_data is not None else None}
 
     # ------------------------------------------------------------------
     # Settings persistence (export / import JSON)
