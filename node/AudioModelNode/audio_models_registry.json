@@ -2,9 +2,14 @@
   {
     "name": "YAMNet",
     "path": "/home/runner/work/CV_Studio/CV_Studio/node/AudioModelNode/models/yamnet.onnx",
-    "n_mels": 0,
-    "fixed_time": 0,
+    "n_mels": 64,
+    "fixed_time": 96,
     "target_sr": 16000,
+    "n_fft": 400,
+    "hop_length": 160,
+    "mel_transpose": true,
+    "mel_norm": "log_offset",
+    "output_activation": "sigmoid",
     "num_classes": 0,
     "model_type": "mel_cnn",
     "class_names": {

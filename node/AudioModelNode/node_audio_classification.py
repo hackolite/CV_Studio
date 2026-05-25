@@ -70,6 +70,34 @@ _DEFAULT_N_FFT = 2048        # must match training (librosa default but made exp
 # The mel-CNN ONNX exported here expects the same 16 kHz pre-processing.
 _YAMNET_TARGET_SR = 16000
 
+# Qualcomm/Google YAMNet mel-spectrogram parameters (from the YAMNet paper):
+#   window = 25 ms → 400 samples at 16 kHz
+#   hop    = 10 ms → 160 samples at 16 kHz
+# These differ from the ESC-50 defaults (n_fft=2048, hop=512) and MUST be
+# used when running this model; using the wrong parameters produces a mel
+# that looks nothing like the training data → completely random predictions.
+_YAMNET_N_FFT = 400
+_YAMNET_HOP_LENGTH = 160
+
+# Qualcomm YAMNet model architecture:
+#   Input shape: [1, 1, 96, 64]  → [batch, channel, TIME=96, MELS=64]
+#   This is TIME-MAJOR format: dim[2] = time frames, dim[3] = mel bins.
+#   The standard ESC-50 convention is MELS-FIRST: dim[2]=n_mels, dim[3]=T.
+# n_mels = 64 (NOT 96) and fixed_time = 96 (NOT 64).
+_YAMNET_N_MELS = 64
+_YAMNET_FIXED_TIME = 96  # number of time frames per inference patch
+
+# Mel normalisation: the Google/Qualcomm YAMNet model was trained on
+# log(mel_spectrogram + 1e-3), NOT on power_to_db values.
+# Feeding dB-scale inputs causes every ReLU in the network to output zero.
+_YAMNET_MEL_NORM = "log_offset"  # "power_to_db" is the ESC-50 default
+
+# The YAMNet model output 'class_scores' contains per-class sigmoid
+# probabilities (independent [0,1] scores, sum ≠ 1.0).
+# Applying a second softmax on top of sigmoid scores spreads probability
+# mass uniformly → predictions look completely random.
+_YAMNET_OUTPUT_ACTIVATION = "sigmoid"  # "softmax" is the ESC-50 default
+
 _N_MELS_OPTIONS = [64, 96, 128, 256]
 _MAX_SEC_OPTIONS = [1, 2, 3, 5, 10]
 _TOP_K_OPTIONS = [1, 3, 5, 10]
@@ -97,9 +125,35 @@ _BUILTIN_AUDIO_MODELS = [
         "name": "YAMNet",
         "path": os.path.join(_UPLOADS_DIR, "yamnet.onnx"),
         "class_names": _YAMNET_NAMES,
-        # YAMNet was originally trained on 16 kHz audio; set target_sr so the
-        # pipeline automatically resamples any incoming audio to this rate.
+        # ----------------------------------------------------------------
+        # YAMNet was originally trained on 16 kHz audio; set target_sr so
+        # the pipeline automatically resamples any incoming audio to this rate.
         "target_sr": _YAMNET_TARGET_SR,
+        # ----------------------------------------------------------------
+        # STFT / mel-filter parameters that MUST match the training recipe.
+        # Using ESC-50 defaults (n_fft=2048, hop=512) would produce a mel
+        # spectrogram that looks nothing like training data → random outputs.
+        "n_fft": _YAMNET_N_FFT,
+        "hop_length": _YAMNET_HOP_LENGTH,
+        # ----------------------------------------------------------------
+        # Architecture: Input [1,1,96,64] is TIME-MAJOR (dim[2]=TIME=96,
+        # dim[3]=MELS=64).  The catalogue overrides the auto-detected values
+        # from inspect_audio_onnx to ensure correctness.
+        "n_mels": _YAMNET_N_MELS,
+        "fixed_time": _YAMNET_FIXED_TIME,
+        # When mel_transpose=True the pipeline computes mel as (n_mels, T),
+        # then transposes the last two dims so the tensor fed to the model
+        # becomes (1, 1, TIME=fixed_time, MELS=n_mels).
+        "mel_transpose": True,
+        # ----------------------------------------------------------------
+        # Mel normalisation: model was trained on log(mel + 1e-3) not dB.
+        # Feeding dB values causes all-zero activations → uniform predictions.
+        "mel_norm": _YAMNET_MEL_NORM,
+        # ----------------------------------------------------------------
+        # Output: per-class sigmoid scores in [0,1] (NOT softmax logits).
+        # Applying softmax on top of sigmoid outputs collapses the confidence
+        # signal and produces near-uniform predictions.
+        "output_activation": _YAMNET_OUTPUT_ACTIVATION,
     },
 ]
 
@@ -195,29 +249,76 @@ def inspect_audio_onnx(model_path: str) -> dict:
     except Exception:
         pass
 
+    # Extract n_fft / hop_length from ONNX metadata if the exporter embedded them
+    n_fft_meta = 0
+    hop_length_meta = 0
+    try:
+        meta = session.get_modelmeta().custom_metadata_map
+        for key in ("n_fft", "fft_size", "window_length"):
+            if key in meta:
+                try:
+                    n_fft_meta = int(meta[key])
+                    break
+                except (ValueError, TypeError):
+                    pass
+        for key in ("hop_length", "hop_size", "stride"):
+            if key in meta:
+                try:
+                    hop_length_meta = int(meta[key])
+                    break
+                except (ValueError, TypeError):
+                    pass
+    except Exception:
+        pass
+
     logger.info(
         f"[AudioClassification] ONNX inspected: input={input_shape}, "
         f"output={output_shape}, n_mels={n_mels}, num_classes={num_classes}, "
         f"embedded_labels={len(class_names)}, model_type={model_type}, "
-        f"target_sr={target_sr if target_sr > 0 else '(not set)'}"
+        f"target_sr={target_sr if target_sr > 0 else '(not set)'}, "
+        f"n_fft={n_fft_meta if n_fft_meta > 0 else '(not set)'}, "
+        f"hop_length={hop_length_meta if hop_length_meta > 0 else '(not set)'}"
     )
 
-    # Detect fixed time axis: dim[3] if 4-D and concrete integer (not a string/symbol)
+    # Detect fixed time axis and n_mels from the input tensor dimensions.
+    #
+    # Two tensor conventions exist in practice:
+    #   1. Mels-first (ESC-50 style): [batch, ch, N_MELS, T]  → dim[2] < dim[3] typically
+    #   2. Time-first (YAMNet style): [batch, ch, TIME, N_MELS] → dim[2] > dim[3] typically
+    #
+    # Heuristic: when dim[3] < dim[2] we assume time-first layout because
+    # common mel-bin counts (64, 96, 128, …) are all less than typical time-frame
+    # counts for a multi-second window.  The catalogue always overrides this for
+    # built-in models, so the heuristic only matters for custom uploads.
     fixed_time = 0
-    if ndim == 4 and isinstance(input_shape[3], int) and input_shape[3] > 0:
-        fixed_time = input_shape[3]
+    mel_transpose = False  # True → model expects (TIME, MELS) layout
+    if ndim == 4:
+        d2 = input_shape[2] if isinstance(input_shape[2], int) else 0
+        d3 = input_shape[3] if isinstance(input_shape[3], int) else 0
+        if d2 > 0 and d3 > 0 and d3 < d2:
+            # Time-first: dim[2] = TIME (fixed_time), dim[3] = N_MELS
+            n_mels = d3
+            fixed_time = d2
+            mel_transpose = True
+        elif d2 > 0 and d3 > 0:
+            # Mels-first: dim[2] = N_MELS, dim[3] = TIME
+            n_mels = d2
+            fixed_time = d3
 
     return {
         "input_name": inp.name,
         "input_shape": input_shape,
         "n_mels": n_mels,
         "fixed_time": fixed_time,
+        "mel_transpose": mel_transpose,
         "output_name": out.name,
         "output_shape": output_shape,
         "num_classes": num_classes,
         "class_names": class_names,
         "model_type": model_type,
         "target_sr": target_sr,
+        "n_fft": n_fft_meta,
+        "hop_length": hop_length_meta,
     }
 
 
@@ -226,16 +327,29 @@ def inspect_audio_onnx(model_path: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def audio_to_mel_array(audio_data: np.ndarray, sample_rate: int,
-                        n_mels: int, max_sec: int) -> np.ndarray:
+                        n_mels: int, max_sec: int,
+                        n_fft: int = None, hop_length: int = None,
+                        mel_norm: str = "power_to_db") -> np.ndarray:
     """Convert 1-D float32 audio → (1, n_mels, T) float32 numpy array.
 
-    Matches the ESC-50 training pre-processing:
+    Matches the ESC-50 training pre-processing by default:
       - pad / crop to `max_sec * sample_rate` samples
       - librosa.feature.melspectrogram → power_to_db
+
+    Pass explicit `n_fft` and `hop_length` to override the defaults when the
+    model was trained with different STFT parameters (e.g. YAMNet uses
+    n_fft=400, hop_length=160 instead of the ESC-50 defaults of 2048/512).
+
+    Pass ``mel_norm="log_offset"`` for models trained on
+    ``log(mel_spectrogram + 1e-3)`` (Google/Qualcomm YAMNet).  The default
+    ``"power_to_db"`` matches the ESC-50 training setup.
     """
     librosa = _get_librosa()
     if librosa is None:
         return None
+
+    _n_fft = n_fft if n_fft and n_fft > 0 else _DEFAULT_N_FFT
+    _hop = hop_length if hop_length and hop_length > 0 else _DEFAULT_HOP_LENGTH
 
     max_len = sample_rate * max_sec
 
@@ -250,11 +364,15 @@ def audio_to_mel_array(audio_data: np.ndarray, sample_rate: int,
 
     mel = librosa.feature.melspectrogram(
         y=y, sr=sample_rate, n_mels=n_mels,
-        n_fft=_DEFAULT_N_FFT, hop_length=_DEFAULT_HOP_LENGTH,
+        n_fft=_n_fft, hop_length=_hop,
     )
-    mel_db = librosa.power_to_db(mel).astype(np.float32)
+    if mel_norm == "log_offset":
+        # Google / Qualcomm YAMNet normalization: log(mel + 1e-3)
+        mel_out = np.log(mel + 1e-3).astype(np.float32)
+    else:
+        mel_out = librosa.power_to_db(mel).astype(np.float32)
 
-    return mel_db[np.newaxis]  # (1, n_mels, T)
+    return mel_out[np.newaxis]  # (1, n_mels, T)
 
 
 # ---------------------------------------------------------------------------
@@ -600,12 +718,24 @@ class Node(BaseNode):
     # -----------------------------------------------------------------------
     # Class-level model registry (shared across all instances)
     # -----------------------------------------------------------------------
-    _model_path_setting: dict = {}   # name → onnx file path (str)
-    _model_class_names: dict = {}    # name → {int: str}
-    _model_n_mels: dict = {}         # name → int (0 = use UI value)
-    _model_type: dict = {}           # name → "mel_cnn" | "waveform"
-    _model_fixed_time: dict = {}     # name → int (0 = dynamic / no constraint)
-    _model_target_sr: dict = {}      # name → int (0 = use incoming SR as-is / no resample)
+    _model_path_setting: dict = {}       # name → onnx file path (str)
+    _model_class_names: dict = {}        # name → {int: str}
+    _model_n_mels: dict = {}             # name → int (0 = use UI value)
+    _model_type: dict = {}               # name → "mel_cnn" | "waveform"
+    _model_fixed_time: dict = {}         # name → int (0 = dynamic / no constraint)
+    _model_target_sr: dict = {}          # name → int (0 = use incoming SR / no resample)
+    _model_n_fft: dict = {}              # name → int (0 = use _DEFAULT_N_FFT)
+    _model_hop_length: dict = {}         # name → int (0 = use _DEFAULT_HOP_LENGTH)
+    # Mel-spectrogram layout: False = (MELS, TIME) standard; True = (TIME, MELS) YAMNet
+    _model_mel_transpose: dict = {}
+    # Mel normalisation applied before inference:
+    #   "power_to_db"  – ESC-50 default (librosa.power_to_db)
+    #   "log_offset"   – Google/Qualcomm YAMNet: log(mel + 1e-3)
+    _model_mel_norm: dict = {}
+    # How to interpret the raw model output:
+    #   "softmax"  – treat as logits, apply softmax (ESC-50 default)
+    #   "sigmoid"  – treat as per-class sigmoid scores, use directly (YAMNet)
+    _model_output_activation: dict = {}
 
     # -----------------------------------------------------------------------
     # Per-instance inference state
@@ -626,13 +756,26 @@ class Node(BaseNode):
     @classmethod
     def _register_model(cls, name: str, path: str, class_names: dict, n_mels: int,
                          model_type: str = "mel_cnn", fixed_time: int = 0,
-                         target_sr: int = 0):
+                         target_sr: int = 0, n_fft: int = 0, hop_length: int = 0,
+                         mel_transpose: bool = False,
+                         mel_norm: str = "power_to_db",
+                         output_activation: str = "softmax"):
         """Add one model to the class-level runtime dictionaries.
 
         Args:
-            target_sr: Expected input sample rate for this model (Hz).
-                       0 means "use whatever SR the audio source provides" (no resampling).
-                       For YAMNet this should be 16000; for ESC-50 models it is 22050.
+            target_sr:          Expected input sample rate (Hz). 0 = no forced resampling.
+            n_fft:              STFT window size used during training. 0 = _DEFAULT_N_FFT.
+                                Qualcomm/Google YAMNet: 400 (25 ms at 16 kHz).
+            hop_length:         STFT hop size used during training. 0 = _DEFAULT_HOP_LENGTH.
+                                Qualcomm/Google YAMNet: 160 (10 ms at 16 kHz).
+            mel_transpose:      When True, the model expects (TIME, MELS) tensor layout
+                                (YAMNet input shape [1,1,96,64] = [batch,ch,TIME,MELS]).
+                                The pipeline transposes mel to match before inference.
+            mel_norm:           Mel normalisation applied before inference.
+                                "power_to_db" (ESC-50 default) or "log_offset" (YAMNet).
+            output_activation:  How to interpret raw model output.
+                                "softmax" = treat as logits and apply softmax (ESC-50 default).
+                                "sigmoid" = per-class sigmoid scores, use directly (YAMNet).
         """
         cls._model_path_setting[name] = path
         cls._model_class_names[name] = class_names
@@ -640,6 +783,11 @@ class Node(BaseNode):
         cls._model_type[name] = model_type
         cls._model_fixed_time[name] = fixed_time
         cls._model_target_sr[name] = target_sr
+        cls._model_n_fft[name] = n_fft
+        cls._model_hop_length[name] = hop_length
+        cls._model_mel_transpose[name] = mel_transpose
+        cls._model_mel_norm[name] = mel_norm
+        cls._model_output_activation[name] = output_activation
 
     @classmethod
     def _load_models_from_registry(cls):
@@ -662,8 +810,15 @@ class Node(BaseNode):
             model_type = entry.get("model_type", "mel_cnn")
             fixed_time = int(entry.get("fixed_time", 0))
             target_sr = int(entry.get("target_sr", 0))
+            n_fft = int(entry.get("n_fft", 0))
+            hop_length = int(entry.get("hop_length", 0))
+            mel_transpose = bool(entry.get("mel_transpose", False))
+            mel_norm = entry.get("mel_norm", "power_to_db")
+            output_activation = entry.get("output_activation", "softmax")
             cls._register_model(name, path, class_names, n_mels, model_type, fixed_time,
-                                 target_sr=target_sr)
+                                 target_sr=target_sr, n_fft=n_fft, hop_length=hop_length,
+                                 mel_transpose=mel_transpose, mel_norm=mel_norm,
+                                 output_activation=output_activation)
             logger.info(f"[AudioUpload] Loaded model from registry: {name}")
 
     @classmethod
@@ -698,19 +853,29 @@ class Node(BaseNode):
 
             # Prefer labels embedded in the ONNX; fall back to built-in list
             class_names = info.get("class_names") or meta.get("class_names", {})
-            n_mels = info.get("n_mels", 0)
-            model_type = info.get("model_type", "mel_cnn")
-            fixed_time = info.get("fixed_time", 0)
-            # target_sr: ONNX metadata has highest priority, then the catalogue
-            # hint, then 0 (= no forced resampling).
-            target_sr = info.get("target_sr", 0) or int(meta.get("target_sr", 0))
+
+            # For built-ins the catalogue is the authoritative source for all
+            # training-related parameters.  inspect_audio_onnx provides sensible
+            # auto-detected values as a fallback for custom uploads only.
+            def _cat(key, fallback=0):
+                """Catalogue hint → ONNX-inspected value → fallback."""
+                return meta.get(key, fallback) or info.get(key, fallback)
+
+            n_mels = int(_cat("n_mels"))
+            model_type = meta.get("model_type") or info.get("model_type", "mel_cnn")
+            fixed_time = int(_cat("fixed_time"))
+            target_sr = int(_cat("target_sr"))
+            n_fft = int(_cat("n_fft"))
+            hop_length = int(_cat("hop_length"))
+            mel_transpose = bool(meta.get("mel_transpose", info.get("mel_transpose", False)))
+            mel_norm = meta.get("mel_norm") or info.get("mel_norm", "power_to_db")
+            output_activation = meta.get("output_activation", "softmax")
 
             # Always refresh in-memory registration
             cls._register_model(name, path, class_names, n_mels, model_type, fixed_time,
-                                 target_sr=target_sr)
-
-            if name in existing:
-                continue  # already persisted — no need to rewrite
+                                 target_sr=target_sr, n_fft=n_fft, hop_length=hop_length,
+                                 mel_transpose=mel_transpose, mel_norm=mel_norm,
+                                 output_activation=output_activation)
 
             entry = {
                 "name": name,
@@ -718,14 +883,26 @@ class Node(BaseNode):
                 "n_mels": n_mels,
                 "fixed_time": fixed_time,
                 "target_sr": target_sr,
+                "n_fft": n_fft,
+                "hop_length": hop_length,
+                "mel_transpose": mel_transpose,
+                "mel_norm": mel_norm,
+                "output_activation": output_activation,
                 "num_classes": info.get("num_classes", len(class_names)),
                 "model_type": model_type,
                 "class_names": {str(k): v for k, v in class_names.items()},
             }
             try:
+                # Always write/update built-in entries so that the registry stays in
+                # sync with the catalogue (e.g. after a code update that changes
+                # n_fft or hop_length for a built-in model).
                 audio_models_registry.save_entry(entry)
-                logger.info(f"[AudioBuiltin] Registered built-in model: {name} "
-                            f"(model_type={model_type}, target_sr={target_sr if target_sr > 0 else 'none'})")
+                if name in existing:
+                    logger.debug(f"[AudioBuiltin] Updated registry entry for built-in: {name}")
+                else:
+                    logger.info(f"[AudioBuiltin] Registered built-in model: {name} "
+                                f"(model_type={model_type}, mel_norm={mel_norm}, "
+                                f"output_activation={output_activation})")
             except Exception as exc:
                 logger.warning(f"[AudioBuiltin] Could not persist '{name}': {exc}")
 
@@ -781,20 +958,45 @@ class Node(BaseNode):
         in_shape = meta.get("input_shape", [])
         out_shape = meta.get("output_shape", [])
         target_sr_val = int(meta.get("target_sr", 0))
+        n_fft_val = int(meta.get("n_fft", 0))
+        hop_length_val = int(meta.get("hop_length", 0))
+        mel_transpose_val = bool(meta.get("mel_transpose", False))
+        mel_norm_val = meta.get("mel_norm", "power_to_db")
+        output_act_val = meta.get("output_activation", "softmax")
 
         model_type = meta.get("model_type", "mel_cnn")
-        dpg.add_text(f"Model type   : {model_type}  (auto-detected)", parent=self.tag_preview_details)
-        dpg.add_text(f"Input shape  : {in_shape}", parent=self.tag_preview_details)
-        dpg.add_text(f"Output shape : {out_shape}", parent=self.tag_preview_details)
+        dpg.add_text(f"Model type        : {model_type}  (auto-detected)", parent=self.tag_preview_details)
+        dpg.add_text(f"Input shape       : {in_shape}", parent=self.tag_preview_details)
+        dpg.add_text(f"Output shape      : {out_shape}", parent=self.tag_preview_details)
         dpg.add_text(
-            f"N Mels       : {n_mels if n_mels > 0 else '(dynamic — use UI value)'}",
+            f"N Mels            : {n_mels if n_mels > 0 else '(dynamic — use UI value)'}",
             parent=self.tag_preview_details,
         )
         dpg.add_text(
-            f"Target SR    : {target_sr_val if target_sr_val > 0 else '(not set — no resampling)'}",
+            f"Target SR         : {target_sr_val if target_sr_val > 0 else '(not set — no resampling)'}",
             parent=self.tag_preview_details,
         )
-        dpg.add_text(f"Num classes  : {num_cls}", parent=self.tag_preview_details)
+        dpg.add_text(
+            f"N FFT             : {n_fft_val if n_fft_val > 0 else f'(not set — default {_DEFAULT_N_FFT})'}",
+            parent=self.tag_preview_details,
+        )
+        dpg.add_text(
+            f"Hop length        : {hop_length_val if hop_length_val > 0 else f'(not set — default {_DEFAULT_HOP_LENGTH})'}",
+            parent=self.tag_preview_details,
+        )
+        dpg.add_text(
+            f"Mel layout        : {'time-first (transpose)' if mel_transpose_val else 'mels-first (standard)'}",
+            parent=self.tag_preview_details,
+        )
+        dpg.add_text(
+            f"Mel norm          : {mel_norm_val}",
+            parent=self.tag_preview_details,
+        )
+        dpg.add_text(
+            f"Output activation : {output_act_val}",
+            parent=self.tag_preview_details,
+        )
+        dpg.add_text(f"Num classes       : {num_cls}", parent=self.tag_preview_details)
 
         if class_names:
             dpg.add_text("Class list:", parent=self.tag_preview_details)
@@ -889,15 +1091,25 @@ class Node(BaseNode):
         model_type = meta.get("model_type", "mel_cnn")
         fixed_time = meta.get("fixed_time", 0)
         target_sr = int(meta.get("target_sr", 0))
+        n_fft = int(meta.get("n_fft", 0))
+        hop_length = int(meta.get("hop_length", 0))
+        mel_transpose = bool(meta.get("mel_transpose", False))
+        mel_norm = meta.get("mel_norm", "power_to_db")
+        output_activation = meta.get("output_activation", "softmax")
 
         logger.info(
             f"[AudioUpload] Registering '{name}' — "
             f"n_mels={n_mels}, classes={num_classes}, model_type={model_type}, "
-            f"fixed_time={fixed_time}, target_sr={target_sr if target_sr > 0 else 'none'}"
+            f"fixed_time={fixed_time}, target_sr={target_sr if target_sr > 0 else 'none'}, "
+            f"n_fft={n_fft if n_fft > 0 else 'default'}, "
+            f"hop_length={hop_length if hop_length > 0 else 'default'}, "
+            f"mel_norm={mel_norm}, output_activation={output_activation}"
         )
 
         Node._register_model(name, onnx_path, class_names, n_mels, model_type, fixed_time,
-                              target_sr=target_sr)
+                              target_sr=target_sr, n_fft=n_fft, hop_length=hop_length,
+                              mel_transpose=mel_transpose, mel_norm=mel_norm,
+                              output_activation=output_activation)
 
         registry_entry = {
             "name": name,
@@ -906,6 +1118,11 @@ class Node(BaseNode):
             "n_mels": n_mels,
             "fixed_time": fixed_time,
             "target_sr": target_sr,
+            "n_fft": n_fft,
+            "hop_length": hop_length,
+            "mel_transpose": mel_transpose,
+            "mel_norm": mel_norm,
+            "output_activation": output_activation,
             "num_classes": num_classes,
             "model_type": model_type,
         }
@@ -1006,6 +1223,13 @@ class Node(BaseNode):
         # Implicit model type — read from registry (no UI combo)
         model_type = Node._model_type.get(model_name, "mel_cnn")
 
+        # Per-model STFT and mel parameters (0/default = use module-level defaults)
+        model_n_fft = Node._model_n_fft.get(model_name, 0)
+        model_hop_length = Node._model_hop_length.get(model_name, 0)
+        model_mel_norm = Node._model_mel_norm.get(model_name, "power_to_db")
+        model_mel_transpose = Node._model_mel_transpose.get(model_name, False)
+        model_output_activation = Node._model_output_activation.get(model_name, "softmax")
+
         # Sync N_Mels UI to match model
         if n_mels_model > 0 and str(n_mels_model) in [str(v) for v in _N_MELS_OPTIONS]:
             try:
@@ -1060,19 +1284,25 @@ class Node(BaseNode):
                 y_rs = np.asarray(audio_data, dtype=np.float32)
                 if y_rs.ndim > 1:
                     y_rs = np.mean(y_rs, axis=-1)
+                orig_sr = int(sample_rate)
                 audio_data = librosa.resample(
                     y_rs,
-                    orig_sr=int(sample_rate),
+                    orig_sr=orig_sr,
                     target_sr=target_sr_for_model,
                 )
                 sample_rate = target_sr_for_model
                 logger.debug(
                     f"[AudioClassification] Resampled audio "
-                    f"{int(sample_rate)} → {target_sr_for_model} Hz for model '{model_name}'"
+                    f"{orig_sr} → {target_sr_for_model} Hz for model '{model_name}'"
                 )
 
         # ---- Build mel array ----
-        mel_arr = audio_to_mel_array(audio_data, sample_rate, n_mels, max_sec)
+        mel_arr = audio_to_mel_array(
+            audio_data, sample_rate, n_mels, max_sec,
+            n_fft=model_n_fft if model_n_fft > 0 else None,
+            hop_length=model_hop_length if model_hop_length > 0 else None,
+            mel_norm=model_mel_norm,
+        )
         if mel_arr is None:
             return {"image": None, "json": None, "audio": None}
 
@@ -1098,23 +1328,55 @@ class Node(BaseNode):
                     logits = outputs[0].flatten().astype(np.float32)
                 else:
                     # mel_cnn pipeline (default)
-                    x = mel_arr[np.newaxis].astype(np.float32)  # (1, 1, n_mels, T)
-                    # Crop or pad the time axis when the model requires a fixed T
                     fixed_t = Node._model_fixed_time.get(model_name, 0)
-                    if fixed_t > 0:
-                        t_actual = x.shape[3]
-                        if t_actual > fixed_t:
-                            x = x[:, :, :, :fixed_t]
-                        elif t_actual < fixed_t:
+                    if model_mel_transpose and fixed_t > 0:
+                        # Time-major format: model expects (batch, ch, TIME, MELS)
+                        # mel_arr shape: (1, n_mels, T) = e.g. (1, 64, 497)
+                        # → take LAST fixed_t frames from T dimension (newest audio)
+                        # → transpose to (TIME, MELS) = (96, 64)
+                        # → add batch/channel dims → (1, 1, 96, 64)
+                        t_actual = mel_arr.shape[2]
+                        if t_actual >= fixed_t:
+                            mel_patch = mel_arr[:, :, -fixed_t:]   # (1, n_mels, fixed_t)
+                        else:
                             pad_w = fixed_t - t_actual
-                            x = np.pad(x, ((0, 0), (0, 0), (0, 0), (0, pad_w)), mode="constant")
+                            mel_patch = np.pad(mel_arr, ((0,0),(0,0),(pad_w, 0)),
+                                               mode="constant")  # pre-pad (silence at start)
+                        # Transpose last two dims: (1, n_mels, fixed_t) → (1, fixed_t, n_mels)
+                        mel_transposed = mel_patch.transpose(0, 2, 1)   # (1, TIME, MELS)
+                        x = mel_transposed[np.newaxis].astype(np.float32)  # (1, 1, TIME, MELS)
+                    else:
+                        # Mels-first format (standard ESC-50 style):
+                        # model expects (batch, ch, MELS, TIME)
+                        x = mel_arr[np.newaxis].astype(np.float32)  # (1, 1, n_mels, T)
+                        # Crop / pad the time axis when the model requires a fixed T.
+                        # Take the LAST fixed_t frames so that inference always uses the
+                        # most recent audio (the rolling buffer appends new samples at the
+                        # end, so the newest frames are at the right of the time axis).
+                        if fixed_t > 0:
+                            t_actual = x.shape[3]
+                            if t_actual > fixed_t:
+                                x = x[:, :, :, -fixed_t:]   # newest audio is at the end
+                            elif t_actual < fixed_t:
+                                pad_w = fixed_t - t_actual
+                                x = np.pad(x, ((0, 0), (0, 0), (0, 0), (0, pad_w)),
+                                           mode="constant")
                     outputs = self._session.run(None, {self._input_name: x})
                     logits = outputs[0].flatten().astype(np.float32)
 
-                # Softmax
-                logits -= logits.max()
-                probs = np.exp(logits)
-                probs /= probs.sum()
+                # ---- Convert raw model output to probability scores ----
+                if model_output_activation == "sigmoid":
+                    # The model's output is already per-class sigmoid probabilities
+                    # (e.g. Qualcomm YAMNet: class_scores in [0,1], sum ≠ 1).
+                    # Using these directly preserves the confidence signal.
+                    # Applying softmax on top of sigmoid outputs is incorrect and
+                    # causes the predictions to look uniformly random.
+                    probs = np.clip(logits, 0.0, 1.0)
+                else:
+                    # Standard logit → softmax (ESC-50 style)
+                    logits -= logits.max()  # numerical stability
+                    probs = np.exp(logits)
+                    probs /= probs.sum()
 
                 num_classes = len(probs)
                 actual_k = min(top_k, num_classes)

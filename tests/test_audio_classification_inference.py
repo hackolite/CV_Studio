@@ -49,6 +49,13 @@ from node.AudioModelNode.node_audio_classification import (  # noqa: E402
     _DEFAULT_HOP_LENGTH,
     _DEFAULT_N_FFT,
     _DEFAULT_TOP_K,
+    _YAMNET_N_FFT,
+    _YAMNET_HOP_LENGTH,
+    _YAMNET_TARGET_SR,
+    _YAMNET_N_MELS,
+    _YAMNET_FIXED_TIME,
+    _YAMNET_MEL_NORM,
+    _YAMNET_OUTPUT_ACTIVATION,
 )
 
 
@@ -252,6 +259,11 @@ class TestFinaliseUpload(unittest.TestCase):
         Node._model_path_setting = {}
         Node._model_class_names = {}
         Node._model_n_mels = {}
+        Node._model_type = {}
+        Node._model_fixed_time = {}
+        Node._model_target_sr = {}
+        Node._model_n_fft = {}
+        Node._model_hop_length = {}
 
     @patch("node.AudioModelNode.node_audio_classification.audio_models_registry.save_entry")
     @patch("node.AudioModelNode.node_audio_classification.dpg")
@@ -434,6 +446,130 @@ class TestJsonOutputStructure(unittest.TestCase):
                              "Sum of top-3 scores should not exceed 1.0")
 
 
+# ---------------------------------------------------------------------------
+# 8. YAMNet mel preprocessing parameters
+# ---------------------------------------------------------------------------
+
+class TestYamnetMelPreprocessing(unittest.TestCase):
+    """Verify that audio_to_mel_array honours per-model n_fft / hop_length
+    overrides and that YAMNet uses the correct Qualcomm/Google parameters."""
+
+    def test_yamnet_constants_are_correct(self):
+        """YAMNet n_fft=400 (25ms) and hop_length=160 (10ms) at 16 kHz."""
+        self.assertEqual(_YAMNET_N_FFT, 400,
+                         "YAMNet n_fft must be 400 (25 ms window at 16 kHz)")
+        self.assertEqual(_YAMNET_HOP_LENGTH, 160,
+                         "YAMNet hop_length must be 160 (10 ms stride at 16 kHz)")
+        self.assertEqual(_YAMNET_TARGET_SR, 16000,
+                         "YAMNet target sample rate must be 16000 Hz")
+        # Architecture: input [1,1,96,64] → TIME-major (dim[2]=TIME, dim[3]=MELS)
+        self.assertEqual(_YAMNET_N_MELS, 64,
+                         "YAMNet n_mels must be 64 (not 96)")
+        self.assertEqual(_YAMNET_FIXED_TIME, 96,
+                         "YAMNet fixed_time must be 96 time frames per patch")
+        # Mel normalisation: Google/Qualcomm YAMNet uses log(mel+0.001)
+        self.assertEqual(_YAMNET_MEL_NORM, "log_offset",
+                         "YAMNet mel_norm must be 'log_offset'")
+        # Output: per-class sigmoid scores, not softmax logits
+        self.assertEqual(_YAMNET_OUTPUT_ACTIVATION, "sigmoid",
+                         "YAMNet output_activation must be 'sigmoid'")
+
+    def test_custom_n_fft_changes_shape(self):
+        """Passing n_fft overrides the default and is reflected in the output."""
+        sr = 16000
+        audio = _make_sine_audio(sr=sr, duration=1.0)
+        mel_default = audio_to_mel_array(audio, sr, 96, 1)
+        mel_yamnet = audio_to_mel_array(
+            audio, sr, 96, 1,
+            n_fft=_YAMNET_N_FFT, hop_length=_YAMNET_HOP_LENGTH,
+        )
+        self.assertIsNotNone(mel_default)
+        self.assertIsNotNone(mel_yamnet)
+        # Different hop produces different number of time frames
+        self.assertNotEqual(
+            mel_default.shape[2], mel_yamnet.shape[2],
+            "YAMNet hop_length=160 must produce more frames than ESC-50 hop=512",
+        )
+
+    def test_yamnet_produces_more_frames_than_esc50(self):
+        """hop_length=160 yields ~3.2x more frames than hop_length=512."""
+        sr = 16000
+        audio = _make_sine_audio(sr=sr, duration=5.0)
+        mel_esc50 = audio_to_mel_array(audio, sr, 96, 5)
+        mel_yamnet = audio_to_mel_array(
+            audio, sr, 96, 5,
+            n_fft=_YAMNET_N_FFT, hop_length=_YAMNET_HOP_LENGTH,
+        )
+        self.assertGreater(mel_yamnet.shape[2], mel_esc50.shape[2],
+                           "YAMNet should produce more time frames due to smaller hop")
+
+    def test_yamnet_mel_shape_at_16khz(self):
+        """At 16 kHz, 5 s, hop=160, n_fft=400: T = 1 + (16000*5)//160 = 501."""
+        sr = _YAMNET_TARGET_SR
+        audio = _make_sine_audio(sr=sr, duration=5.0)
+        mel = audio_to_mel_array(
+            audio, sr, 96, 5,
+            n_fft=_YAMNET_N_FFT, hop_length=_YAMNET_HOP_LENGTH,
+        )
+        self.assertIsNotNone(mel)
+        expected_T = 1 + (sr * 5) // _YAMNET_HOP_LENGTH
+        self.assertEqual(mel.shape[2], expected_T,
+                         f"Expected T={expected_T}, got {mel.shape[2]}")
+
+    def test_none_n_fft_falls_back_to_default(self):
+        """Passing n_fft=None must use _DEFAULT_N_FFT unchanged."""
+        sr = _DEFAULT_SR
+        audio = _make_sine_audio(sr=sr)
+        mel_none = audio_to_mel_array(audio, sr, _DEFAULT_N_MELS, _DEFAULT_MAX_SEC, n_fft=None)
+        mel_explicit = audio_to_mel_array(audio, sr, _DEFAULT_N_MELS, _DEFAULT_MAX_SEC,
+                                          n_fft=_DEFAULT_N_FFT)
+        self.assertIsNotNone(mel_none)
+        np.testing.assert_array_equal(mel_none, mel_explicit,
+                                      "n_fft=None must behave the same as n_fft=_DEFAULT_N_FFT")
+
+    def test_zero_n_fft_falls_back_to_default(self):
+        """Passing n_fft=0 must use _DEFAULT_N_FFT unchanged."""
+        sr = _DEFAULT_SR
+        audio = _make_sine_audio(sr=sr)
+        mel_zero = audio_to_mel_array(audio, sr, _DEFAULT_N_MELS, _DEFAULT_MAX_SEC, n_fft=0)
+        mel_explicit = audio_to_mel_array(audio, sr, _DEFAULT_N_MELS, _DEFAULT_MAX_SEC,
+                                          n_fft=_DEFAULT_N_FFT)
+        self.assertIsNotNone(mel_zero)
+        np.testing.assert_array_equal(mel_zero, mel_explicit,
+                                      "n_fft=0 must behave the same as n_fft=_DEFAULT_N_FFT")
+
+    def test_log_offset_norm_produces_different_values_than_power_to_db(self):
+        """mel_norm='log_offset' must produce different values from 'power_to_db'."""
+        sr = _YAMNET_TARGET_SR
+        audio = _make_sine_audio(sr=sr, duration=1.0)
+        mel_pdb = audio_to_mel_array(audio, sr, _YAMNET_N_MELS, 1,
+                                     n_fft=_YAMNET_N_FFT, hop_length=_YAMNET_HOP_LENGTH,
+                                     mel_norm="power_to_db")
+        mel_log = audio_to_mel_array(audio, sr, _YAMNET_N_MELS, 1,
+                                     n_fft=_YAMNET_N_FFT, hop_length=_YAMNET_HOP_LENGTH,
+                                     mel_norm="log_offset")
+        self.assertIsNotNone(mel_pdb)
+        self.assertIsNotNone(mel_log)
+        # log_offset values should be in [-7, 3] (natural log scale)
+        # power_to_db values should be in [-80, 0] (dB scale)
+        self.assertLess(mel_pdb.min(), -20.0,
+                        "power_to_db should produce strongly negative dB values")
+        self.assertGreater(mel_log.min(), -8.0,
+                           "log_offset min should be ~log(0.001)=-6.9, not deeply negative")
+
+    def test_log_offset_range_is_bounded(self):
+        """log(mel + 0.001) output should be in [-6.9, ~3] range, not [-80, 0] dB."""
+        sr = _YAMNET_TARGET_SR
+        audio = _make_sine_audio(sr=sr, duration=1.0)
+        mel_log = audio_to_mel_array(audio, sr, _YAMNET_N_MELS, 1,
+                                     n_fft=_YAMNET_N_FFT, hop_length=_YAMNET_HOP_LENGTH,
+                                     mel_norm="log_offset")
+        self.assertIsNotNone(mel_log)
+        self.assertGreaterEqual(mel_log.min(), -7.0,
+                                "log_offset min should be bounded by log(0.001) ≈ -6.9")
+        # max could be positive if mel energy > 1.0 (e.g. loud signal)
+        self.assertLess(mel_log.max(), 30.0, "log_offset max should be reasonable")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
-
