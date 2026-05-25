@@ -50,6 +50,7 @@ from node.AudioModelNode.node_audio_classification import (  # noqa: E402
     _DEFAULT_N_FFT,
     _DEFAULT_TOP_K,
     _YAMNET_N_FFT,
+    _YAMNET_WIN_LENGTH,
     _YAMNET_HOP_LENGTH,
     _YAMNET_TARGET_SR,
     _YAMNET_N_MELS,
@@ -455,9 +456,11 @@ class TestYamnetMelPreprocessing(unittest.TestCase):
     overrides and that YAMNet uses the correct Qualcomm/Google parameters."""
 
     def test_yamnet_constants_are_correct(self):
-        """YAMNet n_fft=400 (25ms) and hop_length=160 (10ms) at 16 kHz."""
-        self.assertEqual(_YAMNET_N_FFT, 400,
-                         "YAMNet n_fft must be 400 (25 ms window at 16 kHz)")
+        """YAMNet win_length=400 (25ms window), n_fft=512 (zero-padded FFT), hop_length=160 (10ms) at 16 kHz."""
+        self.assertEqual(_YAMNET_WIN_LENGTH, 400,
+                         "YAMNet win_length must be 400 (25 ms window at 16 kHz)")
+        self.assertEqual(_YAMNET_N_FFT, 512,
+                         "YAMNet n_fft must be 512 (zero-padded FFT, next power-of-two >= 400)")
         self.assertEqual(_YAMNET_HOP_LENGTH, 160,
                          "YAMNet hop_length must be 160 (10 ms stride at 16 kHz)")
         self.assertEqual(_YAMNET_TARGET_SR, 16000,
