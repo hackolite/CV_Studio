@@ -245,7 +245,7 @@ class FactoryNode:
                     tag=node.tag_node_input06_value_name,
                     callback=None,
                     user_data=node.tag_node_name,
-                    default_value=True,
+                    default_value=False,
                 )
 
             if use_pref_counter:
@@ -622,7 +622,7 @@ class VideoNode(Node):
 
         frames_only_mode = dpg_get_value(tag_node_input06_value_name)
         if frames_only_mode is None:
-            frames_only_mode = True
+            frames_only_mode = False
 
         preprocessing_status = self._preprocessing_status.get(node_id, None)
         movie_path = self._movie_filepath.get(node_id, None)
@@ -813,7 +813,7 @@ class VideoNode(Node):
         start_time = time.monotonic()
         frames_only_mode = dpg_get_value(tag_node_input06_value_name)
         if frames_only_mode is None:
-            frames_only_mode = True
+            frames_only_mode = False
 
         frame = None
         # Only read frames if video is playing
@@ -980,7 +980,7 @@ class VideoNode(Node):
         playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
         frames_only_mode = dpg_get_value(tag_node_input06_value_name)
         if frames_only_mode is None:
-            frames_only_mode = True
+            frames_only_mode = False
 
         setting_dict = {}
         setting_dict["ver"] = self._ver
@@ -1015,7 +1015,7 @@ class VideoNode(Node):
         skip_rate = int(setting_dict[tag_node_input03_value_name])
         target_fps = int(setting_dict.get(tag_node_input04_value_name, 24))
         playback_speed = float(setting_dict.get(tag_node_input05_value_name, 1.0))
-        frames_only_mode = setting_dict.get(tag_node_input06_value_name, True)
+        frames_only_mode = setting_dict.get(tag_node_input06_value_name, False)
 
         dpg_set_value(tag_node_input02_value_name, loop_flag)
         dpg_set_value(tag_node_input03_value_name, skip_rate)
@@ -1073,7 +1073,7 @@ class VideoNode(Node):
 
             frames_only_mode = dpg_get_value(tag_node_input06_value_name)
             if frames_only_mode is None:
-                frames_only_mode = True
+                frames_only_mode = False
 
             # Reset UI to a clean "ready" state
             with _dpg_lock:
