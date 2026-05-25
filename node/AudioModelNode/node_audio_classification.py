@@ -756,7 +756,7 @@ class FactoryNode:
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 upload_btn = dpg.add_button(
-                    label=u"📂 Add Model",
+                    label=u"Add Model",
                     tag=node.tag_upload_btn,
                     width=small_window_w,
                     callback=_on_add_model_clicked,
@@ -1454,6 +1454,11 @@ class Node(BaseNode):
                 silence_label = "Silence"
                 bgr_preview = overlay_predictions(bgr_preview, [(silence_label, 0.0)])
                 result_json = {
+                    "bboxes": [],
+                    "scores": [0.0],
+                    "class_ids": [-1],
+                    "class_names": {"-1": silence_label},
+                    "score_th": 0.0,
                     "predictions": [{"rank": 1, "class_id": -1,
                                      "class_name": silence_label, "score": 0.0}],
                     "model": model_name,
@@ -1546,6 +1551,14 @@ class Node(BaseNode):
                 bgr_preview = overlay_predictions(bgr_preview, predictions)
 
                 result_json = {
+                    "bboxes": [],
+                    "scores": [float(top_scores[r]) for r in range(actual_k)],
+                    "class_ids": [int(top_ids[r]) for r in range(actual_k)],
+                    "class_names": {
+                        str(int(top_ids[r])): class_names.get(int(top_ids[r]), f"class_{top_ids[r]}")
+                        for r in range(actual_k)
+                    },
+                    "score_th": 0.0,
                     "predictions": [
                         {
                             "rank": r + 1,

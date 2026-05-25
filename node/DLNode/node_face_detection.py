@@ -464,7 +464,7 @@ class Node(Node):  # noqa: F811
                         dpg.add_theme_color(dpg.mvThemeCol_Text, (0, 0, 0, 255))
 
                 add_model_btn = dpg.add_button(
-                    label=u"📂 Add Model",
+                    label=u"Add Model",
                     tag=self.tag_upload_btn,
                     width=small_window_w,
                     callback=_on_upload_clicked,
