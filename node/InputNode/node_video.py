@@ -110,6 +110,8 @@ class FactoryNode:
             node.tag_node_name + ":" + node.TYPE_JSON + ":OutputJsonValue"
         )
 
+        node.tag_node_progress_bar_name = node.tag_node_name + ":ProgressBar"
+
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict["input_window_width"]
         small_window_h = node._opencv_setting_dict["input_window_height"]
@@ -269,6 +271,13 @@ class FactoryNode:
                     user_data=node.tag_node_name,
                 )
                 dpg.bind_item_theme(btn_start, yellow_button_theme)
+                dpg.add_progress_bar(
+                    tag=node.tag_node_progress_bar_name,
+                    default_value=0.0,
+                    width=node._small_window_w,
+                    show=False,
+                    overlay="",
+                )
 
             # Outputs audio, json, float, elapsed time as disabled yellow buttons
             def add_yellow_disabled_button(label, tag):
@@ -320,6 +329,7 @@ class VideoNode(Node):
     _loop_elapsed_time = {}  # Track cumulative time across loops for continuous timestamps
     _preprocessing_status = {}  # Track preprocessing status: 'loading', 'done', 'error', or None
     _preprocessing_threads = {}  # Track preprocessing threads for cleanup
+    _preprocessing_progress = {}  # Track chunking progress 0.0–1.0 per node
     _is_playing = {}  # Track whether video is playing or paused
 
     def __init__(self):
@@ -339,7 +349,7 @@ class VideoNode(Node):
         self._chunk_metadata = {}  # Metadata for chunk-to-frame mapping
         self._chunk_temp_dirs = {}  # Track temporary directories for cleanup
 
-    def _preprocess_video(self, node_id, movie_path, chunk_duration=5.0, step_duration=1.0):
+    def _preprocess_video(self, node_id, movie_path, chunk_duration=5.0, step_duration=1.0, progress_callback=None):
         """
         Pre-process video by extracting and chunking audio as WAV files.
         
@@ -354,12 +364,19 @@ class VideoNode(Node):
             movie_path: Path to video file
             chunk_duration: Duration of each audio chunk in seconds (default: 5.0)
             step_duration: Step size between chunks in seconds (default: 1.0)
+            progress_callback: Optional callable(float) receiving 0.0–1.0 progress values
         """
+        def _report(p):
+            self._preprocessing_progress[node_id] = p
+            if progress_callback:
+                progress_callback(p)
+
         if not movie_path or not os.path.exists(movie_path):
             print(f"Video file not found: {movie_path}")
             return
         
         print(f"🎬 Pre-processing video: {movie_path}")
+        _report(0.0)
         
         # Clean up any previous chunks for this node
         self._cleanup_audio_chunks(node_id)
@@ -375,6 +392,7 @@ class VideoNode(Node):
             frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             cap.release()
             print(f"✅ Video metadata extracted (FPS: {fps}, Frames: {frame_count})")
+            _report(0.10)
             
             # Step 2: Extract audio using ffmpeg directly to WAV (faster than librosa)
             print("🎵 Extracting audio with ffmpeg to WAV format...")
@@ -413,6 +431,8 @@ class VideoNode(Node):
                 if os.path.exists(tmp_audio_path):
                     os.unlink(tmp_audio_path)
             
+            _report(0.35)
+
             # Step 3: Create temporary directory for audio chunks
             chunk_temp_dir = tempfile.mkdtemp(prefix=f"cv_studio_audio_{node_id}_")
             self._chunk_temp_dirs[node_id] = chunk_temp_dir
@@ -423,6 +443,12 @@ class VideoNode(Node):
                 print(f"✂️ Chunking audio and saving as WAV files (chunk: {chunk_duration}s, step: {step_duration}s)...")
                 chunk_samples = int(chunk_duration * sr)
                 step_samples = int(step_duration * sr)
+
+                # Pre-calculate estimated chunk count for progress reporting
+                total_samples = len(y)
+                estimated_chunks = max(1, (total_samples - chunk_samples) // step_samples + 1)
+                if total_samples % step_samples > 0:
+                    estimated_chunks += 1
                 
                 chunk_paths = []
                 chunk_start_times = []
@@ -441,6 +467,10 @@ class VideoNode(Node):
                     chunk_start_times.append(start / sr)
                     chunk_idx += 1
                     start += step_samples
+
+                    # Report progress: 35%–95% during chunking
+                    chunk_progress = 0.35 + 0.60 * (chunk_idx / estimated_chunks)
+                    _report(min(chunk_progress, 0.95))
                 
                 # Handle remaining audio: pad to chunk_duration if necessary
                 remaining_samples = len(y) - start
@@ -484,7 +514,8 @@ class VideoNode(Node):
                     'num_frames': frame_count,
                     'num_chunks': len(chunk_paths),
                 }
-                
+
+                _report(1.0)
                 print(f"🎉 Pre-processing complete!")
                 print(f"   Frames: {frame_count}, Chunks: {len(chunk_paths)}, FPS: {fps}")
                 print(f"   All chunks saved as WAV files for efficient spectrogram conversion")
@@ -577,22 +608,116 @@ class VideoNode(Node):
 
 
     def _button(self, sender, app_data, user_data):
-        """Toggle play/pause state and update button label"""
+        """Handle Start/Stop button press.
+
+        When the video node is NOT in on-the-fly mode and chunking has not yet
+        been triggered, pressing Start begins the chunking process and shows a
+        progress bar.  Once chunking completes playback starts automatically.
+        In all other states the button toggles play/pause as before.
+        """
         tag_node_name = user_data
         node_id = tag_node_name.split(':')[0]
+        tag_node_input06_value_name = tag_node_name + ":" + self.TYPE_TEXT + ":Input06Value"
+
+        on_the_fly_mode = dpg_get_value(tag_node_input06_value_name)
+        if on_the_fly_mode is None:
+            on_the_fly_mode = True
+
+        preprocessing_status = self._preprocessing_status.get(node_id, None)
+        movie_path = self._movie_filepath.get(node_id, None)
+
+        # Non-on-the-fly: trigger chunking on first Start press
+        if not on_the_fly_mode and preprocessing_status is None and movie_path:
+            self._trigger_preprocessing(node_id, tag_node_name, movie_path)
+            return
+
+        # Ignore presses while chunking is in progress
+        if preprocessing_status == 'loading':
+            return
+
+        # Normal play/pause toggle
         tag_node_button_value_name = tag_node_name + ":" + self.TYPE_TEXT + ":ButtonValue"
-        
-        # Toggle playing state
         current_state = self._is_playing.get(node_id, False)
         self._is_playing[node_id] = not current_state
-        
-        # Update button label
+
         with _dpg_lock:
             if dpg.does_item_exist(tag_node_button_value_name):
                 new_label = self._stop_label if self._is_playing[node_id] else self._start_label
                 dpg.configure_item(tag_node_button_value_name, label=new_label)
-        
+
         print(f"Button clicked for {user_data}, playing: {self._is_playing[node_id]}")
+
+    def _trigger_preprocessing(self, node_id, tag_node_name, movie_path):
+        """Start the audio chunking pipeline and show a progress bar.
+
+        Called when the user presses Start on a non-on-the-fly video node
+        before chunking has started.  The progress bar is updated from the
+        background thread; when complete, playback starts automatically.
+        """
+        tag_node_button_value_name = tag_node_name + ":" + self.TYPE_TEXT + ":ButtonValue"
+        tag_node_progress_bar_name = tag_node_name + ":ProgressBar"
+
+        self._preprocessing_status[node_id] = 'loading'
+        self._preprocessing_progress[node_id] = 0.0
+
+        with _dpg_lock:
+            if dpg.does_item_exist(tag_node_button_value_name):
+                dpg.configure_item(tag_node_button_value_name, label=self._loading_label)
+            if dpg.does_item_exist(tag_node_progress_bar_name):
+                dpg.configure_item(
+                    tag_node_progress_bar_name,
+                    show=True,
+                    default_value=0.0,
+                    overlay="0 %",
+                )
+
+        def progress_callback(p):
+            self._preprocessing_progress[node_id] = p
+            with _dpg_lock:
+                if dpg.does_item_exist(tag_node_progress_bar_name):
+                    dpg.set_value(tag_node_progress_bar_name, p)
+                    dpg.configure_item(
+                        tag_node_progress_bar_name,
+                        overlay=f"{int(p * 100)} %",
+                    )
+
+        def preprocess_thread():
+            try:
+                print(f"🎬 Starting video preprocessing for node {node_id}...")
+                self._preprocess_video(node_id, movie_path, progress_callback=progress_callback)
+                print(f"✅ Video preprocessing complete for node {node_id}")
+                self._preprocessing_status[node_id] = 'done'
+
+                # Auto-start playback
+                self._is_playing[node_id] = True
+                with _dpg_lock:
+                    if dpg.does_item_exist(tag_node_button_value_name):
+                        dpg.configure_item(tag_node_button_value_name, label=self._stop_label)
+                    if dpg.does_item_exist(tag_node_progress_bar_name):
+                        dpg.configure_item(tag_node_progress_bar_name, show=False)
+            except Exception as e:
+                print(f"❌ Error during video preprocessing for node {node_id}: {e}")
+                import traceback
+                traceback.print_exc()
+                self._preprocessing_status[node_id] = 'error'
+                with _dpg_lock:
+                    if dpg.does_item_exist(tag_node_button_value_name):
+                        dpg.configure_item(tag_node_button_value_name, label=self._start_label)
+                    if dpg.does_item_exist(tag_node_progress_bar_name):
+                        dpg.configure_item(tag_node_progress_bar_name, show=False)
+            finally:
+                if node_id in self._preprocessing_threads:
+                    del self._preprocessing_threads[node_id]
+
+        thread = threading.Thread(
+            target=preprocess_thread,
+            daemon=True,
+            name=f"VideoPreprocess-{node_id}",
+        )
+        self._preprocessing_threads[node_id] = thread
+        thread.start()
+        print(f"▶️  Chunking started for node {node_id} – progress bar visible")
+
 
     def update(
         self,
@@ -888,28 +1013,36 @@ class VideoNode(Node):
     def _callback_file_select(self, sender, data):
         """
         Callback when a video file is selected.
-        Runs preprocessing in a background thread to avoid blocking the UI.
-        Only preprocesses if "On-the-fly (fast mode)" is unchecked (to extract audio).
-        Displays the first frame as a preview immediately after selection.
+        - Always displays the first frame as a preview.
+        - On-the-fly mode: silently starts background preprocessing so the
+          AUDIO output is populated as soon as it is ready.
+        - Normal mode (on-the-fly OFF): just stores the path and resets the
+          chunking state.  Preprocessing is deferred until the user presses
+          Start (handled by _button → _trigger_preprocessing).
         """
         if data["file_name"] != ".":
             node_id = sender.split(":")[1]
             file_path = data["file_path_name"]
+
+            # Cancel any in-progress preprocessing for this node
+            self._preprocessing_status[node_id] = None
+            self._preprocessing_progress[node_id] = 0.0
+            self._is_playing[node_id] = False
             self._movie_filepath[node_id] = file_path
-            
-            # Check if we should preprocess (when "On-the-fly" is unchecked)
+
             tag_node_name = str(node_id) + ":" + self.node_tag
             tag_node_input06_value_name = tag_node_name + ":" + self.TYPE_TEXT + ":Input06Value"
             tag_node_output_image = tag_node_name + ":" + self.TYPE_IMAGE + ":Output01Value"
-            
+            tag_node_button_value_name = tag_node_name + ":" + self.TYPE_TEXT + ":ButtonValue"
+            tag_node_progress_bar_name = tag_node_name + ":ProgressBar"
+
             # Load and display first frame as preview
             try:
                 preview_cap = cv2.VideoCapture(file_path)
                 ret, first_frame = preview_cap.read()
                 preview_cap.release()
-                
+
                 if ret and first_frame is not None:
-                    # Convert first frame to texture and display it
                     texture = self.convert_cv_to_dpg(
                         first_frame,
                         self._small_window_w,
@@ -923,58 +1056,41 @@ class VideoNode(Node):
                     print(f"⚠️ Could not read first frame from video: {file_path}")
             except Exception as e:
                 print(f"⚠️ Error loading preview frame: {e}")
-            
-            # Get the checkbox value - if checked (on-the-fly mode), video plays immediately
+
             on_the_fly_mode = dpg_get_value(tag_node_input06_value_name)
             if on_the_fly_mode is None:
                 on_the_fly_mode = True
 
-            tag_node_button_value_name = tag_node_name + ":" + self.TYPE_TEXT + ":ButtonValue"
+            # Reset UI to a clean "ready" state
+            with _dpg_lock:
+                if dpg.does_item_exist(tag_node_button_value_name):
+                    dpg.configure_item(tag_node_button_value_name, label=self._start_label)
+                if dpg.does_item_exist(tag_node_progress_bar_name):
+                    dpg.configure_item(tag_node_progress_bar_name, show=False)
 
-            # In normal mode, block video playback until preprocessing finishes.
-            # In on-the-fly mode, video starts immediately but audio preprocessing
-            # still runs in the background so the AUDIO output becomes available.
-            if not on_the_fly_mode:
-                self._preprocessing_status[node_id] = 'loading'
-                with _dpg_lock:
-                    if dpg.does_item_exist(tag_node_button_value_name):
-                        dpg.configure_item(tag_node_button_value_name, label=self._loading_label)
-            else:
-                # Video is allowed to play right away
+            if on_the_fly_mode:
+                # On-the-fly: preprocessing runs silently in the background
                 self._preprocessing_status[node_id] = 'done'
 
-            def preprocess_thread():
-                try:
-                    print(f"🎬 Starting video preprocessing for node {node_id} in background thread...")
-                    self._preprocess_video(node_id, file_path)
-                    print(f"✅ Video preprocessing complete for node {node_id}")
-                    self._preprocessing_status[node_id] = 'done'
+                def preprocess_bg():
+                    try:
+                        self._preprocess_video(node_id, file_path)
+                        self._preprocessing_status[node_id] = 'done'
+                    except Exception as e:
+                        print(f"❌ Background preprocessing failed for node {node_id}: {e}")
+                    finally:
+                        if node_id in self._preprocessing_threads:
+                            del self._preprocessing_threads[node_id]
 
-                    # Restore button label only when we were in blocking (non-on-the-fly) mode
-                    if not on_the_fly_mode:
-                        with _dpg_lock:
-                            if dpg.does_item_exist(tag_node_button_value_name):
-                                dpg.configure_item(tag_node_button_value_name, label=self._start_label)
-                except Exception as e:
-                    print(f"❌ Error during video preprocessing for node {node_id}: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    self._preprocessing_status[node_id] = 'error'
+                thread = threading.Thread(
+                    target=preprocess_bg,
+                    daemon=True,
+                    name=f"VideoPreprocess-{node_id}",
+                )
+                self._preprocessing_threads[node_id] = thread
+                thread.start()
+                print(f"📂 Video selected (on-the-fly): {file_path} – background preprocessing started")
+            else:
+                # Normal mode: wait for the user to press Start
+                print(f"📂 Video selected (normal mode): {file_path} – press Start to begin chunking")
 
-                    if not on_the_fly_mode:
-                        with _dpg_lock:
-                            if dpg.does_item_exist(tag_node_button_value_name):
-                                dpg.configure_item(tag_node_button_value_name, label=self._start_label)
-                finally:
-                    if node_id in self._preprocessing_threads:
-                        del self._preprocessing_threads[node_id]
-
-            # Always start preprocessing in the background.
-            # In on-the-fly mode this is a silent background job that populates
-            # _audio_chunk_paths once done, enabling the AUDIO output.
-            thread = threading.Thread(target=preprocess_thread, daemon=True, name=f"VideoPreprocess-{node_id}")
-            self._preprocessing_threads[node_id] = thread
-            thread.start()
-            print(f"📂 Video file selected: {file_path}")
-            if on_the_fly_mode:
-                print(f"⚡ On-the-fly mode: video plays immediately; audio preprocessing running in background")
