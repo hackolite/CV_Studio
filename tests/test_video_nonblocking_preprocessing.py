@@ -62,7 +62,7 @@ def test_video_node_has_preprocessing_status():
 
 
 def test_callback_file_select_uses_threading():
-    """Test that _callback_file_select runs preprocessing in a background thread"""
+    """Test that _trigger_preprocessing runs preprocessing in a background thread."""
     video_node_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'node', 'InputNode', 'node_video.py'
@@ -73,18 +73,17 @@ def test_callback_file_select_uses_threading():
     with open(video_node_path, 'r') as f:
         content = f.read()
     
-    # Find _callback_file_select method
-    assert 'def _callback_file_select(self, sender, data):' in content
+    # Find _trigger_preprocessing method (background threading moved here)
+    assert 'def _trigger_preprocessing(self, node_id, tag_node_name, movie_path):' in content
     
-    # Check that the method creates a thread
-    method_start = content.find('def _callback_file_select(self, sender, data):')
+    method_start = content.find('def _trigger_preprocessing(self, node_id, tag_node_name, movie_path):')
     method_end = content.find('\n    def ', method_start + 1)
     if method_end == -1:
         method_end = len(content)
     method_section = content[method_start:method_end]
     
     # Verify it creates a thread
-    assert 'threading.Thread(' in method_section, "_callback_file_select should create a Thread"
+    assert 'threading.Thread(' in method_section, "_trigger_preprocessing should create a Thread"
     assert 'daemon=True' in method_section, "Thread should be daemon to not block shutdown"
     assert 'thread.start()' in method_section, "Thread should be started"
     
@@ -95,7 +94,7 @@ def test_callback_file_select_uses_threading():
     # Verify it uses thread-safe DPG operations
     assert 'with _dpg_lock:' in method_section, "Should use _dpg_lock for thread-safe DPG operations"
     
-    print("✓ _callback_file_select uses threading for non-blocking preprocessing")
+    print("✓ _trigger_preprocessing uses threading for non-blocking preprocessing")
 
 
 def test_update_checks_preprocessing_status():

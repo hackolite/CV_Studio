@@ -241,7 +241,7 @@ class FactoryNode:
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_checkbox(
-                    label="On-the-fly (fast mode)",
+                    label="Frames only",
                     tag=node.tag_node_input06_value_name,
                     callback=None,
                     user_data=node.tag_node_name,
@@ -610,24 +610,25 @@ class VideoNode(Node):
     def _button(self, sender, app_data, user_data):
         """Handle Start/Stop button press.
 
-        When the video node is NOT in on-the-fly mode and chunking has not yet
-        been triggered, pressing Start begins the chunking process and shows a
-        progress bar.  Once chunking completes playback starts automatically.
-        In all other states the button toggles play/pause as before.
+        When the video node is in full-pipeline mode (Frames only = OFF) and
+        chunking has not yet been triggered, pressing Start begins the chunking
+        process and shows a progress bar.  Once chunking completes playback
+        starts automatically.  In all other states the button toggles
+        play/pause as before.
         """
         tag_node_name = user_data
         node_id = tag_node_name.split(':')[0]
         tag_node_input06_value_name = tag_node_name + ":" + self.TYPE_TEXT + ":Input06Value"
 
-        on_the_fly_mode = dpg_get_value(tag_node_input06_value_name)
-        if on_the_fly_mode is None:
-            on_the_fly_mode = True
+        frames_only_mode = dpg_get_value(tag_node_input06_value_name)
+        if frames_only_mode is None:
+            frames_only_mode = True
 
         preprocessing_status = self._preprocessing_status.get(node_id, None)
         movie_path = self._movie_filepath.get(node_id, None)
 
-        # Non-on-the-fly: trigger chunking on first Start press
-        if not on_the_fly_mode and preprocessing_status is None and movie_path:
+        # Full-pipeline mode: trigger chunking on first Start press
+        if not frames_only_mode and preprocessing_status is None and movie_path:
             self._trigger_preprocessing(node_id, tag_node_name, movie_path)
             return
 
@@ -648,10 +649,10 @@ class VideoNode(Node):
         print(f"Button clicked for {user_data}, playing: {self._is_playing[node_id]}")
 
     def _trigger_preprocessing(self, node_id, tag_node_name, movie_path):
-        """Start the audio chunking pipeline and show a progress bar.
+        """Start the audio chunking pipeline and show a progress bar on the node.
 
-        Called when the user presses Start on a non-on-the-fly video node
-        before chunking has started.  The progress bar is updated from the
+        Called when the user presses Start in full-pipeline mode (Frames only =
+        OFF) before chunking has started.  The progress bar is updated from the
         background thread; when complete, playback starts automatically.
         """
         tag_node_button_value_name = tag_node_name + ":" + self.TYPE_TEXT + ":ButtonValue"
@@ -798,11 +799,9 @@ class VideoNode(Node):
         target_fps = int(target_fps_value) if target_fps_value is not None else 24
         playback_speed_value = dpg_get_value(tag_node_input05_value_name)
         playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
-        on_the_fly_mode = dpg_get_value(tag_node_input06_value_name)
-        if on_the_fly_mode is None:
-            on_the_fly_mode = True
-
-        if video_capture is not None and use_pref_counter:
+        frames_only_mode = dpg_get_value(tag_node_input06_value_name)
+        if frames_only_mode is None:
+            frames_only_mode = True
             start_time = time.monotonic()
 
         frame = None
@@ -888,11 +887,14 @@ class VideoNode(Node):
             )
             dpg_set_value(tag_node_output_image, texture)
 
-        # Get audio chunk data for this frame to pass to other audio nodes
+        # Get audio chunk data for this frame to pass to other audio nodes.
+        # In "Frames only" mode audio preprocessing is skipped entirely, so
+        # the audio output is always None.
         audio_chunk_data = None
-        current_frame_num = self._frame_count.get(str(node_id), 0)
-        if str(node_id) in self._audio_chunk_paths:
-            audio_chunk_data = self._get_audio_chunk_for_frame(str(node_id), current_frame_num)
+        if not frames_only_mode:
+            current_frame_num = self._frame_count.get(str(node_id), 0)
+            if str(node_id) in self._audio_chunk_paths:
+                audio_chunk_data = self._get_audio_chunk_for_frame(str(node_id), current_frame_num)
 
         # Calculate FPS-based timestamp for this frame
         # The timestamp is based on the frame number and the target FPS
@@ -965,9 +967,9 @@ class VideoNode(Node):
         target_fps = int(target_fps_value) if target_fps_value is not None else 24
         playback_speed_value = dpg_get_value(tag_node_input05_value_name)
         playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
-        on_the_fly_mode = dpg_get_value(tag_node_input06_value_name)
-        if on_the_fly_mode is None:
-            on_the_fly_mode = True
+        frames_only_mode = dpg_get_value(tag_node_input06_value_name)
+        if frames_only_mode is None:
+            frames_only_mode = True
 
         setting_dict = {}
         setting_dict["ver"] = self._ver
@@ -976,7 +978,7 @@ class VideoNode(Node):
         setting_dict[tag_node_input03_value_name] = skip_rate
         setting_dict[tag_node_input04_value_name] = target_fps
         setting_dict[tag_node_input05_value_name] = playback_speed
-        setting_dict[tag_node_input06_value_name] = on_the_fly_mode
+        setting_dict[tag_node_input06_value_name] = frames_only_mode
 
         return setting_dict
 
@@ -1002,23 +1004,24 @@ class VideoNode(Node):
         skip_rate = int(setting_dict[tag_node_input03_value_name])
         target_fps = int(setting_dict.get(tag_node_input04_value_name, 24))
         playback_speed = float(setting_dict.get(tag_node_input05_value_name, 1.0))
-        on_the_fly_mode = setting_dict.get(tag_node_input06_value_name, True)
+        frames_only_mode = setting_dict.get(tag_node_input06_value_name, True)
 
         dpg_set_value(tag_node_input02_value_name, loop_flag)
         dpg_set_value(tag_node_input03_value_name, skip_rate)
         dpg_set_value(tag_node_input04_value_name, target_fps)
         dpg_set_value(tag_node_input05_value_name, playback_speed)
-        dpg_set_value(tag_node_input06_value_name, on_the_fly_mode)
+        dpg_set_value(tag_node_input06_value_name, frames_only_mode)
 
     def _callback_file_select(self, sender, data):
         """
         Callback when a video file is selected.
         - Always displays the first frame as a preview.
-        - On-the-fly mode: silently starts background preprocessing so the
-          AUDIO output is populated as soon as it is ready.
-        - Normal mode (on-the-fly OFF): just stores the path and resets the
-          chunking state.  Preprocessing is deferred until the user presses
-          Start (handled by _button → _trigger_preprocessing).
+        - Frames only mode (checked): skips audio preprocessing entirely.
+          The video can be played immediately, frames are delivered directly.
+        - Full-pipeline mode (unchecked): stores the path and resets the
+          chunking state.  Audio+video splitting and chunking are deferred
+          until the user presses Start
+          (handled by _button → _trigger_preprocessing).
         """
         if data["file_name"] != ".":
             node_id = sender.split(":")[1]
@@ -1057,9 +1060,9 @@ class VideoNode(Node):
             except Exception as e:
                 print(f"⚠️ Error loading preview frame: {e}")
 
-            on_the_fly_mode = dpg_get_value(tag_node_input06_value_name)
-            if on_the_fly_mode is None:
-                on_the_fly_mode = True
+            frames_only_mode = dpg_get_value(tag_node_input06_value_name)
+            if frames_only_mode is None:
+                frames_only_mode = True
 
             # Reset UI to a clean "ready" state
             with _dpg_lock:
@@ -1068,29 +1071,12 @@ class VideoNode(Node):
                 if dpg.does_item_exist(tag_node_progress_bar_name):
                     dpg.configure_item(tag_node_progress_bar_name, show=False)
 
-            if on_the_fly_mode:
-                # On-the-fly: preprocessing runs silently in the background
+            if frames_only_mode:
+                # Frames only: skip all audio preprocessing, play immediately
                 self._preprocessing_status[node_id] = 'done'
-
-                def preprocess_bg():
-                    try:
-                        self._preprocess_video(node_id, file_path)
-                        self._preprocessing_status[node_id] = 'done'
-                    except Exception as e:
-                        print(f"❌ Background preprocessing failed for node {node_id}: {e}")
-                    finally:
-                        if node_id in self._preprocessing_threads:
-                            del self._preprocessing_threads[node_id]
-
-                thread = threading.Thread(
-                    target=preprocess_bg,
-                    daemon=True,
-                    name=f"VideoPreprocess-{node_id}",
-                )
-                self._preprocessing_threads[node_id] = thread
-                thread.start()
-                print(f"📂 Video selected (on-the-fly): {file_path} – background preprocessing started")
+                print(f"📂 Video selected (frames only): {file_path} – no audio processing")
             else:
-                # Normal mode: wait for the user to press Start
-                print(f"📂 Video selected (normal mode): {file_path} – press Start to begin chunking")
+                # Full-pipeline mode: wait for the user to press Start to begin
+                # audio+video splitting, chunking, and frame cadence setup
+                print(f"📂 Video selected (full pipeline): {file_path} – press Start to begin chunking")
 
