@@ -627,8 +627,19 @@ class VideoNode(Node):
         preprocessing_status = self._preprocessing_status.get(node_id, None)
         movie_path = self._movie_filepath.get(node_id, None)
 
-        # Full-pipeline mode: trigger chunking on first Start press
-        if not frames_only_mode and preprocessing_status is None and movie_path:
+        # Full-pipeline mode: trigger chunking when no audio chunks exist yet.
+        # This covers two cases:
+        #   1. First Start press after selecting a video in full-pipeline mode
+        #      (preprocessing_status is None).
+        #   2. The video was selected while "Frames only" was checked (the
+        #      default), which marks status as 'done' without creating any
+        #      audio chunks.  The user then unchecks "Frames only" and presses
+        #      Start – chunking must still be triggered.
+        has_chunks = node_id in self._audio_chunk_paths
+        needs_chunking = preprocessing_status is None or (
+            preprocessing_status == 'done' and not has_chunks
+        )
+        if not frames_only_mode and needs_chunking and movie_path:
             self._trigger_preprocessing(node_id, tag_node_name, movie_path)
             return
 
