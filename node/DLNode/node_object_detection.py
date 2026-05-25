@@ -448,19 +448,20 @@ class FactoryNode:
                     tag=node.tag_node_name + ':UploadAttr',
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
-                with dpg.theme() as green_btn_theme:
+                with dpg.theme() as add_model_btn_theme:
                     with dpg.theme_component(dpg.mvButton):
-                        dpg.add_theme_color(dpg.mvThemeCol_Button, (60, 160, 60, 255))
-                        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (80, 200, 80, 255))
-                        dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (40, 120, 40, 255))
+                        dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 220, 0, 255))
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 235, 50, 255))
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (220, 190, 0, 255))
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, (0, 0, 0, 255))
 
                 upload_btn = dpg.add_button(
-                    label=u"📂 Add Model",
+                    label=u"Add Model",
                     tag=node.tag_upload_btn,
                     width=small_window_w,
                     callback=_on_upload_clicked,
                 )
-                dpg.bind_item_theme(upload_btn, green_btn_theme)
+                dpg.bind_item_theme(upload_btn, add_model_btn_theme)
 
 
 

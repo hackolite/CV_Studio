@@ -266,7 +266,7 @@ class FactoryNode:
                         dpg.add_theme_color(dpg.mvThemeCol_Text, (0, 0, 0, 255))
 
                 add_model_btn = dpg.add_button(
-                    label=u"📂 Add Model",
+                    label=u"Add Model",
                     tag=node.tag_upload_btn,
                     width=node.small_window_w,
                     callback=_on_upload_clicked,
