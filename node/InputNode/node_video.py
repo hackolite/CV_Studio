@@ -924,58 +924,57 @@ class VideoNode(Node):
             except Exception as e:
                 print(f"⚠️ Error loading preview frame: {e}")
             
-            # Get the checkbox value - if checked (on-the-fly mode), skip preprocessing
+            # Get the checkbox value - if checked (on-the-fly mode), video plays immediately
             on_the_fly_mode = dpg_get_value(tag_node_input06_value_name)
             if on_the_fly_mode is None:
                 on_the_fly_mode = True
-            
-            # Only preprocess if checkbox is unchecked (on_the_fly_mode == False)
+
+            tag_node_button_value_name = tag_node_name + ":" + self.TYPE_TEXT + ":ButtonValue"
+
+            # In normal mode, block video playback until preprocessing finishes.
+            # In on-the-fly mode, video starts immediately but audio preprocessing
+            # still runs in the background so the AUDIO output becomes available.
             if not on_the_fly_mode:
-                # Set preprocessing status to 'loading'
                 self._preprocessing_status[node_id] = 'loading'
-                
-                # Update button label to show "Loading..." using thread-safe dpg_set_value
-                tag_node_button_value_name = tag_node_name + ":" + self.TYPE_TEXT + ":ButtonValue"
                 with _dpg_lock:
                     if dpg.does_item_exist(tag_node_button_value_name):
                         dpg.configure_item(tag_node_button_value_name, label=self._loading_label)
-                
-                # Run preprocessing in background thread to avoid blocking UI
-                def preprocess_thread():
-                    try:
-                        print(f"🎬 Starting video preprocessing for node {node_id} in background thread...")
-                        self._preprocess_video(node_id, file_path)
-                        print(f"✅ Video preprocessing complete for node {node_id}")
-                        self._preprocessing_status[node_id] = 'done'
-                        
-                        # Restore button label using thread-safe dpg_set_value
-                        with _dpg_lock:
-                            if dpg.does_item_exist(tag_node_button_value_name):
-                                dpg.configure_item(tag_node_button_value_name, label=self._start_label)
-                    except Exception as e:
-                        print(f"❌ Error during video preprocessing for node {node_id}: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        self._preprocessing_status[node_id] = 'error'
-                        
-                        # Restore button label even on error
-                        with _dpg_lock:
-                            if dpg.does_item_exist(tag_node_button_value_name):
-                                dpg.configure_item(tag_node_button_value_name, label=self._start_label)
-                    finally:
-                        # Clean up thread reference when done
-                        # Note: Thread is daemon so it will auto-terminate on app shutdown
-                        if node_id in self._preprocessing_threads:
-                            del self._preprocessing_threads[node_id]
-                
-                # Start preprocessing thread (daemon=True ensures it doesn't prevent app shutdown)
-                thread = threading.Thread(target=preprocess_thread, daemon=True, name=f"VideoPreprocess-{node_id}")
-                self._preprocessing_threads[node_id] = thread
-                thread.start()
-                print(f"📂 Video file selected: {file_path}")
-                print(f"⚙️ Preprocessing started in background thread (non-blocking)")
             else:
-                # Skip preprocessing when in on-the-fly mode
+                # Video is allowed to play right away
                 self._preprocessing_status[node_id] = 'done'
-                print(f"📂 Video file selected: {file_path}")
-                print(f"⚡ On-the-fly mode: Skipping preprocessing (fast mode, frames sent via IMAGE output)")
+
+            def preprocess_thread():
+                try:
+                    print(f"🎬 Starting video preprocessing for node {node_id} in background thread...")
+                    self._preprocess_video(node_id, file_path)
+                    print(f"✅ Video preprocessing complete for node {node_id}")
+                    self._preprocessing_status[node_id] = 'done'
+
+                    # Restore button label only when we were in blocking (non-on-the-fly) mode
+                    if not on_the_fly_mode:
+                        with _dpg_lock:
+                            if dpg.does_item_exist(tag_node_button_value_name):
+                                dpg.configure_item(tag_node_button_value_name, label=self._start_label)
+                except Exception as e:
+                    print(f"❌ Error during video preprocessing for node {node_id}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    self._preprocessing_status[node_id] = 'error'
+
+                    if not on_the_fly_mode:
+                        with _dpg_lock:
+                            if dpg.does_item_exist(tag_node_button_value_name):
+                                dpg.configure_item(tag_node_button_value_name, label=self._start_label)
+                finally:
+                    if node_id in self._preprocessing_threads:
+                        del self._preprocessing_threads[node_id]
+
+            # Always start preprocessing in the background.
+            # In on-the-fly mode this is a silent background job that populates
+            # _audio_chunk_paths once done, enabling the AUDIO output.
+            thread = threading.Thread(target=preprocess_thread, daemon=True, name=f"VideoPreprocess-{node_id}")
+            self._preprocessing_threads[node_id] = thread
+            thread.start()
+            print(f"📂 Video file selected: {file_path}")
+            if on_the_fly_mode:
+                print(f"⚡ On-the-fly mode: video plays immediately; audio preprocessing running in background")
