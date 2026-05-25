@@ -98,6 +98,22 @@ _YAMNET_MEL_NORM = "log_offset"  # "power_to_db" is the ESC-50 default
 # mass uniformly → predictions look completely random.
 _YAMNET_OUTPUT_ACTIVATION = "sigmoid"  # "softmax" is the ESC-50 default
 
+# YAMNet mel filter bank frequency bounds (from the original YAMNet paper and
+# reference implementation):
+#   fmin = 125 Hz  (librosa default is 0 Hz — wrong for this model)
+#   fmax = 7500 Hz (librosa default is sr/2 = 8000 Hz — wrong for this model)
+# Using the librosa defaults changes which frequencies each mel bin captures,
+# shifting all predictions away from the training distribution.
+_YAMNET_FMIN = 125
+_YAMNET_FMAX = 7500
+
+# Minimum RMS energy threshold below which inference is skipped and "Silence"
+# is reported instead.  When the microphone captures only background hiss the
+# mel spectrogram is flat at log(~0 + 1e-3) = -6.9, and the model almost
+# always outputs "Sound effect" = 1.0 because that is its learned catch-all
+# for near-silent inputs.  Skipping inference avoids false positives.
+_YAMNET_SILENCE_RMS_THRESHOLD = 1e-3
+
 _N_MELS_OPTIONS = [64, 96, 128, 256]
 _MAX_SEC_OPTIONS = [1, 2, 3, 5, 10]
 _TOP_K_OPTIONS = [1, 3, 5, 10]
@@ -154,6 +170,18 @@ _BUILTIN_AUDIO_MODELS = [
         # Applying softmax on top of sigmoid outputs collapses the confidence
         # signal and produces near-uniform predictions.
         "output_activation": _YAMNET_OUTPUT_ACTIVATION,
+        # ----------------------------------------------------------------
+        # Mel filter bank frequency bounds (from the YAMNet reference implementation).
+        # librosa defaults (fmin=0, fmax=sr/2=8000) are WRONG for this model.
+        # Using wrong bounds changes which frequencies map to each mel bin, shifting
+        # the entire mel feature distribution away from the training data.
+        "fmin": _YAMNET_FMIN,
+        "fmax": _YAMNET_FMAX,
+        # ----------------------------------------------------------------
+        # Silence gate: skip inference when audio RMS is below this level.
+        # Near-silent frames produce a flat mel at log(1e-3)=-6.9 that the model
+        # consistently maps to "Sound effect"=1.0 (its catch-all for uncertainty).
+        "silence_rms_threshold": _YAMNET_SILENCE_RMS_THRESHOLD,
     },
 ]
 
@@ -329,7 +357,8 @@ def inspect_audio_onnx(model_path: str) -> dict:
 def audio_to_mel_array(audio_data: np.ndarray, sample_rate: int,
                         n_mels: int, max_sec: int,
                         n_fft: int = None, hop_length: int = None,
-                        mel_norm: str = "power_to_db") -> np.ndarray:
+                        mel_norm: str = "power_to_db",
+                        fmin: float = 0.0, fmax: float = 0.0) -> np.ndarray:
     """Convert 1-D float32 audio → (1, n_mels, T) float32 numpy array.
 
     Matches the ESC-50 training pre-processing by default:
@@ -343,6 +372,11 @@ def audio_to_mel_array(audio_data: np.ndarray, sample_rate: int,
     Pass ``mel_norm="log_offset"`` for models trained on
     ``log(mel_spectrogram + 1e-3)`` (Google/Qualcomm YAMNet).  The default
     ``"power_to_db"`` matches the ESC-50 training setup.
+
+    Pass ``fmin``/``fmax`` (Hz) to set the mel filter bank frequency bounds.
+    The Google/Qualcomm YAMNet reference implementation uses fmin=125 Hz and
+    fmax=7500 Hz; librosa defaults (0 Hz and sr/2) produce a different mel
+    feature distribution and degrade prediction quality for this model.
     """
     librosa = _get_librosa()
     if librosa is None:
@@ -362,9 +396,16 @@ def audio_to_mel_array(audio_data: np.ndarray, sample_rate: int,
     else:
         y = y[:max_len]
 
+    mel_kwargs = {}
+    if fmin and fmin > 0.0:
+        mel_kwargs["fmin"] = fmin
+    if fmax and fmax > 0.0:
+        mel_kwargs["fmax"] = fmax
+
     mel = librosa.feature.melspectrogram(
         y=y, sr=sample_rate, n_mels=n_mels,
         n_fft=_n_fft, hop_length=_hop,
+        **mel_kwargs,
     )
     if mel_norm == "log_offset":
         # Google / Qualcomm YAMNet normalization: log(mel + 1e-3)
@@ -726,6 +767,9 @@ class Node(BaseNode):
     _model_target_sr: dict = {}          # name → int (0 = use incoming SR / no resample)
     _model_n_fft: dict = {}              # name → int (0 = use _DEFAULT_N_FFT)
     _model_hop_length: dict = {}         # name → int (0 = use _DEFAULT_HOP_LENGTH)
+    # Mel filter bank frequency bounds (0 = use librosa default)
+    _model_fmin: dict = {}               # name → float (Hz)
+    _model_fmax: dict = {}               # name → float (Hz; 0 = sr/2)
     # Mel-spectrogram layout: False = (MELS, TIME) standard; True = (TIME, MELS) YAMNet
     _model_mel_transpose: dict = {}
     # Mel normalisation applied before inference:
@@ -736,6 +780,8 @@ class Node(BaseNode):
     #   "softmax"  – treat as logits, apply softmax (ESC-50 default)
     #   "sigmoid"  – treat as per-class sigmoid scores, use directly (YAMNet)
     _model_output_activation: dict = {}
+    # Minimum RMS energy below which inference is skipped (0.0 = disabled)
+    _model_silence_rms_threshold: dict = {}
 
     # -----------------------------------------------------------------------
     # Per-instance inference state
@@ -757,25 +803,33 @@ class Node(BaseNode):
     def _register_model(cls, name: str, path: str, class_names: dict, n_mels: int,
                          model_type: str = "mel_cnn", fixed_time: int = 0,
                          target_sr: int = 0, n_fft: int = 0, hop_length: int = 0,
+                         fmin: float = 0.0, fmax: float = 0.0,
                          mel_transpose: bool = False,
                          mel_norm: str = "power_to_db",
-                         output_activation: str = "softmax"):
+                         output_activation: str = "softmax",
+                         silence_rms_threshold: float = 0.0):
         """Add one model to the class-level runtime dictionaries.
 
         Args:
-            target_sr:          Expected input sample rate (Hz). 0 = no forced resampling.
-            n_fft:              STFT window size used during training. 0 = _DEFAULT_N_FFT.
-                                Qualcomm/Google YAMNet: 400 (25 ms at 16 kHz).
-            hop_length:         STFT hop size used during training. 0 = _DEFAULT_HOP_LENGTH.
-                                Qualcomm/Google YAMNet: 160 (10 ms at 16 kHz).
-            mel_transpose:      When True, the model expects (TIME, MELS) tensor layout
-                                (YAMNet input shape [1,1,96,64] = [batch,ch,TIME,MELS]).
-                                The pipeline transposes mel to match before inference.
-            mel_norm:           Mel normalisation applied before inference.
-                                "power_to_db" (ESC-50 default) or "log_offset" (YAMNet).
-            output_activation:  How to interpret raw model output.
-                                "softmax" = treat as logits and apply softmax (ESC-50 default).
-                                "sigmoid" = per-class sigmoid scores, use directly (YAMNet).
+            target_sr:               Expected input sample rate (Hz). 0 = no forced resampling.
+            n_fft:                   STFT window size used during training. 0 = _DEFAULT_N_FFT.
+                                     Qualcomm/Google YAMNet: 400 (25 ms at 16 kHz).
+            hop_length:              STFT hop size used during training. 0 = _DEFAULT_HOP_LENGTH.
+                                     Qualcomm/Google YAMNet: 160 (10 ms at 16 kHz).
+            fmin:                    Mel filter bank lower bound (Hz). 0 = librosa default (0 Hz).
+                                     Qualcomm/Google YAMNet: 125 Hz.
+            fmax:                    Mel filter bank upper bound (Hz). 0 = librosa default (sr/2).
+                                     Qualcomm/Google YAMNet: 7500 Hz.
+            mel_transpose:           When True, the model expects (TIME, MELS) tensor layout
+                                     (YAMNet input shape [1,1,96,64] = [batch,ch,TIME,MELS]).
+                                     The pipeline transposes mel to match before inference.
+            mel_norm:                Mel normalisation applied before inference.
+                                     "power_to_db" (ESC-50 default) or "log_offset" (YAMNet).
+            output_activation:       How to interpret raw model output.
+                                     "softmax" = treat as logits and apply softmax (ESC-50 default).
+                                     "sigmoid" = per-class sigmoid scores, use directly (YAMNet).
+            silence_rms_threshold:   RMS energy below which inference is skipped and "Silence"
+                                     is reported. 0.0 = disabled. YAMNet default: 1e-3.
         """
         cls._model_path_setting[name] = path
         cls._model_class_names[name] = class_names
@@ -785,9 +839,12 @@ class Node(BaseNode):
         cls._model_target_sr[name] = target_sr
         cls._model_n_fft[name] = n_fft
         cls._model_hop_length[name] = hop_length
+        cls._model_fmin[name] = float(fmin)
+        cls._model_fmax[name] = float(fmax)
         cls._model_mel_transpose[name] = mel_transpose
         cls._model_mel_norm[name] = mel_norm
         cls._model_output_activation[name] = output_activation
+        cls._model_silence_rms_threshold[name] = float(silence_rms_threshold)
 
     @classmethod
     def _load_models_from_registry(cls):
@@ -812,13 +869,18 @@ class Node(BaseNode):
             target_sr = int(entry.get("target_sr", 0))
             n_fft = int(entry.get("n_fft", 0))
             hop_length = int(entry.get("hop_length", 0))
+            fmin = float(entry.get("fmin", 0.0))
+            fmax = float(entry.get("fmax", 0.0))
             mel_transpose = bool(entry.get("mel_transpose", False))
             mel_norm = entry.get("mel_norm", "power_to_db")
             output_activation = entry.get("output_activation", "softmax")
+            silence_rms_threshold = float(entry.get("silence_rms_threshold", 0.0))
             cls._register_model(name, path, class_names, n_mels, model_type, fixed_time,
                                  target_sr=target_sr, n_fft=n_fft, hop_length=hop_length,
+                                 fmin=fmin, fmax=fmax,
                                  mel_transpose=mel_transpose, mel_norm=mel_norm,
-                                 output_activation=output_activation)
+                                 output_activation=output_activation,
+                                 silence_rms_threshold=silence_rms_threshold)
             logger.info(f"[AudioUpload] Loaded model from registry: {name}")
 
     @classmethod
@@ -867,15 +929,20 @@ class Node(BaseNode):
             target_sr = int(_cat("target_sr"))
             n_fft = int(_cat("n_fft"))
             hop_length = int(_cat("hop_length"))
+            fmin = float(meta.get("fmin", 0.0))
+            fmax = float(meta.get("fmax", 0.0))
             mel_transpose = bool(meta.get("mel_transpose", info.get("mel_transpose", False)))
             mel_norm = meta.get("mel_norm") or info.get("mel_norm", "power_to_db")
             output_activation = meta.get("output_activation", "softmax")
+            silence_rms_threshold = float(meta.get("silence_rms_threshold", 0.0))
 
             # Always refresh in-memory registration
             cls._register_model(name, path, class_names, n_mels, model_type, fixed_time,
                                  target_sr=target_sr, n_fft=n_fft, hop_length=hop_length,
+                                 fmin=fmin, fmax=fmax,
                                  mel_transpose=mel_transpose, mel_norm=mel_norm,
-                                 output_activation=output_activation)
+                                 output_activation=output_activation,
+                                 silence_rms_threshold=silence_rms_threshold)
 
             entry = {
                 "name": name,
@@ -885,9 +952,12 @@ class Node(BaseNode):
                 "target_sr": target_sr,
                 "n_fft": n_fft,
                 "hop_length": hop_length,
+                "fmin": fmin,
+                "fmax": fmax,
                 "mel_transpose": mel_transpose,
                 "mel_norm": mel_norm,
                 "output_activation": output_activation,
+                "silence_rms_threshold": silence_rms_threshold,
                 "num_classes": info.get("num_classes", len(class_names)),
                 "model_type": model_type,
                 "class_names": {str(k): v for k, v in class_names.items()},
@@ -1093,9 +1163,12 @@ class Node(BaseNode):
         target_sr = int(meta.get("target_sr", 0))
         n_fft = int(meta.get("n_fft", 0))
         hop_length = int(meta.get("hop_length", 0))
+        fmin = float(meta.get("fmin", 0.0))
+        fmax = float(meta.get("fmax", 0.0))
         mel_transpose = bool(meta.get("mel_transpose", False))
         mel_norm = meta.get("mel_norm", "power_to_db")
         output_activation = meta.get("output_activation", "softmax")
+        silence_rms_threshold = float(meta.get("silence_rms_threshold", 0.0))
 
         logger.info(
             f"[AudioUpload] Registering '{name}' — "
@@ -1103,13 +1176,16 @@ class Node(BaseNode):
             f"fixed_time={fixed_time}, target_sr={target_sr if target_sr > 0 else 'none'}, "
             f"n_fft={n_fft if n_fft > 0 else 'default'}, "
             f"hop_length={hop_length if hop_length > 0 else 'default'}, "
+            f"fmin={fmin if fmin > 0 else 'default'}, fmax={fmax if fmax > 0 else 'default'}, "
             f"mel_norm={mel_norm}, output_activation={output_activation}"
         )
 
         Node._register_model(name, onnx_path, class_names, n_mels, model_type, fixed_time,
                               target_sr=target_sr, n_fft=n_fft, hop_length=hop_length,
+                              fmin=fmin, fmax=fmax,
                               mel_transpose=mel_transpose, mel_norm=mel_norm,
-                              output_activation=output_activation)
+                              output_activation=output_activation,
+                              silence_rms_threshold=silence_rms_threshold)
 
         registry_entry = {
             "name": name,
@@ -1120,9 +1196,12 @@ class Node(BaseNode):
             "target_sr": target_sr,
             "n_fft": n_fft,
             "hop_length": hop_length,
+            "fmin": fmin,
+            "fmax": fmax,
             "mel_transpose": mel_transpose,
             "mel_norm": mel_norm,
             "output_activation": output_activation,
+            "silence_rms_threshold": silence_rms_threshold,
             "num_classes": num_classes,
             "model_type": model_type,
         }
@@ -1226,9 +1305,12 @@ class Node(BaseNode):
         # Per-model STFT and mel parameters (0/default = use module-level defaults)
         model_n_fft = Node._model_n_fft.get(model_name, 0)
         model_hop_length = Node._model_hop_length.get(model_name, 0)
+        model_fmin = Node._model_fmin.get(model_name, 0.0)
+        model_fmax = Node._model_fmax.get(model_name, 0.0)
         model_mel_norm = Node._model_mel_norm.get(model_name, "power_to_db")
         model_mel_transpose = Node._model_mel_transpose.get(model_name, False)
         model_output_activation = Node._model_output_activation.get(model_name, "softmax")
+        model_silence_rms_threshold = Node._model_silence_rms_threshold.get(model_name, 0.0)
 
         # Sync N_Mels UI to match model
         if n_mels_model > 0 and str(n_mels_model) in [str(v) for v in _N_MELS_OPTIONS]:
@@ -1302,6 +1384,8 @@ class Node(BaseNode):
             n_fft=model_n_fft if model_n_fft > 0 else None,
             hop_length=model_hop_length if model_hop_length > 0 else None,
             mel_norm=model_mel_norm,
+            fmin=model_fmin,
+            fmax=model_fmax,
         )
         if mel_arr is None:
             return {"image": None, "json": None, "audio": None}
@@ -1310,8 +1394,41 @@ class Node(BaseNode):
         bgr_preview = mel_array_to_bgr_image(mel_arr, small_window_w, small_window_h)
         result_json = None
 
+        # ---- Silence / energy gate ----
+        # When audio is near-silent the mel spectrogram is a flat matrix at
+        # log(~0 + 1e-3) = -6.9.  For YAMNet (and similar models) this flat
+        # pattern consistently maps to "Sound effect" = 1.0, because the
+        # model was never explicitly trained on "silence" and uses that class
+        # as a catch-all for uncertain inputs.  Skipping inference avoids the
+        # false positive and reports a meaningful "Silence" label instead.
+        _is_silent = False
+        if model_silence_rms_threshold > 0.0 and model_name:
+            y_check = np.asarray(audio_data, dtype=np.float32)
+            if y_check.ndim > 1:
+                y_check = np.mean(y_check, axis=-1)
+            rms = float(np.sqrt(np.mean(y_check ** 2)))
+            if rms < model_silence_rms_threshold:
+                _is_silent = True
+                logger.debug(
+                    f"[AudioClassification] Silence gate: RMS={rms:.2e} < "
+                    f"threshold={model_silence_rms_threshold:.2e} — skipping inference"
+                )
+                silence_label = "Silence"
+                bgr_preview = overlay_predictions(bgr_preview, [(silence_label, 0.0)])
+                result_json = {
+                    "predictions": [{"rank": 1, "class_id": -1,
+                                     "class_name": silence_label, "score": 0.0}],
+                    "model": model_name,
+                    "n_mels": n_mels,
+                    "sample_rate": sample_rate,
+                }
+                try:
+                    dpg.configure_item(output_json_tag, label=silence_label)
+                except Exception:
+                    pass
+
         # ---- ONNX inference ----
-        if model_name and self._ensure_session(model_name, use_gpu=use_gpu):
+        if not _is_silent and model_name and self._ensure_session(model_name, use_gpu=use_gpu):
             try:
                 if model_type == "waveform":
                     # Waveform pipeline: flatten audio, feed as (1, N) or (N,) float32
