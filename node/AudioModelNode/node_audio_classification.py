@@ -72,11 +72,18 @@ _YAMNET_TARGET_SR = 16000
 
 # Qualcomm/Google YAMNet mel-spectrogram parameters (from the YAMNet paper):
 #   window = 25 ms → 400 samples at 16 kHz
+#   fft    = 512 points (next power-of-two ≥ 400, as in tf.signal.stft)
 #   hop    = 10 ms → 160 samples at 16 kHz
 # These differ from the ESC-50 defaults (n_fft=2048, hop=512) and MUST be
 # used when running this model; using the wrong parameters produces a mel
 # that looks nothing like the training data → completely random predictions.
-_YAMNET_N_FFT = 400
+#
+# Note: the TF YAMNet reference uses frame_length=400 (window) but
+# fft_length=512 (zero-padded FFT).  In librosa this is expressed as
+# n_fft=512 (FFT size) + win_length=400 (window size), giving 257 frequency
+# bins instead of 201, which better captures the 125–7500 Hz mel range.
+_YAMNET_N_FFT = 512        # FFT size (next power of 2 ≥ window length)
+_YAMNET_WIN_LENGTH = 400   # STFT window length (25 ms at 16 kHz)
 _YAMNET_HOP_LENGTH = 160
 
 # Qualcomm YAMNet model architecture:
@@ -150,6 +157,7 @@ _BUILTIN_AUDIO_MODELS = [
         # Using ESC-50 defaults (n_fft=2048, hop=512) would produce a mel
         # spectrogram that looks nothing like training data → random outputs.
         "n_fft": _YAMNET_N_FFT,
+        "win_length": _YAMNET_WIN_LENGTH,
         "hop_length": _YAMNET_HOP_LENGTH,
         # ----------------------------------------------------------------
         # Architecture: Input [1,1,96,64] is TIME-MAJOR (dim[2]=TIME=96,
@@ -357,17 +365,23 @@ def inspect_audio_onnx(model_path: str) -> dict:
 def audio_to_mel_array(audio_data: np.ndarray, sample_rate: int,
                         n_mels: int, max_sec: int,
                         n_fft: int = None, hop_length: int = None,
+                        win_length: int = None,
                         mel_norm: str = "power_to_db",
                         fmin: float = 0.0, fmax: float = 0.0) -> np.ndarray:
     """Convert 1-D float32 audio → (1, n_mels, T) float32 numpy array.
 
     Matches the ESC-50 training pre-processing by default:
-      - pad / crop to `max_sec * sample_rate` samples
+      - pad / crop to `max_sec * sample_rate` samples (most recent samples kept)
       - librosa.feature.melspectrogram → power_to_db
 
     Pass explicit `n_fft` and `hop_length` to override the defaults when the
     model was trained with different STFT parameters (e.g. YAMNet uses
-    n_fft=400, hop_length=160 instead of the ESC-50 defaults of 2048/512).
+    n_fft=512, win_length=400, hop_length=160 instead of the ESC-50 defaults
+    of 2048/512).
+
+    Pass ``win_length`` to use a different window size from the FFT size.
+    The TF YAMNet reference uses frame_length=400 (window) with fft_length=512
+    (zero-padded): ``n_fft=512, win_length=400, hop_length=160``.
 
     Pass ``mel_norm="log_offset"`` for models trained on
     ``log(mel_spectrogram + 1e-3)`` (Google/Qualcomm YAMNet).  The default
@@ -394,13 +408,15 @@ def audio_to_mel_array(audio_data: np.ndarray, sample_rate: int,
     if len(y) < max_len:
         y = np.pad(y, (0, max_len - len(y)))
     else:
-        y = y[:max_len]
+        y = y[-max_len:]  # keep the most recent samples
 
     mel_kwargs = {}
     if fmin and fmin > 0.0:
         mel_kwargs["fmin"] = fmin
     if fmax and fmax > 0.0:
         mel_kwargs["fmax"] = fmax
+    if win_length and win_length > 0:
+        mel_kwargs["win_length"] = win_length
 
     mel = librosa.feature.melspectrogram(
         y=y, sr=sample_rate, n_mels=n_mels,
@@ -766,6 +782,7 @@ class Node(BaseNode):
     _model_fixed_time: dict = {}         # name → int (0 = dynamic / no constraint)
     _model_target_sr: dict = {}          # name → int (0 = use incoming SR / no resample)
     _model_n_fft: dict = {}              # name → int (0 = use _DEFAULT_N_FFT)
+    _model_win_length: dict = {}         # name → int (0 = same as n_fft, no separate window)
     _model_hop_length: dict = {}         # name → int (0 = use _DEFAULT_HOP_LENGTH)
     # Mel filter bank frequency bounds (0 = use librosa default)
     _model_fmin: dict = {}               # name → float (Hz)
@@ -802,7 +819,8 @@ class Node(BaseNode):
     @classmethod
     def _register_model(cls, name: str, path: str, class_names: dict, n_mels: int,
                          model_type: str = "mel_cnn", fixed_time: int = 0,
-                         target_sr: int = 0, n_fft: int = 0, hop_length: int = 0,
+                         target_sr: int = 0, n_fft: int = 0, win_length: int = 0,
+                         hop_length: int = 0,
                          fmin: float = 0.0, fmax: float = 0.0,
                          mel_transpose: bool = False,
                          mel_norm: str = "power_to_db",
@@ -812,7 +830,9 @@ class Node(BaseNode):
 
         Args:
             target_sr:               Expected input sample rate (Hz). 0 = no forced resampling.
-            n_fft:                   STFT window size used during training. 0 = _DEFAULT_N_FFT.
+            n_fft:                   STFT FFT size used during training. 0 = _DEFAULT_N_FFT.
+                                     Qualcomm/Google YAMNet: 512 (zero-padded from 400-sample window).
+            win_length:              STFT window size (samples). 0 = same as n_fft (no zero-padding).
                                      Qualcomm/Google YAMNet: 400 (25 ms at 16 kHz).
             hop_length:              STFT hop size used during training. 0 = _DEFAULT_HOP_LENGTH.
                                      Qualcomm/Google YAMNet: 160 (10 ms at 16 kHz).
@@ -838,6 +858,7 @@ class Node(BaseNode):
         cls._model_fixed_time[name] = fixed_time
         cls._model_target_sr[name] = target_sr
         cls._model_n_fft[name] = n_fft
+        cls._model_win_length[name] = win_length
         cls._model_hop_length[name] = hop_length
         cls._model_fmin[name] = float(fmin)
         cls._model_fmax[name] = float(fmax)
@@ -868,6 +889,7 @@ class Node(BaseNode):
             fixed_time = int(entry.get("fixed_time", 0))
             target_sr = int(entry.get("target_sr", 0))
             n_fft = int(entry.get("n_fft", 0))
+            win_length = int(entry.get("win_length", 0))
             hop_length = int(entry.get("hop_length", 0))
             fmin = float(entry.get("fmin", 0.0))
             fmax = float(entry.get("fmax", 0.0))
@@ -876,7 +898,8 @@ class Node(BaseNode):
             output_activation = entry.get("output_activation", "softmax")
             silence_rms_threshold = float(entry.get("silence_rms_threshold", 0.0))
             cls._register_model(name, path, class_names, n_mels, model_type, fixed_time,
-                                 target_sr=target_sr, n_fft=n_fft, hop_length=hop_length,
+                                 target_sr=target_sr, n_fft=n_fft, win_length=win_length,
+                                 hop_length=hop_length,
                                  fmin=fmin, fmax=fmax,
                                  mel_transpose=mel_transpose, mel_norm=mel_norm,
                                  output_activation=output_activation,
@@ -928,6 +951,7 @@ class Node(BaseNode):
             fixed_time = int(_cat("fixed_time"))
             target_sr = int(_cat("target_sr"))
             n_fft = int(_cat("n_fft"))
+            win_length = int(meta.get("win_length", 0))
             hop_length = int(_cat("hop_length"))
             fmin = float(meta.get("fmin", 0.0))
             fmax = float(meta.get("fmax", 0.0))
@@ -938,7 +962,8 @@ class Node(BaseNode):
 
             # Always refresh in-memory registration
             cls._register_model(name, path, class_names, n_mels, model_type, fixed_time,
-                                 target_sr=target_sr, n_fft=n_fft, hop_length=hop_length,
+                                 target_sr=target_sr, n_fft=n_fft, win_length=win_length,
+                                 hop_length=hop_length,
                                  fmin=fmin, fmax=fmax,
                                  mel_transpose=mel_transpose, mel_norm=mel_norm,
                                  output_activation=output_activation,
@@ -951,6 +976,7 @@ class Node(BaseNode):
                 "fixed_time": fixed_time,
                 "target_sr": target_sr,
                 "n_fft": n_fft,
+                "win_length": win_length,
                 "hop_length": hop_length,
                 "fmin": fmin,
                 "fmax": fmax,
@@ -1162,6 +1188,7 @@ class Node(BaseNode):
         fixed_time = meta.get("fixed_time", 0)
         target_sr = int(meta.get("target_sr", 0))
         n_fft = int(meta.get("n_fft", 0))
+        win_length = int(meta.get("win_length", 0))
         hop_length = int(meta.get("hop_length", 0))
         fmin = float(meta.get("fmin", 0.0))
         fmax = float(meta.get("fmax", 0.0))
@@ -1175,13 +1202,15 @@ class Node(BaseNode):
             f"n_mels={n_mels}, classes={num_classes}, model_type={model_type}, "
             f"fixed_time={fixed_time}, target_sr={target_sr if target_sr > 0 else 'none'}, "
             f"n_fft={n_fft if n_fft > 0 else 'default'}, "
+            f"win_length={win_length if win_length > 0 else 'same as n_fft'}, "
             f"hop_length={hop_length if hop_length > 0 else 'default'}, "
             f"fmin={fmin if fmin > 0 else 'default'}, fmax={fmax if fmax > 0 else 'default'}, "
             f"mel_norm={mel_norm}, output_activation={output_activation}"
         )
 
         Node._register_model(name, onnx_path, class_names, n_mels, model_type, fixed_time,
-                              target_sr=target_sr, n_fft=n_fft, hop_length=hop_length,
+                              target_sr=target_sr, n_fft=n_fft, win_length=win_length,
+                              hop_length=hop_length,
                               fmin=fmin, fmax=fmax,
                               mel_transpose=mel_transpose, mel_norm=mel_norm,
                               output_activation=output_activation,
@@ -1195,6 +1224,7 @@ class Node(BaseNode):
             "fixed_time": fixed_time,
             "target_sr": target_sr,
             "n_fft": n_fft,
+            "win_length": win_length,
             "hop_length": hop_length,
             "fmin": fmin,
             "fmax": fmax,
@@ -1304,6 +1334,7 @@ class Node(BaseNode):
 
         # Per-model STFT and mel parameters (0/default = use module-level defaults)
         model_n_fft = Node._model_n_fft.get(model_name, 0)
+        model_win_length = Node._model_win_length.get(model_name, 0)
         model_hop_length = Node._model_hop_length.get(model_name, 0)
         model_fmin = Node._model_fmin.get(model_name, 0.0)
         model_fmax = Node._model_fmax.get(model_name, 0.0)
@@ -1383,6 +1414,7 @@ class Node(BaseNode):
             audio_data, sample_rate, n_mels, max_sec,
             n_fft=model_n_fft if model_n_fft > 0 else None,
             hop_length=model_hop_length if model_hop_length > 0 else None,
+            win_length=model_win_length if model_win_length > 0 else None,
             mel_norm=model_mel_norm,
             fmin=model_fmin,
             fmax=model_fmax,
