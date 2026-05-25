@@ -1454,13 +1454,10 @@ class Node(BaseNode):
                 silence_label = "Silence"
                 bgr_preview = overlay_predictions(bgr_preview, [(silence_label, 0.0)])
                 result_json = {
-                    "bboxes": [],
                     "scores": [0.0],
                     "class_ids": [-1],
                     "class_names": {"-1": silence_label},
                     "score_th": 0.0,
-                    "predictions": [{"rank": 1, "class_id": -1,
-                                     "class_name": silence_label, "score": 0.0}],
                     "model": model_name,
                     "n_mels": n_mels,
                     "sample_rate": sample_rate,
@@ -1551,7 +1548,6 @@ class Node(BaseNode):
                 bgr_preview = overlay_predictions(bgr_preview, predictions)
 
                 result_json = {
-                    "bboxes": [],
                     "scores": [float(top_scores[r]) for r in range(actual_k)],
                     "class_ids": [int(top_ids[r]) for r in range(actual_k)],
                     "class_names": {
@@ -1559,15 +1555,6 @@ class Node(BaseNode):
                         for r in range(actual_k)
                     },
                     "score_th": 0.0,
-                    "predictions": [
-                        {
-                            "rank": r + 1,
-                            "class_id": int(top_ids[r]),
-                            "class_name": class_names.get(int(top_ids[r]), f"class_{top_ids[r]}"),
-                            "score": float(top_scores[r]),
-                        }
-                        for r in range(actual_k)
-                    ],
                     "model": model_name,
                     "n_mels": n_mels,
                     "sample_rate": sample_rate,
