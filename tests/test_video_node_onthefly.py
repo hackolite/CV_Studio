@@ -27,12 +27,12 @@ def test_video_node_source_code():
         "Checkbox label should be 'Frames only'"
     print("✅ Checkbox label is correct: 'Frames only'")
     
-    # Test 2: Default value should be True
-    # Check that near the checkbox label, we have default_value=True
+    # Test 2: Default value should be False (unchecked by default)
+    # Check that near the checkbox label, we have default_value=False
     checkbox_section = source[source.find('label="Frames only"')-50:source.find('label="Frames only"')+300]
-    assert 'default_value=True' in checkbox_section, \
-        "Checkbox default value should be True"
-    print("✅ Checkbox default value is True (frames only mode enabled by default)")
+    assert 'default_value=False' in checkbox_section, \
+        "Checkbox default value should be False (unchecked by default)"
+    print("✅ Checkbox default value is False (full-pipeline mode enabled by default)")
     
     # Test 3: Variable should be renamed to frames_only_mode
     assert 'frames_only_mode' in source, \
@@ -59,15 +59,15 @@ def test_video_node_source_code():
         "Comment should clarify frames are sent via IMAGE only"
     print("✅ Comment confirms frames are always sent via IMAGE output")
     
-    # Test 8: Default in get_setting_dict should be True
-    assert 'frames_only_mode = True' in source, \
-        "Default should be True in update method"
-    print("✅ Default value is True in get_setting_dict")
+    # Test 8: Default in get_setting_dict should be False
+    assert 'frames_only_mode = False' in source, \
+        "Default should be False in update method"
+    print("✅ Default value is False in get_setting_dict")
     
-    # Test 9: Default in set_setting_dict should be True
-    assert 'tag_node_input06_value_name, True)' in source, \
-        "Default should be True in set_setting_dict"
-    print("✅ Default value is True in set_setting_dict")
+    # Test 9: Default in set_setting_dict should be False
+    assert 'tag_node_input06_value_name, False)' in source, \
+        "Default should be False in set_setting_dict"
+    print("✅ Default value is False in set_setting_dict")
     
     # Test 10: Preprocessing should run when frames_only_mode is False
     assert 'if not frames_only_mode' in source, \
@@ -91,11 +91,11 @@ if __name__ == "__main__":
         print("="*70)
         print("\nSummary of changes:")
         print("  • Checkbox label: 'On-the-fly (fast mode)' → 'Frames only'")
-        print("  • Default value: True (frames only / fast mode by default)")
+        print("  • Default value: False (full-pipeline mode by default)")
         print("  • Frames: NEVER sent in JSON, ALWAYS sent via IMAGE output")
         print("  • Variable: 'on_the_fly_mode' → 'frames_only_mode'")
         print("  • Behavior when checked: Skip audio preprocessing, just deliver frames")
-        print("  • Behavior when unchecked: Split audio+video, chunk, show progress bar")
+        print("  • Behavior when unchecked: Split audio+video, chunk, show progress bar (jauge)")
         print("="*70)
     except AssertionError as e:
         print(f"\n❌ Test failed: {e}")
