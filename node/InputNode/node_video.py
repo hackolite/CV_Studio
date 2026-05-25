@@ -810,10 +810,10 @@ class VideoNode(Node):
         target_fps = int(target_fps_value) if target_fps_value is not None else 24
         playback_speed_value = dpg_get_value(tag_node_input05_value_name)
         playback_speed = float(playback_speed_value) if playback_speed_value is not None else 1.0
+        start_time = time.monotonic()
         frames_only_mode = dpg_get_value(tag_node_input06_value_name)
         if frames_only_mode is None:
             frames_only_mode = True
-            start_time = time.monotonic()
 
         frame = None
         # Only read frames if video is playing
