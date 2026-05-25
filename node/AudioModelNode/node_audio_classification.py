@@ -405,6 +405,12 @@ def audio_to_mel_array(audio_data: np.ndarray, sample_rate: int,
     if y.ndim > 1:
         y = np.mean(y, axis=-1)
 
+    # Clip to [-1, 1] as expected by YAMNet and the standard audio pipeline.
+    # Microphone audio via sounddevice (float32) is already in this range;
+    # this safeguard prevents extreme values from shifting mel spectrogram values
+    # when audio arrives from other sources.
+    y = np.clip(y, -1.0, 1.0)
+
     if len(y) < max_len:
         y = np.pad(y, (0, max_len - len(y)))
     else:
