@@ -624,10 +624,16 @@ class VideoNode(Node):
             chunk_path = chunk_paths[chunk_index]
             if os.path.exists(chunk_path):
                 audio_data, sample_rate = sf.read(chunk_path)
-                # Return audio chunk in the format expected by audio processing nodes
+                # Return audio chunk in the format expected by audio processing nodes.
+                # chunk_index and step_duration are included so VideoWriter can
+                # deduplicate consecutive identical chunks (the same window is
+                # returned for every frame inside the same step) and reconstruct
+                # the original audio timeline without duplication.
                 return {
                     'data': audio_data,
-                    'sample_rate': sample_rate
+                    'sample_rate': sample_rate,
+                    'chunk_index': chunk_index,
+                    'step_duration': step_duration,
                 }
         except Exception as e:
             if chunk_path:

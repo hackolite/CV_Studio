@@ -28,6 +28,20 @@ except ImportError:
     FFMPEG_AVAILABLE = False
     sf = None
 
+
+def _get_ffmpeg_exe():
+    """Return the ffmpeg executable path.
+
+    Preference order:
+    1. imageio-ffmpeg bundled binary (works without a system-level install).
+    2. 'ffmpeg' on the system PATH (fallback).
+    """
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return 'ffmpeg'
+
 def slow_motion_interpolation(prev_frame, next_frame, alpha):
     """ Generates smooth intermediate frame between 2 images """
     return cv2.addWeighted(prev_frame, 1 - alpha, next_frame, alpha, 0)
@@ -152,6 +166,7 @@ class VideoWriterNode(Node):
     _recording_metadata_dict = {}  # Store metadata about ongoing recordings
     _merge_threads_dict = {}  # Store merge threads for async operations
     _merge_progress_dict = {}  # Store merge progress (0.0 to 1.0)
+    _last_chunk_index_dict = {}  # Track last seen chunk_index per recording slot to avoid duplicates
     _start_label = 'Start'
     _stop_label = 'Stop'
     
@@ -203,7 +218,6 @@ class VideoWriterNode(Node):
                         dpg.configure_item(tag_node_progress_name, overlay="")
 
         connection_info_src = ''
-        print(connection_list)
         for connection_info in connection_list:
             connection_info_src = connection_info[0]
             connection_info_src = connection_info_src.split(':')[:2]
@@ -237,37 +251,67 @@ class VideoWriterNode(Node):
                     if isinstance(audio_data, dict):
                         # Check if this is a multi-slot concat output or single audio chunk from video node
                         # Multi-slot: {0: audio_chunk, 1: audio_chunk, ...}
-                        # Single chunk: {'data': array, 'sample_rate': int}
-                        
+                        # Single chunk: {'data': array, 'sample_rate': int, ...}
+
                         if 'data' in audio_data and 'sample_rate' in audio_data:
-                            # Single audio chunk from video node
-                            self._audio_samples_dict[tag_node_name].append(audio_data['data'])
-                            # Update sample rate if provided
-                            if tag_node_name in self._recording_metadata_dict:
-                                self._recording_metadata_dict[tag_node_name]['sample_rate'] = audio_data['sample_rate']
+                            # Single audio chunk (e.g. directly from VideoNode or Microphone)
+                            chunk_index = audio_data.get('chunk_index', None)
+                            step_duration = audio_data.get('step_duration', None)
+                            chunk_sample_rate = audio_data['sample_rate']
+
+                            last_key = tag_node_name + '|single'
+                            last_idx = self._last_chunk_index_dict.get(last_key, -1)
+
+                            if chunk_index is None or chunk_index != last_idx:
+                                if chunk_index is not None:
+                                    self._last_chunk_index_dict[last_key] = chunk_index
+
+                                audio_portion = audio_data['data']
+                                # For VideoNode audio (sliding-window chunks), extract only the
+                                # non-overlapping step so that concatenating unique chunks
+                                # reconstructs the original audio without duplication.
+                                if step_duration is not None and chunk_index is not None:
+                                    step_samples = int(step_duration * chunk_sample_rate)
+                                    audio_portion = audio_portion[:step_samples]
+
+                                self._audio_samples_dict[tag_node_name].append(audio_portion)
+                                if tag_node_name in self._recording_metadata_dict:
+                                    self._recording_metadata_dict[tag_node_name]['sample_rate'] = chunk_sample_rate
                         else:
                             # Concat node output: {slot_idx: audio_chunk}
-                            # For now, merge all slots into a single audio track
-                            # Get all audio chunks and concatenate them
                             audio_chunks = []
                             sample_rate = None
-                            
+
                             for slot_idx in sorted(audio_data.keys()):
                                 audio_chunk = audio_data[slot_idx]
-                                # Handle dict format from video node: {'data': array, 'sample_rate': int}
                                 if isinstance(audio_chunk, dict) and 'data' in audio_chunk:
-                                    audio_chunks.append(audio_chunk['data'])
-                                    if sample_rate is None and 'sample_rate' in audio_chunk:
-                                        sample_rate = audio_chunk['sample_rate']
+                                    chunk_index = audio_chunk.get('chunk_index', None)
+                                    step_duration = audio_chunk.get('step_duration', None)
+                                    chunk_sample_rate = audio_chunk.get('sample_rate', 22050)
+
+                                    last_key = f"{tag_node_name}|{slot_idx}"
+                                    last_idx = self._last_chunk_index_dict.get(last_key, -1)
+
+                                    if chunk_index is None or chunk_index != last_idx:
+                                        if chunk_index is not None:
+                                            self._last_chunk_index_dict[last_key] = chunk_index
+
+                                        audio_portion = audio_chunk['data']
+                                        # Extract only the new, non-overlapping step portion
+                                        if step_duration is not None and chunk_index is not None:
+                                            step_samples = int(step_duration * chunk_sample_rate)
+                                            audio_portion = audio_portion[:step_samples]
+
+                                        audio_chunks.append(audio_portion)
+                                        if sample_rate is None:
+                                            sample_rate = chunk_sample_rate
                                 elif isinstance(audio_chunk, np.ndarray):
                                     audio_chunks.append(audio_chunk)
-                            
+
                             if audio_chunks:
-                                # Concatenate all chunks
                                 merged_chunk = np.concatenate(audio_chunks)
                                 self._audio_samples_dict[tag_node_name].append(merged_chunk)
-                                
-                                # Update sample rate if found
+
                                 if sample_rate is not None and tag_node_name in self._recording_metadata_dict:
                                     self._recording_metadata_dict[tag_node_name]['sample_rate'] = sample_rate
                     else:
@@ -421,14 +465,20 @@ class VideoWriterNode(Node):
                 # Use ffmpeg to merge video and audio
                 video_input = ffmpeg.input(video_path)
                 audio_input = ffmpeg.input(temp_audio_path)
-                
+
+                # Choose audio codec compatible with the output container:
+                #   AVI  → PCM (AAC is not supported inside AVI)
+                #   MP4 / MKV → AAC
+                ext = os.path.splitext(output_path)[1].lower()
+                acodec = 'pcm_s16le' if ext == '.avi' else 'aac'
+
                 # Merge video and audio streams
                 output = ffmpeg.output(
                     video_input,
                     audio_input,
                     output_path,
                     vcodec='copy',  # Copy video codec (no re-encoding)
-                    acodec='aac',   # Use AAC for audio (widely compatible)
+                    acodec=acodec,
                     loglevel='error'  # Only show errors
                 )
                 
@@ -439,8 +489,11 @@ class VideoWriterNode(Node):
                 if progress_callback:
                     progress_callback(0.7)
                 
+                # Locate the ffmpeg binary (prefer imageio-ffmpeg bundled binary)
+                ffmpeg_exe = _get_ffmpeg_exe()
+
                 # Run ffmpeg
-                ffmpeg.run(output, capture_stdout=True, capture_stderr=True)
+                ffmpeg.run(output, cmd=ffmpeg_exe, capture_stdout=True, capture_stderr=True)
                 
                 # Report progress: Merge complete
                 if progress_callback:
@@ -642,6 +695,11 @@ class VideoWriterNode(Node):
                 
                 # Initialize audio sample collection
                 self._audio_samples_dict[tag_node_name] = []
+
+                # Reset chunk-index deduplication state for the new recording
+                for key in list(self._last_chunk_index_dict.keys()):
+                    if key.startswith(tag_node_name + '|') or key == tag_node_name:
+                        del self._last_chunk_index_dict[key]
                 
                 # Store recording metadata for final merge
                 self._recording_metadata_dict[tag_node_name] = {
@@ -717,6 +775,11 @@ class VideoWriterNode(Node):
                 # Clean up audio samples
                 if tag_node_name in self._audio_samples_dict:
                     self._audio_samples_dict.pop(tag_node_name, None)
+
+                # Clean up chunk-index deduplication state
+                for key in list(self._last_chunk_index_dict.keys()):
+                    if key.startswith(tag_node_name + '|') or key == tag_node_name:
+                        del self._last_chunk_index_dict[key]
                 
                 # Close metadata file handles if MKV
                 if tag_node_name in self._mkv_metadata_dict:
