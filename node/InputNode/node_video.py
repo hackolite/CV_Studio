@@ -12,6 +12,29 @@ import os
 import shutil
 import threading
 
+try:
+    import imageio_ffmpeg
+    _IMAGEIO_FFMPEG_AVAILABLE = True
+except ImportError:
+    _IMAGEIO_FFMPEG_AVAILABLE = False
+
+
+def _get_ffmpeg_exe():
+    """Return the path to a usable ffmpeg executable.
+
+    Resolution order:
+    1. imageio-ffmpeg bundled binary (cross-platform, no system install needed).
+    2. ffmpeg binary found on the system PATH via shutil.which.
+
+    Returns the executable path string, or None if no backend is found.
+    """
+    if _IMAGEIO_FFMPEG_AVAILABLE:
+        try:
+            return imageio_ffmpeg.get_ffmpeg_exe()
+        except RuntimeError:
+            pass
+    return shutil.which("ffmpeg")
+
 from node_editor.util import dpg_get_value, dpg_set_value, _dpg_lock
 
 from node.node_abc import DpgNodeABC
@@ -397,15 +420,23 @@ class VideoNode(Node):
             # Step 2: Extract audio using ffmpeg directly to WAV (faster than librosa)
             print("🎵 Extracting audio with ffmpeg to WAV format...")
             
+            # Locate the ffmpeg binary (imageio-ffmpeg bundled binary or system PATH)
+            ffmpeg_exe = _get_ffmpeg_exe()
+            
             # Create temporary WAV file for full audio extraction
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_audio:
                 tmp_audio_path = tmp_audio.name
             
             try:
+                if ffmpeg_exe is None:
+                    raise FileNotFoundError(
+                        "ffmpeg not found. Install the 'imageio-ffmpeg' Python package "
+                        "(pip install imageio-ffmpeg) or add ffmpeg to your system PATH."
+                    )
                 # Use ffmpeg to extract audio as WAV - most efficient for spectrogram conversion
                 subprocess.run(
                     [
-                        "ffmpeg",
+                        ffmpeg_exe,
                         "-i", movie_path,
                         "-vn",  # No video
                         "-acodec", "pcm_s16le",  # WAV codec
@@ -422,10 +453,12 @@ class VideoNode(Node):
                 print(f"✅ Audio extracted (SR: {sr} Hz, Duration: {len(y)/sr:.2f}s)")
                 
             except (subprocess.CalledProcessError, FileNotFoundError) as e:
-                print(f"⚠️ ffmpeg extraction failed, trying librosa: {e}")
-                # Fallback to librosa if ffmpeg fails or is not installed
-                y, sr = librosa.load(movie_path, sr=44100)
-                print(f"✅ Audio extracted with librosa (SR: {sr} Hz, Duration: {len(y)/sr:.2f}s)")
+                print(f"⚠️ ffmpeg extraction failed: {e}")
+                raise RuntimeError(
+                    f"Audio extraction failed. Ensure 'imageio-ffmpeg' is installed "
+                    f"(pip install imageio-ffmpeg) or that ffmpeg is available on your PATH.\n"
+                    f"Original error: {e}"
+                ) from e
             finally:
                 # Clean up temporary full audio file
                 if os.path.exists(tmp_audio_path):
