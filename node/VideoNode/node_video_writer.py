@@ -364,18 +364,28 @@ class VideoWriterNode(Node):
 
         return {"image":frame, "json":None, "audio":None}
 
+    def _clear_dedup_state(self, tag_node_name):
+        """Remove all chunk-deduplication tracking entries for *tag_node_name*."""
+        keys_to_clear = [k for k in self._last_chunk_index_dict if k[0] == tag_node_name]
+        for k in keys_to_clear:
+            del self._last_chunk_index_dict[k]
+
     def _dedup_chunk_segment(self, tag_node_name, slot_key, audio_chunk):
         """Return the non-overlapping audio segment for *audio_chunk*, or None.
 
         When VideoNode uses a sliding-window chunking scheme the same chunk is
-        delivered for every frame that falls within the same 1-second step
+        delivered for every frame that falls within the same step_duration
         window.  This helper:
 
         1. Checks whether the incoming ``chunk_index`` has already been seen for
            this (node, slot) combination.
         2. If it is a *new* chunk, extracts only the first ``step_duration``
            seconds of audio (the non-overlapping portion) and returns it.
-        3. If the chunk has already been seen, returns ``None`` (duplicate).
+        3. If the chunk has already been seen (or is older than the last seen),
+           returns ``None``.  Using ``<= last_seen`` intentionally discards
+           any backwards-stepping chunk_index that could appear if the user
+           scrubs while recording; dedup state is reset at each recording start
+           so a fresh playback always begins clean.
 
         For audio sources that do not supply ``chunk_index`` (microphone, legacy
         nodes) the full ``data`` array is returned unchanged so that existing
@@ -398,12 +408,13 @@ class VideoWriterNode(Node):
         last_seen = self._last_chunk_index_dict.get(state_key, -1)
 
         if chunk_index <= last_seen:
-            # Already processed this chunk; skip it.
+            # Already processed this chunk (or a newer one); skip it.
             return None
 
         self._last_chunk_index_dict[state_key] = chunk_index
 
-        # Extract only the non-overlapping step_duration portion.
+        # Extract only the non-overlapping step_duration portion so that
+        # consecutive chunks produce a continuous, non-duplicated audio track.
         if step_duration is not None and sample_rate is not None and step_duration > 0:
             step_samples = int(step_duration * sample_rate)
             segment = data[:step_samples]
@@ -734,9 +745,7 @@ class VideoWriterNode(Node):
                 self._audio_samples_dict[tag_node_name] = []
                 
                 # Reset audio chunk deduplication state for a fresh recording
-                keys_to_clear = [k for k in self._last_chunk_index_dict if k[0] == tag_node_name]
-                for k in keys_to_clear:
-                    del self._last_chunk_index_dict[k]
+                self._clear_dedup_state(tag_node_name)
                 
                 # Store recording metadata for final merge
                 self._recording_metadata_dict[tag_node_name] = {
@@ -814,9 +823,7 @@ class VideoWriterNode(Node):
                     self._audio_samples_dict.pop(tag_node_name, None)
                 
                 # Clear deduplication state for this recording session
-                keys_to_clear = [k for k in self._last_chunk_index_dict if k[0] == tag_node_name]
-                for k in keys_to_clear:
-                    del self._last_chunk_index_dict[k]
+                self._clear_dedup_state(tag_node_name)
                 
                 # Close metadata file handles if MKV
                 if tag_node_name in self._mkv_metadata_dict:
