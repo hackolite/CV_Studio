@@ -14,6 +14,7 @@ filterpy>=1.4.5
 scipy>=1.10.0
 pafy>=0.5.5
 ffmpeg-python>=0.2.0
+imageio-ffmpeg>=0.4.8
 pytest>=7.0.0
 # Note: youtube-dl is kept for pafy backward compatibility
 # but yt-dlp is preferred and actively maintained
