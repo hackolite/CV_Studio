@@ -627,7 +627,8 @@ class VideoNode(Node):
                 # Return audio chunk in the format expected by audio processing nodes
                 return {
                     'data': audio_data,
-                    'sample_rate': sample_rate
+                    'sample_rate': sample_rate,
+                    'chunk_index': chunk_index,
                 }
         except Exception as e:
             if chunk_path:
@@ -729,7 +730,14 @@ class VideoNode(Node):
         def preprocess_thread():
             try:
                 print(f"🎬 Starting video preprocessing for node {node_id}...")
-                self._preprocess_video(node_id, movie_path, progress_callback=progress_callback)
+                chunk_dur = self._opencv_setting_dict.get('audio_chunk_duration', 5.0)
+                step_dur = self._opencv_setting_dict.get('audio_chunk_step', 1.0)
+                self._preprocess_video(
+                    node_id, movie_path,
+                    chunk_duration=chunk_dur,
+                    step_duration=step_dur,
+                    progress_callback=progress_callback,
+                )
                 print(f"✅ Video preprocessing complete for node {node_id}")
                 self._preprocessing_status[node_id] = 'done'
 

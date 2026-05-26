@@ -33,6 +33,11 @@ def test_classification_node_accepts_audio_dict():
     sys.modules['node.DLNode.classification.ResNet50'] = mock.MagicMock()
     sys.modules['node.DLNode.classification.ResNet50.resnet50'] = mock.MagicMock()
     sys.modules['node.DLNode.classification.imagenet_class_names'] = mock.MagicMock()
+    sys.modules['node.DLNode.classification.esc50_class_names'] = mock.MagicMock()
+    sys.modules['node.DLNode.classification.yamnet_class_names'] = mock.MagicMock()
+    sys.modules['node.DLNode.classification.CustomONNX'] = mock.MagicMock()
+    sys.modules['node.DLNode.classification.CustomONNX.custom_onnx'] = mock.MagicMock()
+    sys.modules['node.DLNode.classification.custom_models_registry'] = mock.MagicMock()
     
     from node.DLNode.node_classification import Node as ClassificationNode
     
@@ -77,6 +82,11 @@ def test_classification_node_calls_get_input_frame_correctly():
     sys.modules['node.DLNode.classification.ResNet50.resnet50'].ResNet50 = mock_resnet50
     sys.modules['node.DLNode.classification.imagenet_class_names'] = mock.MagicMock()
     sys.modules['node.DLNode.classification.imagenet_class_names'].imagenet_class_names = mock_imagenet_names
+    sys.modules['node.DLNode.classification.esc50_class_names'] = mock.MagicMock()
+    sys.modules['node.DLNode.classification.yamnet_class_names'] = mock.MagicMock()
+    sys.modules['node.DLNode.classification.CustomONNX'] = mock.MagicMock()
+    sys.modules['node.DLNode.classification.CustomONNX.custom_onnx'] = mock.MagicMock()
+    sys.modules['node.DLNode.classification.custom_models_registry'] = mock.MagicMock()
     
     from node.DLNode.node_classification import Node as ClassificationNode
     
