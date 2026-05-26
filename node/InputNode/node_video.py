@@ -421,9 +421,9 @@ class VideoNode(Node):
                 y, sr = sf.read(tmp_audio_path)
                 print(f"✅ Audio extracted (SR: {sr} Hz, Duration: {len(y)/sr:.2f}s)")
                 
-            except subprocess.CalledProcessError as e:
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
                 print(f"⚠️ ffmpeg extraction failed, trying librosa: {e}")
-                # Fallback to librosa if ffmpeg fails
+                # Fallback to librosa if ffmpeg fails or is not installed
                 y, sr = librosa.load(movie_path, sr=44100)
                 print(f"✅ Audio extracted with librosa (SR: {sr} Hz, Duration: {len(y)/sr:.2f}s)")
             finally:
