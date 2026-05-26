@@ -27,6 +27,13 @@ try:
 except ImportError:
     FFMPEG_AVAILABLE = False
     sf = None
+    import warnings
+    warnings.warn(
+        "ffmpeg-python is not installed. VideoWriter will save video WITHOUT audio. "
+        "Fix: pip install ffmpeg-python",
+        RuntimeWarning,
+        stacklevel=1,
+    )
 
 def slow_motion_interpolation(prev_frame, next_frame, alpha):
     """ Generates smooth intermediate frame between 2 images """
@@ -149,6 +156,7 @@ class VideoWriterNode(Node):
     _mkv_metadata_dict = {}  # Store audio and JSON metadata for MKV files
     _mkv_file_handles = {}  # Store file handles for MKV metadata tracks
     _audio_samples_dict = {}  # Store audio samples during recording for merging
+    _last_chunk_index_dict = {}  # Track last appended chunk_index per node to avoid duplicates
     _recording_metadata_dict = {}  # Store metadata about ongoing recordings
     _merge_threads_dict = {}  # Store merge threads for async operations
     _merge_progress_dict = {}  # Store merge progress (0.0 to 1.0)
@@ -240,11 +248,14 @@ class VideoWriterNode(Node):
                         # Single chunk: {'data': array, 'sample_rate': int}
                         
                         if 'data' in audio_data and 'sample_rate' in audio_data:
-                            # Single audio chunk from video node
-                            self._audio_samples_dict[tag_node_name].append(audio_data['data'])
-                            # Update sample rate if provided
-                            if tag_node_name in self._recording_metadata_dict:
-                                self._recording_metadata_dict[tag_node_name]['sample_rate'] = audio_data['sample_rate']
+                            # Single audio chunk from video node — deduplicate by chunk_index
+                            incoming_idx = audio_data.get('chunk_index', None)
+                            last_idx = self._last_chunk_index_dict.get(tag_node_name, -1)
+                            if incoming_idx is None or incoming_idx != last_idx:
+                                self._last_chunk_index_dict[tag_node_name] = incoming_idx
+                                self._audio_samples_dict[tag_node_name].append(audio_data['data'])
+                                if tag_node_name in self._recording_metadata_dict:
+                                    self._recording_metadata_dict[tag_node_name]['sample_rate'] = audio_data['sample_rate']
                         else:
                             # Concat node output: {slot_idx: audio_chunk}
                             # For now, merge all slots into a single audio track
@@ -642,6 +653,7 @@ class VideoWriterNode(Node):
                 
                 # Initialize audio sample collection
                 self._audio_samples_dict[tag_node_name] = []
+                self._last_chunk_index_dict[tag_node_name] = -1
                 
                 # Store recording metadata for final merge
                 self._recording_metadata_dict[tag_node_name] = {
@@ -717,6 +729,7 @@ class VideoWriterNode(Node):
                 # Clean up audio samples
                 if tag_node_name in self._audio_samples_dict:
                     self._audio_samples_dict.pop(tag_node_name, None)
+                self._last_chunk_index_dict.pop(tag_node_name, None)
                 
                 # Close metadata file handles if MKV
                 if tag_node_name in self._mkv_metadata_dict:

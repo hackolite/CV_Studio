@@ -18,5 +18,7 @@
     "use_gpu":true,
     "use_serial":false,
     "use_multiprocessing_rtsp":true,
-    "use_multiprocessing_hls":true
+    "use_multiprocessing_hls":true,
+    "audio_chunk_duration": 5.0,
+    "audio_chunk_step": 1.0
 }
