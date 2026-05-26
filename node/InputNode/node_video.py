@@ -598,7 +598,19 @@ class VideoNode(Node):
             frame_number: Current frame number
             
         Returns:
-            Dictionary with 'data' (numpy array) and 'sample_rate' (int), or None if not available
+            Dictionary with keys:
+              'data'         – numpy array of audio samples
+              'sample_rate'  – int, samples per second
+              'chunk_index'  – int, monotonically increasing index of this chunk
+              'step_duration'– float, seconds between consecutive chunk start times
+            Returns None if audio is not available.
+            
+        Note on audio reconstruction:
+            Chunks use a sliding window (chunk_duration > step_duration), so they
+            overlap.  To reconstruct a continuous, non-duplicated audio stream,
+            consumers should only use the first step_duration seconds of each chunk
+            the first time a new chunk_index is observed (see VideoWriter for the
+            reference implementation).
         """
         if node_id not in self._chunk_metadata or node_id not in self._audio_chunk_paths:
             return None
@@ -624,10 +636,13 @@ class VideoNode(Node):
             chunk_path = chunk_paths[chunk_index]
             if os.path.exists(chunk_path):
                 audio_data, sample_rate = sf.read(chunk_path)
-                # Return audio chunk in the format expected by audio processing nodes
+                # Return audio chunk with synchronization metadata so downstream
+                # nodes (e.g. VideoWriter) can deduplicate overlapping chunks.
                 return {
                     'data': audio_data,
-                    'sample_rate': sample_rate
+                    'sample_rate': sample_rate,
+                    'chunk_index': chunk_index,
+                    'step_duration': step_duration,
                 }
         except Exception as e:
             if chunk_path:

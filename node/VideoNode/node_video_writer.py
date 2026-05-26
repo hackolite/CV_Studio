@@ -152,6 +152,9 @@ class VideoWriterNode(Node):
     _recording_metadata_dict = {}  # Store metadata about ongoing recordings
     _merge_threads_dict = {}  # Store merge threads for async operations
     _merge_progress_dict = {}  # Store merge progress (0.0 to 1.0)
+    # Track the last seen chunk_index per node so we only keep the
+    # non-overlapping portion of each new sliding-window audio chunk.
+    _last_chunk_index_dict = {}
     _start_label = 'Start'
     _stop_label = 'Stop'
     
@@ -231,32 +234,53 @@ class VideoWriterNode(Node):
                                           interpolation=cv2.INTER_CUBIC)
                 self._video_writer_dict[tag_node_name].write(writer_frame)
                 
-                # Collect audio samples for final merge (for all formats)
+                # Collect audio samples for final merge (for all formats).
+                #
+                # Audio deduplication strategy
+                # ─────────────────────────────
+                # The VideoNode uses a *sliding-window* chunking scheme
+                # (chunk_duration > step_duration).  Every video frame carries
+                # the chunk that is "current" for that frame, so many consecutive
+                # frames share the same 5-second chunk.  Blindly appending that
+                # chunk for every frame would result in ~fps×chunk_duration seconds
+                # of audio per second of video (e.g. 150 s of audio per 1 s of
+                # video at 30 fps / 5 s chunks).
+                #
+                # Fix: the audio dict from VideoNode now includes `chunk_index`
+                # and `step_duration`.  We only append audio when a new
+                # chunk_index is seen, and we only take the first
+                # step_duration seconds (the non-overlapping portion) of each
+                # new chunk.  This reconstructs a continuous, correctly-timed
+                # audio track regardless of chunk/step parameters.
+                #
+                # For audio sources that do not supply chunk_index (microphone,
+                # legacy nodes) the old behaviour is preserved.
                 if audio_data is not None and tag_node_name in self._audio_samples_dict:
                     # audio_data can be a dict (from concat node with multiple slots) or a single chunk
                     if isinstance(audio_data, dict):
                         # Check if this is a multi-slot concat output or single audio chunk from video node
                         # Multi-slot: {0: audio_chunk, 1: audio_chunk, ...}
-                        # Single chunk: {'data': array, 'sample_rate': int}
+                        # Single chunk: {'data': array, 'sample_rate': int, ...}
                         
                         if 'data' in audio_data and 'sample_rate' in audio_data:
-                            # Single audio chunk from video node
-                            self._audio_samples_dict[tag_node_name].append(audio_data['data'])
-                            # Update sample rate if provided
-                            if tag_node_name in self._recording_metadata_dict:
-                                self._recording_metadata_dict[tag_node_name]['sample_rate'] = audio_data['sample_rate']
+                            # Single audio chunk from video node (or compatible source)
+                            self._append_audio_chunk(tag_node_name, audio_data)
                         else:
                             # Concat node output: {slot_idx: audio_chunk}
-                            # For now, merge all slots into a single audio track
-                            # Get all audio chunks and concatenate them
+                            # Merge all slots into a single audio track, applying
+                            # deduplication per slot where chunk_index is available.
                             audio_chunks = []
                             sample_rate = None
                             
                             for slot_idx in sorted(audio_data.keys()):
                                 audio_chunk = audio_data[slot_idx]
-                                # Handle dict format from video node: {'data': array, 'sample_rate': int}
+                                # Handle dict format from video node: {'data': array, 'sample_rate': int, ...}
                                 if isinstance(audio_chunk, dict) and 'data' in audio_chunk:
-                                    audio_chunks.append(audio_chunk['data'])
+                                    segment = self._dedup_chunk_segment(
+                                        tag_node_name, slot_idx, audio_chunk
+                                    )
+                                    if segment is not None:
+                                        audio_chunks.append(segment)
                                     if sample_rate is None and 'sample_rate' in audio_chunk:
                                         sample_rate = audio_chunk['sample_rate']
                                 elif isinstance(audio_chunk, np.ndarray):
@@ -271,7 +295,7 @@ class VideoWriterNode(Node):
                                 if sample_rate is not None and tag_node_name in self._recording_metadata_dict:
                                     self._recording_metadata_dict[tag_node_name]['sample_rate'] = sample_rate
                     else:
-                        # Single audio chunk as numpy array
+                        # Single audio chunk as numpy array (no deduplication possible)
                         if isinstance(audio_data, np.ndarray):
                             self._audio_samples_dict[tag_node_name].append(audio_data)
                 
@@ -339,6 +363,72 @@ class VideoWriterNode(Node):
             self._prev_frame_flag = False
 
         return {"image":frame, "json":None, "audio":None}
+
+    def _dedup_chunk_segment(self, tag_node_name, slot_key, audio_chunk):
+        """Return the non-overlapping audio segment for *audio_chunk*, or None.
+
+        When VideoNode uses a sliding-window chunking scheme the same chunk is
+        delivered for every frame that falls within the same 1-second step
+        window.  This helper:
+
+        1. Checks whether the incoming ``chunk_index`` has already been seen for
+           this (node, slot) combination.
+        2. If it is a *new* chunk, extracts only the first ``step_duration``
+           seconds of audio (the non-overlapping portion) and returns it.
+        3. If the chunk has already been seen, returns ``None`` (duplicate).
+
+        For audio sources that do not supply ``chunk_index`` (microphone, legacy
+        nodes) the full ``data`` array is returned unchanged so that existing
+        behaviour is preserved.
+        """
+        chunk_index = audio_chunk.get('chunk_index', None)
+        step_duration = audio_chunk.get('step_duration', None)
+        sample_rate = audio_chunk.get('sample_rate', None)
+        data = audio_chunk.get('data', None)
+
+        if data is None:
+            return None
+
+        # No chunk_index → legacy/microphone source; return data as-is.
+        if chunk_index is None:
+            return data
+
+        # Per-node, per-slot deduplication state
+        state_key = (tag_node_name, slot_key)
+        last_seen = self._last_chunk_index_dict.get(state_key, -1)
+
+        if chunk_index <= last_seen:
+            # Already processed this chunk; skip it.
+            return None
+
+        self._last_chunk_index_dict[state_key] = chunk_index
+
+        # Extract only the non-overlapping step_duration portion.
+        if step_duration is not None and sample_rate is not None and step_duration > 0:
+            step_samples = int(step_duration * sample_rate)
+            segment = data[:step_samples]
+        else:
+            segment = data
+
+        return segment if len(segment) > 0 else None
+
+    def _append_audio_chunk(self, tag_node_name, audio_chunk):
+        """Append deduplicated audio from a single-slot audio chunk dict.
+
+        This handles the common case where ``audio_data`` is a flat dict
+        ``{'data': ..., 'sample_rate': ..., 'chunk_index': ..., 'step_duration': ...}``
+        as produced by the VideoNode.
+        """
+        segment = self._dedup_chunk_segment(tag_node_name, 'single', audio_chunk)
+        if segment is None:
+            return
+
+        if tag_node_name in self._audio_samples_dict:
+            self._audio_samples_dict[tag_node_name].append(segment)
+
+        sample_rate = audio_chunk.get('sample_rate', None)
+        if sample_rate is not None and tag_node_name in self._recording_metadata_dict:
+            self._recording_metadata_dict[tag_node_name]['sample_rate'] = sample_rate
 
     def _close_metadata_handles(self, metadata):
         """Helper method to close all metadata file handles"""
@@ -643,6 +733,11 @@ class VideoWriterNode(Node):
                 # Initialize audio sample collection
                 self._audio_samples_dict[tag_node_name] = []
                 
+                # Reset audio chunk deduplication state for a fresh recording
+                keys_to_clear = [k for k in self._last_chunk_index_dict if k[0] == tag_node_name]
+                for k in keys_to_clear:
+                    del self._last_chunk_index_dict[k]
+                
                 # Store recording metadata for final merge
                 self._recording_metadata_dict[tag_node_name] = {
                     'final_path': file_path,
@@ -717,6 +812,11 @@ class VideoWriterNode(Node):
                 # Clean up audio samples
                 if tag_node_name in self._audio_samples_dict:
                     self._audio_samples_dict.pop(tag_node_name, None)
+                
+                # Clear deduplication state for this recording session
+                keys_to_clear = [k for k in self._last_chunk_index_dict if k[0] == tag_node_name]
+                for k in keys_to_clear:
+                    del self._last_chunk_index_dict[k]
                 
                 # Close metadata file handles if MKV
                 if tag_node_name in self._mkv_metadata_dict:
