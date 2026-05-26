@@ -1407,11 +1407,23 @@ class Node(BaseNode):
         if use_pref_counter:
             start_time = time.monotonic()
 
+        # Preserve the original (unmodified) audio for the passthrough output.
+        # Resampling below is only for feeding the ONNX model; the passthrough
+        # must always carry the original audio at the original sample rate so
+        # downstream nodes (e.g. VideoWriter) receive full-fidelity audio.
+        passthrough_audio_data = audio_data
+        passthrough_sample_rate = sample_rate
+
         # ---- Resample audio to match the model's expected sample rate ----
         # When the microphone (or other audio source) runs at a different rate from
         # the SR used during model training, the mel spectrogram will have different
         # frequency-time characteristics → wrong predictions.  We transparently
         # resample so the model always receives audio at its expected rate.
+        # NOTE: only the local mel_audio_data / mel_sample_rate variables are
+        # modified here; passthrough_audio_data / passthrough_sample_rate stay
+        # at the original values.
+        mel_audio_data = audio_data
+        mel_sample_rate = sample_rate
         target_sr_for_model = Node._model_target_sr.get(model_name, 0)
         if target_sr_for_model > 0 and int(sample_rate) != target_sr_for_model:
             librosa = _get_librosa()
@@ -1420,12 +1432,12 @@ class Node(BaseNode):
                 if y_rs.ndim > 1:
                     y_rs = np.mean(y_rs, axis=-1)
                 orig_sr = int(sample_rate)
-                audio_data = librosa.resample(
+                mel_audio_data = librosa.resample(
                     y_rs,
                     orig_sr=orig_sr,
                     target_sr=target_sr_for_model,
                 )
-                sample_rate = target_sr_for_model
+                mel_sample_rate = target_sr_for_model
                 logger.debug(
                     f"[AudioClassification] Resampled audio "
                     f"{orig_sr} → {target_sr_for_model} Hz for model '{model_name}'"
@@ -1433,7 +1445,7 @@ class Node(BaseNode):
 
         # ---- Build mel array ----
         mel_arr = audio_to_mel_array(
-            audio_data, sample_rate, n_mels, max_sec,
+            mel_audio_data, mel_sample_rate, n_mels, max_sec,
             n_fft=model_n_fft if model_n_fft > 0 else None,
             hop_length=model_hop_length if model_hop_length > 0 else None,
             win_length=model_win_length if model_win_length > 0 else None,
@@ -1442,7 +1454,17 @@ class Node(BaseNode):
             fmax=model_fmax,
         )
         if mel_arr is None:
-            return {"image": None, "json": None, "audio": None}
+            # Even when the spectrogram cannot be built (e.g. silence or audio
+            # too short), the original audio must still flow downstream so the
+            # VideoWriter can include it in the final recording.
+            return {
+                "image": None,
+                "json": None,
+                "audio": {
+                    "data": passthrough_audio_data,
+                    "sample_rate": passthrough_sample_rate,
+                },
+            }
 
         # ---- Render mel as preview (shown even without a model) ----
         bgr_preview = mel_array_to_bgr_image(mel_arr, small_window_w, small_window_h)
@@ -1605,7 +1627,15 @@ class Node(BaseNode):
             except Exception:
                 pass
 
-        return {"image": bgr_preview, "json": result_json, "audio": {"data": audio_data, "sample_rate": sample_rate} if audio_data is not None else None}
+        return {
+            "image": bgr_preview,
+            "json": result_json,
+            "audio": (
+                {"data": passthrough_audio_data, "sample_rate": passthrough_sample_rate}
+                if passthrough_audio_data is not None
+                else None
+            ),
+        }
 
     # ------------------------------------------------------------------
     # Settings persistence (export / import JSON)
