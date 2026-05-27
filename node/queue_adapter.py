@@ -57,10 +57,10 @@ class QueueBackedDict:
         if value is not None:
             self._queue_manager.put_data(node_id_name, self._data_type, value)
             
-            # Log the data insertion via adapter
-            data_type_name = type(value).__name__
-            logger.info(
-                f"QueueAdapter [{self._data_type}] - Node [{node_id_name}] set value of type={data_type_name}"
+            logger.debug(
+                "QueueAdapter [%s] accepted value for node [%s]",
+                self._data_type,
+                node_id_name,
             )
     
     def set_with_timestamp(self, node_id_name: str, value: Any, timestamp: Optional[float] = None) -> None:
@@ -81,11 +81,11 @@ class QueueBackedDict:
         if value is not None:
             self._queue_manager.put_data(node_id_name, self._data_type, value, timestamp)
             
-            # Log the data insertion via adapter
-            data_type_name = type(value).__name__
-            ts_source = "preserved" if timestamp is not None else "new"
-            logger.info(
-                f"QueueAdapter [{self._data_type}] - Node [{node_id_name}] set value of type={data_type_name} with {ts_source} timestamp"
+            logger.debug(
+                "QueueAdapter [%s] accepted timestamped value for node [%s] (%s timestamp)",
+                self._data_type,
+                node_id_name,
+                "preserved" if timestamp is not None else "new",
             )
     
     def __getitem__(self, node_id_name: str) -> Any:
