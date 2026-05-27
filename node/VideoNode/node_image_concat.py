@@ -537,11 +537,16 @@ class Node(Node):
         json_chunks = {}
         
         for slot_idx, slot_info in slot_data_dict.items():
-            if slot_info['type'] in [self.TYPE_AUDIO, self.TYPE_IMAGE]:
-                # Pass-through audio also from IMAGE slots (e.g. Video node)
+            if slot_info['type'] == self.TYPE_AUDIO:
                 audio_chunk = node_audio_dict.get(slot_info['source'], None)
                 if audio_chunk is not None:
                     audio_chunks[slot_idx] = audio_chunk
+            elif slot_info['type'] == self.TYPE_IMAGE:
+                source_node_name = slot_info['source'].split(':')[1] if ':' in slot_info['source'] else ''
+                if source_node_name == 'Video':
+                    audio_chunk = node_audio_dict.get(slot_info['source'], None)
+                    if audio_chunk is not None:
+                        audio_chunks[slot_idx] = audio_chunk
             elif slot_info['type'] == self.TYPE_JSON:
                 # Get JSON from node_result_dict
                 json_chunk = node_result_dict.get(slot_info['source'], None)
