@@ -4,6 +4,7 @@
 
 import pytest
 import numpy as np
+from unittest.mock import patch
 
 
 def test_slot_type_initialization():
@@ -156,6 +157,96 @@ def test_setting_dict_with_slot_types():
     assert setting_dict['slot_types'][3] == 'JSON'
 
 
+def test_audio_slot_passes_through_audio():
+    """Test that AUDIO slots forward their audio payload."""
+    from node.VideoNode.node_image_concat import Node
+
+    node = Node()
+    tag_node_name = "1:ImageConcat"
+    node.tag_node_name = tag_node_name
+    node._opencv_setting_dict = {
+        'process_width': 64,
+        'process_height': 48,
+        'result_width': 64,
+        'result_height': 48,
+        'draw_info_on_result': False,
+    }
+    node._slot_id[tag_node_name] = 1
+    node._slot_types[tag_node_name] = {1: node.TYPE_AUDIO}
+    node._value_history = {}
+
+    source = "0:AudioClassification"
+    audio_chunk = {
+        'data': np.array([0.1, 0.2, 0.3], dtype=np.float32),
+        'sample_rate': 16000,
+        'chunk_index': 7,
+    }
+
+    connection_list = [
+        (f"{source}:{node.TYPE_AUDIO}:Output01", f"{tag_node_name}:{node.TYPE_AUDIO}:Input01")
+    ]
+    node_audio_dict = {source: audio_chunk}
+
+    with patch('node.VideoNode.node_image_concat.dpg_set_value'):
+        result = node.update(
+            1,
+            connection_list,
+            {},
+            {},
+            node_audio_dict,
+        )
+
+    assert result['audio'] is not None
+    assert 0 in result['audio']
+    assert result['audio'][0]['sample_rate'] == 16000
+    assert result['audio'][0]['chunk_index'] == 7
+    np.testing.assert_array_equal(result['audio'][0]['data'], audio_chunk['data'])
+
+
+def test_image_slot_does_not_pass_through_audio():
+    """Test that IMAGE slots do not forward audio payloads."""
+    from node.VideoNode.node_image_concat import Node
+
+    node = Node()
+    tag_node_name = "1:ImageConcat"
+    node.tag_node_name = tag_node_name
+    node._opencv_setting_dict = {
+        'process_width': 64,
+        'process_height': 48,
+        'result_width': 64,
+        'result_height': 48,
+        'draw_info_on_result': False,
+    }
+    node._slot_id[tag_node_name] = 1
+    node._slot_types[tag_node_name] = {1: node.TYPE_IMAGE}
+    node._value_history = {}
+
+    source = "0:Video"
+    frame = np.zeros((48, 64, 3), dtype=np.uint8)
+    audio_chunk = {
+        'data': np.array([0.1, 0.2, 0.3], dtype=np.float32),
+        'sample_rate': 16000,
+        'chunk_index': 7,
+    }
+
+    connection_list = [
+        (f"{source}:{node.TYPE_IMAGE}:Output01", f"{tag_node_name}:{node.TYPE_IMAGE}:Input01")
+    ]
+    node_image_dict = {source: frame}
+    node_audio_dict = {source: audio_chunk}
+
+    with patch('node.VideoNode.node_image_concat.dpg_set_value'):
+        result = node.update(
+            1,
+            connection_list,
+            node_image_dict,
+            {},
+            node_audio_dict,
+        )
+
+    assert result['audio'] is None
+
+
 if __name__ == '__main__':
     # Run tests
     test_slot_type_initialization()
@@ -166,4 +257,6 @@ if __name__ == '__main__':
     test_json_chunks_collection()
     test_output_data_structure()
     test_setting_dict_with_slot_types()
+    test_audio_slot_passes_through_audio()
+    test_image_slot_does_not_pass_through_audio()
     print("All multi-slot concat tests passed!")
