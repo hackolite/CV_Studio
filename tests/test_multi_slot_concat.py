@@ -223,7 +223,7 @@ def test_non_video_image_slot_does_not_pass_through_audio():
     node._slot_types[tag_node_name] = {1: node.TYPE_IMAGE}
     node._value_history = {}
 
-    source = "0:AudioClassification"
+    source = "0:ImageProcessor"
     frame = np.zeros((48, 64, 3), dtype=np.uint8)
     audio_chunk = {
         'data': np.array([0.1, 0.2, 0.3], dtype=np.float32),

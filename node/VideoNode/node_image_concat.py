@@ -14,6 +14,8 @@ from node.node_abc import DpgNodeABC
 #from node.draw_node.draw_util.draw_util import draw_info
 from node.basenode import Node
 
+VIDEO_NODE_TAG = 'Video'
+
 def create_concat_image(frame_dict, slot_num):
     if slot_num == 1:
         frame = frame_dict[0]
@@ -542,8 +544,8 @@ class Node(Node):
                 if audio_chunk is not None:
                     audio_chunks[slot_idx] = audio_chunk
             elif slot_info['type'] == self.TYPE_IMAGE:
-                source_node_name = slot_info['source'].split(':')[1] if ':' in slot_info['source'] else ''
-                if source_node_name == 'Video':
+                source_node_name = slot_info['source'].rsplit(':', 1)[-1]
+                if source_node_name == VIDEO_NODE_TAG:
                     audio_chunk = node_audio_dict.get(slot_info['source'], None)
                     if audio_chunk is not None:
                         audio_chunks[slot_idx] = audio_chunk
