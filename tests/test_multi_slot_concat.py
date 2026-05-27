@@ -201,6 +201,7 @@ def test_image_slot_passes_through_audio():
     assert result['audio'] is not None
     assert 0 in result['audio']
     assert result['audio'][0]['sample_rate'] == 16000
+    assert result['audio'][0]['chunk_index'] == 7
     np.testing.assert_array_equal(result['audio'][0]['data'], audio_chunk['data'])
 
 
