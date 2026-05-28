@@ -613,14 +613,20 @@ class VideoWriterNode(Node):
                 video_input = ffmpeg.input(video_path)
                 audio_input = ffmpeg.input(temp_audio_path)
                 
-                # Merge video and audio streams
+                # Merge video and audio streams.
+                # Use -shortest so that if the audio track is marginally longer
+                # than the video (e.g. one extra step_duration chunk due to the
+                # off-by-one at the last frame boundary), the output is trimmed
+                # to the video duration — preventing the image from freezing on
+                # the last frame while the extra audio plays out.
                 output = ffmpeg.output(
                     video_input,
                     audio_input,
                     output_path,
                     vcodec='copy',  # Copy video codec (no re-encoding)
                     acodec='aac',   # Use AAC for audio (widely compatible)
-                    loglevel='error'  # Only show errors
+                    loglevel='error',  # Only show errors
+                    shortest=None,  # Trim output to the shorter of the two streams
                 )
                 
                 # Overwrite output file if it exists

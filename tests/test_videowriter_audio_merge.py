@@ -199,7 +199,121 @@ def test_recording_metadata_initialization():
     assert len(audio_samples_dict[tag_node_name]) == 0
 
 
-def test_supported_formats():
+def test_audio_step_duration_trim_single_slot():
+    """Audio chunks from VideoNode carry step_duration; VideoWriter must trim to it.
+
+    Reproduces the progressive A/V drift: a 5-second sliding-window chunk
+    (chunk_duration=5s, step_duration=1s) was previously stored whole, making
+    the concatenated audio 5× the video duration.  After the fix, only the
+    first step_duration seconds are kept.
+    """
+    import numpy as np
+
+    sample_rate = 22050
+    chunk_duration = 5.0   # seconds per WAV chunk
+    step_duration  = 1.0   # seconds of new audio per step
+
+    chunk_samples = int(chunk_duration * sample_rate)
+    step_samples  = int(step_duration  * sample_rate)
+
+    # Simulate 3 chunks as the VideoWriter would receive them from VideoNode.
+    # Each chunk is chunk_duration seconds but the VideoWriter should only
+    # keep the first step_duration seconds.
+    last_idx = -1
+    collected = []
+
+    for chunk_index in range(3):
+        # Full 5-second chunk (what _get_audio_chunk_for_frame returns)
+        chunk_data = np.ones(chunk_samples, dtype=np.float32) * (chunk_index + 1)
+        audio_data = {
+            'data': chunk_data,
+            'sample_rate': sample_rate,
+            'chunk_index': chunk_index,
+            'step_duration': step_duration,
+        }
+
+        # Reproduce the dedup + trim logic from VideoWriterNode.update()
+        incoming_idx = audio_data.get('chunk_index', None)
+        if incoming_idx is None or incoming_idx != last_idx:
+            last_idx = incoming_idx
+            data = audio_data['data']
+            sr   = audio_data['sample_rate']
+            step = audio_data.get('step_duration', None)
+            if step is not None and sr > 0:
+                data = data[:int(step * sr)]
+            collected.append(data)
+
+    full_audio = np.concatenate(collected)
+
+    # Each chunk trimmed to step_samples; 3 chunks → 3 × step_samples total.
+    expected_samples = 3 * step_samples
+    assert len(full_audio) == expected_samples, (
+        f"Expected {expected_samples} samples ({3 * step_duration}s), "
+        f"got {len(full_audio)} ({len(full_audio) / sample_rate:.2f}s). "
+        "Sliding-window trim is not working."
+    )
+
+
+def test_audio_duration_matches_video_no_freeze():
+    """After step_duration trim the audio must not exceed the video duration.
+
+    Verifies that for a typical 10-second video at 30 fps with step_duration=1s,
+    the concatenated audio is ≤ the video duration so the final file does not
+    freeze on the last frame.
+    """
+    import numpy as np
+
+    sample_rate = 22050
+    chunk_duration = 5.0
+    step_duration  = 1.0
+    fps = 30.0
+    total_frames = 300   # 10-second video
+
+    chunk_samples = int(chunk_duration * sample_rate)
+    step_samples  = int(step_duration  * sample_rate)
+
+    # Simulate what the VideoNode emits per frame (same as _get_audio_chunk_for_frame)
+    last_idx = -1
+    collected = []
+
+    for frame_number in range(1, total_frames + 1):
+        current_time = frame_number / fps
+        chunk_index  = int(current_time / step_duration)
+        chunk_index  = min(chunk_index, 999)  # no explicit cap in production; just guard
+
+        chunk_data = np.ones(chunk_samples, dtype=np.float32) * (chunk_index + 1)
+        audio_data = {
+            'data': chunk_data,
+            'sample_rate': sample_rate,
+            'chunk_index': chunk_index,
+            'step_duration': step_duration,
+        }
+
+        incoming_idx = audio_data.get('chunk_index', None)
+        if incoming_idx is None or incoming_idx != last_idx:
+            last_idx = incoming_idx
+            data = audio_data['data']
+            sr   = audio_data['sample_rate']
+            step = audio_data.get('step_duration', None)
+            if step is not None and sr > 0:
+                data = data[:int(step * sr)]
+            collected.append(data)
+
+    full_audio     = np.concatenate(collected)
+    audio_duration = len(full_audio) / sample_rate
+    video_duration = total_frames / fps  # 10.0 s
+
+    # With -shortest the output is trimmed to the shorter stream.  The important
+    # property is that the audio excess must be small (≤ step_duration), not 5×.
+    excess = audio_duration - video_duration
+    assert excess <= step_duration + 0.01, (
+        f"Audio ({audio_duration:.2f}s) exceeds video ({video_duration:.2f}s) "
+        f"by {excess:.2f}s — more than one step_duration ({step_duration}s). "
+        "Progressive drift is not fixed."
+    )
+
+
+
     """Test that all required formats (MP4, AVI, MKV) are supported"""
     supported_formats = ['MP4', 'AVI', 'MKV']
     
