@@ -185,12 +185,18 @@ class FramePacket:
 
 
 class AVDriftDetector:
-    """Stateless A/V drift checker.
+    """Stateful A/V drift checker with smoothed drift estimation.
 
     Call :meth:`check` on each :class:`FramePacket` to detect A/V drift.
     If ``packet.audio_data`` contains a ``'pts_ms'`` key, that value is used
     as the audio clock reference.  Otherwise drift is computed from
     ``audio_chunk_index * step_duration_ms``.
+
+    The detector maintains a short rolling history of recent drift measurements
+    to distinguish transient jitter spikes from sustained drift.  Only sustained
+    drift (where the *smoothed* average exceeds thresholds) triggers warnings/
+    errors — this prevents noisy false positives from single-frame AI
+    processing stalls that are immediately compensated on subsequent frames.
 
     Parameters
     ----------
@@ -205,6 +211,8 @@ class AVDriftDetector:
     on_error:
         Callable invoked as ``on_error(packet, drift_ms)`` when drift reaches
         or exceeds ``max_av_drift_ms``.
+    history_size:
+        Number of recent drift samples to keep for smoothing (default: 8).
     """
 
     def __init__(
@@ -213,6 +221,7 @@ class AVDriftDetector:
         step_duration_ms: float = 1000.0,
         on_warning: Optional[Callable[["FramePacket", float], None]] = None,
         on_error: Optional[Callable[["FramePacket", float], None]] = None,
+        history_size: int = 8,
     ) -> None:
         self._max_av_drift_ms = max_av_drift_ms
         self._step_duration_ms = step_duration_ms
@@ -220,6 +229,27 @@ class AVDriftDetector:
         self._warn_threshold_ms = max_av_drift_ms * 0.9
         self.on_warning = on_warning
         self.on_error = on_error
+        # Rolling drift history for smoothing
+        self._history_size = max(history_size, 1)
+        self._drift_history: List[float] = []
+        # Track signed drift for direction detection
+        self._signed_drift_history: List[float] = []
+
+    # ------------------------------------------------------------------
+
+    @property
+    def smoothed_drift_ms(self) -> float:
+        """Return the current smoothed (mean) absolute drift in ms."""
+        if not self._drift_history:
+            return 0.0
+        return sum(self._drift_history) / len(self._drift_history)
+
+    @property
+    def drift_direction(self) -> float:
+        """Return signed drift trend: >0 means audio leads, <0 means audio lags."""
+        if not self._signed_drift_history:
+            return 0.0
+        return sum(self._signed_drift_history) / len(self._signed_drift_history)
 
     # ------------------------------------------------------------------
 
@@ -235,21 +265,44 @@ class AVDriftDetector:
         if audio_ref_ms is None:
             return 0.0
 
-        drift_ms = abs(packet.pts_ms - audio_ref_ms)
+        signed_drift = packet.pts_ms - audio_ref_ms
+        drift_ms = abs(signed_drift)
 
-        if drift_ms >= self._max_av_drift_ms:
+        # Update rolling history
+        self._drift_history.append(drift_ms)
+        if len(self._drift_history) > self._history_size:
+            self._drift_history.pop(0)
+        self._signed_drift_history.append(signed_drift)
+        if len(self._signed_drift_history) > self._history_size:
+            self._signed_drift_history.pop(0)
+
+        # Use smoothed drift for threshold decisions to avoid false positives
+        # from single-frame jitter spikes.  For the first few frames (history
+        # not yet full), use the raw value to catch early gross misalignment.
+        effective_drift = (
+            self.smoothed_drift_ms
+            if len(self._drift_history) >= self._history_size
+            else drift_ms
+        )
+
+        if effective_drift >= self._max_av_drift_ms:
             logger.error(
-                "A/V drift %.1f ms exceeds hard limit %.1f ms (frame_index=%d)",
+                "A/V drift %.1f ms (smoothed %.1f ms) exceeds hard limit %.1f ms "
+                "(frame_index=%d, direction=%s)",
                 drift_ms,
+                self.smoothed_drift_ms,
                 self._max_av_drift_ms,
                 packet.frame_index,
+                "audio_leads" if signed_drift > 0 else "audio_lags",
             )
             if self.on_error is not None:
                 self.on_error(packet, drift_ms)
-        elif drift_ms >= self._warn_threshold_ms:
+        elif effective_drift >= self._warn_threshold_ms:
             logger.warning(
-                "A/V drift warning: %.1f ms (warn_threshold=%.1f ms, frame_index=%d)",
+                "A/V drift warning: %.1f ms (smoothed %.1f ms, "
+                "warn_threshold=%.1f ms, frame_index=%d)",
                 drift_ms,
+                self.smoothed_drift_ms,
                 self._warn_threshold_ms,
                 packet.frame_index,
             )
@@ -269,6 +322,11 @@ class AVDriftDetector:
                 return float(packet.audio_data["pts_ms"])
         # Fall back to chunk-index-based reference
         return packet.audio_chunk_index * self._step_duration_ms
+
+    def reset(self) -> None:
+        """Clear drift history (e.g. after a seek or loop boundary)."""
+        self._drift_history.clear()
+        self._signed_drift_history.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -488,12 +546,17 @@ class SyncVideoWriter:
         self,
         write_fn: Callable[[np.ndarray, float], None],
     ) -> List["FramePacket"]:
-        """Pop and write one frame from the heap (for streaming integration).
+        """Pop and write frames from the heap (for streaming integration).
 
         Designed to be called from :meth:`VideoWriterNode.update` once per
-        pipeline cycle.  It pops the frame with the lowest PTS from the heap,
+        pipeline cycle.  It pops frames with the lowest PTS from the heap,
         inserts duplicate frames if the PTS gap is too large, and calls
         ``write_fn(image, pts_ms)`` for each frame.
+
+        Adaptive batching: when the internal buffer occupancy exceeds 50%,
+        multiple frames are flushed per call to prevent unbounded growth during
+        AI processing bursts (e.g. ObjectDetection jitter).  This keeps the
+        buffer depth low and reduces end-to-end latency.
 
         Parameters
         ----------
@@ -517,39 +580,53 @@ class SyncVideoWriter:
             if not self._heap:
                 return written
 
-            packet = heapq.heappop(self._heap)
+            # Adaptive batch size: flush more frames when buffer is filling up.
+            # At ≤50% occupancy flush 1 frame (normal); at 100% flush up to 3.
+            occupancy = len(self._heap) / max(self._max_buffer_size, 1)
+            if occupancy > 0.75:
+                max_flush = 3
+            elif occupancy > 0.5:
+                max_flush = 2
+            else:
+                max_flush = 1
 
-            # Gap-fill duplicates
-            if self._written:
-                last_pts = self._written[-1].pts_ms
-                gap_ms = packet.pts_ms - last_pts
-                num_dup = int(gap_ms / self._frame_duration_ms) - 1
-                if num_dup > 0 and last_pts >= 0:
-                    dup_frame = self._written[-1]
-                    for d in range(min(num_dup, _MAX_GAP_FILL_DUPLICATES)):
-                        dup_pts = last_pts + (d + 1) * self._frame_duration_ms
-                        dup = FramePacket(
-                            frame_index=dup_frame.frame_index,
-                            pts_ms=dup_pts,
-                            audio_chunk_index=dup_frame.audio_chunk_index,
-                            image=dup_frame.image,
-                            audio_data=dup_frame.audio_data,
-                            pipeline_entry_ts=dup_frame.pipeline_entry_ts,
-                            pipeline_exit_ts=dup_frame.pipeline_exit_ts,
-                        )
-                        try:
-                            write_fn(dup.image, dup_pts)
-                        except Exception:
-                            logger.exception("SyncVideoWriter.flush_ready: write_fn error (duplicate)")
-                        self._written.append(dup)
-                        written.append(dup)
+            for _ in range(max_flush):
+                if not self._heap:
+                    break
 
-            try:
-                write_fn(packet.image, packet.pts_ms)
-            except Exception:
-                logger.exception("SyncVideoWriter.flush_ready: write_fn error")
-            self._written.append(packet)
-            written.append(packet)
+                packet = heapq.heappop(self._heap)
+
+                # Gap-fill duplicates
+                if self._written:
+                    last_pts = self._written[-1].pts_ms
+                    gap_ms = packet.pts_ms - last_pts
+                    num_dup = int(gap_ms / self._frame_duration_ms) - 1
+                    if num_dup > 0 and last_pts >= 0:
+                        dup_frame = self._written[-1]
+                        for d in range(min(num_dup, _MAX_GAP_FILL_DUPLICATES)):
+                            dup_pts = last_pts + (d + 1) * self._frame_duration_ms
+                            dup = FramePacket(
+                                frame_index=dup_frame.frame_index,
+                                pts_ms=dup_pts,
+                                audio_chunk_index=dup_frame.audio_chunk_index,
+                                image=dup_frame.image,
+                                audio_data=dup_frame.audio_data,
+                                pipeline_entry_ts=dup_frame.pipeline_entry_ts,
+                                pipeline_exit_ts=dup_frame.pipeline_exit_ts,
+                            )
+                            try:
+                                write_fn(dup.image, dup_pts)
+                            except Exception:
+                                logger.exception("SyncVideoWriter.flush_ready: write_fn error (duplicate)")
+                            self._written.append(dup)
+                            written.append(dup)
+
+                try:
+                    write_fn(packet.image, packet.pts_ms)
+                except Exception:
+                    logger.exception("SyncVideoWriter.flush_ready: write_fn error")
+                self._written.append(packet)
+                written.append(packet)
 
         return written
 
@@ -582,12 +659,14 @@ class SyncVideoWriter:
                 continue
 
             # Gap-fill: insert duplicate frames for large PTS gaps
+            # Capped at _MAX_GAP_FILL_DUPLICATES to avoid flooding after
+            # decoder stalls (consistent with flush_ready behaviour).
             if last_pts is not None:
                 gap_ms = packet.pts_ms - last_pts
                 if gap_ms > 2.0 * self._frame_duration_ms and result:
                     num_dup = int(gap_ms / self._frame_duration_ms) - 1
                     prev = result[-1]
-                    for d in range(num_dup):
+                    for d in range(min(num_dup, _MAX_GAP_FILL_DUPLICATES)):
                         dup_pts = last_pts + (d + 1) * self._frame_duration_ms
                         dup = FramePacket(
                             frame_index=prev.frame_index,

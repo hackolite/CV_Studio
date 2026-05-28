@@ -1384,6 +1384,7 @@ class Node(BaseNode):
         # ---- Get AUDIO input ----
         audio_data = None
         sample_rate = _DEFAULT_SR
+        _input_audio_entry = None  # Keep the full input dict for passthrough
 
         for connection_info in connection_list:
             parts = connection_info[0].split(":")
@@ -1394,6 +1395,7 @@ class Node(BaseNode):
                 entry = node_audio_dict.get(src_key, None)
                 if entry is not None:
                     if isinstance(entry, dict):
+                        _input_audio_entry = entry
                         audio_data = entry.get("data", None)
                         sample_rate = entry.get("sample_rate", _DEFAULT_SR)
                     elif isinstance(entry, (list, tuple)) and len(entry) == 2:
@@ -1457,13 +1459,20 @@ class Node(BaseNode):
             # Even when the spectrogram cannot be built (e.g. silence or audio
             # too short), the original audio must still flow downstream so the
             # VideoWriter can include it in the final recording.
+            # Preserve full input dict (chunk_index, step_duration, pts_ms) for
+            # downstream dedup and A/V sync in VideoWriter.
+            _passthrough_out = {
+                "data": passthrough_audio_data,
+                "sample_rate": passthrough_sample_rate,
+            }
+            if _input_audio_entry is not None:
+                for _k in ("chunk_index", "step_duration", "pts_ms"):
+                    if _k in _input_audio_entry:
+                        _passthrough_out[_k] = _input_audio_entry[_k]
             return {
                 "image": None,
                 "json": None,
-                "audio": {
-                    "data": passthrough_audio_data,
-                    "sample_rate": passthrough_sample_rate,
-                },
+                "audio": _passthrough_out,
             }
 
         # ---- Render mel as preview (shown even without a model) ----
@@ -1627,14 +1636,25 @@ class Node(BaseNode):
             except Exception:
                 pass
 
+        # ---- Build passthrough audio output ----
+        # Preserve full input dict metadata (chunk_index, step_duration, pts_ms)
+        # so that downstream nodes (VideoWriter) can deduplicate chunks and
+        # perform accurate A/V alignment.
+        _passthrough_out = None
+        if passthrough_audio_data is not None:
+            _passthrough_out = {
+                "data": passthrough_audio_data,
+                "sample_rate": passthrough_sample_rate,
+            }
+            if _input_audio_entry is not None:
+                for _k in ("chunk_index", "step_duration", "pts_ms"):
+                    if _k in _input_audio_entry:
+                        _passthrough_out[_k] = _input_audio_entry[_k]
+
         return {
             "image": bgr_preview,
             "json": result_json,
-            "audio": (
-                {"data": passthrough_audio_data, "sample_rate": passthrough_sample_rate}
-                if passthrough_audio_data is not None
-                else None
-            ),
+            "audio": _passthrough_out,
         }
 
     # ------------------------------------------------------------------

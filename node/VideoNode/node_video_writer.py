@@ -693,6 +693,36 @@ class VideoWriterNode(Node):
             # Concatenate all valid audio samples
             full_audio = np.concatenate(valid_samples)
             
+            # ---- Trailing audio trim ----
+            # Trim the audio track to match the video duration (derived from the
+            # video file's frame count and fps).  This prevents the audio from
+            # overrunning the video when extra step_duration chunks were collected
+            # after the last video frame, which would cause the player to freeze
+            # on the last frame while extra audio plays out.
+            try:
+                cap = cv2.VideoCapture(video_path)
+                if cap.isOpened():
+                    video_frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                    video_fps = cap.get(cv2.CAP_PROP_FPS)
+                    cap.release()
+                    if video_fps > 0 and video_frame_count > 0:
+                        video_duration_s = video_frame_count / video_fps
+                        max_audio_samples = int(video_duration_s * sample_rate)
+                        if len(full_audio) > max_audio_samples > 0:
+                            trimmed = len(full_audio) - max_audio_samples
+                            full_audio = full_audio[:max_audio_samples]
+                            logger.info(
+                                "Trimmed %d trailing audio samples (%.1f ms) "
+                                "to match video duration %.3f s",
+                                trimmed,
+                                trimmed / sample_rate * 1000.0,
+                                video_duration_s,
+                            )
+                else:
+                    cap.release()
+            except Exception as e:
+                logger.debug("Could not trim trailing audio: %s", e)
+            
             # Report progress: Audio concatenated
             if progress_callback:
                 progress_callback(0.3)
