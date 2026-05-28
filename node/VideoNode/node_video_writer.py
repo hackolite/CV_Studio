@@ -520,6 +520,9 @@ class VideoWriterNode(Node):
         if tag_node_name not in self._audio_samples_dict:
             return
 
+        if not audio_data:
+            return
+
         first_slot = min(audio_data.keys())
         first_chunk = audio_data[first_slot]
         incoming_idx = (

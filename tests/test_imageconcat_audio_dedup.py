@@ -250,3 +250,4 @@ class TestImageConcatChunkIndexDedup:
         # No pre-seeding — tag absent from _audio_samples_dict
         node._collect_concat_audio("missing:tag", _make_concat_audio(0), _make_packet(0.0))
         assert "missing:tag" not in node._audio_samples_dict
+        assert "missing:tag" not in node._last_chunk_index_dict
