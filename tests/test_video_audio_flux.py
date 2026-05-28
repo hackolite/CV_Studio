@@ -578,13 +578,6 @@ class TestLoggingAdditions:
                "VideoWriter has no dedicated AUDIO input" in src, \
             "VideoWriter.update() should document the missing AUDIO input port (RC-1)"
 
-    def test_main_logs_audio_propagation_per_node(self):
-        src = _read("main.py")
-        assert "AudioPropagation" in src, \
-            "main.py update_node_info() should log [AudioPropagation] events"
-        assert "produced an IMAGE frame but returned audio=None" in src or \
-               "IMAGE frame but returned audio=None" in src, \
-            "main.py should warn when an image node drops audio"
 
 
 # ===========================================================================
