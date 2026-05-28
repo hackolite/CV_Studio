@@ -170,9 +170,80 @@ def test_video_writer_release_check():
     print("✓ Video writer release check works correctly")
 
 
+def test_merge_skipped_when_deps_missing():
+    """
+    Test that _merge_audio_video_ffmpeg returns False and emits a precise warning
+    when ffmpeg-python or soundfile is not installed, rather than silently skipping.
+    """
+    import unittest.mock as mock
+    import logging
+    import node.VideoNode.node_video_writer as nvw
+
+    original_ffmpeg_available = nvw.FFMPEG_AVAILABLE
+    original_ffmpeg_python = nvw._FFMPEG_PYTHON_AVAILABLE
+    original_soundfile = nvw._SOUNDFILE_AVAILABLE
+
+    try:
+        # --- Case 1: only ffmpeg-python missing ---
+        nvw.FFMPEG_AVAILABLE = False
+        nvw._FFMPEG_PYTHON_AVAILABLE = False
+        nvw._SOUNDFILE_AVAILABLE = True
+
+        writer = object.__new__(nvw.VideoWriterNode)
+        with mock.patch.object(nvw.logger, "warning") as mock_warn:
+            result = writer._merge_audio_video_ffmpeg("v.mp4", [], 44100, "out.mp4")
+
+        assert result is False, "merge must return False when ffmpeg-python is missing"
+        mock_warn.assert_called_once()
+        # logger.warning(fmt, arg1, arg2) — check both format string and args
+        call_args = mock_warn.call_args
+        full_msg = (call_args[0][0] % call_args[0][1:]) if len(call_args[0]) > 1 else call_args[0][0]
+        assert "ffmpeg-python" in full_msg, "warning must mention ffmpeg-python"
+        assert "soundfile" not in full_msg, "warning must NOT mention soundfile if it is present"
+        print("✓ ffmpeg-python missing: correct False + accurate warning")
+
+        # --- Case 2: only soundfile missing ---
+        nvw.FFMPEG_AVAILABLE = False
+        nvw._FFMPEG_PYTHON_AVAILABLE = True
+        nvw._SOUNDFILE_AVAILABLE = False
+
+        with mock.patch.object(nvw.logger, "warning") as mock_warn:
+            result = writer._merge_audio_video_ffmpeg("v.mp4", [], 44100, "out.mp4")
+
+        assert result is False, "merge must return False when soundfile is missing"
+        mock_warn.assert_called_once()
+        call_args = mock_warn.call_args
+        full_msg = (call_args[0][0] % call_args[0][1:]) if len(call_args[0]) > 1 else call_args[0][0]
+        assert "soundfile" in full_msg, "warning must mention soundfile"
+        assert "ffmpeg-python" not in full_msg, "warning must NOT mention ffmpeg-python if it is present"
+        print("✓ soundfile missing: correct False + accurate warning")
+
+        # --- Case 3: both missing ---
+        nvw.FFMPEG_AVAILABLE = False
+        nvw._FFMPEG_PYTHON_AVAILABLE = False
+        nvw._SOUNDFILE_AVAILABLE = False
+
+        with mock.patch.object(nvw.logger, "warning") as mock_warn:
+            result = writer._merge_audio_video_ffmpeg("v.mp4", [], 44100, "out.mp4")
+
+        assert result is False, "merge must return False when both are missing"
+        mock_warn.assert_called_once()
+        call_args = mock_warn.call_args
+        full_msg = (call_args[0][0] % call_args[0][1:]) if len(call_args[0]) > 1 else call_args[0][0]
+        assert "ffmpeg-python" in full_msg, "warning must mention ffmpeg-python"
+        assert "soundfile" in full_msg, "warning must mention soundfile"
+        print("✓ both missing: correct False + accurate warning")
+
+    finally:
+        nvw.FFMPEG_AVAILABLE = original_ffmpeg_available
+        nvw._FFMPEG_PYTHON_AVAILABLE = original_ffmpeg_python
+        nvw._SOUNDFILE_AVAILABLE = original_soundfile
+
+
 if __name__ == "__main__":
     test_empty_audio_samples_handling()
     test_video_file_wait_logic()
     test_progress_callback_with_validation()
     test_video_writer_release_check()
+    test_merge_skipped_when_deps_missing()
     print("\n✅ All audio merge crash fix tests passed!")

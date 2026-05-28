@@ -23,7 +23,7 @@ class TestQueueLogging(unittest.TestCase):
         # Create a string buffer to capture log output
         self.log_buffer = StringIO()
         self.handler = logging.StreamHandler(self.log_buffer)
-        self.handler.setLevel(logging.INFO)
+        self.handler.setLevel(logging.DEBUG)
         
         # Set up formatter
         formatter = logging.Formatter(
@@ -33,11 +33,11 @@ class TestQueueLogging(unittest.TestCase):
         
         # Add handler to the relevant loggers
         self.timestamped_queue_logger = logging.getLogger('node.timestamped_queue')
-        self.timestamped_queue_logger.setLevel(logging.INFO)
+        self.timestamped_queue_logger.setLevel(logging.DEBUG)
         self.timestamped_queue_logger.addHandler(self.handler)
         
         self.queue_adapter_logger = logging.getLogger('node.queue_adapter')
-        self.queue_adapter_logger.setLevel(logging.INFO)
+        self.queue_adapter_logger.setLevel(logging.DEBUG)
         self.queue_adapter_logger.addHandler(self.handler)
     
     def tearDown(self):
