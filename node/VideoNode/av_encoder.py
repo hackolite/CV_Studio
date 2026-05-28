@@ -58,6 +58,15 @@ except ImportError:  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
+# Exceptions (defined before PyAVEncoder so they can be referenced in its body)
+# ---------------------------------------------------------------------------
+
+
+class SyncError(Exception):
+    """Raised on PyAVEncoder lifecycle errors."""
+
+
+# ---------------------------------------------------------------------------
 # PyAVEncoder
 # ---------------------------------------------------------------------------
 
@@ -252,7 +261,3 @@ class PyAVEncoder:
 
 if not _AV_AVAILABLE:
     PyAVEncoder = None  # type: ignore  # noqa: F811
-
-
-class SyncError(Exception):
-    """Raised on PyAVEncoder lifecycle errors."""

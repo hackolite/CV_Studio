@@ -36,6 +36,11 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# Maximum number of duplicate frames inserted per gap-fill iteration.
+# This limits the impact of a single large PTS gap (e.g. after a decoder stall)
+# to at most 4 duplicate frames rather than flooding the output.
+_MAX_GAP_FILL_DUPLICATES: int = 4
+
 # ---------------------------------------------------------------------------
 # Custom exceptions
 # ---------------------------------------------------------------------------
@@ -515,7 +520,7 @@ class SyncVideoWriter:
                 num_dup = int(gap_ms / self._frame_duration_ms) - 1
                 if num_dup > 0 and last_pts >= 0:
                     dup_frame = self._written[-1]
-                    for d in range(min(num_dup, 4)):  # cap at 4 duplicates
+                    for d in range(min(num_dup, _MAX_GAP_FILL_DUPLICATES)):
                         dup_pts = last_pts + (d + 1) * self._frame_duration_ms
                         dup = FramePacket(
                             frame_index=dup_frame.frame_index,

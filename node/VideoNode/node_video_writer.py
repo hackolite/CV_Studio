@@ -252,9 +252,9 @@ class VideoWriterNode(Node):
                         json_data, writer_frame, audio_data
                     )
                 else:
-                    # Fallback: build from frame counter using writer_fps
+                    # Fallback: build from frame counter using fps stored in recording metadata
                     meta = self._recording_metadata_dict.get(tag_node_name, {})
-                    fps_val = meta.get("fps", writer_fps if "writer_fps" in dir() else 30.0)
+                    fps_val = meta.get("fps", 30.0)
                     now = time.monotonic()
                     packet = FramePacket(
                         frame_index=frame_idx,

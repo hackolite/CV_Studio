@@ -136,7 +136,7 @@ class TestSyncDrift:
         """
         Inject frames with audio PTS drifting +2 ms per frame.
 
-        At i=2: drift = |video_pts - audio_pts| = |80 - 76| ms → 76 ms
+        At i=2: drift = |video_pts - audio_pts| = |(2/25)*1000 - (0 + 2*2)| = |80 - 4| = 76 ms
         (above warn threshold 72 ms, below hard limit 80 ms) → warning fires.
 
         Asserts:
