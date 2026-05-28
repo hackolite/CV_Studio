@@ -1,7 +1,7 @@
 [
   {
     "name": "YAMNet",
-    "path": "/home/runner/work/CV_Studio/CV_Studio/node/AudioModelNode/models/yamnet.onnx",
+    "path": "/tmp/workspace/hackolite/CV_Studio/node/AudioModelNode/models/yamnet.onnx",
     "n_mels": 64,
     "fixed_time": 96,
     "target_sr": 16000,

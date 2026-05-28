@@ -487,7 +487,7 @@ class SyncVideoWriter:
     def flush_ready(
         self,
         write_fn: Callable[[np.ndarray, float], None],
-    ) -> int:
+    ) -> List["FramePacket"]:
         """Pop and write one frame from the heap (for streaming integration).
 
         Designed to be called from :meth:`VideoWriterNode.update` once per
@@ -503,13 +503,19 @@ class SyncVideoWriter:
 
         Returns
         -------
-        int
-            Number of frames written (0 or more, including duplicates).
+        List[FramePacket]
+            The :class:`FramePacket` objects that were actually written
+            (including any gap-fill duplicates), in write order.  Returns an
+            empty list when the internal heap was empty and nothing was written.
+            Callers can use the returned packets to collect audio from the
+            correct source frame rather than from the most recently *incoming*
+            frame, which avoids audio/video misalignment when the heap
+            reorders out-of-order AI-pipeline frames.
         """
-        written_count = 0
+        written: List[FramePacket] = []
         with self._lock:
             if not self._heap:
-                return 0
+                return written
 
             packet = heapq.heappop(self._heap)
 
@@ -536,16 +542,16 @@ class SyncVideoWriter:
                         except Exception:
                             logger.exception("SyncVideoWriter.flush_ready: write_fn error (duplicate)")
                         self._written.append(dup)
-                        written_count += 1
+                        written.append(dup)
 
             try:
                 write_fn(packet.image, packet.pts_ms)
             except Exception:
                 logger.exception("SyncVideoWriter.flush_ready: write_fn error")
             self._written.append(packet)
-            written_count += 1
+            written.append(packet)
 
-        return written_count
+        return written
 
     # ------------------------------------------------------------------
     # Internal helpers

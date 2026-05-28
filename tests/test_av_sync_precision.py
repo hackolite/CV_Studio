@@ -1266,3 +1266,205 @@ class TestSummaryDiagnostic:
 
         # Total must be sub-second for a realistic scenario
         assert total_expected_lead_s < step_dur + heap_size / fps + 0.5
+
+
+# ---------------------------------------------------------------------------
+# 11.  First-chunk lead trim fix
+# ---------------------------------------------------------------------------
+
+
+def _simulate_recording_with_trim(
+    start_frame: int,
+    end_frame: int,
+    fps: float,
+    chunks: List[np.ndarray],
+    sr: int,
+    step_dur: float = STEP_DUR,
+) -> Tuple[np.ndarray, float]:
+    """Like ``_simulate_recording`` but also applies the first-chunk lead trim.
+
+    This simulates the fixed behaviour of ``VideoWriterNode.update()`` where
+    the leading samples that correspond to audio *before* the first video frame
+    are discarded from the first collected chunk.
+
+    Returns
+    -------
+    collected_audio : np.ndarray
+    first_frame_time_s : float
+    """
+    step_samples = int(step_dur * sr)
+    last_chunk_index = -1
+    collected: List[np.ndarray] = []
+    first_frame_time_s = start_frame / fps
+
+    for frame_num in range(start_frame, end_frame):
+        chunk_data, chunk_index = _get_chunk_for_frame(
+            frame_num, fps, chunks, step_dur
+        )
+        if chunk_index != last_chunk_index:
+            last_chunk_index = chunk_index
+            trimmed = chunk_data[:step_samples].astype(np.float32)
+
+            # ---- First-chunk lead trim (the fix) ----
+            if not collected:
+                chunk_start_s = chunk_index * step_dur
+                frame_pts_s = start_frame / fps
+                lead_s = max(0.0, frame_pts_s - chunk_start_s)
+                lead_samples = int(lead_s * sr)
+                if lead_samples > 0:
+                    trimmed = trimmed[lead_samples:]
+
+            collected.append(trimmed)
+
+    full_audio = np.concatenate(collected) if collected else np.array([], dtype=np.float32)
+    return full_audio, first_frame_time_s
+
+
+class TestFirstChunkLeadTrimFix:
+    """
+    Verify that the first-chunk audio lead trim in ``VideoWriterNode.update()``
+    correctly removes the leading samples so that the audio track starts at
+    the same time as the first video frame.
+
+    After the fix, audio_duration should be ≤ video_duration + step_dur
+    AND the previously systematic lead should be gone.
+    """
+
+    @pytest.mark.parametrize(
+        "start_frame, fps, step_dur",
+        [
+            (1, 30.0, 1.0),   # 1-indexed first frame: trim ≈ 1/30 s
+            (15, 30.0, 1.0),  # mid-step: trim = 0.5 s
+            (29, 30.0, 1.0),  # worst-case: trim ≈ step_dur - 1/fps
+            (0, 30.0, 1.0),   # zero-indexed: no trim needed
+            (30, 30.0, 1.0),  # exact step boundary: no trim needed
+            (1, 25.0, 1.0),   # 25 fps, 1-indexed
+            (7, 30.0, 0.5),   # shorter step_dur
+        ],
+    )
+    def test_audio_does_not_precede_video_after_trim(
+        self, start_frame: int, fps: float, step_dur: float
+    ):
+        """After the fix, the collected audio must NOT start before the first
+        video frame.  The audio lead must be ≤ 0 (i.e. audio starts at or
+        after the first frame, up to one step_dur behind at most)."""
+        n_frames = 120
+        total_s = max(30.0, (start_frame + n_frames) / fps + 5)
+        audio, sr = _make_audio_file(total_s, SR)
+        chunks = _build_chunks(audio, sr, chunk_dur=CHUNK_DUR, step_dur=step_dur)
+
+        collected, first_frame_s = _simulate_recording_with_trim(
+            start_frame, start_frame + n_frames, fps, chunks, sr, step_dur
+        )
+
+        audio_duration_s = len(collected) / sr
+        video_duration_s = n_frames / fps
+
+        # After trim the audio must NOT be longer than the video by more than
+        # one step_dur (allowing for the final partial chunk).
+        audio_excess_s = audio_duration_s - video_duration_s
+        assert audio_excess_s <= step_dur + 1.0 / fps + 1e-3, (
+            f"start_frame={start_frame}, fps={fps}, step_dur={step_dur}: "
+            f"audio ({audio_duration_s:.4f}s) is {audio_excess_s:.4f}s longer "
+            f"than video ({video_duration_s:.4f}s) after trim — lead not removed."
+        )
+
+    def test_trim_amount_matches_first_frame_pts(self):
+        """The number of samples trimmed must equal int(lead_s * sr) where
+        lead_s = first_frame_pts_s - chunk_start_s."""
+        fps = 30.0
+        step_dur = 1.0
+        start_frame = 1   # 1-indexed: pts = 1/30 s, chunk_start = 0 s
+
+        audio, sr = _make_audio_file(10.0, SR)
+        chunks = _build_chunks(audio, sr, step_dur=step_dur)
+
+        step_samples = int(step_dur * sr)
+        _, first_chunk_idx = _get_chunk_for_frame(start_frame, fps, chunks, step_dur)
+        chunk_start_s = first_chunk_idx * step_dur
+        frame_pts_s = start_frame / fps
+        expected_lead_s = frame_pts_s - chunk_start_s       # ≈ 1/30 s
+        expected_trim = int(expected_lead_s * sr)
+
+        # First collected chunk before trim
+        first_chunk = chunks[first_chunk_idx][:step_samples].astype(np.float32)
+        # Apply trim
+        trimmed_first_chunk = first_chunk[expected_trim:]
+
+        # The trimmed chunk must start at original audio sample
+        # corresponding to first_frame_pts_s
+        expected_start_sample = int(frame_pts_s * sr)
+        actual_start_in_original = first_chunk_idx * step_samples + expected_trim
+        assert actual_start_in_original == expected_start_sample, (
+            f"After trim, audio starts at original sample {actual_start_in_original} "
+            f"but should start at {expected_start_sample} "
+            f"(frame pts_s={frame_pts_s:.6f}s, expected_trim={expected_trim})"
+        )
+
+        # Verify trim length
+        assert expected_trim > 0, (
+            "1-indexed first frame must produce a positive trim (bug not present?)"
+        )
+        assert len(trimmed_first_chunk) == step_samples - expected_trim, (
+            f"Trimmed chunk has wrong length: {len(trimmed_first_chunk)} "
+            f"(expected {step_samples - expected_trim})"
+        )
+
+    def test_zero_trim_at_step_boundary(self):
+        """When recording starts exactly at a step boundary (e.g. frame 30 at
+        30 fps with 1 s steps), the trim must be zero — no samples removed."""
+        fps = 30.0
+        step_dur = 1.0
+        start_frame = 30  # t = 1.0 s = exactly chunk boundary 1
+
+        audio, sr = _make_audio_file(10.0, SR)
+        chunks = _build_chunks(audio, sr, step_dur=step_dur)
+
+        _, first_chunk_idx = _get_chunk_for_frame(start_frame, fps, chunks, step_dur)
+        chunk_start_s = first_chunk_idx * step_dur
+        frame_pts_s = start_frame / fps
+        lead_s = frame_pts_s - chunk_start_s
+        lead_samples = int(lead_s * sr)
+
+        assert lead_samples == 0, (
+            f"Step-boundary start should have 0 trim, got {lead_samples} samples "
+            f"(lead_s={lead_s:.6f}s)"
+        )
+
+    def test_flush_ready_returns_list_of_frame_packets(self):
+        """``SyncVideoWriter.flush_ready`` must return a list of FramePacket
+        objects (not an int) so that callers can access the written frame's
+        pts_ms for the audio lead calculation."""
+        fps = 30.0
+        image = np.zeros((64, 64, 3), dtype=np.uint8)
+        writer = SyncVideoWriter(fps=fps, max_buffer_size=10)
+
+        written_calls: List[float] = []
+        def write_fn(img: np.ndarray, pts: float) -> None:
+            written_calls.append(pts)
+
+        now = time.monotonic()
+        pkt = FramePacket(
+            frame_index=1,
+            pts_ms=1000.0 / fps,
+            audio_chunk_index=0,
+            image=image,
+            audio_data=None,
+            pipeline_entry_ts=now,
+            pipeline_exit_ts=now,
+        )
+        writer.enqueue(pkt)
+        result = writer.flush_ready(write_fn)
+
+        assert isinstance(result, list), (
+            f"flush_ready must return a list, got {type(result).__name__}"
+        )
+        assert len(result) == 1, (
+            f"Expected 1 written packet, got {len(result)}"
+        )
+        assert isinstance(result[0], FramePacket), (
+            f"flush_ready must return FramePacket objects, got {type(result[0]).__name__}"
+        )
+        assert result[0].pts_ms == pytest.approx(1000.0 / fps, abs=1e-3), (
+            f"Returned packet has wrong pts_ms: {result[0].pts_ms}"
+        )
