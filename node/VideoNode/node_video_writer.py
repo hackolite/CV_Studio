@@ -350,6 +350,33 @@ class VideoWriterNode(Node):
                                     # Trim to the non-overlapping step portion only
                                     step_samples = int(step_dur * sr)
                                     chunk_data = chunk_data[:step_samples]
+                                # Trim leading audio from the first collected chunk so
+                                # that the audio track starts at the same time as the
+                                # first video frame.  Without this correction the audio
+                                # is ~(1/fps) seconds ahead of the images because
+                                # VideoNode uses a 1-based frame counter: frame 1 maps
+                                # to pts_ms ≈ 33 ms while the audio chunk for that frame
+                                # starts at chunk_index * step_dur = 0 ms.  The image
+                                # therefore appears ahead of the audio during playback.
+                                n_current = len(self._audio_samples_dict[tag_node_name])
+                                if n_current == 0 and step_dur is not None and sr > 0:
+                                    chunk_idx_val = incoming_idx if incoming_idx is not None else 0
+                                    chunk_start_s = chunk_idx_val * step_dur
+                                    lead_s = max(0.0, packet.pts_ms / 1000.0 - chunk_start_s)
+                                    lead_samples = int(lead_s * sr)
+                                    if lead_samples > 0:
+                                        chunk_data = chunk_data[lead_samples:]
+                                        logger.debug(
+                                            "VideoWriter[%s]: Trimmed %d leading samples "
+                                            "(%.1f ms) from first audio chunk to align with "
+                                            "first video frame (frame pts_ms=%.1f ms, "
+                                            "chunk_start=%.1f ms).",
+                                            tag_node_name,
+                                            lead_samples,
+                                            lead_s * 1000.0,
+                                            packet.pts_ms,
+                                            chunk_start_s * 1000.0,
+                                        )
                                 self._audio_samples_dict[tag_node_name].append(chunk_data)
                                 n_collected = len(self._audio_samples_dict[tag_node_name])
                                 if n_collected == 1:
