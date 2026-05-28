@@ -136,17 +136,24 @@ def _make_concat_audio(
     n_samples: int = SR,
     sr: int = SR,
     step_dur: float = STEP_DUR,
+    pts_ms: float | None = None,
 ) -> dict:
-    """Build an ImageConcat-style audio dict: {slot_idx: audio_chunk}."""
+    """Build an ImageConcat-style audio dict: {slot_idx: audio_chunk}.
+
+    When *pts_ms* is provided the key is included in the chunk dict, mirroring
+    the format emitted by VideoNode (node_video.py lines 992-994) and preserved
+    verbatim through ImageConcat AUDIO slots.
+    """
     data = np.ones(n_samples, dtype=np.float32) * (chunk_index + 1)
-    return {
-        0: {
-            "data": data,
-            "sample_rate": sr,
-            "chunk_index": chunk_index,
-            "step_duration": step_dur,
-        }
+    chunk: dict = {
+        "data": data,
+        "sample_rate": sr,
+        "chunk_index": chunk_index,
+        "step_duration": step_dur,
     }
+    if pts_ms is not None:
+        chunk["pts_ms"] = pts_ms
+    return {0: chunk}
 
 
 # ---------------------------------------------------------------------------
@@ -251,3 +258,83 @@ class TestImageConcatChunkIndexDedup:
         node._collect_concat_audio("missing:tag", _make_concat_audio(0), _make_packet(0.0))
         assert "missing:tag" not in node._audio_samples_dict
         assert "missing:tag" not in node._last_chunk_index_dict
+
+
+class TestImageConcatPathLeadTrimFix:
+    """Regression tests for the A/V desync bug that occurs when an ImageConcat
+    node is between VideoNode and VideoWriter.
+
+    Root cause: packet.pts_ms was 0 (fallback counter-based packet) when
+    ImageConcat did not forward _frame_packet, so the leading-audio trim was
+    always 0 regardless of the actual recording-start offset inside a step.
+
+    Fix: _collect_concat_audio now reads pts_ms from the audio-chunk dict
+    (set by VideoNode, preserved through ImageConcat) and uses that value
+    for the trim calculation, falling back to packet.pts_ms when absent.
+    """
+
+    def test_chunk_pts_ms_used_over_zero_packet(self):
+        """When audio chunk has pts_ms but packet.pts_ms=0, use chunk's pts_ms."""
+        node = _make_writer_node(TAG)
+        # Recording starts 0.5 s into the first step (chunk_index=0, step=1 s)
+        chunk_pts_ms = 500.0
+        audio_data = _make_concat_audio(chunk_index=0, pts_ms=chunk_pts_ms)
+        # Fallback packet has pts_ms=0 (as produced by VideoWriter when
+        # ImageConcat does not forward _frame_packet)
+        fallback_packet = _make_packet(0.0)
+        node._collect_concat_audio(TAG, audio_data, fallback_packet)
+
+        expected_lead_samples = int((chunk_pts_ms / 1000.0) * SR)  # 0.5 * SR
+        expected_len = SR - expected_lead_samples
+        actual_len = len(node._audio_samples_dict[TAG][0])
+        assert actual_len == expected_len, (
+            f"Expected {expected_len} samples (lead-trim via chunk pts_ms), "
+            f"got {actual_len}"
+        )
+
+    def test_no_desync_without_pts_ms_in_chunk(self):
+        """Without pts_ms in chunk and packet.pts_ms=0, no trim is applied
+        (old behaviour preserved — no regression for non-VideoNode sources)."""
+        node = _make_writer_node(TAG)
+        audio_data = _make_concat_audio(chunk_index=0)  # no pts_ms key
+        node._collect_concat_audio(TAG, audio_data, _make_packet(0.0))
+        assert len(node._audio_samples_dict[TAG][0]) == SR
+
+    def test_chunk_pts_ms_ignored_for_non_first_chunk(self):
+        """pts_ms in audio chunk must not trim subsequent collected chunks."""
+        node = _make_writer_node(TAG)
+        chunk_pts_ms = 500.0
+        # First chunk — trimmed
+        node._collect_concat_audio(
+            TAG, _make_concat_audio(chunk_index=0, pts_ms=chunk_pts_ms), _make_packet(0.0)
+        )
+        first_len = len(node._audio_samples_dict[TAG][0])
+        # Second chunk — no trim
+        node._collect_concat_audio(
+            TAG, _make_concat_audio(chunk_index=1, pts_ms=chunk_pts_ms + 1000.0), _make_packet(0.0)
+        )
+        second_len = len(node._audio_samples_dict[TAG][1])
+        assert second_len == SR, "Second chunk must not be trimmed"
+        assert first_len < second_len
+
+    def test_chunk_pts_ms_mid_step_trim_is_accurate(self):
+        """Verify trim accuracy at various offsets within the first step."""
+        for offset_ms in (0.0, 100.0, 333.0, 500.0, 900.0, 999.0):
+            node = _make_writer_node(TAG)
+            audio_data = _make_concat_audio(chunk_index=0, pts_ms=offset_ms)
+            node._collect_concat_audio(TAG, audio_data, _make_packet(0.0))
+            expected = SR - int((offset_ms / 1000.0) * SR)
+            actual = len(node._audio_samples_dict[TAG][0])
+            assert actual == expected, (
+                f"offset_ms={offset_ms}: expected {expected} samples, got {actual}"
+            )
+
+    def test_packet_pts_ms_still_used_when_no_chunk_pts_ms(self):
+        """packet.pts_ms is the fallback when the chunk dict has no pts_ms key."""
+        node = _make_writer_node(TAG)
+        pts_ms = 1000.0 / 30.0  # ≈ 33.33 ms (single-frame offset)
+        audio_data = _make_concat_audio(chunk_index=0)  # no pts_ms
+        node._collect_concat_audio(TAG, audio_data, _make_packet(pts_ms))
+        expected_lead = int((pts_ms / 1000.0) * SR)
+        expected_len = SR - expected_lead
+        assert len(node._audio_samples_dict[TAG][0]) == expected_len

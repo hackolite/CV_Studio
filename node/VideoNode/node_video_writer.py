@@ -567,11 +567,25 @@ class VideoWriterNode(Node):
         # Trim leading audio from the first collected chunk so that the audio
         # track starts at the same time as the first video frame (mirrors the
         # single-chunk path).
+        #
+        # Prefer pts_ms stored inside the audio-chunk dict (set by VideoNode and
+        # preserved verbatim through ImageConcat AUDIO slots) over packet.pts_ms.
+        # When ImageConcat is in the pipeline and _frame_packet is not forwarded
+        # by an older ImageConcat version, VideoWriter uses a counter-based
+        # fallback packet whose pts_ms is 0 — causing the leading trim to be
+        # miscalculated by up to step_duration seconds and producing A/V desync.
+        chunk_pts_ms = (
+            first_chunk.get('pts_ms', None)
+            if isinstance(first_chunk, dict)
+            else None
+        )
+        effective_pts_ms = chunk_pts_ms if chunk_pts_ms is not None else packet.pts_ms
+
         n_current = len(self._audio_samples_dict[tag_node_name])
         if n_current == 0 and step_dur is not None and sample_rate and sample_rate > 0:
             chunk_idx_val = incoming_idx if incoming_idx is not None else 0
             chunk_start_s = chunk_idx_val * step_dur
-            lead_s = max(0.0, packet.pts_ms / 1000.0 - chunk_start_s)
+            lead_s = max(0.0, effective_pts_ms / 1000.0 - chunk_start_s)
             lead_samples = int(lead_s * sample_rate)
             if lead_samples > 0:
                 merged_chunk = merged_chunk[lead_samples:]
@@ -582,7 +596,7 @@ class VideoWriterNode(Node):
                     tag_node_name,
                     lead_samples,
                     lead_s * 1000.0,
-                    packet.pts_ms,
+                    effective_pts_ms,
                     chunk_start_s * 1000.0,
                 )
 

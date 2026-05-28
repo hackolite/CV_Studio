@@ -554,6 +554,30 @@ class Node(Node):
         if len(json_chunks) > 0:
             json_data = json_chunks
 
+        # Forward _frame_packet from the primary IMAGE input so that
+        # downstream nodes (e.g. VideoWriter) can reconstruct the correct
+        # FramePacket pts_ms.  Without this, VideoWriter falls back to a
+        # frame-counter-based pts_ms = 0, which causes the leading-audio trim
+        # to be computed incorrectly and produces A/V desync proportional to
+        # the recording-start offset within a step_duration window (up to
+        # ~step_duration seconds of early audio).
+        primary_frame_packet = None
+        for slot_idx in sorted(slot_data_dict.keys()):
+            slot_info = slot_data_dict[slot_idx]
+            if slot_info['type'] == self.TYPE_IMAGE:
+                img_json = node_result_dict.get(slot_info['source'], None)
+                if isinstance(img_json, dict) and '_frame_packet' in img_json:
+                    primary_frame_packet = img_json['_frame_packet']
+                    break
+
+        if primary_frame_packet is not None:
+            if json_data is None:
+                json_data = {}
+            # json_data may be a dict keyed by slot index; adding '_frame_packet'
+            # under a string key keeps both the per-slot JSON data and the packet
+            # metadata accessible without collision.
+            json_data['_frame_packet'] = primary_frame_packet
+
         if audio_chunks or json_chunks:
             logger.debug(
                 "ImageConcat[%s] prepared frame=%s audio_chunks=%d json_chunks=%d",
