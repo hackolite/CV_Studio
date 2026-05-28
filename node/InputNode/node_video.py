@@ -966,7 +966,7 @@ class VideoNode(Node):
                         node_id, current_frame_num,
                     )
             else:
-                # Root cause #1: No audio chunks available.
+                # RC-5: No audio chunks available.
                 # This happens when:
                 #   a) "Frames only" was checked when the video was selected
                 #      (preprocessing was skipped entirely).
@@ -982,7 +982,7 @@ class VideoNode(Node):
                     node_id, pp_status, movie_path,
                 )
         else:
-            # Root cause #2: "Frames only" checkbox is ticked – audio is intentionally suppressed.
+            # RC-4: "Frames only" checkbox is ticked – audio is intentionally suppressed.
             logger.debug(
                 "[VideoNode %s] AUDIO OUTPUT IS NONE: 'Frames only' mode is active. "
                 "Uncheck 'Frames only' and press Start to enable audio preprocessing.",

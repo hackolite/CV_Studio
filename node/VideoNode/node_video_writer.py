@@ -213,12 +213,12 @@ class VideoWriterNode(Node):
                         dpg.configure_item(tag_node_progress_name, overlay="")
 
         connection_info_src = ''
-        all_connection_sources = []
+        connection_details = []
         for connection_info in connection_list:
             src_parts = connection_info[0].split(':')
             src_type = src_parts[2] if len(src_parts) > 2 else 'UNKNOWN'
             src_node = ':'.join(src_parts[:2])
-            all_connection_sources.append((src_type, src_node))
+            connection_details.append((src_type, src_node))
             # BUG: this loop always overwrites connection_info_src with the LAST connection.
             # If the node has both an IMAGE and an AUDIO connection from different sources,
             # only the LAST source is used for BOTH frame and audio lookups below.
@@ -226,7 +226,7 @@ class VideoWriterNode(Node):
             connection_info_src = connection_info_src.split(':')[:2]
             connection_info_src = ':'.join(connection_info_src)
 
-        if len(all_connection_sources) > 1:
+        if len(connection_details) > 1:
             logger.warning(
                 "[VideoWriter %s] MULTIPLE CONNECTIONS detected (%d total): %s. "
                 "Only the LAST source (%r) is used to fetch BOTH the video frame AND audio. "
@@ -234,16 +234,16 @@ class VideoWriterNode(Node):
                 "connection_info_src for both node_image_dict and node_audio_dict lookups. "
                 "If image and audio come from different upstream nodes, one of them will be None.",
                 tag_node_name,
-                len(all_connection_sources),
-                [(t, s) for t, s in all_connection_sources],
+                len(connection_details),
+                [(t, s) for t, s in connection_details],
                 connection_info_src,
             )
-        elif len(all_connection_sources) == 1:
+        elif len(connection_details) == 1:
             logger.debug(
                 "[VideoWriter %s] Single connection: type=%s source=%s",
                 tag_node_name,
-                all_connection_sources[0][0],
-                all_connection_sources[0][1],
+                connection_details[0][0],
+                connection_details[0][1],
             )
         else:
             logger.debug("[VideoWriter %s] No connections – frame and audio will be None.", tag_node_name)
