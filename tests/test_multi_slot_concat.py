@@ -203,8 +203,13 @@ def test_audio_slot_passes_through_audio():
     np.testing.assert_array_equal(result['audio'][0]['data'], audio_chunk['data'])
 
 
-def test_image_slot_does_not_pass_through_audio():
-    """Test that IMAGE slots do not forward audio payloads."""
+def test_image_slot_with_audio_source_uses_implicit_fallback():
+    """Test that when no AUDIO slots exist, ImageConcat forwards audio from IMAGE sources.
+
+    This covers pipelines like Video→ImageConcat(IMAGE)→VideoWriter where no
+    explicit AUDIO slot has been added but the source node (e.g. VideoNode) does
+    produce audio.
+    """
     from node.VideoNode.node_image_concat import Node
 
     node = Node()
@@ -227,6 +232,7 @@ def test_image_slot_does_not_pass_through_audio():
         'data': np.array([0.1, 0.2, 0.3], dtype=np.float32),
         'sample_rate': 16000,
         'chunk_index': 7,
+        'step_duration': 1.0,
     }
 
     connection_list = [
@@ -244,7 +250,122 @@ def test_image_slot_does_not_pass_through_audio():
             node_audio_dict,
         )
 
+    # Audio should be forwarded implicitly from the IMAGE source
+    assert result['audio'] is not None
+    assert 0 in result['audio']
+    assert result['audio'][0]['chunk_index'] == 7
+    assert result['audio'][0]['sample_rate'] == 16000
+
+
+def test_image_slot_no_audio_source_returns_none():
+    """Test that IMAGE slots with no audio in node_audio_dict produce no audio output."""
+    from node.VideoNode.node_image_concat import Node
+
+    node = Node()
+    tag_node_name = "1:ImageConcat"
+    node.tag_node_name = tag_node_name
+    node._opencv_setting_dict = {
+        'process_width': 64,
+        'process_height': 48,
+        'result_width': 64,
+        'result_height': 48,
+        'draw_info_on_result': False,
+    }
+    node._slot_id[tag_node_name] = 1
+    node._slot_types[tag_node_name] = {1: node.TYPE_IMAGE}
+    node._value_history = {}
+
+    source = "0:ObjectDetection"
+    frame = np.zeros((48, 64, 3), dtype=np.uint8)
+
+    connection_list = [
+        (f"{source}:{node.TYPE_IMAGE}:Output01", f"{tag_node_name}:{node.TYPE_IMAGE}:Input01")
+    ]
+    node_image_dict = {source: frame}
+    # ObjectDetection produces no audio
+    node_audio_dict = {}
+
+    with patch('node.VideoNode.node_image_concat.dpg_set_value'):
+        result = node.update(
+            1,
+            connection_list,
+            node_image_dict,
+            {},
+            node_audio_dict,
+        )
+
     assert result['audio'] is None
+
+
+def test_implicit_audio_prefers_chunk_index_source():
+    """When multiple IMAGE sources have audio, the one with chunk_index is preferred.
+
+    This models the exact user schema: ObjectDetection (no audio), Decibel (no audio),
+    AudioClassification (audio, no chunk_index), Video (audio, with chunk_index).
+    The fallback should pick Video's audio for safe deduplication.
+    """
+    from node.VideoNode.node_image_concat import Node
+    import node.VideoNode.node_image_concat as _concat_mod
+
+    node = Node()
+    tag_node_name = "3:ImageConcat"
+    node.tag_node_name = tag_node_name
+    node._opencv_setting_dict = {
+        'process_width': 64,
+        'process_height': 48,
+        'result_width': 64,
+        'result_height': 48,
+        'draw_info_on_result': False,
+    }
+    node._slot_id[tag_node_name] = 4
+    node._slot_types[tag_node_name] = {
+        1: node.TYPE_IMAGE, 2: node.TYPE_IMAGE,
+        3: node.TYPE_IMAGE, 4: node.TYPE_IMAGE,
+    }
+    node._value_history = {}
+
+    src_od   = "5:ObjectDetection"
+    src_db   = "7:Decibel"
+    src_ac   = "4:AudioClassification"
+    src_vid  = "1:Video"
+
+    frame = np.zeros((48, 64, 3), dtype=np.uint8)
+    # AudioClassification passthrough — no chunk_index
+    ac_audio = {'data': np.array([0.5, 0.6], dtype=np.float32), 'sample_rate': 16000}
+    # VideoNode audio — has chunk_index
+    vid_audio = {
+        'data': np.array([0.1, 0.2, 0.3], dtype=np.float32),
+        'sample_rate': 44100,
+        'chunk_index': 3,
+        'step_duration': 1.0,
+    }
+
+    connection_list = [
+        (f"{src_od}:{node.TYPE_IMAGE}:Output01",  f"{tag_node_name}:{node.TYPE_IMAGE}:Input01"),
+        (f"{src_db}:{node.TYPE_IMAGE}:Output01",  f"{tag_node_name}:{node.TYPE_IMAGE}:Input02"),
+        (f"{src_ac}:{node.TYPE_IMAGE}:Output01",  f"{tag_node_name}:{node.TYPE_IMAGE}:Input03"),
+        (f"{src_vid}:{node.TYPE_IMAGE}:Output01", f"{tag_node_name}:{node.TYPE_IMAGE}:Input04"),
+    ]
+    node_image_dict = {src_od: frame, src_db: frame, src_ac: frame, src_vid: frame}
+    node_audio_dict = {src_ac: ac_audio, src_vid: vid_audio}
+
+    combined = np.zeros((96, 128, 3), dtype=np.uint8)
+    with patch('node.VideoNode.node_image_concat.dpg_set_value'), \
+         patch.object(_concat_mod, 'create_concat_image', return_value=(combined, combined)):
+        result = node.update(
+            3,
+            connection_list,
+            node_image_dict,
+            {},
+            node_audio_dict,
+        )
+
+    assert result['audio'] is not None
+    # Must have picked the Video source (chunk_index present)
+    vals = list(result['audio'].values())
+    assert len(vals) == 1
+    assert vals[0]['chunk_index'] == 3
+    assert vals[0]['sample_rate'] == 44100
 
 
 if __name__ == '__main__':
@@ -258,5 +379,7 @@ if __name__ == '__main__':
     test_output_data_structure()
     test_setting_dict_with_slot_types()
     test_audio_slot_passes_through_audio()
-    test_image_slot_does_not_pass_through_audio()
+    test_image_slot_with_audio_source_uses_implicit_fallback()
+    test_image_slot_no_audio_source_returns_none()
+    test_implicit_audio_prefers_chunk_index_source()
     print("All multi-slot concat tests passed!")

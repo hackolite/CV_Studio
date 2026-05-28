@@ -1384,6 +1384,7 @@ class Node(BaseNode):
         # ---- Get AUDIO input ----
         audio_data = None
         sample_rate = _DEFAULT_SR
+        _input_audio_entry = None  # Full entry dict — preserved for passthrough metadata
 
         for connection_info in connection_list:
             parts = connection_info[0].split(":")
@@ -1396,6 +1397,7 @@ class Node(BaseNode):
                     if isinstance(entry, dict):
                         audio_data = entry.get("data", None)
                         sample_rate = entry.get("sample_rate", _DEFAULT_SR)
+                        _input_audio_entry = entry
                     elif isinstance(entry, (list, tuple)) and len(entry) == 2:
                         audio_data, sample_rate = entry
                 break
@@ -1627,14 +1629,25 @@ class Node(BaseNode):
             except Exception:
                 pass
 
+        if passthrough_audio_data is not None:
+            _passthrough = {
+                "data": passthrough_audio_data,
+                "sample_rate": passthrough_sample_rate,
+            }
+            # Preserve sync metadata (chunk_index, step_duration, pts_ms) from the
+            # input audio entry so that downstream deduplication in VideoWriter and
+            # ImageConcat works correctly when AudioClassification is in the chain.
+            if isinstance(_input_audio_entry, dict):
+                for _k in ("chunk_index", "step_duration", "pts_ms"):
+                    if _k in _input_audio_entry:
+                        _passthrough[_k] = _input_audio_entry[_k]
+            _audio_out = _passthrough
+        else:
+            _audio_out = None
         return {
             "image": bgr_preview,
             "json": result_json,
-            "audio": (
-                {"data": passthrough_audio_data, "sample_rate": passthrough_sample_rate}
-                if passthrough_audio_data is not None
-                else None
-            ),
+            "audio": _audio_out,
         }
 
     # ------------------------------------------------------------------

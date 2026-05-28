@@ -547,6 +547,37 @@ class Node(Node):
                 json_chunk = node_result_dict.get(slot_info['source'], None)
                 if json_chunk is not None:
                     json_chunks[slot_idx] = json_chunk
+
+        # No explicit AUDIO slots — fall back to implicit audio from IMAGE sources.
+        # This covers pipelines where a VideoNode (or AudioClassification with AUDIO
+        # passthrough) is connected only via IMAGE to ImageConcat with no dedicated
+        # AUDIO slot.  Prefer sources whose audio dict contains chunk_index so that
+        # VideoWriter._collect_concat_audio can properly deduplicate sliding-window
+        # chunks; accept any audio when no chunk_index source is found.
+        if not audio_chunks:
+            _implicit = None
+            _implicit_slot = None
+            for _slot_idx in sorted(connection_info_src_dict.keys()):
+                _src = connection_info_src_dict[_slot_idx]
+                _candidate = node_audio_dict.get(_src, None)
+                if _candidate is None:
+                    continue
+                if _implicit is None:
+                    _implicit = _candidate
+                    _implicit_slot = _slot_idx
+                # Prefer an entry with chunk_index for safe deduplication
+                if isinstance(_candidate, dict) and 'chunk_index' in _candidate:
+                    _implicit = _candidate
+                    _implicit_slot = _slot_idx
+                    break
+            if _implicit is not None:
+                audio_chunks[_implicit_slot] = _implicit
+                logger.debug(
+                    "ImageConcat[%s]: no AUDIO slots — using implicit audio from "
+                    "IMAGE source at slot %d",
+                    self.tag_node_name,
+                    _implicit_slot,
+                )
         
         # Prepare output data
         if len(audio_chunks) > 0:
