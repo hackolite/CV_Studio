@@ -173,7 +173,110 @@ def test_audio_sample_collection_multi_slot():
     )
 
 
-def test_recording_metadata_initialization():
+def test_concat_audio_chunk_index_deduplication():
+    """ImageConcat audio delivered via concat path must be deduplicated by chunk_index.
+
+    At 30 fps the same audio chunk (with the same chunk_index) is delivered for
+    every video frame.  Without deduplication 30 identical 1-second chunks would
+    be appended per second of video, making the audio track 30× too long and
+    producing completely wrong A/V sync.  The concat path must skip a chunk when
+    its chunk_index equals the previously stored value — exactly as the
+    single-slot path does.
+    """
+    import numpy as np
+
+    sample_rate = 22050
+    step_duration = 1.0
+
+    step_samples = int(step_duration * sample_rate)
+
+    # Simulate the deduplication state maintained by VideoWriter
+    audio_samples_dict = {"1:VideoWriter": []}
+    last_chunk_index_dict = {}
+    tag_node_name = "1:VideoWriter"
+
+    # Replicate the deduplication logic from the concat path
+    def _collect_concat(audio_data):
+        concat_incoming_idx = None
+        for _si in sorted(audio_data.keys()):
+            _ac = audio_data[_si]
+            if isinstance(_ac, dict):
+                _ci = _ac.get('chunk_index', None)
+                if _ci is not None:
+                    concat_incoming_idx = _ci
+                    break
+
+        concat_last_idx = last_chunk_index_dict.get(tag_node_name, -1)
+        if concat_incoming_idx is not None and concat_incoming_idx == concat_last_idx:
+            return  # duplicate — skip
+
+        if concat_incoming_idx is not None:
+            last_chunk_index_dict[tag_node_name] = concat_incoming_idx
+
+        audio_chunks = []
+        sr_found = None
+        step_dur = None
+
+        for slot_idx in sorted(audio_data.keys()):
+            ac = audio_data[slot_idx]
+            if isinstance(ac, dict) and 'data' in ac:
+                chunk_data = ac['data']
+                sr = ac.get('sample_rate', None)
+                if step_dur is None:
+                    step_dur = ac.get('step_duration', None)
+                if step_dur is not None and sr and sr > 0:
+                    chunk_data = chunk_data[:int(step_dur * sr)]
+                audio_chunks.append(chunk_data)
+                if sr_found is None and sr is not None:
+                    sr_found = sr
+
+        if audio_chunks:
+            audio_samples_dict[tag_node_name].append(np.concatenate(audio_chunks))
+
+    # 30-frame simulation at 30 fps: same chunk_index = 0 for all 30 frames
+    chunk0_data = np.ones(step_samples, dtype=np.float32) * 1.0
+    for _ in range(30):
+        _collect_concat({
+            0: {
+                'data': chunk0_data.copy(),
+                'sample_rate': sample_rate,
+                'chunk_index': 0,
+                'step_duration': step_duration,
+            }
+        })
+
+    # Only ONE chunk should have been appended (the first); the remaining 29 are duplicates
+    assert len(audio_samples_dict[tag_node_name]) == 1, (
+        f"Expected 1 chunk after 30 frames with the same chunk_index, "
+        f"got {len(audio_samples_dict[tag_node_name])}"
+    )
+
+    # Then a new chunk_index arrives (next second)
+    chunk1_data = np.ones(step_samples, dtype=np.float32) * 2.0
+    for _ in range(30):
+        _collect_concat({
+            0: {
+                'data': chunk1_data.copy(),
+                'sample_rate': sample_rate,
+                'chunk_index': 1,
+                'step_duration': step_duration,
+            }
+        })
+
+    assert len(audio_samples_dict[tag_node_name]) == 2, (
+        f"Expected 2 chunks after new chunk_index, "
+        f"got {len(audio_samples_dict[tag_node_name])}"
+    )
+
+    # Total audio should be exactly 2 × step_samples
+    full_audio = np.concatenate(audio_samples_dict[tag_node_name])
+    expected_samples = 2 * step_samples
+    assert len(full_audio) == expected_samples, (
+        f"Expected {expected_samples} samples (2 × {step_duration}s), "
+        f"got {len(full_audio)} ({len(full_audio) / sample_rate:.2f}s)"
+    )
+
+
     """Test that recording metadata is initialized correctly"""
     # Test the logic without importing the node
     recording_metadata_dict = {}
