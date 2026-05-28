@@ -45,10 +45,11 @@ def _get_ffmpeg_exe() -> str:
 
     Resolution order:
     1. imageio-ffmpeg bundled binary (no system install required).
+       Falls through if imageio_ffmpeg is not installed or raises RuntimeError.
     2. ffmpeg binary found on the system PATH via shutil.which.
-
-    Returns the executable path string, or ``'ffmpeg'`` as last-resort
-    fallback (let the OS report the error if it is truly missing).
+       Falls through if shutil.which returns None.
+    3. Plain ``'ffmpeg'`` string as last resort, letting the OS raise an
+       informative error if the binary is truly absent.
     """
     if _IMAGEIO_FFMPEG_AVAILABLE:
         try:

@@ -981,6 +981,9 @@ class VideoNode(Node):
                 # with the video frame; the apparent "drift" produced by the
                 # chunk-index fallback (chunk_idx * 1000 ms) is a false
                 # positive caused by target_fps != native_fps.
+                # Shallow-copy only the dict container (not the numpy array)
+                # to avoid mutating the cached chunk returned by
+                # _get_audio_chunk_for_frame.
                 if "pts_ms" not in audio_chunk_data:
                     audio_chunk_data = dict(audio_chunk_data)
                     audio_chunk_data["pts_ms"] = pts_ms
