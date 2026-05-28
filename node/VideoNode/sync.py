@@ -246,7 +246,7 @@ class AVDriftDetector:
 
     @property
     def drift_direction(self) -> float:
-        """Return signed drift trend: >0 means audio leads, <0 means audio lags."""
+        """Return signed drift trend: >0 means audio lags, <0 means audio leads."""
         if not self._signed_drift_history:
             return 0.0
         return sum(self._signed_drift_history) / len(self._signed_drift_history)

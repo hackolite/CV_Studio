@@ -69,11 +69,9 @@ class TestAVDriftDetectorSmoothing:
         spike_pkt = make_packet(5, 30.0, audio_data={"pts_ms": 0.0})
         detector.check(spike_pkt)
 
-        # The smoothed drift is (0+0+0+0+drift)/5-ish → below threshold
-        # But after the spike, the smoothed average of last 4 includes the spike
         # With history_size=4, the history is [0, 0, 0, spike_drift]
         # spike_drift = |5/30*1000 - 0| = 166.7 ms
-        # smoothed = (0 + 0 + 0 + 166.7) / 4 = 41.7 ms → below 50
+        # smoothed = (0 + 0 + 0 + 166.7) / 4 = 41.7 ms → below 50 ms limit
         assert len(errors) == 0, "Single spike should not trigger error with smoothing"
 
     def test_sustained_drift_triggers_error(self):
@@ -97,7 +95,7 @@ class TestAVDriftDetectorSmoothing:
     def test_drift_direction_property(self):
         """drift_direction indicates whether audio leads or lags."""
         detector = AVDriftDetector(max_av_drift_ms=200.0, history_size=4)
-        # Audio behind video: pts_ms > audio_pts → positive signed drift
+        # Audio behind video: video_pts - audio_pts > 0 → audio lags
         for i in range(4):
             pts_ms = i / 30.0 * 1000.0
             pkt = make_packet(i, 30.0, audio_data={"pts_ms": pts_ms - 50.0})
