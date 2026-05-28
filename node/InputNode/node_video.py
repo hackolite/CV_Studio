@@ -628,11 +628,16 @@ class VideoNode(Node):
             chunk_path = chunk_paths[chunk_index]
             if os.path.exists(chunk_path):
                 audio_data, sample_rate = sf.read(chunk_path)
-                # Return audio chunk in the format expected by audio processing nodes
+                # Return audio chunk in the format expected by audio processing nodes.
+                # step_duration is included so that the VideoWriter can trim each
+                # chunk to its non-overlapping portion before concatenating, which
+                # prevents the audio from being (chunk_duration / step_duration)×
+                # longer than the video (progressive A/V drift).
                 return {
                     'data': audio_data,
                     'sample_rate': sample_rate,
                     'chunk_index': chunk_index,
+                    'step_duration': step_duration,
                 }
         except Exception as e:
             if chunk_path:

@@ -334,47 +334,67 @@ class VideoWriterNode(Node):
                         # Single chunk: {'data': array, 'sample_rate': int}
                         
                         if 'data' in audio_data and 'sample_rate' in audio_data:
-                            # Single audio chunk from video node — deduplicate by chunk_index
+                            # Single audio chunk from video node — deduplicate by chunk_index.
+                            # Audio chunks are sliding-window (chunk_duration > step_duration),
+                            # so only keep the non-overlapping step portion to avoid concatenating
+                            # audio that is (chunk_duration / step_duration)× too long, which
+                            # would cause a progressive A/V drift proportional to that ratio.
                             incoming_idx = audio_data.get('chunk_index', None)
                             last_idx = self._last_chunk_index_dict.get(tag_node_name, -1)
                             if incoming_idx is None or incoming_idx != last_idx:
                                 self._last_chunk_index_dict[tag_node_name] = incoming_idx
-                                self._audio_samples_dict[tag_node_name].append(audio_data['data'])
+                                chunk_data = audio_data['data']
+                                sr = audio_data['sample_rate']
+                                step_dur = audio_data.get('step_duration', None)
+                                if step_dur is not None and sr > 0:
+                                    # Trim to the non-overlapping step portion only
+                                    step_samples = int(step_dur * sr)
+                                    chunk_data = chunk_data[:step_samples]
+                                self._audio_samples_dict[tag_node_name].append(chunk_data)
                                 n_collected = len(self._audio_samples_dict[tag_node_name])
                                 if n_collected == 1:
                                     logger.info(
                                         "VideoWriter[%s]: First audio chunk received "
-                                        "(chunk_index=%s, samples=%s, SR=%s Hz). Audio recording active.",
+                                        "(chunk_index=%s, samples=%s, SR=%s Hz, step_dur=%s). Audio recording active.",
                                         tag_node_name,
                                         incoming_idx,
-                                        len(audio_data['data']) if hasattr(audio_data['data'], '__len__') else 'n/a',
-                                        audio_data['sample_rate'],
+                                        len(chunk_data) if hasattr(chunk_data, '__len__') else 'n/a',
+                                        sr,
+                                        step_dur,
                                     )
                                 else:
                                     logger.debug(
                                         "VideoWriter[%s]: audio chunk index=%s samples=%s SR=%s total_chunks=%d",
                                         tag_node_name,
                                         incoming_idx,
-                                        len(audio_data['data']) if hasattr(audio_data['data'], '__len__') else 'n/a',
-                                        audio_data['sample_rate'],
+                                        len(chunk_data) if hasattr(chunk_data, '__len__') else 'n/a',
+                                        sr,
                                         n_collected,
                                     )
                                 if tag_node_name in self._recording_metadata_dict:
-                                    self._recording_metadata_dict[tag_node_name]['sample_rate'] = audio_data['sample_rate']
+                                    self._recording_metadata_dict[tag_node_name]['sample_rate'] = sr
                         else:
                             # Concat node output: {slot_idx: audio_chunk}
-                            # For now, merge all slots into a single audio track
-                            # Get all audio chunks and concatenate them
+                            # For now, merge all slots into a single audio track.
+                            # Apply the same step_duration trim as the single-slot path.
                             audio_chunks = []
                             sample_rate = None
+                            step_dur = None
                             
                             for slot_idx in sorted(audio_data.keys()):
                                 audio_chunk = audio_data[slot_idx]
                                 # Handle dict format from video node: {'data': array, 'sample_rate': int}
                                 if isinstance(audio_chunk, dict) and 'data' in audio_chunk:
-                                    audio_chunks.append(audio_chunk['data'])
-                                    if sample_rate is None and 'sample_rate' in audio_chunk:
-                                        sample_rate = audio_chunk['sample_rate']
+                                    chunk_data = audio_chunk['data']
+                                    sr = audio_chunk.get('sample_rate', None)
+                                    if step_dur is None:
+                                        step_dur = audio_chunk.get('step_duration', None)
+                                    if step_dur is not None and sr and sr > 0:
+                                        step_samples = int(step_dur * sr)
+                                        chunk_data = chunk_data[:step_samples]
+                                    audio_chunks.append(chunk_data)
+                                    if sample_rate is None and sr is not None:
+                                        sample_rate = sr
                                 elif isinstance(audio_chunk, np.ndarray):
                                     audio_chunks.append(audio_chunk)
                             
