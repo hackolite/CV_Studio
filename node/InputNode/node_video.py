@@ -11,6 +11,9 @@ import tempfile
 import os
 import shutil
 import threading
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     import imageio_ffmpeg
@@ -947,6 +950,44 @@ class VideoNode(Node):
             current_frame_num = self._frame_count.get(str(node_id), 0)
             if str(node_id) in self._audio_chunk_paths:
                 audio_chunk_data = self._get_audio_chunk_for_frame(str(node_id), current_frame_num)
+                if audio_chunk_data is not None:
+                    logger.debug(
+                        "[VideoNode %s] AUDIO OUTPUT: chunk_index=%s frame=%d samples=%s sr=%s",
+                        node_id,
+                        audio_chunk_data.get('chunk_index'),
+                        current_frame_num,
+                        len(audio_chunk_data['data']) if hasattr(audio_chunk_data.get('data'), '__len__') else 'n/a',
+                        audio_chunk_data.get('sample_rate'),
+                    )
+                else:
+                    logger.warning(
+                        "[VideoNode %s] AUDIO OUTPUT IS NONE: _get_audio_chunk_for_frame returned None "
+                        "for frame=%d (chunk_paths present but chunk load failed)",
+                        node_id, current_frame_num,
+                    )
+            else:
+                # Root cause #1: No audio chunks available.
+                # This happens when:
+                #   a) "Frames only" was checked when the video was selected
+                #      (preprocessing was skipped entirely).
+                #   b) The user has not yet pressed Start after selecting the video
+                #      in full-pipeline mode (preprocessing not triggered yet).
+                #   c) Audio preprocessing failed (status == 'error').
+                pp_status = self._preprocessing_status.get(str(node_id))
+                logger.warning(
+                    "[VideoNode %s] AUDIO OUTPUT IS NONE: no audio chunks in _audio_chunk_paths. "
+                    "preprocessing_status=%r  movie_path=%r  "
+                    "Downstream nodes will receive audio=None for every frame. "
+                    "Root cause: audio preprocessing was never completed for this node.",
+                    node_id, pp_status, movie_path,
+                )
+        else:
+            # Root cause #2: "Frames only" checkbox is ticked – audio is intentionally suppressed.
+            logger.debug(
+                "[VideoNode %s] AUDIO OUTPUT IS NONE: 'Frames only' mode is active. "
+                "Uncheck 'Frames only' and press Start to enable audio preprocessing.",
+                node_id,
+            )
 
         # Calculate FPS-based timestamp for this frame
         # The timestamp is based on the frame number and the target FPS

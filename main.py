@@ -204,6 +204,30 @@ def update_node_info(
             # This allows input nodes to specify timestamps based on their internal timing (FPS, audio chunks, etc.)
             node_provided_timestamp = data.get("timestamp", None) if isinstance(data, dict) else None
             
+            # Log audio propagation to help diagnose silent video+audio pipelines
+            audio_out = data.get("audio") if isinstance(data, dict) else None
+            image_out = data.get("image") if isinstance(data, dict) else None
+            if image_out is not None and audio_out is None:
+                # An image-producing node returned no audio.
+                # This is expected for processing nodes (Resize, Flip, etc.) that don't forward
+                # audio, but it means any downstream VideoWriter will record video WITHOUT audio.
+                logger.warning(
+                    "[AudioPropagation] Node %s produced an IMAGE frame but returned audio=None. "
+                    "Any downstream node receiving only this node's output will NOT have audio. "
+                    "If this is an intermediate image processing node (e.g. Resize, Flip, ColorSpace) "
+                    "the original Video node audio has been DROPPED at this stage.",
+                    node_id_name,
+                )
+            elif audio_out is not None:
+                audio_len = (
+                    len(audio_out.get('data')) if isinstance(audio_out, dict) and hasattr(audio_out.get('data'), '__len__')
+                    else 'n/a'
+                )
+                logger.debug(
+                    "[AudioPropagation] Node %s output: image=%s  audio=PRESENT (samples=%s)",
+                    node_id_name, image_out is not None, audio_len,
+                )
+
             # Store data with appropriate timestamp
             # Priority:
             # 1. For processing nodes: preserve source timestamp from connected input
