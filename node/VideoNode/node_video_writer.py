@@ -10,6 +10,8 @@ import threading
 import time
 import logging
 
+import shutil
+
 import cv2
 import numpy as np
 import dearpygui.dearpygui as dpg
@@ -29,6 +31,32 @@ try:
 except ImportError:
     ffmpeg = None  # type: ignore[assignment]
     _FFMPEG_PYTHON_AVAILABLE = False
+
+try:
+    import imageio_ffmpeg
+    _IMAGEIO_FFMPEG_AVAILABLE = True
+except ImportError:
+    imageio_ffmpeg = None  # type: ignore[assignment]
+    _IMAGEIO_FFMPEG_AVAILABLE = False
+
+
+def _get_ffmpeg_exe() -> str:
+    """Return a usable ffmpeg executable path.
+
+    Resolution order:
+    1. imageio-ffmpeg bundled binary (no system install required).
+    2. ffmpeg binary found on the system PATH via shutil.which.
+
+    Returns the executable path string, or ``'ffmpeg'`` as last-resort
+    fallback (let the OS report the error if it is truly missing).
+    """
+    if _IMAGEIO_FFMPEG_AVAILABLE:
+        try:
+            return imageio_ffmpeg.get_ffmpeg_exe()
+        except RuntimeError:
+            pass
+    found = shutil.which("ffmpeg")
+    return found if found is not None else "ffmpeg"
 
 try:
     import soundfile as sf
@@ -581,8 +609,15 @@ class VideoWriterNode(Node):
                 if progress_callback:
                     progress_callback(0.7)
                 
-                # Run ffmpeg
-                ffmpeg.run(output, capture_stdout=True, capture_stderr=True)
+                # Run ffmpeg – use the resolved executable so the merge
+                # works even when 'ffmpeg' is not on the system PATH
+                # (e.g. imageio-ffmpeg bundled binary on Windows).
+                ffmpeg.run(
+                    output,
+                    cmd=_get_ffmpeg_exe(),
+                    capture_stdout=True,
+                    capture_stderr=True,
+                )
                 
                 # Report progress: Merge complete
                 if progress_callback:

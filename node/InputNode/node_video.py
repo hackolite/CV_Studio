@@ -975,6 +975,15 @@ class VideoNode(Node):
             audio_chunk_index = 0
             if isinstance(audio_chunk_data, dict):
                 audio_chunk_index = audio_chunk_data.get("chunk_index", 0)
+                # Tag the audio dict with the video-timeline PTS so that
+                # AVDriftDetector compares both streams on the same clock.
+                # Audio is fetched by frame index, so it is always aligned
+                # with the video frame; the apparent "drift" produced by the
+                # chunk-index fallback (chunk_idx * 1000 ms) is a false
+                # positive caused by target_fps != native_fps.
+                if "pts_ms" not in audio_chunk_data:
+                    audio_chunk_data = dict(audio_chunk_data)
+                    audio_chunk_data["pts_ms"] = pts_ms
             now = time.monotonic()
             fp = FramePacket(
                 frame_index=current_frame_num,
