@@ -25,18 +25,36 @@ logger = logging.getLogger(__name__)
 
 try:
     import ffmpeg
-    import soundfile as sf
-    FFMPEG_AVAILABLE = True
+    _FFMPEG_PYTHON_AVAILABLE = True
 except ImportError:
-    FFMPEG_AVAILABLE = False
-    sf = None
+    ffmpeg = None  # type: ignore[assignment]
+    _FFMPEG_PYTHON_AVAILABLE = False
+
+try:
+    import soundfile as sf
+    _SOUNDFILE_AVAILABLE = True
+except ImportError:
+    sf = None  # type: ignore[assignment]
+    _SOUNDFILE_AVAILABLE = False
+
+FFMPEG_AVAILABLE = _FFMPEG_PYTHON_AVAILABLE and _SOUNDFILE_AVAILABLE
+
+if not FFMPEG_AVAILABLE:
+    _missing_pkgs = []
+    if not _FFMPEG_PYTHON_AVAILABLE:
+        _missing_pkgs.append("ffmpeg-python")
+    if not _SOUNDFILE_AVAILABLE:
+        _missing_pkgs.append("soundfile")
     import warnings
     warnings.warn(
-        "ffmpeg-python is not installed. VideoWriter will save video WITHOUT audio. "
-        "Fix: pip install ffmpeg-python",
+        "{} not installed. VideoWriter will save video WITHOUT audio. "
+        "Fix: pip install {}".format(
+            " and ".join(_missing_pkgs), " ".join(_missing_pkgs)
+        ),
         RuntimeWarning,
         stacklevel=1,
     )
+    del _missing_pkgs
 
 def slow_motion_interpolation(prev_frame, next_frame, alpha):
     """ Generates smooth intermediate frame between 2 images """
@@ -480,8 +498,17 @@ class VideoWriterNode(Node):
         Returns:
             True if successful, False otherwise
         """
-        if not FFMPEG_AVAILABLE or sf is None:
-            logger.warning("ffmpeg-python and soundfile are required for audio merging; saving video without audio")
+        if not FFMPEG_AVAILABLE:
+            _missing = []
+            if not _FFMPEG_PYTHON_AVAILABLE:
+                _missing.append("ffmpeg-python")
+            if not _SOUNDFILE_AVAILABLE:
+                _missing.append("soundfile")
+            logger.warning(
+                "%s not installed; audio merge skipped, saving video without audio. "
+                "Fix: pip install %s",
+                " and ".join(_missing), " ".join(_missing),
+            )
             return False
         
         try:
