@@ -566,12 +566,11 @@ class TestHeapLagAudioMismatch:
             # Enqueue
             writer.enqueue(packet)
 
-            # flush_ready pops and writes the OLDEST frame
-            popped = writer.flush_and_collect()  # drains the heap
-            # Re-enqueue everything except the oldest (simulate flush_ready)
-            # Actually: flush_ready pops one. We simulate by collecting the
-            # first popped frame (oldest PTS) using flush_and_collect on a
-            # single-shot basis.
+            # Drain the heap and record only the first (lowest-PTS) frame that
+            # would have been written by flush_ready.  Subsequent frames would
+            # be written in later cycles by the real VideoWriterNode, but here
+            # we only care about which frame is written *first* per cycle.
+            popped = writer.flush_and_collect()
             if popped:
                 written_pts.append(popped[0].pts_ms / 1000.0)
 
@@ -610,7 +609,7 @@ class TestHeapLagAudioMismatch:
                 last_chunk = chunk_idx
                 audio_events.append(pts_ms / 1000.0)
 
-            popped: List[FramePacket] = []
+            popped: List[float] = []
             writer.flush_ready(lambda img, pts: popped.append(pts))
             if not popped:
                 writer.enqueue(pkt)
