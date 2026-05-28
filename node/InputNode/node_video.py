@@ -39,6 +39,7 @@ from node_editor.util import dpg_get_value, dpg_set_value, _dpg_lock
 
 from node.node_abc import DpgNodeABC
 from node.basenode import Node
+from node.VideoNode.sync import FramePacket
 
 
 class FactoryNode:
@@ -964,8 +965,24 @@ class VideoNode(Node):
             frame_timestamp = base_timestamp + loop_offset
         
         # Frames are ALWAYS sent via IMAGE output, never in JSON
-        # JSON output can contain metadata only (no frame data)
+        # JSON output contains FramePacket metadata for downstream sync nodes
         json_output = None
+        if frame is not None and frame_timestamp is not None:
+            pts_ms = frame_timestamp * 1000.0
+            audio_chunk_index = 0
+            if isinstance(audio_chunk_data, dict):
+                audio_chunk_index = audio_chunk_data.get("chunk_index", 0)
+            now = time.monotonic()
+            fp = FramePacket(
+                frame_index=current_frame_num,
+                pts_ms=pts_ms,
+                audio_chunk_index=audio_chunk_index,
+                image=frame,
+                audio_data=audio_chunk_data,
+                pipeline_entry_ts=now,
+                pipeline_exit_ts=now,
+            )
+            json_output = fp.to_metadata()
         
         # Return frame via IMAGE output and audio chunk data via AUDIO output
         # Include the FPS-based timestamp so it can be used for synchronization

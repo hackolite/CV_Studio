@@ -19,6 +19,7 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 #from node_editor.util import convert_cv_to_dpg
 from node.basenode import Node
+from node.VideoNode.sync import FramePacket, SyncVideoWriter
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +163,8 @@ class VideoWriterNode(Node):
     _recording_metadata_dict = {}  # Store metadata about ongoing recordings
     _merge_threads_dict = {}  # Store merge threads for async operations
     _merge_progress_dict = {}  # Store merge progress (0.0 to 1.0)
+    _sync_writers_dict = {}  # SyncVideoWriter instances keyed by tag_node_name
+    _frame_counter_dict = {}  # Per-node frame counter for FramePacket construction
     _start_label = 'Start'
     _stop_label = 'Stop'
     
@@ -238,7 +241,42 @@ class VideoWriterNode(Node):
                 writer_frame = cv2.resize(rec_frame,
                                           (writer_width, writer_height),
                                           interpolation=cv2.INTER_CUBIC)
-                self._video_writer_dict[tag_node_name].write(writer_frame)
+
+                # Build a FramePacket from upstream JSON metadata (if available)
+                # or fall back to a counter-based packet.
+                frame_idx = self._frame_counter_dict.get(tag_node_name, 0)
+                self._frame_counter_dict[tag_node_name] = frame_idx + 1
+
+                if isinstance(json_data, dict) and "_frame_packet" in json_data:
+                    packet = FramePacket.from_metadata(
+                        json_data, writer_frame, audio_data
+                    )
+                else:
+                    # Fallback: build from frame counter using writer_fps
+                    meta = self._recording_metadata_dict.get(tag_node_name, {})
+                    fps_val = meta.get("fps", writer_fps if "writer_fps" in dir() else 30.0)
+                    now = time.monotonic()
+                    packet = FramePacket(
+                        frame_index=frame_idx,
+                        pts_ms=(frame_idx / max(fps_val, 1)) * 1000.0,
+                        audio_chunk_index=0,
+                        image=writer_frame,
+                        audio_data=audio_data,
+                        pipeline_entry_ts=now,
+                        pipeline_exit_ts=now,
+                    )
+
+                # Enqueue into the priority-queue based sync writer
+                if tag_node_name in self._sync_writers_dict:
+                    sync_writer = self._sync_writers_dict[tag_node_name]
+                    sync_writer.enqueue(packet)
+                    cv2_writer = self._video_writer_dict[tag_node_name]
+                    sync_writer.flush_ready(
+                        lambda img, _pts: cv2_writer.write(img)
+                    )
+                else:
+                    # No sync writer yet (race at startup) → write directly
+                    self._video_writer_dict[tag_node_name].write(writer_frame)
                 
                 # Collect audio samples for final merge (for all formats)
                 if audio_data is not None and tag_node_name in self._audio_samples_dict:
@@ -677,12 +715,20 @@ class VideoWriterNode(Node):
                 self._audio_samples_dict[tag_node_name] = []
                 self._last_chunk_index_dict[tag_node_name] = -1
                 
+                # Initialise per-node frame counter and SyncVideoWriter
+                self._frame_counter_dict[tag_node_name] = 0
+                self._sync_writers_dict[tag_node_name] = SyncVideoWriter(
+                    fps=float(writer_fps),
+                    max_buffer_size=max(4, int(writer_fps * 0.2)),  # ~200 ms buffer
+                )
+                
                 # Store recording metadata for final merge
                 self._recording_metadata_dict[tag_node_name] = {
                     'final_path': file_path,
                     'temp_path': temp_file_path,
                     'format': video_format,
-                    'sample_rate': 22050  # Default sample rate, can be adjusted based on input
+                    'sample_rate': 22050,  # Default sample rate, can be adjusted based on input
+                    'fps': float(writer_fps),
                 }
                 logger.info(
                     "VideoWriter[%s] recording started format=%s fps=%s size=%sx%s temp=%s final=%s",
@@ -698,6 +744,14 @@ class VideoWriterNode(Node):
             dpg.set_item_label(tag_node_button_value_name, self._stop_label)
         elif label == self._stop_label:
             try:
+                # Flush remaining frames from the sync writer before releasing cv2 writer
+                if tag_node_name in self._sync_writers_dict:
+                    sync_writer = self._sync_writers_dict.pop(tag_node_name)
+                    cv2_writer = self._video_writer_dict.get(tag_node_name)
+                    if cv2_writer is not None:
+                        sync_writer.flush_and_collect()  # drain heap; frames already written via flush_ready
+                self._frame_counter_dict.pop(tag_node_name, None)
+
                 # Release video writer and ensure file is flushed to disk
                 if tag_node_name in self._video_writer_dict:
                     try:
