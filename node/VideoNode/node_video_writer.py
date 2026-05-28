@@ -293,12 +293,25 @@ class VideoWriterNode(Node):
                             if incoming_idx is None or incoming_idx != last_idx:
                                 self._last_chunk_index_dict[tag_node_name] = incoming_idx
                                 self._audio_samples_dict[tag_node_name].append(audio_data['data'])
-                                logger.debug(
-                                    "VideoWriter[%s] received video-node audio chunk index=%s samples=%s",
-                                    tag_node_name,
-                                    incoming_idx,
-                                    len(audio_data['data']) if hasattr(audio_data['data'], '__len__') else 'n/a',
-                                )
+                                n_collected = len(self._audio_samples_dict[tag_node_name])
+                                if n_collected == 1:
+                                    logger.info(
+                                        "VideoWriter[%s]: First audio chunk received "
+                                        "(chunk_index=%s, samples=%s, SR=%s Hz). Audio recording active.",
+                                        tag_node_name,
+                                        incoming_idx,
+                                        len(audio_data['data']) if hasattr(audio_data['data'], '__len__') else 'n/a',
+                                        audio_data['sample_rate'],
+                                    )
+                                else:
+                                    logger.debug(
+                                        "VideoWriter[%s]: audio chunk index=%s samples=%s SR=%s total_chunks=%d",
+                                        tag_node_name,
+                                        incoming_idx,
+                                        len(audio_data['data']) if hasattr(audio_data['data'], '__len__') else 'n/a',
+                                        audio_data['sample_rate'],
+                                        n_collected,
+                                    )
                                 if tag_node_name in self._recording_metadata_dict:
                                     self._recording_metadata_dict[tag_node_name]['sample_rate'] = audio_data['sample_rate']
                         else:
@@ -322,12 +335,18 @@ class VideoWriterNode(Node):
                                 # Concatenate all chunks
                                 merged_chunk = np.concatenate(audio_chunks)
                                 self._audio_samples_dict[tag_node_name].append(merged_chunk)
-                                logger.debug(
-                                    "VideoWriter[%s] received ImageConcat audio chunks slots=%d merged_samples=%d",
-                                    tag_node_name,
-                                    len(audio_chunks),
-                                    len(merged_chunk),
-                                )
+                                n_collected = len(self._audio_samples_dict[tag_node_name])
+                                if n_collected == 1:
+                                    logger.info(
+                                        "VideoWriter[%s]: First ImageConcat audio received "
+                                        "(slots=%d, merged_samples=%d, SR=%s Hz). Audio recording active.",
+                                        tag_node_name, len(audio_chunks), len(merged_chunk), sample_rate,
+                                    )
+                                else:
+                                    logger.debug(
+                                        "VideoWriter[%s]: ImageConcat audio slots=%d merged_samples=%d total_chunks=%d",
+                                        tag_node_name, len(audio_chunks), len(merged_chunk), n_collected,
+                                    )
                                 
                                 # Update sample rate if found
                                 if sample_rate is not None and tag_node_name in self._recording_metadata_dict:
@@ -336,11 +355,33 @@ class VideoWriterNode(Node):
                         # Single audio chunk as numpy array
                         if isinstance(audio_data, np.ndarray):
                             self._audio_samples_dict[tag_node_name].append(audio_data)
-                            logger.debug(
-                                "VideoWriter[%s] received ndarray audio samples=%d",
-                                tag_node_name,
-                                len(audio_data),
-                            )
+                            n_collected = len(self._audio_samples_dict[tag_node_name])
+                            if n_collected == 1:
+                                logger.info(
+                                    "VideoWriter[%s]: First raw ndarray audio received (samples=%d). Audio recording active.",
+                                    tag_node_name, len(audio_data),
+                                )
+                            else:
+                                logger.debug(
+                                    "VideoWriter[%s]: ndarray audio samples=%d total_chunks=%d",
+                                    tag_node_name, len(audio_data), n_collected,
+                                )
+                elif tag_node_name in self._video_writer_dict and tag_node_name in self._audio_samples_dict:
+                    # Recording is active but no audio arriving — warn once every 60 frames
+                    no_audio_count = self._frame_counter_dict.get(tag_node_name, 0)
+                    if no_audio_count == 1:
+                        logger.warning(
+                            "VideoWriter[%s]: Recording active but audio_data=None on first frame. "
+                            "Source: %s. Check that the Video node 'Frames only' checkbox is unchecked "
+                            "and that audio preprocessing has completed.",
+                            tag_node_name, connection_info_src,
+                        )
+                    elif no_audio_count % 300 == 0:
+                        n_collected = len(self._audio_samples_dict.get(tag_node_name, []))
+                        logger.warning(
+                            "VideoWriter[%s]: %d frames recorded, %d audio chunks collected (audio_data=None this frame).",
+                            tag_node_name, no_audio_count, n_collected,
+                        )
                 
                 # Write audio and JSON data to MKV metadata tracks if applicable
                 if tag_node_name in self._mkv_metadata_dict:
@@ -773,13 +814,22 @@ class VideoWriterNode(Node):
                             
                             # Copy audio samples for the thread (to avoid race conditions)
                             audio_samples_copy = copy.deepcopy(self._audio_samples_dict[tag_node_name])
+                            total_samples = sum(
+                                len(s) for s in audio_samples_copy if hasattr(s, '__len__')
+                            )
+                            duration_s = total_samples / max(sample_rate, 1)
                             
                             # Start merge in a separate thread to prevent UI freezing
                             logger.info(
-                                "VideoWriter[%s] stopping recording: audio_chunks=%d sample_rate=%s, starting merge",
+                                "VideoWriter[%s]: Stopping recording. "
+                                "Audio collected: %d chunks, ~%d samples, SR=%s Hz (~%.1fs). "
+                                "Starting async merge → %s",
                                 tag_node_name,
                                 len(audio_samples_copy),
+                                total_samples,
                                 sample_rate,
+                                duration_s,
+                                final_path,
                             )
                             merge_thread = threading.Thread(
                                 target=self._async_merge_thread,
@@ -790,8 +840,6 @@ class VideoWriterNode(Node):
                             
                             # Store thread reference for tracking
                             self._merge_threads_dict[tag_node_name] = merge_thread
-                            
-                            logger.info("Started async audio/video merge for: %s", final_path)
                         except Exception as e:
                             logger.exception("Error starting audio/video merge: %s", e)
                         finally:
@@ -804,6 +852,13 @@ class VideoWriterNode(Node):
                             metadata = self._recording_metadata_dict[tag_node_name]
                             temp_path = metadata['temp_path']
                             final_path = metadata['final_path']
+                            n_frames = self._frame_counter_dict.get(tag_node_name, 0)
+                            logger.warning(
+                                "VideoWriter[%s]: Stopping recording with NO audio chunks "
+                                "(recorded %d frames). Video will be saved without audio. "
+                                "Check that the Video node 'Frames only' checkbox is unchecked.",
+                                tag_node_name, n_frames,
+                            )
                             
                             if os.path.exists(temp_path):
                                 os.rename(temp_path, final_path)

@@ -80,9 +80,9 @@ class TimestampedQueue:
         with self._lock:
             self._queue.append(timestamped_data)
             
-            # Log the data insertion with timestamp and data type
+            # Log the data insertion with timestamp and data type (DEBUG to avoid per-frame pollution)
             data_type = type(data).__name__
-            logger.info(
+            logger.debug(
                 f"Queue [{self._node_id}] - Inserted data: type={data_type}, "
                 f"timestamp={timestamp:.6f}, queue_size={len(self._queue)}/{self._maxsize}"
             )
@@ -210,8 +210,8 @@ class NodeDataQueueManager:
         queue = self.get_queue(node_id_name, data_type)
         queue.put(data, timestamp)
         
-        # Log the data insertion at manager level with the same timestamp
-        logger.info(
+        # Log at DEBUG to avoid per-frame log pollution
+        logger.debug(
             f"Manager - Node [{node_id_name}] received {data_type} data at timestamp={timestamp:.6f}"
         )
     
