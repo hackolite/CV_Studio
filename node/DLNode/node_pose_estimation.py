@@ -4,6 +4,7 @@ import copy
 import shutil
 import time
 import os
+import sys
 
 import numpy as np
 import dearpygui.dearpygui as dpg
@@ -41,9 +42,13 @@ from src.utils.gpu_utils import get_execution_providers
 
 logger = get_logger(__name__)
 
-_POSE_UPLOADS_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), 'pose_estimation', 'CustomONNX', 'models'
-)
+if getattr(sys, 'frozen', False):
+    from src.utils.paths import get_models_dir
+    _POSE_UPLOADS_DIR = get_models_dir('pose_estimation')
+else:
+    _POSE_UPLOADS_DIR = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), 'pose_estimation', 'CustomONNX', 'models'
+    )
 
 import random
 

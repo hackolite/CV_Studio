@@ -4,6 +4,7 @@ import copy
 import shutil
 import time
 import os
+import sys
 
 import numpy as np
 import cv2
@@ -41,9 +42,13 @@ from node.basenode import Node
 from src.utils.logging import get_logger
 logger = get_logger(__name__)
 
-_CLS_UPLOADS_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), 'classification', 'CustomONNX', 'models'
-)
+if getattr(sys, 'frozen', False):
+    from src.utils.paths import get_models_dir
+    _CLS_UPLOADS_DIR = get_models_dir('classification')
+else:
+    _CLS_UPLOADS_DIR = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), 'classification', 'CustomONNX', 'models'
+    )
 
 
 class FactoryNode:

@@ -18,6 +18,7 @@ Model management mirrors the ObjectDetection node:
 import ast
 import json
 import os
+import sys
 import shutil
 import time
 import copy
@@ -39,7 +40,11 @@ logger = get_logger(__name__)
 # Paths
 # ---------------------------------------------------------------------------
 _AUDIO_MODEL_BASE = os.path.dirname(os.path.abspath(__file__))
-_UPLOADS_DIR = os.path.join(_AUDIO_MODEL_BASE, "models")
+if getattr(sys, 'frozen', False):
+    from src.utils.paths import get_models_dir
+    _UPLOADS_DIR = get_models_dir('audio')
+else:
+    _UPLOADS_DIR = os.path.join(_AUDIO_MODEL_BASE, "models")
 
 # librosa is imported lazily so the app starts even when it is not installed
 _librosa = None

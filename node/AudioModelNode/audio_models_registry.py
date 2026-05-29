@@ -4,10 +4,19 @@
 
 import json
 import os
+import sys
 
-_REGISTRY_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "audio_models_registry.json"
-)
+
+def _get_registry_path():
+    """Return the registry path – writable location in frozen (onefile) mode."""
+    if getattr(sys, "frozen", False):
+        from src.utils.paths import get_registry_path
+        return get_registry_path("audio_models_registry.json")
+    return os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "audio_models_registry.json"
+    )
+
+_REGISTRY_PATH = _get_registry_path()
 
 
 def _load_raw() -> list:

@@ -12,6 +12,7 @@ editor.
 
 import copy
 import os
+import sys
 import shutil
 import time
 
@@ -42,7 +43,11 @@ _OBJECT_DETECTION_BASE = os.path.join(
 )
 
 # Directory where user-uploaded ONNX models are stored permanently
-_UPLOADS_DIR = os.path.join(_OBJECT_DETECTION_BASE, 'CustomONNX', 'models')
+if getattr(sys, 'frozen', False):
+    from src.utils.paths import get_models_dir
+    _UPLOADS_DIR = get_models_dir('object_detection')
+else:
+    _UPLOADS_DIR = os.path.join(_OBJECT_DETECTION_BASE, 'CustomONNX', 'models')
 
 _COCO_CLASSES = {k: v for k, v in coco_class_names.items()}
 
