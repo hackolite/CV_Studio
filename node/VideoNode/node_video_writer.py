@@ -935,6 +935,14 @@ class VideoWriterNode(Node):
             video_writer_directory = self._opencv_setting_dict[
                 'video_writer_directory']
 
+            # In frozen (onefile) mode, resolve relative paths against the
+            # persistent app directory (next to the .exe), not the temp
+            # extraction folder.
+            if not os.path.isabs(video_writer_directory):
+                from src.utils.paths import get_app_dir
+                video_writer_directory = os.path.join(
+                    get_app_dir(), video_writer_directory.lstrip('./\\'))
+
             os.makedirs(video_writer_directory, exist_ok=True)
 
             # Get selected format

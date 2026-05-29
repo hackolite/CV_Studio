@@ -3,6 +3,7 @@
 import shutil
 import time
 import os
+import sys
 
 import cv2
 import numpy as np
@@ -22,8 +23,10 @@ from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-_DEPTH_UPLOADS_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), 'monocular_depth_estimation', 'CustomONNX', 'models'
+_DEPTH_UPLOADS_DIR = (
+    __import__('src.utils.paths', fromlist=['get_models_dir']).get_models_dir('monocular_depth_estimation')
+    if getattr(sys, 'frozen', False) else
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'monocular_depth_estimation', 'CustomONNX', 'models')
 )
 
 class FactoryNode:

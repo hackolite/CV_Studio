@@ -4,6 +4,7 @@ import copy
 import shutil
 import time
 import os
+import sys
 import requests
 import numpy as np
 import dearpygui.dearpygui as dpg
@@ -34,8 +35,10 @@ logger = get_logger(__name__)
 
 from node.basenode import Node
 
-_FD_UPLOADS_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), 'face_detection', 'CustomONNX', 'models'
+_FD_UPLOADS_DIR = (
+    __import__('src.utils.paths', fromlist=['get_models_dir']).get_models_dir('face_detection')
+    if getattr(sys, 'frozen', False) else
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'face_detection', 'CustomONNX', 'models')
 )
 
 

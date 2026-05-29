@@ -183,15 +183,64 @@ For a pure GUI application without console window:
 python build_exe.py --windowed
 ```
 
-### Single File (onefile)
+### Single File (onefile) — RECOMMENDED for distribution
 
-To create a single .exe file (slower startup):
+Creates a **single `CV_Studio.exe`** that contains everything. At runtime it
+extracts to a temporary folder (read-only). All user data is stored in a
+`CV_Studio_data/` folder **next to the .exe**.
 
 ```bash
-python build_exe.py --onefile
+# Build with the dedicated onefile spec
+pyinstaller CV_Studio_onefile.spec
 ```
 
-**Note**: Onefile mode is slower to start because it must extract all files temporarily.
+The resulting exe is at `dist/CV_Studio.exe`.
+
+#### Runtime data folder layout
+
+When you run the .exe for the first time, a `CV_Studio_data/` folder is
+automatically created next to it:
+
+```
+MyFolder/
+├── CV_Studio.exe                  ← the single executable
+└── CV_Studio_data/                ← auto-created on first run
+    ├── _VideoWriter/              ← recorded videos & metadata
+    ├── models/                    ← user-uploaded ONNX models
+    │   ├── object_detection/
+    │   ├── classification/
+    │   ├── face_detection/
+    │   ├── pose_estimation/
+    │   ├── semantic_segmentation/
+    │   ├── monocular_depth_estimation/
+    │   └── audio/
+    └── registries/                ← persistent JSON registries
+        ├── od_custom_models_registry.json
+        ├── cls_custom_models_registry.json
+        ├── fd_custom_models_registry.json
+        ├── pose_custom_models_registry.json
+        ├── seg_custom_models_registry.json
+        ├── depth_custom_models_registry.json
+        └── audio_models_registry.json
+```
+
+#### Why this layout?
+
+| Concern | Solution |
+|---------|----------|
+| PyInstaller `_MEIPASS` is temporary & read-only | Write data next to the .exe |
+| VideoWriter needs persistent recordings | `CV_Studio_data/_VideoWriter/` |
+| User-uploaded models must survive restarts | `CV_Studio_data/models/<type>/` |
+| Registry JSON must be writable | `CV_Studio_data/registries/` |
+| Built-in ONNX models (bundled) | Bundled inside the .exe (read from `_MEIPASS`) |
+| Settings (`setting.json`) | Bundled inside the .exe (read-only defaults) |
+
+#### Notes
+
+- **First start is slower** (~5-15 sec) because the .exe extracts ~300 MB to a temp dir.
+- The `CV_Studio_data/` folder is portable — you can copy the exe + data folder together.
+- Built-in models (YOLOX, YAMNet, etc.) are bundled **inside** the exe and don't need to be in `CV_Studio_data/`.
+- If you delete `CV_Studio_data/`, it will be recreated (empty) on next launch.
 
 ### Custom Icon
 

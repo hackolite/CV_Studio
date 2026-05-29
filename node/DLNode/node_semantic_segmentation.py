@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import time
 import os
+import sys
 import shutil
 
 import numpy as np
@@ -29,8 +30,10 @@ from node.basenode import Node
 from src.utils.logging import get_logger
 logger = get_logger(__name__)
 
-_SEG_UPLOADS_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), 'semantic_segmentation', 'CustomONNX', 'models'
+_SEG_UPLOADS_DIR = (
+    __import__('src.utils.paths', fromlist=['get_models_dir']).get_models_dir('semantic_segmentation')
+    if getattr(sys, 'frozen', False) else
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'semantic_segmentation', 'CustomONNX', 'models')
 )
 
 class FactoryNode:

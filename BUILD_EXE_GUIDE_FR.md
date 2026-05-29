@@ -183,15 +183,61 @@ Pour une application purement GUI sans fenêtre de console :
 python build_exe.py --windowed
 ```
 
-### Fichier unique (onefile)
+### Fichier unique (onefile) — RECOMMANDÉ pour la distribution
 
-Pour créer un seul fichier .exe (démarrage plus lent) :
+Crée un **seul `CV_Studio.exe`** autonome. À l'exécution, il s'extrait dans un
+dossier temporaire (lecture seule). Toutes les données utilisateur sont stockées
+dans un dossier `CV_Studio_data/` **à côté du .exe**.
 
 ```bash
-python build_exe.py --onefile
+# Compilation onefile avec le spec dédié
+pyinstaller CV_Studio_onefile.spec
 ```
 
-**Note** : Le mode onefile est plus lent au démarrage car il doit extraire tous les fichiers temporairement.
+Le .exe résultant se trouve dans `dist/CV_Studio.exe`.
+
+#### Arborescence du dossier de données (créé automatiquement)
+
+```
+MonDossier/
+├── CV_Studio.exe                  ← l'exécutable unique
+└── CV_Studio_data/                ← créé au premier lancement
+    ├── _VideoWriter/              ← vidéos enregistrées & métadonnées
+    ├── models/                    ← modèles ONNX uploadés par l'utilisateur
+    │   ├── object_detection/
+    │   ├── classification/
+    │   ├── face_detection/
+    │   ├── pose_estimation/
+    │   ├── semantic_segmentation/
+    │   ├── monocular_depth_estimation/
+    │   └── audio/
+    └── registries/                ← registres JSON persistants
+        ├── od_custom_models_registry.json
+        ├── cls_custom_models_registry.json
+        ├── fd_custom_models_registry.json
+        ├── pose_custom_models_registry.json
+        ├── seg_custom_models_registry.json
+        ├── depth_custom_models_registry.json
+        └── audio_models_registry.json
+```
+
+#### Pourquoi cette organisation ?
+
+| Problème | Solution |
+|----------|----------|
+| `_MEIPASS` de PyInstaller est temporaire et en lecture seule | Écriture à côté du .exe |
+| VideoWriter nécessite des enregistrements persistants | `CV_Studio_data/_VideoWriter/` |
+| Les modèles uploadés doivent survivre aux redémarrages | `CV_Studio_data/models/<type>/` |
+| Les JSON de registre doivent être modifiables | `CV_Studio_data/registries/` |
+| Modèles ONNX intégrés (bundled) | Inclus dans le .exe (lus depuis `_MEIPASS`) |
+| Settings (`setting.json`) | Inclus dans le .exe (valeurs par défaut en lecture seule) |
+
+#### Notes
+
+- **Le premier démarrage est plus lent** (~5-15 sec) car le .exe extrait ~300 Mo vers un dossier temp.
+- Le dossier `CV_Studio_data/` est portable — vous pouvez copier le exe + dossier ensemble.
+- Les modèles intégrés (YOLOX, YAMNet, etc.) sont dans le .exe, pas besoin d'être dans `CV_Studio_data/`.
+- Si vous supprimez `CV_Studio_data/`, il sera recréé (vide) au prochain lancement.
 
 ### Icône personnalisée
 
