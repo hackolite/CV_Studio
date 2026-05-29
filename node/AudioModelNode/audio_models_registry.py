@@ -6,7 +6,6 @@ import json
 import os
 import sys
 
-_REGISTRY_PATH = None
 
 def _get_registry_path():
     """Return the registry path – writable location in frozen (onefile) mode."""

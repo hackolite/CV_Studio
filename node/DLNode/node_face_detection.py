@@ -35,11 +35,13 @@ logger = get_logger(__name__)
 
 from node.basenode import Node
 
-_FD_UPLOADS_DIR = (
-    __import__('src.utils.paths', fromlist=['get_models_dir']).get_models_dir('face_detection')
-    if getattr(sys, 'frozen', False) else
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'face_detection', 'CustomONNX', 'models')
-)
+if getattr(sys, 'frozen', False):
+    from src.utils.paths import get_models_dir
+    _FD_UPLOADS_DIR = get_models_dir('face_detection')
+else:
+    _FD_UPLOADS_DIR = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), 'face_detection', 'CustomONNX', 'models'
+    )
 
 
 class FactoryNode:

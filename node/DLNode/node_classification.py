@@ -42,11 +42,13 @@ from node.basenode import Node
 from src.utils.logging import get_logger
 logger = get_logger(__name__)
 
-_CLS_UPLOADS_DIR = (
-    __import__('src.utils.paths', fromlist=['get_models_dir']).get_models_dir('classification')
-    if getattr(sys, 'frozen', False) else
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'classification', 'CustomONNX', 'models')
-)
+if getattr(sys, 'frozen', False):
+    from src.utils.paths import get_models_dir
+    _CLS_UPLOADS_DIR = get_models_dir('classification')
+else:
+    _CLS_UPLOADS_DIR = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), 'classification', 'CustomONNX', 'models'
+    )
 
 
 class FactoryNode:
