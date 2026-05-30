@@ -286,7 +286,7 @@ class MicrophoneNode(Node):
         self._audio_buffer = queue.Queue(maxsize=10)  # Limit buffer size to prevent memory issues
         self._current_sample_rate = 16000
         self._current_channels = 1
-        self._current_chunk_duration = 1.0
+        self._current_chunk_duration = 5.0
         self._current_slide_duration = 0.5
         self._rolling_buffer = None  # Sliding window buffer
         self._lock = threading.Lock()

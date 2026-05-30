@@ -269,7 +269,7 @@ class WebRTCNode(Node):
         self._audio_thread = None
         self._audio_queue = queue.Queue(maxsize=10)
         self._audio_sr = 16000
-        self._audio_chunk_duration = 1.0  # seconds per chunk
+        self._audio_chunk_duration = 5.0  # seconds per chunk
         self._audio_url = None
         self._audio_stop_event = threading.Event()
         self._audio_chunk_counter = 0
