@@ -111,6 +111,8 @@ class MongodbNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
         self.node_label = 'Mongodb'
         self.node_tag = 'Mongodb'
         self._last_update_time = 0
+        self._client = None
+        self._current_uri = None
         
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
         tag_node_name = f"{node_id}:{self.node_tag}"
@@ -137,8 +139,14 @@ class MongodbNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
                 if not uri or not database or not collection_name:
                     return {"image": None, "json": None, "audio": None}
 
-                client = MongoClient(uri)
-                db = client[database]
+                # Reuse client if URI hasn't changed
+                if self._client is None or self._current_uri != uri:
+                    if self._client is not None:
+                        self._client.close()
+                    self._client = MongoClient(uri)
+                    self._current_uri = uri
+
+                db = self._client[database]
                 collection = db[collection_name]
 
                 data = node_result_dict[clee]
@@ -147,7 +155,6 @@ class MongodbNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
 
                 result = collection.insert_one(data)
                 print("Inserted document ID:", result.inserted_id)
-                client.close()
             
             except Exception as e:
                 print(e)
@@ -157,7 +164,9 @@ class MongodbNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
         return {"image": None, "json": None, "audio": None}
 
     def close(self, node_id):
-        pass
+        if self._client is not None:
+            self._client.close()
+            self._client = None
 
 
     def get_setting_dict(self, node_id):
