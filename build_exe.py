@@ -558,12 +558,32 @@ def modify_spec_file(args):
     
     # Handle onefile mode
     if args.onefile:
-        print("  - Single file mode requested")
-        print("  NOTE: Onefile mode requires manual spec file modification")
-        print("  Please edit CV_Studio.spec and change:")
-        print("    1. exe: exclude_binaries=False")
-        print("    2. Remove or comment out the COLLECT section")
-        print("  For now, building with standard (folder) mode...")
+        import re
+        print("  - Single file mode enabled")
+        original = spec_content
+        # Change exclude_binaries from True to False
+        spec_content = re.sub(
+            r'exclude_binaries=True',
+            'exclude_binaries=False',
+            spec_content
+        )
+        # Add a.binaries, a.zipfiles, a.datas to EXE arguments
+        # In onefile mode, EXE must include these directly (instead of COLLECT)
+        spec_content = re.sub(
+            r'(exe = EXE\(\s*pyz,\s*a\.scripts,)\s*\[\],',
+            r'\1\n    a.binaries,\n    a.zipfiles,\n    a.datas,',
+            spec_content
+        )
+        # Remove the COLLECT section entirely
+        spec_content = re.sub(
+            r'\ncoll = COLLECT\(.*?\)\s*\n',
+            '\n',
+            spec_content,
+            flags=re.DOTALL
+        )
+        if spec_content == original:
+            print("  ✗ Failed to apply onefile transformations to spec file")
+            return False
     
     # Write modified spec file
     with open(spec_file, 'w') as f:
@@ -829,9 +849,10 @@ def main():
     if not build_executable(args):
         sys.exit(1)
     
-    # Copy data directories from _internal to dist root
-    if not copy_data_directories():
-        sys.exit(1)
+    # Copy data directories from _internal to dist root (not needed for onefile)
+    if not args.onefile:
+        if not copy_data_directories():
+            sys.exit(1)
     
     # Create documentation
     create_documentation()
