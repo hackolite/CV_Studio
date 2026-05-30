@@ -19,6 +19,10 @@ class MediaPipeFaceDetection(object):
     ):
         import mediapipe as mp
 
+        # Note: The old mp.solutions API had model_selection=0 (short-range ~2m)
+        # and model_selection=1 (full-range ~5m).  The new Tasks API only ships
+        # the short-range model; the model_selection parameter is accepted for
+        # backward compatibility but has no effect.
         tflite_path = get_model_path("face_detector_short")
         base_options = mp.tasks.BaseOptions(model_asset_path=tflite_path)
         options = mp.tasks.vision.FaceDetectorOptions(

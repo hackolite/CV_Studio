@@ -76,7 +76,8 @@ class MediaPipeHands(object):
 
         return results_list
 
-    def _calc_palm_moment(self, image, landmarks, image_width, image_height):
+    def _calc_palm_moment(self, image, landmarks, image_width, image_height):  # noqa: ARG002
+        """Calculate palm center of mass. *image* kept for API compat."""
         palm_array = np.empty((0, 2), int)
 
         for index, landmark in enumerate(landmarks):

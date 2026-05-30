@@ -64,7 +64,7 @@ class MediaPipePose(object):
                     x = min(int(landmark.x * image_width), image_width - 1)
                     y = min(int(landmark.y * image_height), image_height - 1)
                     z = landmark.z
-                    visibility = landmark.visibility if landmark.visibility else 0.0
+                    visibility = landmark.visibility if landmark.visibility is not None else 0.0
                     landmark_dict[idx] = [x, y, z, visibility]
 
                 results_list.append(copy.deepcopy(landmark_dict))

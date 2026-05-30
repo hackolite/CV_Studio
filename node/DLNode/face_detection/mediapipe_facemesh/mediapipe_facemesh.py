@@ -28,7 +28,9 @@ class MediaPipeFaceMesh(object):
             num_faces=max_num_faces,
             min_face_detection_confidence=min_detection_confidence,
             min_tracking_confidence=min_tracking_confidence,
-            output_face_blendshapes=refine_landmarks,
+            # Note: The old refine_landmarks option (which added iris landmarks)
+            # has no direct equivalent in the new Tasks API.  The FaceLandmarker
+            # model already includes iris landmarks by default.
         )
         self.landmarker = mp.tasks.vision.FaceLandmarker.create_from_options(
             options
