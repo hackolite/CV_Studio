@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import time
+import subprocess
+import threading
+import shutil
+import queue
 import multiprocessing as mp
 
 import cv2
@@ -10,9 +14,22 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
-#from node_editor.util import convert_cv_to_dpg
 from node.basenode import Node
 
+try:
+    import imageio_ffmpeg
+except ImportError:
+    imageio_ffmpeg = None
+
+
+def _get_ffmpeg_exe():
+    """Return the path to a usable ffmpeg executable."""
+    try:
+        if imageio_ffmpeg is not None:
+            return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        pass
+    return shutil.which("ffmpeg")
 
 
 class FactoryNode:
@@ -56,9 +73,6 @@ class FactoryNode:
 
 
 
-
-
-
         node._opencv_setting_dict = opencv_setting_dict
         node.small_window_w = node._opencv_setting_dict['input_window_width']
         node.small_window_h = node._opencv_setting_dict['input_window_height']
@@ -86,10 +100,19 @@ class FactoryNode:
         # Create yellow theme for buttons
         with dpg.theme() as yellow_button_theme:
             with dpg.theme_component(dpg.mvButton):
-                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))          # Yellow background
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 153, 255)) # Yellow on hover
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 153, 255))   # Yellow on press
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (255, 255, 153, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 153, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 153, 255))
 
+        # Create default (inactive) theme for audio button
+        with dpg.theme() as default_button_theme:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (51, 51, 55, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (66, 66, 70, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (80, 80, 85, 255))
+
+        node.yellow_button_theme = yellow_button_theme
+        node.default_button_theme = default_button_theme
 
 
         with dpg.node(
@@ -128,8 +151,6 @@ class FactoryNode:
                 )
 
 
-
-            # Outputs audio, json, float, elapsed time as disabled yellow buttons
             def add_yellow_disabled_button(label, tag):
                 btn = dpg.add_button(
                     label=label,
@@ -140,10 +161,16 @@ class FactoryNode:
                 dpg.bind_item_theme(btn, yellow_button_theme)
                 return btn
 
-
+            # Audio toggle button (clickable)
             with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Output):
-                btn = add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
-                
+                btn_audio = dpg.add_button(
+                    label="Audio",
+                    tag=node.tag_node_output_audio_value_name,
+                    width=node._small_window_w,
+                    callback=node._toggle_audio,
+                )
+                dpg.bind_item_theme(btn_audio, default_button_theme)
+
             with dpg.node_attribute(tag=node.tag_node_output_json_name, attribute_type=dpg.mvNode_Attr_Output):
                 btn = add_yellow_disabled_button("JSON", node.tag_node_output_json_value_name)
         
@@ -211,7 +238,124 @@ class RtspNode(Node):
         
         self.node_tag = "Rtsp"
         self.node_label = "Rtsp"
-        
+
+        self.yellow_button_theme = None
+        self.default_button_theme = None
+        self.is_streaming = False
+        self._frame_count = 0
+
+        # Audio state
+        self._audio_enabled = False
+        self._audio_process = None
+        self._audio_thread = None
+        self._audio_queue = queue.Queue(maxsize=10)
+        self._audio_sr = 16000
+        self._audio_chunk_duration = 1.0  # seconds per chunk
+        self._audio_url = None
+        self._audio_stop_event = threading.Event()
+        self._audio_chunk_counter = 0
+
+    def _toggle_audio(self, sender, data, user_data=None):
+        """Toggle audio extraction on/off."""
+        self._audio_enabled = not self._audio_enabled
+        if self._audio_enabled:
+            dpg.bind_item_theme(sender, self.yellow_button_theme)
+            # Start audio capture if currently streaming
+            if self.is_streaming and self._audio_url:
+                self._start_audio_capture()
+        else:
+            dpg.bind_item_theme(sender, self.default_button_theme)
+            self._stop_audio_capture()
+
+    def _start_audio_capture(self):
+        """Start the ffmpeg subprocess to capture audio from the stream."""
+        self._stop_audio_capture()
+
+        if not self._audio_url:
+            return
+
+        ffmpeg_exe = _get_ffmpeg_exe()
+        if ffmpeg_exe is None:
+            print("❌ ffmpeg non trouvé pour l'extraction audio")
+            return
+
+        self._audio_stop_event.clear()
+        self._audio_thread = threading.Thread(
+            target=self._audio_reader_loop,
+            args=(ffmpeg_exe, self._audio_url),
+            daemon=True,
+        )
+        self._audio_thread.start()
+
+    def _audio_reader_loop(self, ffmpeg_exe, audio_url):
+        """Background thread: reads PCM audio from ffmpeg stdout."""
+        try:
+            cmd = [
+                ffmpeg_exe,
+                "-rtsp_transport", "tcp",
+                "-i", audio_url,
+                "-vn",
+                "-acodec", "pcm_s16le",
+                "-ar", str(self._audio_sr),
+                "-ac", "1",
+                "-f", "s16le",
+                "-",
+            ]
+            self._audio_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+
+            bytes_per_chunk = int(self._audio_sr * self._audio_chunk_duration) * 2  # 16-bit mono
+
+            while not self._audio_stop_event.is_set():
+                raw = self._audio_process.stdout.read(bytes_per_chunk)
+                if not raw:
+                    break
+                audio_np = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+                chunk_idx = self._audio_chunk_counter
+                self._audio_chunk_counter += 1
+                audio_dict = {
+                    'data': audio_np,
+                    'sample_rate': self._audio_sr,
+                    'channels': 1,
+                    'chunk_index': chunk_idx,
+                    'step_duration': self._audio_chunk_duration,
+                }
+                # Non-blocking put: discard old chunks if queue is full
+                try:
+                    self._audio_queue.put_nowait(audio_dict)
+                except queue.Full:
+                    try:
+                        self._audio_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                    self._audio_queue.put_nowait(audio_dict)
+
+        except Exception as e:
+            if not self._audio_stop_event.is_set():
+                print(f"❌ Erreur audio reader RTSP: {e}")
+        finally:
+            if self._audio_process and self._audio_process.poll() is None:
+                self._audio_process.kill()
+                self._audio_process = None
+
+    def _stop_audio_capture(self):
+        """Stop the audio capture thread and ffmpeg process."""
+        self._audio_stop_event.set()
+        if self._audio_process and self._audio_process.poll() is None:
+            self._audio_process.kill()
+            self._audio_process = None
+        if self._audio_thread and self._audio_thread.is_alive():
+            self._audio_thread.join(timeout=2.0)
+        self._audio_thread = None
+        # Drain the queue
+        while not self._audio_queue.empty():
+            try:
+                self._audio_queue.get_nowait()
+            except queue.Empty:
+                break
 
     def update(
         self,
@@ -272,6 +416,7 @@ class RtspNode(Node):
                 num = image_queue.qsize()
                 if num > 0:
                     frame = image_queue.get()
+                    self._frame_count += 1
         else:
             # single-threaded
             if rtsp_capture is not None:
@@ -281,6 +426,7 @@ class RtspNode(Node):
                     ret = False
                 if not ret:
                     return {"image": None, "json": None, "audio": None}
+                self._frame_count += 1
 
 
         if rtsp_url != '' and use_pref_counter:
@@ -298,9 +444,29 @@ class RtspNode(Node):
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return {"image": frame, "json": None, "audio": None}
+        # Get audio chunk if audio is enabled
+        audio_chunk_data = None
+        if self._audio_enabled:
+            try:
+                audio_chunk_data = self._audio_queue.get_nowait()
+            except queue.Empty:
+                pass
+
+        # Calculate pts_ms for A/V sync
+        pts_ms = None
+        if self._frame_count > 0:
+            pts_ms = self._frame_count * 33.0  # approximate 30fps
+
+        # Inject pts_ms into audio dict for A/V sync alignment
+        if audio_chunk_data is not None and pts_ms is not None:
+            audio_chunk_data = dict(audio_chunk_data)
+            audio_chunk_data["pts_ms"] = pts_ms
+
+        return {"image": frame, "json": None, "audio": audio_chunk_data}
 
     def close(self, node_id):
+        # Stop audio capture
+        self._stop_audio_capture()
         # multiprocessing
         use_mp = self._opencv_setting_dict['use_multiprocessing_rtsp']
         if use_mp:
@@ -360,10 +526,19 @@ class RtspNode(Node):
                         )
                         self._process[rtsp_url].start()
                 else:
-                    # multiprocessing
+                    # single-threaded
                     if not (rtsp_url in self._rtsp_capture):
                         rtsp_capture = cv2.VideoCapture(rtsp_url)
                         self._rtsp_capture[rtsp_url] = rtsp_capture
+
+            self.is_streaming = True
+            self._frame_count = 0
+            self._audio_chunk_counter = 0
+
+            # Use the same URL for audio extraction
+            self._audio_url = rtsp_url
+            if self._audio_enabled and self._audio_url:
+                self._start_audio_capture()
 
             dpg.set_item_label(tag_node_button_value_name, self._stop_label)
         elif label == self._stop_label:
@@ -378,9 +553,12 @@ class RtspNode(Node):
                         self._request.pop(rtsp_url)
                         self._process.pop(rtsp_url)
                 else:
-                    # multiprocessing
+                    # single-threaded
                     if rtsp_url in self._rtsp_capture:
                         self._rtsp_capture[rtsp_url].release()
                         self._rtsp_capture.pop(rtsp_url)
 
+            self.is_streaming = False
+            self._stop_audio_capture()
+            self._audio_url = None
             dpg.set_item_label(tag_node_button_value_name, self._start_label)
