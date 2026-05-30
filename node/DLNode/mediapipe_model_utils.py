@@ -18,35 +18,35 @@ _GCS_BASE = "https://storage.googleapis.com/mediapipe-models"
 # Mapping of logical model name  -> (GCS path segment, filename)
 _MODEL_CATALOG = {
     "face_detector_short": (
-        "face_detector/blaze_face_short_range/float16/latest",
+        "face_detector/blaze_face_short_range/float16/1",
         "blaze_face_short_range.tflite",
     ),
     "face_landmarker": (
-        "face_landmarker/face_landmarker/float16/latest",
-        "face_landmarker.tflite",
+        "face_landmarker/face_landmarker/float16/1",
+        "face_landmarker.task",
     ),
     "hand_landmarker": (
-        "hand_landmarker/hand_landmarker/float16/latest",
-        "hand_landmarker.tflite",
+        "hand_landmarker/hand_landmarker/float16/1",
+        "hand_landmarker.task",
     ),
     "pose_landmarker_lite": (
-        "pose_landmarker/pose_landmarker_lite/float16/latest",
-        "pose_landmarker_lite.tflite",
+        "pose_landmarker/pose_landmarker_lite/float16/1",
+        "pose_landmarker_lite.task",
     ),
     "pose_landmarker_full": (
-        "pose_landmarker/pose_landmarker_full/float16/latest",
-        "pose_landmarker_full.tflite",
+        "pose_landmarker/pose_landmarker_full/float16/1",
+        "pose_landmarker_full.task",
     ),
     "pose_landmarker_heavy": (
-        "pose_landmarker/pose_landmarker_heavy/float16/latest",
-        "pose_landmarker_heavy.tflite",
+        "pose_landmarker/pose_landmarker_heavy/float16/1",
+        "pose_landmarker_heavy.task",
     ),
     "selfie_segmenter": (
-        "image_segmenter/selfie_segmenter/float16/latest",
+        "image_segmenter/selfie_segmenter/float16/1",
         "selfie_segmenter.tflite",
     ),
     "selfie_segmenter_landscape": (
-        "image_segmenter/selfie_segmenter_landscape/float16/latest",
+        "image_segmenter/selfie_segmenter_landscape/float16/1",
         "selfie_segmenter_landscape.tflite",
     ),
 }
