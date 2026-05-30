@@ -438,6 +438,8 @@ def main():
         title="CV_STUDIO",
         width=editor_width,
         height=editor_height,
+        x_pos=0,
+        y_pos=0,
     )
 
     # Load Space Grotesk font (minimalist, futuristic, elegant, architectural)
