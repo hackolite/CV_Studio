@@ -4,8 +4,12 @@ import copy
 import cv2 as cv
 import numpy as np
 
+from node.DLNode.mediapipe_model_utils import get_model_path
+
 
 class MediaPipeFaceMesh(object):
+    """Face mesh/landmarks using MediaPipe Tasks API (``mp.tasks.vision``)."""
+
     def __init__(
         self,
         model_path,
@@ -17,37 +21,46 @@ class MediaPipeFaceMesh(object):
     ):
         import mediapipe as mp
 
-        mp_face_mesh = mp.solutions.face_mesh
-
-        self.face_mesh = mp_face_mesh.FaceMesh(
-            max_num_faces=max_num_faces,
-            refine_landmarks=refine_landmarks,
-            min_detection_confidence=min_detection_confidence,
+        tflite_path = get_model_path("face_landmarker")
+        base_options = mp.tasks.BaseOptions(model_asset_path=tflite_path)
+        options = mp.tasks.vision.FaceLandmarkerOptions(
+            base_options=base_options,
+            num_faces=max_num_faces,
+            min_face_detection_confidence=min_detection_confidence,
             min_tracking_confidence=min_tracking_confidence,
+            # Note: The old refine_landmarks option (which added iris landmarks)
+            # has no direct equivalent in the new Tasks API.  The FaceLandmarker
+            # model already includes iris landmarks by default.
         )
+        self.landmarker = mp.tasks.vision.FaceLandmarker.create_from_options(
+            options
+        )
+        self._mp = mp
 
     def __call__(self, image):
         image_width, image_height = image.shape[1], image.shape[0]
 
-        # Pre process:BGR->RGB
+        # Pre process: BGR -> RGB
         input_image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
+        mp_image = self._mp.Image(
+            image_format=self._mp.ImageFormat.SRGB, data=input_image
+        )
 
         # Inference
-        results = self.face_mesh.process(input_image)
+        results = self.landmarker.detect(mp_image)
 
-        # Post process
+        # Post process – produce the same dict format as before
         results_list = []
-        if results.multi_face_landmarks is not None:
-            for face_landmarks in results.multi_face_landmarks:
+        if results.face_landmarks:
+            for face_landmarks in results.face_landmarks:
                 landmark_dict = {}
 
-                # 各キーポイント
-                for id, landmark in enumerate(face_landmarks.landmark):
+                for idx, landmark in enumerate(face_landmarks):
                     x = min(int(landmark.x * image_width), image_width - 1)
                     y = min(int(landmark.y * image_height), image_height - 1)
                     z = landmark.z
                     visibility = 1.0
-                    landmark_dict[id] = [x, y, z, visibility]
+                    landmark_dict[idx] = [x, y, z, visibility]
 
                 results_list.append(copy.deepcopy(landmark_dict))
 

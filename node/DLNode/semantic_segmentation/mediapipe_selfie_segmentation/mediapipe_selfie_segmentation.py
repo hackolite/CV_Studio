@@ -4,8 +4,17 @@ import copy
 import cv2 as cv
 import numpy as np
 
+from node.DLNode.mediapipe_model_utils import get_model_path
+
+# Map old model_selection values to new task model keys
+_SEGMENTER_MODEL_MAP = {
+    0: "selfie_segmenter",
+    1: "selfie_segmenter_landscape",
+}
+
 
 class MediaPipeSelfieSegmentation(object):
+    """Selfie segmentation using MediaPipe Tasks API."""
 
     def __init__(
         self,
@@ -15,21 +24,35 @@ class MediaPipeSelfieSegmentation(object):
     ):
         import mediapipe as mp
 
-        mp_selfie_segmentation = mp.solutions.selfie_segmentation
-
-        self.selfie_segmentation = mp_selfie_segmentation.SelfieSegmentation(
-            model_selection=model_selection)
+        model_key = _SEGMENTER_MODEL_MAP.get(
+            model_selection, "selfie_segmenter"
+        )
+        tflite_path = get_model_path(model_key)
+        base_options = mp.tasks.BaseOptions(model_asset_path=tflite_path)
+        options = mp.tasks.vision.ImageSegmenterOptions(
+            base_options=base_options,
+            output_confidence_masks=True,
+            output_category_mask=False,
+        )
+        self.segmenter = mp.tasks.vision.ImageSegmenter.create_from_options(
+            options
+        )
+        self._mp = mp
 
     def __call__(self, image):
-        # Pre process:BGR->RGB
+        # Pre process: BGR -> RGB
         input_image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
+        mp_image = self._mp.Image(
+            image_format=self._mp.ImageFormat.SRGB, data=input_image
+        )
 
         # Inference
-        result = self.selfie_segmentation.process(input_image)
+        result = self.segmenter.segment(mp_image)
 
-        # Post process:squeeze
-        segmentation_map = copy.deepcopy(result.segmentation_mask)
-        segmentation_map = np.expand_dims(segmentation_map, 0)
+        # Post process – produce the same format as before
+        # confidence_masks is a list of mp.Image; take the first (person mask)
+        mask = result.confidence_masks[0].numpy_view().copy()
+        segmentation_map = np.expand_dims(mask, 0)
         return segmentation_map
 
     def get_class_num(self):

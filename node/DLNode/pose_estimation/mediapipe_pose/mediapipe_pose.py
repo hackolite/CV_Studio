@@ -3,8 +3,18 @@ import copy
 
 import cv2 as cv
 
+from node.DLNode.mediapipe_model_utils import get_model_path
+
+# Map old model_complexity values to new task model keys
+_POSE_MODEL_MAP = {
+    0: "pose_landmarker_lite",
+    1: "pose_landmarker_full",
+    2: "pose_landmarker_heavy",
+}
+
 
 class MediaPipePose(object):
+    """Pose estimation using MediaPipe Tasks API (``mp.tasks.vision``)."""
 
     def __init__(
         self,
@@ -17,38 +27,47 @@ class MediaPipePose(object):
     ):
         import mediapipe as mp
 
-        mp_pose = mp.solutions.pose
-
-        self.pose = mp_pose.Pose(
-            model_complexity=model_complexity,
-            enable_segmentation=enable_segmentation,
-            min_detection_confidence=min_detection_confidence,
+        model_key = _POSE_MODEL_MAP.get(model_complexity, "pose_landmarker_lite")
+        tflite_path = get_model_path(model_key)
+        base_options = mp.tasks.BaseOptions(model_asset_path=tflite_path)
+        options = mp.tasks.vision.PoseLandmarkerOptions(
+            base_options=base_options,
+            num_poses=1,
+            min_pose_detection_confidence=min_detection_confidence,
             min_tracking_confidence=min_tracking_confidence,
+            output_segmentation_masks=enable_segmentation,
         )
+        self.landmarker = mp.tasks.vision.PoseLandmarker.create_from_options(
+            options
+        )
+        self._mp = mp
 
     def __call__(self, image):
         image_width, image_height = image.shape[1], image.shape[0]
 
-        # Pre process:BGR->RGB
+        # Pre process: BGR -> RGB
         input_image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
+        mp_image = self._mp.Image(
+            image_format=self._mp.ImageFormat.SRGB, data=input_image
+        )
 
         # Inference
-        results = self.pose.process(input_image)
+        results = self.landmarker.detect(mp_image)
 
-        # Post process
+        # Post process – produce the same dict format as before
         results_list = []
-        if results.pose_landmarks is not None:
-            landmark_dict = {}
+        if results.pose_landmarks:
+            for pose_landmarks in results.pose_landmarks:
+                landmark_dict = {}
 
-            # 各キーポイント
-            for id, landmark in enumerate(results.pose_landmarks.landmark):
-                x = min(int(landmark.x * image_width), image_width - 1)
-                y = min(int(landmark.y * image_height), image_height - 1)
-                z = landmark.z
-                visibility = landmark.visibility
-                landmark_dict[id] = [x, y, z, visibility]
+                for idx, landmark in enumerate(pose_landmarks):
+                    x = min(int(landmark.x * image_width), image_width - 1)
+                    y = min(int(landmark.y * image_height), image_height - 1)
+                    z = landmark.z
+                    visibility = landmark.visibility if landmark.visibility is not None else 0.0
+                    landmark_dict[idx] = [x, y, z, visibility]
 
-            results_list.append(copy.deepcopy(landmark_dict))
+                results_list.append(copy.deepcopy(landmark_dict))
 
         return results_list
 
