@@ -3,15 +3,32 @@
 import time
 import subprocess
 import threading
+import shutil
+import queue
 
 import cv2
 import numpy as np
 import dearpygui.dearpygui as dpg
 import yt_dlp
 
+try:
+    import imageio_ffmpeg
+except ImportError:
+    imageio_ffmpeg = None
+
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node
+
+
+def _get_ffmpeg_exe():
+    """Return the path to a usable ffmpeg executable."""
+    try:
+        if imageio_ffmpeg is not None:
+            return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        pass
+    return shutil.which("ffmpeg")
 
 
 def get_light_live_stream_url(url):
@@ -198,9 +215,17 @@ class FactoryNode:
                 dpg.add_theme_color(dpg.mvThemeCol_Button, (100, 149, 237, 255))
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (65, 105, 225, 255))
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (25, 25, 112, 255))
+
+        # Create default (inactive) theme for audio button
+        with dpg.theme() as default_button_theme:
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (51, 51, 55, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (66, 66, 70, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (80, 80, 85, 255))
         
         node.yellow_button_theme = yellow_button_theme
         node.blue_button_theme = blue_button_theme
+        node.default_button_theme = default_button_theme
 
         with dpg.node(
                 tag=node.tag_node_name,
@@ -263,7 +288,13 @@ class FactoryNode:
                 return btnn
 
             with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Output):
-                add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
+                btn_audio = dpg.add_button(
+                    label="Audio",
+                    tag=node.tag_node_output_audio_value_name,
+                    width=node.small_window_w,
+                    callback=node._toggle_audio,
+                )
+                dpg.bind_item_theme(btn_audio, default_button_theme)
                 
             with dpg.node_attribute(tag=node.tag_node_output_json_name, attribute_type=dpg.mvNode_Attr_Output):
                 add_yellow_disabled_button("JSON", node.tag_node_output_json_value_name)
@@ -297,8 +328,18 @@ class YoutubeNode(Node):
         self.small_window_h = 135
         self.yellow_button_theme = None
         self.blue_button_theme = None
+        self.default_button_theme = None
         self.is_streaming = False
         self._frame_skip_counter = 0
+        # Audio state
+        self._audio_enabled = False
+        self._audio_process = None
+        self._audio_thread = None
+        self._audio_queue = queue.Queue(maxsize=10)
+        self._audio_sr = 16000
+        self._audio_chunk_duration = 1.0  # seconds per chunk
+        self._audio_url = None
+        self._audio_stop_event = threading.Event()
         
     def convert_cv_to_dpg(self, cv_img, w, h):
         """Converts OpenCV image to DearPyGui format"""
@@ -309,6 +350,123 @@ class YoutubeNode(Node):
         rgb_image = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
         normalized = rgb_image.astype(np.float32) / 255.0
         return normalized.flatten().tobytes()
+
+    def _toggle_audio(self, sender, data, user_data=None):
+        """Toggle audio extraction on/off."""
+        self._audio_enabled = not self._audio_enabled
+        if self._audio_enabled:
+            dpg.bind_item_theme(sender, self.yellow_button_theme)
+            # Start audio capture if currently streaming
+            if self.is_streaming and self._audio_url:
+                self._start_audio_capture()
+        else:
+            dpg.bind_item_theme(sender, self.default_button_theme)
+            self._stop_audio_capture()
+
+    def _get_audio_stream_url(self, youtube_url):
+        """Get the best audio-only stream URL from YouTube using yt-dlp."""
+        try:
+            ydl_opts = {
+                "quiet": True,
+                "no_warnings": True,
+                "format": "bestaudio[ext=webm]/bestaudio/best",
+                "nocheckcertificate": True,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(youtube_url, download=False)
+                return info.get("url")
+        except Exception as e:
+            print(f"❌ Erreur extraction URL audio: {e}")
+            return None
+
+    def _start_audio_capture(self):
+        """Start the ffmpeg subprocess to capture audio from the stream."""
+        self._stop_audio_capture()
+        
+        if not self._audio_url:
+            return
+
+        ffmpeg_exe = _get_ffmpeg_exe()
+        if ffmpeg_exe is None:
+            print("❌ ffmpeg non trouvé pour l'extraction audio")
+            return
+
+        self._audio_stop_event.clear()
+        self._audio_thread = threading.Thread(
+            target=self._audio_reader_loop,
+            args=(ffmpeg_exe, self._audio_url),
+            daemon=True,
+        )
+        self._audio_thread.start()
+
+    def _audio_reader_loop(self, ffmpeg_exe, audio_url):
+        """Background thread: reads PCM audio from ffmpeg stdout."""
+        try:
+            cmd = [
+                ffmpeg_exe,
+                "-reconnect", "1",
+                "-reconnect_streamed", "1",
+                "-reconnect_delay_max", "5",
+                "-i", audio_url,
+                "-vn",
+                "-acodec", "pcm_s16le",
+                "-ar", str(self._audio_sr),
+                "-ac", "1",
+                "-f", "s16le",
+                "-",
+            ]
+            self._audio_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+
+            bytes_per_chunk = int(self._audio_sr * self._audio_chunk_duration) * 2  # 16-bit mono
+
+            while not self._audio_stop_event.is_set():
+                raw = self._audio_process.stdout.read(bytes_per_chunk)
+                if not raw:
+                    break
+                audio_np = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+                audio_dict = {
+                    'data': audio_np,
+                    'sample_rate': self._audio_sr,
+                    'channels': 1,
+                    'timestamp': time.time(),
+                }
+                # Non-blocking put: discard old chunks if queue is full
+                try:
+                    self._audio_queue.put_nowait(audio_dict)
+                except queue.Full:
+                    try:
+                        self._audio_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                    self._audio_queue.put_nowait(audio_dict)
+
+        except Exception as e:
+            if not self._audio_stop_event.is_set():
+                print(f"❌ Erreur audio reader: {e}")
+        finally:
+            if self._audio_process and self._audio_process.poll() is None:
+                self._audio_process.kill()
+                self._audio_process = None
+
+    def _stop_audio_capture(self):
+        """Stop the audio capture thread and ffmpeg process."""
+        self._audio_stop_event.set()
+        if self._audio_process and self._audio_process.poll() is None:
+            self._audio_process.kill()
+            self._audio_process = None
+        if self._audio_thread and self._audio_thread.is_alive():
+            self._audio_thread.join(timeout=2.0)
+        self._audio_thread = None
+        # Drain the queue
+        while not self._audio_queue.empty():
+            try:
+                self._audio_queue.get_nowait()
+            except queue.Empty:
+                break
 
     def button(self, sender, data, user_data):
         tag_parts = user_data.split(':')
@@ -347,6 +505,11 @@ class YoutubeNode(Node):
                 
                 if self.blue_button_theme is not None:
                     dpg.bind_item_theme(tag_node_button_value_name, self.blue_button_theme)
+
+                # Resolve audio URL and start audio capture if enabled
+                self._audio_url = self._get_audio_stream_url(youtube_url)
+                if self._audio_enabled and self._audio_url:
+                    self._start_audio_capture()
                     
             except ValueError as e:
                 print(f"❌ Erreur: {e}")
@@ -366,6 +529,8 @@ class YoutubeNode(Node):
                 print("⏹️ Stream YouTube arrêté")
             
             self.is_streaming = False
+            self._stop_audio_capture()
+            self._audio_url = None
             dpg.set_item_label(tag_node_button_value_name, self._start_label)
             
             if self.yellow_button_theme is not None:
@@ -407,10 +572,19 @@ class YoutubeNode(Node):
                 print(f"❌ Erreur de lecture: {e}")
                 self._frame_skip_counter += 1
 
-        return {"image": getattr(self, "_last_frame", None), "json": None, "audio": None}
+        # Get audio chunk if audio is enabled
+        audio_chunk_data = None
+        if self._audio_enabled:
+            try:
+                audio_chunk_data = self._audio_queue.get_nowait()
+            except queue.Empty:
+                pass
+
+        return {"image": getattr(self, "_last_frame", None), "json": None, "audio": audio_chunk_data}
     
     def close(self, node_id):
         """Clean up resources when node is closed."""
+        self._stop_audio_capture()
         if self.cap is not None:
             self.cap.release()
             self.cap = None
