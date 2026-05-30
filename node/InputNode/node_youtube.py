@@ -19,6 +19,7 @@ except ImportError:
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node
+from node.VideoNode.sync import FramePacket
 
 
 def _get_ffmpeg_exe():
@@ -331,6 +332,11 @@ class YoutubeNode(Node):
         self.default_button_theme = None
         self.is_streaming = False
         self._frame_skip_counter = 0
+        # Frame counting and sync state
+        self._frame_count = 0
+        self._stream_start_time = None  # time.monotonic() when streaming started
+        self._audio_chunk_counter = 0  # incremented for each audio chunk read
+
         # Audio state
         self._audio_enabled = False
         self._audio_process = None
@@ -428,11 +434,14 @@ class YoutubeNode(Node):
                 if not raw:
                     break
                 audio_np = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+                chunk_idx = self._audio_chunk_counter
+                self._audio_chunk_counter += 1
                 audio_dict = {
                     'data': audio_np,
                     'sample_rate': self._audio_sr,
                     'channels': 1,
-                    'timestamp': time.time(),
+                    'chunk_index': chunk_idx,
+                    'step_duration': self._audio_chunk_duration,
                 }
                 # Non-blocking put: discard old chunks if queue is full
                 try:
@@ -500,6 +509,9 @@ class YoutubeNode(Node):
                 print(f"✅ Stream YouTube démarré avec succès!")
                 self.is_streaming = True
                 self._frame_skip_counter = 0
+                self._frame_count = 0
+                self._audio_chunk_counter = 0
+                self._stream_start_time = time.monotonic()
                 
                 dpg.set_item_label(tag_node_button_value_name, self._stop_label)
                 
@@ -552,12 +564,14 @@ class YoutubeNode(Node):
         except (ValueError, KeyError, AttributeError, TypeError):
             self._frame_interval = 0.033
 
+        frame = None
         if self.cap is not None and self.is_streaming and self.current_time - self._last_frame_time >= self._frame_interval:
             try:
                 ret, frame = self.cap.read()
                 
                 if ret and frame is not None:
                     self._last_frame = frame
+                    self._frame_count += 1
                     texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
                     dpg_set_value(output_value01_tag, texture)
                     self._last_frame_time = self.current_time
@@ -580,7 +594,43 @@ class YoutubeNode(Node):
             except queue.Empty:
                 pass
 
-        return {"image": getattr(self, "_last_frame", None), "json": None, "audio": audio_chunk_data}
+        # Calculate timestamp based on frame count and interval
+        # Use frame_interval as the effective "1/fps" value
+        current_frame = self._frame_count
+        effective_fps = 1.0 / self._frame_interval if self._frame_interval > 0 else 30.0
+        frame_timestamp = current_frame / effective_fps if current_frame > 0 else None
+        pts_ms = frame_timestamp * 1000.0 if frame_timestamp is not None else None
+
+        # Inject pts_ms into audio dict for A/V sync alignment
+        if audio_chunk_data is not None and pts_ms is not None:
+            audio_chunk_data = dict(audio_chunk_data)
+            audio_chunk_data["pts_ms"] = pts_ms
+
+        # Build FramePacket JSON metadata (same as VideoNode)
+        json_output = None
+        current_image = getattr(self, "_last_frame", None)
+        if current_image is not None and pts_ms is not None:
+            audio_chunk_index = 0
+            if isinstance(audio_chunk_data, dict):
+                audio_chunk_index = audio_chunk_data.get("chunk_index", 0)
+            now = time.monotonic()
+            fp = FramePacket(
+                frame_index=current_frame,
+                pts_ms=pts_ms,
+                audio_chunk_index=audio_chunk_index,
+                image=current_image,
+                audio_data=audio_chunk_data,
+                pipeline_entry_ts=now,
+                pipeline_exit_ts=now,
+            )
+            json_output = fp.to_metadata()
+
+        return {
+            "image": current_image,
+            "json": json_output,
+            "audio": audio_chunk_data,
+            "timestamp": frame_timestamp,
+        }
     
     def close(self, node_id):
         """Clean up resources when node is closed."""
