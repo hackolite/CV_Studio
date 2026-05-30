@@ -4,8 +4,11 @@ import copy
 import cv2 as cv
 import numpy as np
 
+from node.DLNode.mediapipe_model_utils import get_model_path
+
 
 class MediaPipeHands(object):
+    """Hand landmark detection using MediaPipe Tasks API."""
 
     def __init__(
         self,
@@ -18,73 +21,81 @@ class MediaPipeHands(object):
     ):
         import mediapipe as mp
 
-        mp_hands = mp.solutions.hands
-
-        self.hands = mp_hands.Hands(
-            model_complexity=model_complexity,
-            max_num_hands=max_num_hands,
-            min_detection_confidence=min_detection_confidence,
+        tflite_path = get_model_path("hand_landmarker")
+        base_options = mp.tasks.BaseOptions(model_asset_path=tflite_path)
+        options = mp.tasks.vision.HandLandmarkerOptions(
+            base_options=base_options,
+            num_hands=max_num_hands,
+            min_hand_detection_confidence=min_detection_confidence,
             min_tracking_confidence=min_tracking_confidence,
         )
+        self.landmarker = mp.tasks.vision.HandLandmarker.create_from_options(
+            options
+        )
+        self._mp = mp
 
     def __call__(self, image):
         image_width, image_height = image.shape[1], image.shape[0]
 
-        # Pre process:BGR->RGB
+        # Pre process: BGR -> RGB
         input_image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
+        mp_image = self._mp.Image(
+            image_format=self._mp.ImageFormat.SRGB, data=input_image
+        )
 
         # Inference
-        results = self.hands.process(input_image)
+        results = self.landmarker.detect(mp_image)
 
-        # Post process
+        # Post process – produce the same dict format as before
         results_list = []
-        if results.multi_hand_landmarks is not None:
+        if results.hand_landmarks:
             for hand_landmarks, handedness in zip(
-                    results.multi_hand_landmarks,
-                    results.multi_handedness,
+                    results.hand_landmarks,
+                    results.handedness,
             ):
                 landmark_dict = {}
 
-                # 手のひらの重心
-                cx, cy = self._calc_palm_moment(image, hand_landmarks)
+                # Palm moment
+                cx, cy = self._calc_palm_moment(
+                    image, hand_landmarks, image_width, image_height
+                )
                 landmark_dict['palm_moment'] = [cx, cy]
 
-                # 各キーポイント
-                for id, landmark in enumerate(hand_landmarks.landmark):
+                # Keypoints
+                for idx, landmark in enumerate(hand_landmarks):
                     x = min(int(landmark.x * image_width), image_width - 1)
                     y = min(int(landmark.y * image_height), image_height - 1)
                     z = landmark.z
                     visibility = 1.0
-                    landmark_dict[id] = [x, y, z, visibility]
-                # ラベル
-                landmark_dict['label'] = handedness.classification[0].label
+                    landmark_dict[idx] = [x, y, z, visibility]
+
+                # Label (handedness category)
+                landmark_dict['label'] = handedness[0].category_name
 
                 results_list.append(copy.deepcopy(landmark_dict))
 
         return results_list
 
-    def _calc_palm_moment(self, image, landmarks):
-        image_width, image_height = image.shape[1], image.shape[0]
-
+    def _calc_palm_moment(self, image, landmarks, image_width, image_height):
         palm_array = np.empty((0, 2), int)
 
-        for index, landmark in enumerate(landmarks.landmark):
+        for index, landmark in enumerate(landmarks):
             landmark_x = min(int(landmark.x * image_width), image_width - 1)
             landmark_y = min(int(landmark.y * image_height), image_height - 1)
 
             landmark_point = [np.array((landmark_x, landmark_y))]
 
-            if index == 0:  # 手首1
+            if index == 0:  # Wrist 1
                 palm_array = np.append(palm_array, landmark_point, axis=0)
-            if index == 1:  # 手首2
+            if index == 1:  # Wrist 2
                 palm_array = np.append(palm_array, landmark_point, axis=0)
-            if index == 5:  # 人差指：付け根
+            if index == 5:  # Index finger base
                 palm_array = np.append(palm_array, landmark_point, axis=0)
-            if index == 9:  # 中指：付け根
+            if index == 9:  # Middle finger base
                 palm_array = np.append(palm_array, landmark_point, axis=0)
-            if index == 13:  # 薬指：付け根
+            if index == 13:  # Ring finger base
                 palm_array = np.append(palm_array, landmark_point, axis=0)
-            if index == 17:  # 小指：付け根
+            if index == 17:  # Pinky base
                 palm_array = np.append(palm_array, landmark_point, axis=0)
         M = cv.moments(palm_array)
         cx, cy = 0, 0

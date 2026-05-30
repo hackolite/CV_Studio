@@ -18,6 +18,7 @@ from node.basenode import Node
 # Import MediaPipe Hands for hand pose estimation
 try:
     import mediapipe as mp
+    from node.DLNode.mediapipe_model_utils import get_model_path as _get_mp_model_path
     MEDIAPIPE_AVAILABLE = True
 except ImportError:
     MEDIAPIPE_AVAILABLE = False
@@ -167,12 +168,16 @@ class Node(Node):
     def _init_hand_model(self):
         """Initialize MediaPipe Hands model if not already initialized"""
         if self._hand_model is None and MEDIAPIPE_AVAILABLE:
-            mp_hands = mp.solutions.hands
-            self._hand_model = mp_hands.Hands(
-                model_complexity=0,
-                max_num_hands=1,
-                min_detection_confidence=0.7,
+            tflite_path = _get_mp_model_path("hand_landmarker")
+            base_options = mp.tasks.BaseOptions(model_asset_path=tflite_path)
+            options = mp.tasks.vision.HandLandmarkerOptions(
+                base_options=base_options,
+                num_hands=1,
+                min_hand_detection_confidence=0.7,
                 min_tracking_confidence=0.5,
+            )
+            self._hand_model = mp.tasks.vision.HandLandmarker.create_from_options(
+                options
             )
 
     def _detect_hands(self, frame):
@@ -182,12 +187,13 @@ class Node(Node):
         
         # Convert BGR to RGB
         image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_rgb)
         
         # Process the image
-        results = self._hand_model.process(image_rgb)
+        results = self._hand_model.detect(mp_image)
         
-        if results.multi_hand_landmarks:
-            return results.multi_hand_landmarks[0]  # Return first hand
+        if results.hand_landmarks:
+            return results.hand_landmarks[0]  # Return first hand
         
         return None
 
@@ -197,7 +203,7 @@ class Node(Node):
             return None
         
         keypoints = {}
-        for id, landmark in enumerate(hand_landmarks.landmark):
+        for id, landmark in enumerate(hand_landmarks):
             x = min(int(landmark.x * image_width), image_width - 1)
             y = min(int(landmark.y * image_height), image_height - 1)
             keypoints[id] = (x, y)
