@@ -440,8 +440,22 @@ def main():
         height=editor_height,
     )
 
-    # Using default DearPyGui font (no custom font needed)
-    # DearPyGui will use its built-in default font automatically
+    # Load Space Grotesk font (minimalist, futuristic, elegant, architectural)
+    _font_dir = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "node_editor", "font", "SpaceGrotesk",
+    )
+    _font_path = os.path.join(_font_dir, "SpaceGrotesk-Medium.otf")
+    if not os.path.isfile(_font_path):
+        _font_path = os.path.join(_font_dir, "SpaceGrotesk-Regular.otf")
+
+    if os.path.isfile(_font_path):
+        with dpg.font_registry():
+            default_font = dpg.add_font(_font_path, 18)
+        dpg.bind_font(default_font)
+        logger.info(f"Loaded custom font: {os.path.basename(_font_path)}")
+    else:
+        logger.warning("Space Grotesk font not found, using default DearPyGui font")
 
     # Viewport must be visible before rendering splash frames.
     dpg.show_viewport(maximized=True)
