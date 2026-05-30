@@ -30,21 +30,23 @@ class FactoryNode:
         pass
 
     def add_node(self, parent, node_id, pos=[0, 0], callback=None, opencv_setting_dict=None):
-        """Adds a node to the processing graph with link field and Start button."""
+        """Adds a node to the processing graph with MongoDB connection fields."""
         
         # Generate tags for Node and its attributes
         node = MongodbNode()
         node.tag_node_name = f"{node_id}:{node.node_tag}"
         
-        tag_input_url = f"{node.tag_node_name}:InputURL"
-        tag_start_button = f"{node.tag_node_name}:StartButton"
-        
-        node.tag_node_input_text_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01'
-        node.tag_node_input_text_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01Value'
-        
         tag_node_name = str(node_id) + ':' + node.node_tag
         tag_node_output01_name = tag_node_name + ':' + node.TYPE_INT + ':Output01'
         tag_node_output01_value_name = tag_node_name + ':' + node.TYPE_INT + ':Output01Value'
+
+        node.tag_node_input_text_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01'
+        node.tag_node_input_text_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01Value'
+
+        # Tags for MongoDB connection fields
+        node.tag_uri = f"{node.tag_node_name}:URI"
+        node.tag_database = f"{node.tag_node_name}:Database"
+        node.tag_collection = f"{node.tag_node_name}:Collection"
 
         node.tag_node_output_audio_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudio'
         node.tag_node_output_audio_value_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudioValue'
@@ -76,12 +78,24 @@ class FactoryNode:
 
         # Create node in the GUI
         with dpg.node(tag=node.tag_node_name, parent=parent, label=node.node_label, pos=pos):  
-            # Outputs (décommentés et corrigés)
-            with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Static):
-                add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
-                    
+            # MongoDB connection fields
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_input_text(label="URI", tag=node.tag_uri, 
+                                   default_value="mongodb://localhost:27017", width=300)
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_input_text(label="Database", tag=node.tag_database,
+                                   default_value="", width=300)
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_input_text(label="Collection", tag=node.tag_collection,
+                                   default_value="", width=300)
+
+            # Input JSON
             with dpg.node_attribute(tag=node.tag_node_output_json_name, attribute_type=dpg.mvNode_Attr_Input):
                 add_yellow_disabled_button("JSON", node.tag_node_output_json_value_name)
+
+            # Outputs
+            with dpg.node_attribute(tag=node.tag_node_output_audio_name, attribute_type=dpg.mvNode_Attr_Static):
+                add_yellow_disabled_button("Audio", node.tag_node_output_audio_value_name)
 
             with dpg.node_attribute(tag=node.tag_node_output_float_name, attribute_type=dpg.mvNode_Attr_Static):
                 add_yellow_disabled_button("Float", node.tag_node_output_float_value_name)
@@ -103,23 +117,37 @@ class MongodbNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
         tag_node_input01_value_name = f"{tag_node_name}:{self.TYPE_IMAGE}:Input01Value"
 
         connection_info_src = ''
+        clee = None
         for connection_info in connection_list:
             connection_type = connection_info[0].split(':')[2]
             if connection_type == self.TYPE_JSON:
-                        clee = ":".join(connection_info[0].split(":")[0:2])
+                clee = ":".join(connection_info[0].split(":")[0:2])
+
+        if clee is None:
+            return {"image": None, "json": None, "audio": None}
 
         current_time = time.time()
-        if current_time - self._last_update_time >= 10.0:  # toutes les secondes
+        if current_time - self._last_update_time >= 10.0:
 
             try:
-				
-                print(node_result_dict[clee])
+                uri = dpg_get_value(f"{tag_node_name}:URI")
+                database = dpg_get_value(f"{tag_node_name}:Database")
+                collection_name = dpg_get_value(f"{tag_node_name}:Collection")
+
+                if not uri or not database or not collection_name:
+                    return {"image": None, "json": None, "audio": None}
+
+                client = MongoClient(uri)
+                db = client[database]
+                collection = db[collection_name]
+
                 data = node_result_dict[clee]
                 data['class_names'] = {str(k): v for k, v in data['class_names'].items()}
-                data['time'] = datetime.now(pytz.utc)  # ou datetime.utcnow() si tu ne veux pas utiliser pytz
+                data['time'] = datetime.now(pytz.utc)
 
                 result = collection.insert_one(data)
                 print("Inserted document ID:", result.inserted_id)
+                client.close()
             
             except Exception as e:
                 print(e)

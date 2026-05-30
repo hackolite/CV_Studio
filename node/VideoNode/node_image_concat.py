@@ -64,8 +64,8 @@ def create_concat_image(frame_dict, slot_num):
     return frame, display_frame
 
 class FactoryNode:
-    node_label = 'ImageConcat'
-    node_tag = 'ImageConcat'
+    node_label = 'VideoConcat'
+    node_tag = 'VideoConcat'
     
 
     def __init__(self):
@@ -168,8 +168,8 @@ class FactoryNode:
 class Node(Node):
     _ver = '0.0.2'
 
-    node_label = 'ImageConcat'
-    node_tag = 'ImageConcat'
+    node_label = 'VideoConcat'
+    node_tag = 'VideoConcat'
 
     _opencv_setting_dict = None
 
