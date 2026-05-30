@@ -5,12 +5,16 @@ Elegant Apple-style splash screen for CvStudio.dev.
 Features:
 - Dark cinematic background
 - Vector-drawn geometric logo (camera aperture / lens motif)
-- Smooth fade-in animation with eased progress
+- Smooth fade-in animation with eased progress and pulsed fading
+- Ambient design sound (airplane interior chime)
 - Minimalist typography
 """
 import math
 import time
+import threading
 import dearpygui.dearpygui as dpg
+import numpy as np
+import sounddevice as sd
 
 
 # ─── Design Tokens ──────────────────────────────────────────────────────────
@@ -42,6 +46,54 @@ def _ease_in_out_sine(t: float) -> float:
     """Smooth sine ease for fade."""
     return -(math.cos(math.pi * t) - 1.0) / 2.0
 
+
+
+def _generate_cabin_chime(duration: float = 2.8, sr: int = 44100) -> np.ndarray:
+    """
+    Generate an ambient airplane-cabin-style design chime.
+    Soft layered tones with gentle attack and release.
+    """
+    t = np.linspace(0, duration, int(sr * duration), endpoint=False)
+
+    # Soft fundamental tone (C5 ~523 Hz) with harmonics
+    tone = 0.0
+    freqs = [523.25, 659.25, 783.99, 1046.50]  # C5, E5, G5, C6 – major chord
+    amps = [0.30, 0.20, 0.15, 0.08]
+
+    for freq, amp in zip(freqs, amps):
+        tone += amp * np.sin(2.0 * np.pi * freq * t)
+
+    # Subtle low sub-bass warmth (like cabin hum)
+    tone += 0.05 * np.sin(2.0 * np.pi * 120.0 * t)
+
+    # Envelope: smooth attack + sustained + gentle release
+    attack = 0.4
+    release = 0.8
+    env = np.ones_like(t)
+    attack_samples = int(attack * sr)
+    release_samples = int(release * sr)
+    # Smooth sine attack
+    env[:attack_samples] = np.sin(np.linspace(0, np.pi / 2, attack_samples)) ** 2
+    # Smooth sine release
+    env[-release_samples:] = np.sin(np.linspace(np.pi / 2, 0, release_samples)) ** 2
+
+    tone *= env
+
+    # Normalize to safe volume
+    peak = np.max(np.abs(tone))
+    if peak > 0:
+        tone = tone / peak * 0.35
+
+    return tone.astype(np.float32)
+
+
+def _play_splash_sound(duration: float = 2.8):
+    """Play the splash chime in a background thread (non-blocking)."""
+    try:
+        audio = _generate_cabin_chime(duration=duration)
+        sd.play(audio, samplerate=44100)
+    except Exception:
+        pass  # Sound is non-critical; fail silently
 
 
 def _draw_logo_vectors(drawlist, cx: float, cy: float, radius: float, alpha: float):
@@ -201,6 +253,8 @@ def _create_splash_theme():
             dpg.add_theme_style(dpg.mvStyleVar_WindowRounding, 18, category=dpg.mvThemeCat_Core)
             dpg.add_theme_style(dpg.mvStyleVar_WindowBorderSize, 0, category=dpg.mvThemeCat_Core)
             dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 0, 0, category=dpg.mvThemeCat_Core)
+            dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing, 0, 0, category=dpg.mvThemeCat_Core)
+            dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 0, 0, category=dpg.mvThemeCat_Core)
 
 
 def show_splash_screen(duration_seconds: float = 2.8, steps: int = 90):
@@ -249,7 +303,7 @@ def show_splash_screen(duration_seconds: float = 2.8, steps: int = 90):
 
     dpg.bind_item_theme(_SPLASH_WIN, _SPLASH_THEME)
 
-    # Layout constants
+    # Layout constants – center logo precisely in the drawlist
     logo_cx = _SPLASH_W / 2.0
     logo_cy = _SPLASH_H * 0.36
     logo_radius = 52.0
@@ -258,10 +312,22 @@ def show_splash_screen(duration_seconds: float = 2.8, steps: int = 90):
     progress_y = _SPLASH_H - 50
     progress_w = _SPLASH_W * 0.35
 
+    # Start ambient sound in background thread
+    threading.Thread(
+        target=_play_splash_sound,
+        args=(duration_seconds,),
+        daemon=True,
+    ).start()
+
+    # Pulsed fading parameters
+    pulse_freq = 1.8  # Hz – gentle breathing pulse
+    pulse_depth = 0.15  # 15% intensity variation
+
     # Animation loop
     frame_time = duration_seconds / float(steps) if duration_seconds > 0 else 0
     for step in range(steps):
         t = float(step + 1) / float(steps)
+        elapsed = t * duration_seconds
 
         # Clear drawlist
         dpg.delete_item(_SPLASH_DRAW, children_only=True)
@@ -276,7 +342,7 @@ def show_splash_screen(duration_seconds: float = 2.8, steps: int = 90):
             parent=_SPLASH_DRAW,
         )
 
-        # Subtle radial gradient effect (concentric circles with decreasing alpha)
+        # Subtle radial gradient effect (concentric circles centered on logo)
         for i in range(5):
             r = 180 - i * 30
             grad_alpha = int(6 - i)
@@ -288,8 +354,10 @@ def show_splash_screen(duration_seconds: float = 2.8, steps: int = 90):
                 parent=_SPLASH_DRAW,
             )
 
-        # Fade-in alpha
-        fade = _ease_in_out_sine(min(1.0, t * 2.5))  # Fade completes at ~40%
+        # Fade-in alpha with pulsed breathing effect
+        base_fade = _ease_in_out_sine(min(1.0, t * 2.5))  # Fade completes at ~40%
+        pulse = 1.0 - pulse_depth * (0.5 + 0.5 * math.sin(2.0 * math.pi * pulse_freq * elapsed))
+        fade = base_fade * pulse
 
         # Draw logo
         _draw_logo_vectors(_SPLASH_DRAW, logo_cx, logo_cy, logo_radius, fade)
@@ -313,7 +381,7 @@ def show_splash_screen(duration_seconds: float = 2.8, steps: int = 90):
         progress_value = _ease_out_cubic(t)
         _draw_progress_bar(
             _SPLASH_DRAW, logo_cx, progress_y,
-            progress_w, progress_value, progress_alpha,
+            progress_w, progress_value, progress_alpha * pulse,
         )
 
         # Version / status text
@@ -322,7 +390,7 @@ def show_splash_screen(duration_seconds: float = 2.8, steps: int = 90):
             _draw_text_label(
                 _SPLASH_DRAW, "Initializing…",
                 logo_cx, progress_y + 14, 11.0,
-                _TEXT_TERTIARY, status_alpha * 0.7,
+                _TEXT_TERTIARY, status_alpha * 0.7 * pulse,
             )
 
         # Render frame
@@ -332,6 +400,12 @@ def show_splash_screen(duration_seconds: float = 2.8, steps: int = 90):
 
     # Hold the final frame briefly for polish
     time.sleep(0.15)
+
+    # Stop any remaining sound playback
+    try:
+        sd.stop()
+    except Exception:
+        pass
 
     # Cleanup
     if dpg.does_item_exist(_SPLASH_WIN):
