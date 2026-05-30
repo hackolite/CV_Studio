@@ -151,13 +151,9 @@ def _get_device_profiles(xaddr, username="admin", pw="admin", timeout=5):
             except Exception:
                 pass
 
-            # Get audio stream URI (if audio config exists)
+            # Audio typically shares the same RTSP URI on a different track
             if aec:
-                try:
-                    # Audio typically shares the same RTSP URI but on a different track
-                    profile_info["audio_stream_uri"] = profile_info["video_stream_uri"]
-                except Exception:
-                    pass
+                profile_info["audio_stream_uri"] = profile_info["video_stream_uri"]
 
             result["profiles"].append(profile_info)
 
@@ -296,6 +292,7 @@ class ScanNode(Node):
     _opencv_setting_dict = None
     _scan_results = {}  # tag_node_name -> list of device dicts
     _scan_running = {}  # tag_node_name -> bool
+    _lock = threading.Lock()
 
     def __init__(self):
         pass
@@ -303,24 +300,25 @@ class ScanNode(Node):
     def _callback_scan(self, sender, data, user_data):
         """Trigger an async network scan."""
         tag_node_name = user_data
-        if self._scan_running.get(tag_node_name, False):
-            return  # Already scanning
+        with self._lock:
+            if self._scan_running.get(tag_node_name, False):
+                return  # Already scanning
+            self._scan_running[tag_node_name] = True
 
-        self._scan_running[tag_node_name] = True
         dpg_set_value(tag_node_name + ":Status", "Scanning...")
 
         username = dpg_get_value(tag_node_name + ":Username") or "admin"
-        password = dpg_get_value(tag_node_name + ":Password") or "admin"
+        pw = dpg_get_value(tag_node_name + ":Password") or "admin"
         timeout = dpg_get_value(tag_node_name + ":Timeout") or 4
 
         thread = threading.Thread(
             target=self._run_scan,
-            args=(tag_node_name, username, password, timeout),
+            args=(tag_node_name, username, pw, timeout),
             daemon=True,
         )
         thread.start()
 
-    def _run_scan(self, tag_node_name, username, password, timeout):
+    def _run_scan(self, tag_node_name, username, pw, timeout):
         """Run the ONVIF discovery + profile retrieval in a background thread."""
         try:
             # Phase 1: WS-Discovery
@@ -329,8 +327,9 @@ class ScanNode(Node):
             if not xaddrs:
                 dpg_set_value(tag_node_name + ":Status", "No devices found")
                 dpg_set_value(tag_node_name + ":Results", "No ONVIF devices discovered on the network.")
-                self._scan_results[tag_node_name] = []
-                self._scan_running[tag_node_name] = False
+                with self._lock:
+                    self._scan_results[tag_node_name] = []
+                    self._scan_running[tag_node_name] = False
                 return
 
             dpg_set_value(
@@ -342,12 +341,13 @@ class ScanNode(Node):
             devices = []
             for xaddr in xaddrs:
                 device_info = _get_device_profiles(
-                    xaddr, username=username, pw=password, timeout=timeout
+                    xaddr, username=username, pw=pw, timeout=timeout
                 )
                 if device_info:
                     devices.append(device_info)
 
-            self._scan_results[tag_node_name] = devices
+            with self._lock:
+                self._scan_results[tag_node_name] = devices
 
             # Format display text
             display_lines = []
@@ -391,9 +391,11 @@ class ScanNode(Node):
         except Exception as e:
             dpg_set_value(tag_node_name + ":Status", f"Error: {e}")
             dpg_set_value(tag_node_name + ":Results", traceback.format_exc())
-            self._scan_results[tag_node_name] = []
+            with self._lock:
+                self._scan_results[tag_node_name] = []
         finally:
-            self._scan_running[tag_node_name] = False
+            with self._lock:
+                self._scan_running[tag_node_name] = False
 
     def update(
         self,
@@ -410,7 +412,8 @@ class ScanNode(Node):
         tag_node_name = str(node_id) + ":" + self.node_tag
 
         # Output scan results to JSON dict for downstream nodes
-        devices = self._scan_results.get(tag_node_name, [])
+        with self._lock:
+            devices = self._scan_results.get(tag_node_name, [])
         if devices:
             # Build a simplified output structure
             output = {
