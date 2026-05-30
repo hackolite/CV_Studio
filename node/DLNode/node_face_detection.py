@@ -583,7 +583,7 @@ class Node(Node):  # noqa: F811
 
         count = 1
         try:
-            if len(result['results_list']) > 0 :
+            if result.get('results_list'):
                 if count != 0:
                     logger.debug("Face detected")
                     count = 0
