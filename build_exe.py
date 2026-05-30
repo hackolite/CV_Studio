@@ -289,7 +289,7 @@ def clean_build_directories():
 
 
 def generate_spec_file():
-    """Generate CV_Studio.spec file if it doesn't exist"""
+    """Generate (or regenerate) the CV_Studio.spec file from the template"""
     spec_file = 'CV_Studio.spec'
     
     spec_content = '''# -*- mode: python ; coding: utf-8 -*-
@@ -526,9 +526,10 @@ def modify_spec_file(args):
     
     spec_file = 'CV_Studio.spec'
     
-    if not os.path.exists(spec_file):
-        print(f"  - {spec_file} not found, generating...")
-        generate_spec_file()
+    # Always regenerate the spec file to ensure a clean starting state.
+    # A previous build with --onefile may have already transformed the file
+    # in-place, leaving patterns that no longer match on subsequent runs.
+    generate_spec_file()
     
     with open(spec_file, 'r') as f:
         spec_content = f.read()
