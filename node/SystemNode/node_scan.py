@@ -412,6 +412,7 @@ class ScanNode(Node):
         tag_node_name = str(node_id) + ":" + self.node_tag
 
         # Output scan results to JSON dict for downstream nodes
+        output = None
         with self._lock:
             devices = self._scan_results.get(tag_node_name, [])
         if devices:
@@ -444,4 +445,4 @@ class ScanNode(Node):
             tag_output = tag_node_name + ":" + self.TYPE_JSON + ":Output01Value"
             node_result_dict[tag_output] = output
 
-        return None, None
+        return {"image": None, "json": output, "audio": None}
