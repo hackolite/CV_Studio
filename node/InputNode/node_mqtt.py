@@ -8,8 +8,8 @@ from node.basenode import Node as BaseNode
 
 
 class FactoryNode:
-    node_label = 'Mqtt'
-    node_tag = 'Mqtt'
+    node_label = 'MQTT'
+    node_tag = 'MQTT'
     
     def __init__(self):
         pass
@@ -85,8 +85,8 @@ class MQTTNode(BaseNode):  # Renommé pour éviter la confusion avec BaseNode
 
     def __init__(self):
         super().__init__()  # Call parent constructor
-        self.node_label = 'Mqtt'
-        self.node_tag = 'Mqtt'
+        self.node_label = 'MQTT'
+        self.node_tag = 'MQTT'
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
         return {"image": None, "json": None, "audio": None}

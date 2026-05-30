@@ -27,8 +27,8 @@ class FactoryNode:
         node = Node()
 
         node.tag_node_name = f"{node_id}:{node.node_tag}"
-        tag_node_output01_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01"
-        tag_node_output01_value_name = f"{tag_node_name}:{node.TYPE_IMAGE}:Output01Value"
+        tag_node_output01_name = f"{node.tag_node_name}:{node.TYPE_IMAGE}:Output01"
+        tag_node_output01_value_name = f"{node.tag_node_name}:{node.TYPE_IMAGE}:Output01Value"
 
         # Initialize video stream
         node.cap = get_light_live_stream_url(VIDEO_ID)
@@ -37,7 +37,7 @@ class FactoryNode:
         node.small_window_w, node.small_window_h = 600, 400  # Display size
 
         # Black image for startup
-        black_image = np.zeros((nodesmall_window_w, node.small_window_h, 3))
+        black_image = np.zeros((node.small_window_w, node.small_window_h, 3))
         black_texture = node.convert_cv_to_dpg(black_image, node.small_window_w, node.small_window_h)
 
         # Create texture to display image
@@ -48,7 +48,7 @@ class FactoryNode:
             )
 
         # Create node in the GUI
-        with dpg.node(tag=tag_node_name, parent=parent, label=node.node_label, pos=pos):
+        with dpg.node(tag=node.tag_node_name, parent=parent, label=node.node_label, pos=pos):
             with dpg.node_attribute(tag=tag_node_output01_name, attribute_type=dpg.mvNode_Attr_Output):
                 dpg.add_image(tag_node_output01_value_name)
 
