@@ -28,7 +28,7 @@ OVERLAY = ["DrawInformation", "PutText"]
 VIZ = ["Heatmap", "ObjChart", "Visual", "Map", "WordCloud"]
 TIMESERIES = ["PositionPrediction"]
 NLP_MODEL = ["TinyBertVigilance"]
-SYSTEM = ["SyncQueue"]
+SYSTEM = ["SyncQueue", "Scan"]
 
 
 
