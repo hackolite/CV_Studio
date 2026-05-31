@@ -198,7 +198,7 @@ def _draw_text_label(drawlist, text: str, cx: float, y: float, font_size: float,
                      color: tuple, alpha: float):
     """Draw text centered at position. DearPyGui draw_text is top-left aligned."""
     # Approximate character width for centering
-    char_w = font_size * 0.52
+    char_w = font_size * 0.48
     text_w = len(text) * char_w
     x = cx - text_w / 2.0
     r, g, b, _ = color
@@ -305,9 +305,9 @@ def show_splash_screen(duration_seconds: float = 2.8, steps: int = 90):
 
     # Layout constants – center logo precisely in the drawlist
     logo_cx = _SPLASH_W / 2.0
-    logo_cy = _SPLASH_H * 0.36
-    logo_radius = 52.0
-    title_y = logo_cy + logo_radius + 32
+    logo_cy = _SPLASH_H * 0.38
+    logo_radius_base = 38.0
+    title_y = logo_cy + logo_radius_base + 30
     subtitle_y = title_y + 36
     progress_y = _SPLASH_H - 50
     progress_w = _SPLASH_W * 0.35
@@ -322,6 +322,7 @@ def show_splash_screen(duration_seconds: float = 2.8, steps: int = 90):
     # Pulsed fading parameters
     pulse_freq = 1.8  # Hz – gentle breathing pulse
     pulse_depth = 0.15  # 15% intensity variation
+    radius_pulse_depth = 0.12  # 12% radius variation (shrink/grow)
 
     # Animation loop
     frame_time = duration_seconds / float(steps) if duration_seconds > 0 else 0
@@ -344,7 +345,7 @@ def show_splash_screen(duration_seconds: float = 2.8, steps: int = 90):
 
         # Subtle radial gradient effect (concentric circles centered on logo)
         for i in range(5):
-            r = 180 - i * 30
+            r = 120 - i * 20
             grad_alpha = int(6 - i)
             dpg.draw_circle(
                 center=(logo_cx, logo_cy),
@@ -358,6 +359,10 @@ def show_splash_screen(duration_seconds: float = 2.8, steps: int = 90):
         base_fade = _ease_in_out_sine(min(1.0, t * 2.5))  # Fade completes at ~40%
         pulse = 1.0 - pulse_depth * (0.5 + 0.5 * math.sin(2.0 * math.pi * pulse_freq * elapsed))
         fade = base_fade * pulse
+
+        # Pulsating radius (shrink/grow breathing effect)
+        radius_pulse = 1.0 - radius_pulse_depth * (0.5 + 0.5 * math.sin(2.0 * math.pi * pulse_freq * elapsed))
+        logo_radius = logo_radius_base * radius_pulse
 
         # Draw logo
         _draw_logo_vectors(_SPLASH_DRAW, logo_cx, logo_cy, logo_radius, fade)
