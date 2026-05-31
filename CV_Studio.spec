@@ -53,6 +53,10 @@ hiddenimports += collect_submodules('norfair')
 hiddenimports += collect_submodules('ffmpeg')
 hiddenimports += collect_submodules('streamlink')
 hiddenimports += collect_submodules('wordcloud')
+hiddenimports += collect_submodules('wsdiscovery')
+hiddenimports += collect_submodules('onvif')
+hiddenimports += collect_submodules('zeep')
+hiddenimports += collect_submodules('lxml')
 
 # Add explicit hidden imports for node modules
 hiddenimports += [
@@ -120,6 +124,16 @@ hiddenimports += [
     'sounddevice',
     'streamlink',
     'wordcloud',
+    # ONVIF Network Scanner (node.SystemNode)
+    'node.SystemNode',
+    'wsdiscovery',
+    'wsdiscovery.discovery',
+    'wsdiscovery.scope',
+    'wsdiscovery.qname',
+    'onvif',
+    'onvif.client',
+    'zeep',
+    'zeep.transports',
 ]
 
 # Collect data files
@@ -151,6 +165,8 @@ datas += collect_data_files('librosa')
 datas += collect_data_files('sklearn')
 datas += collect_data_files('streamlink')
 datas += collect_data_files('wordcloud')
+datas += collect_data_files('zeep')
+datas += collect_data_files('onvif')
 
 # Binary excludes - exclude unnecessary binaries
 binaries = []
