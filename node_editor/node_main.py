@@ -26,6 +26,11 @@ logger = get_logger(__name__)
 _SELECTION_SATURATION_BOOST = 1.15  # 15% increase in color saturation
 _SELECTION_BRIGHTNESS_BOOST = 1.2   # 20% increase in brightness
 
+# Legacy node name migration for backward-compatible project file loading
+_LEGACY_NODE_NAMES = {
+    'Rtsp': 'RTSP',
+}
+
 
 def _enhance_color_for_selection(color_tuple):
     """
@@ -620,9 +625,6 @@ class DpgNodeEditor(object):
                     self._node_id = node_id
 
                 # Legacy name migration for saved files
-                _LEGACY_NODE_NAMES = {
-                    'Rtsp': 'RTSP',
-                }
                 node_name = _LEGACY_NODE_NAMES.get(node_name, node_name)
 
                 # Get the factory for this node type
