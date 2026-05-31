@@ -313,11 +313,11 @@ def show_splash_screen(duration_seconds: float = 5.0, steps: int = 150):
 
     # Layout constants – center logo precisely in the drawlist
     logo_cx = _SPLASH_W / 2.0
-    logo_cy = _SPLASH_H * 0.30
-    logo_radius_base = 38.0
-    # Place text BELOW the outermost gradient circle (radius ~100)
-    title_y = logo_cy + 115
-    subtitle_y = title_y + 32
+    logo_cy = _SPLASH_H * 0.36
+    logo_radius_base = 52.0
+    # Place text BELOW the outermost gradient circle (radius ~130)
+    title_y = logo_cy + 145
+    subtitle_y = title_y + 36
     progress_y = _SPLASH_H - 50
     progress_w = _SPLASH_W * 0.35
 
@@ -370,7 +370,7 @@ def show_splash_screen(duration_seconds: float = 5.0, steps: int = 150):
         # Subtle radial gradient effect with pulsating circles (sync with breathing)
         grad_pulse = 0.5 + 0.5 * math.sin(2.0 * math.pi * pulse_freq * elapsed)
         for i in range(5):
-            base_r = 100 - i * 16
+            base_r = 130 - i * 22
             # Radius breathes gently outward/inward
             r = base_r * (1.0 + 0.06 * grad_pulse)
             # Alpha breathes: brighter on expansion, dimmer on contraction
