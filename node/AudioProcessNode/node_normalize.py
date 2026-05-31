@@ -19,6 +19,7 @@ logger = get_logger(__name__)
 
 DEFAULT_SAMPLE_RATE = 16000
 DEFAULT_TARGET_DB = -3.0
+MAX_TARGET_DB = 40.0
 
 
 def normalize_peak(audio_data, target_db=-3.0):
@@ -65,7 +66,7 @@ def normalize_rms(audio_data, target_db=-20.0):
     target_linear = 10 ** (target_db / 20.0)
     gain = target_linear / rms
     result = audio * gain
-    return np.clip(result, -1.0, 1.0).astype(np.float32)
+    return result.astype(np.float32)
 
 
 class FactoryNode:
@@ -147,7 +148,7 @@ class FactoryNode:
                     label='Target (dB)',
                     default_value=DEFAULT_TARGET_DB,
                     min_value=-40.0,
-                    max_value=0.0,
+                    max_value=MAX_TARGET_DB,
                     width=small_window_w,
                     callback=callback,
                 )
