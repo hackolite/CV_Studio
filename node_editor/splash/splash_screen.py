@@ -368,8 +368,8 @@ def show_splash_screen(duration_seconds: float = 8.0, steps: int = 240):
 
     # Pulsed fading parameters – slow, elegant breathing
     pulse_freq = 0.8  # Hz – slow, elegant breathing pulse
-    pulse_depth = 0.10  # 10% intensity variation (subtler)
-    radius_pulse_depth = 0.08  # 8% radius variation (gentler shrink/grow)
+    pulse_depth = 0.25  # 25% intensity variation (pronounced fading)
+    radius_pulse_depth = 0.18  # 18% radius variation (visible shrink/grow)
 
     # Animation loop
     frame_time = duration_seconds / float(steps) if duration_seconds > 0 else 0
@@ -395,15 +395,15 @@ def show_splash_screen(duration_seconds: float = 8.0, steps: int = 240):
         rainbow_speed = 0.3  # Full rainbow cycle every ~3.3 seconds
         for i in range(5):
             base_r = 130 - i * 22
-            # Radius breathes gently outward/inward
-            r = base_r * (1.0 + 0.06 * grad_pulse)
+            # Radius breathes outward/inward
+            r = base_r * (1.0 + 0.12 * grad_pulse)
             # Alpha breathes: brighter on expansion, dimmer on contraction
-            grad_alpha = int((6 - i) * (0.7 + 0.6 * grad_pulse))
+            grad_alpha = min(255, int((6 - i) * (1.4 + 1.2 * grad_pulse)))
             # Rainbow hue: each ring offset + time-based rotation
             hue = (elapsed * rainbow_speed + i * 0.15) % 1.0
-            # HSV to RGB (S=0.85, V=1.0 for vivid rainbow)
+            # HSV to RGB (S=1.0, V=1.0 for maximum vivid rainbow)
             h6 = hue * 6.0
-            c = 0.85
+            c = 1.0
             x_col = c * (1.0 - abs(h6 % 2.0 - 1.0))
             if h6 < 1:
                 rb, gb, bb = c, x_col, 0.0
@@ -418,9 +418,9 @@ def show_splash_screen(duration_seconds: float = 8.0, steps: int = 240):
             else:
                 rb, gb, bb = c, 0.0, x_col
             m = 1.0 - c
-            rc = int((rb + m) * 255)
-            gc = int((gb + m) * 255)
-            bc = int((bb + m) * 255)
+            rc = min(255, int((rb + m) * 255))
+            gc = min(255, int((gb + m) * 255))
+            bc = min(255, int((bb + m) * 255))
             dpg.draw_circle(
                 center=(logo_cx, logo_cy),
                 radius=r,
