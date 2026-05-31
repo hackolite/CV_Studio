@@ -347,6 +347,12 @@ hiddenimports += collect_submodules('norfair')
 hiddenimports += collect_submodules('ffmpeg')
 hiddenimports += collect_submodules('streamlink')
 hiddenimports += collect_submodules('wordcloud')
+hiddenimports += collect_submodules('wsdiscovery')
+hiddenimports += collect_submodules('onvif')
+hiddenimports += collect_submodules('zeep')
+hiddenimports += collect_submodules('lxml')
+hiddenimports += collect_submodules('isodate')
+hiddenimports += collect_submodules('ifaddr')
 
 # Add explicit hidden imports for node modules
 hiddenimports += [
@@ -361,6 +367,7 @@ hiddenimports += [
     'node.TriggerNode',
     'node.RouterNode',
     'node.ActionNode',
+    'node.SystemNode',
     'node.OverlayNode',
     'node.TrackerNode',
     'node.VisualNode',
@@ -414,6 +421,22 @@ hiddenimports += [
     'sounddevice',
     'streamlink',
     'wordcloud',
+    # ONVIF / WS-Discovery (lazy imports in node_scan.py)
+    'wsdiscovery',
+    'wsdiscovery.discovery',
+    'wsdiscovery.scope',
+    'wsdiscovery.qname',
+    'onvif',
+    'onvif.client',
+    'onvif.exceptions',
+    'onvif.definition',
+    'zeep',
+    'zeep.transports',
+    'zeep.wsdl',
+    'lxml',
+    'lxml.etree',
+    'isodate',
+    'ifaddr',
 ]
 
 # Collect data files
@@ -448,6 +471,18 @@ datas += collect_data_files('librosa')
 datas += collect_data_files('sklearn')
 datas += collect_data_files('streamlink')
 datas += collect_data_files('wordcloud')
+datas += collect_data_files('zeep')
+
+# ONVIF WSDL files - onvif-zeep installs a top-level 'wsdl' folder in
+# site-packages that ONVIFCamera needs at runtime.
+import importlib.util as _iu
+_onvif_spec = _iu.find_spec('onvif')
+if _onvif_spec and _onvif_spec.submodule_search_locations:
+    import pathlib as _pl
+    _onvif_pkg = _pl.Path(list(_onvif_spec.submodule_search_locations)[0])
+    _wsdl_dir = _onvif_pkg.parent / 'wsdl'
+    if _wsdl_dir.is_dir():
+        datas.append((str(_wsdl_dir), 'wsdl'))
 
 # Binary excludes - exclude unnecessary binaries
 binaries = []
