@@ -313,12 +313,28 @@ def show_splash_screen(duration_seconds: float = 5.0, steps: int = 150):
 
     # Layout constants – center logo precisely in the drawlist
     logo_cx = _SPLASH_W / 2.0
-    logo_cy = _SPLASH_H * 0.38
+    logo_cy = _SPLASH_H * 0.30
     logo_radius_base = 38.0
-    title_y = logo_cy + logo_radius_base + 38
-    subtitle_y = title_y + 40
+    # Place text BELOW the outermost gradient circle (radius ~100)
+    title_y = logo_cy + 115
+    subtitle_y = title_y + 32
     progress_y = _SPLASH_H - 50
     progress_w = _SPLASH_W * 0.35
+
+    # Scrolling promotional feature texts
+    _feature_texts = [
+        "Node-Based Computer Vision Pipeline",
+        "Real-Time Object Detection & Tracking",
+        "Audio Classification with ONNX Models",
+        "Video Recording & Processing",
+        "Custom ONNX Model Import",
+        "Live Camera & Microphone Input",
+        "Image Segmentation & Analysis",
+        "Visual Data Charts & Heatmaps",
+        "Multi-Source Video Concatenation",
+        "Drag & Drop Workflow Editor",
+    ]
+    feature_scroll_speed = 3.0  # seconds per feature
 
     # Start ambient sound in background thread
     threading.Thread(
@@ -354,7 +370,7 @@ def show_splash_screen(duration_seconds: float = 5.0, steps: int = 150):
         # Subtle radial gradient effect with pulsating circles (sync with breathing)
         grad_pulse = 0.5 + 0.5 * math.sin(2.0 * math.pi * pulse_freq * elapsed)
         for i in range(5):
-            base_r = 120 - i * 20
+            base_r = 100 - i * 16
             # Radius breathes gently outward/inward
             r = base_r * (1.0 + 0.06 * grad_pulse)
             # Alpha breathes: brighter on expansion, dimmer on contraction
@@ -386,11 +402,20 @@ def show_splash_screen(duration_seconds: float = 5.0, steps: int = 150):
             _TEXT_PRIMARY, fade,
         )
 
-        # Subtitle
+        # Subtitle: scrolling feature text
+        feature_idx = int(elapsed / feature_scroll_speed) % len(_feature_texts)
+        feature_sub_t = (elapsed % feature_scroll_speed) / feature_scroll_speed
+        # Fade in/out each feature text
+        if feature_sub_t < 0.15:
+            feat_alpha = feature_sub_t / 0.15
+        elif feature_sub_t > 0.85:
+            feat_alpha = (1.0 - feature_sub_t) / 0.15
+        else:
+            feat_alpha = 1.0
         _draw_text_label(
-            _SPLASH_DRAW, "Computer Vision Studio",
-            logo_cx, subtitle_y, 15.0,
-            _TEXT_SECONDARY, fade * 0.8,
+            _SPLASH_DRAW, _feature_texts[feature_idx],
+            logo_cx, subtitle_y, 14.0,
+            _TEXT_SECONDARY, fade * 0.8 * feat_alpha,
         )
 
         # Progress bar (appears after fade-in)
