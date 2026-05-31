@@ -19,6 +19,7 @@ logger = get_logger(__name__)
 
 DEFAULT_SAMPLE_RATE = 16000
 DEFAULT_TARGET_DB = -3.0
+# Allow heavy amplification up to +40 dB for quiet sources (mic far away, etc.)
 MAX_TARGET_DB = 40.0
 
 
@@ -66,6 +67,7 @@ def normalize_rms(audio_data, target_db=-20.0):
     target_linear = 10 ** (target_db / 20.0)
     gain = target_linear / rms
     result = audio * gain
+    # No clipping: allow amplification beyond 0 dBFS; downstream handles final clipping.
     return result.astype(np.float32)
 
 
