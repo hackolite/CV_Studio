@@ -138,6 +138,7 @@ class CaptureNode(Node):
     _stop_event = None
     _thread = None
     _prev_frame = None
+    _frame_lock = None
 
     def __init__(self):
         pass
@@ -164,6 +165,7 @@ class CaptureNode(Node):
         if self._thread is None:
             self._image_queue = queue.Queue(maxsize=1)
             self._stop_event = threading.Event()
+            self._frame_lock = threading.Lock()
             self._thread = threading.Thread(
                 target=screen_capture_process,
                 args=(
@@ -183,9 +185,11 @@ class CaptureNode(Node):
         if self._image_queue is not None:
             if not self._image_queue.empty():
                 frame = self._image_queue.get_nowait()
-                self._prev_frame = frame
+                with self._frame_lock:
+                    self._prev_frame = frame
             else:
-                frame = self._prev_frame
+                with self._frame_lock:
+                    frame = self._prev_frame
 
 
         if use_pref_counter:
