@@ -112,8 +112,10 @@ def screen_capture_process(image_queue, request):
 
             if image_queue.qsize() == 0:
                 image_queue.put(frame)
-        except Exception:
-            pass
+        except Exception as e:
+            # Log but continue - transient capture errors should not kill the subprocess
+            print(f"[ScreenCapture] capture error: {e}")
+
 
         time.sleep(0.001)
 
