@@ -330,7 +330,8 @@ def show_splash_screen(duration_seconds: float = 8.0, steps: int = 240):
     logo_radius_base = 52.0
     # Place text BELOW the outermost gradient circle (radius ~130)
     title_y = logo_cy + 165
-    subtitle_y = title_y + 36
+    dev_subtitle_y = title_y + 28
+    subtitle_y = dev_subtitle_y + 30
     progress_y = _SPLASH_H - 50
     progress_w = _SPLASH_W * 0.35
 
@@ -418,11 +419,18 @@ def show_splash_screen(duration_seconds: float = 8.0, steps: int = 240):
         # Draw logo
         _draw_logo_vectors(_SPLASH_DRAW, logo_cx, logo_cy, logo_radius, fade)
 
-        # Title: "CvStudio.dev" – larger, dynamic typography
+        # Title: "CvStudio" – larger, dynamic typography
         _draw_text_label(
-            _SPLASH_DRAW, "CvStudio.dev",
+            _SPLASH_DRAW, "CvStudio",
             logo_cx + 8, title_y, 32.0,
             _TEXT_PRIMARY, fade,
+        )
+
+        # Subtitle: ".dev" – slightly indented below the title
+        _draw_text_label(
+            _SPLASH_DRAW, ".dev",
+            logo_cx + 12, dev_subtitle_y, 18.0,
+            _TEXT_SECONDARY, fade * 0.9,
         )
 
         # Subtitle: scrolling feature text
