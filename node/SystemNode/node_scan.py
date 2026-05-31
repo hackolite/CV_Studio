@@ -81,10 +81,16 @@ def _probe_ptz_on_ports(host, username="admin", pw="admin", timeout=3):
     except ImportError:
         return False, None
 
+    from requests import Session
+    from zeep.transports import Transport
+
     for port in ONVIF_PORTS:
         try:
-            cam = ONVIFCamera(host, port, username, pw, no_cache=True)
-            cam.devicemgmt.SetTimeout(timeout)
+            session = Session()
+            session.timeout = timeout
+            transport = Transport(session=session, timeout=timeout)
+            cam = ONVIFCamera(host, port, username, pw, no_cache=True,
+                              transport=transport)
 
             # Use GetCapabilities to check PTZ service presence
             capabilities = cam.devicemgmt.GetCapabilities({"Category": "PTZ"})
@@ -131,8 +137,14 @@ def _get_device_profiles(xaddr, username="admin", pw="admin", timeout=5):
     }
 
     try:
-        cam = ONVIFCamera(host, port, username, pw, no_cache=True)
-        cam.devicemgmt.SetTimeout(timeout)
+        from requests import Session
+        from zeep.transports import Transport
+
+        session = Session()
+        session.timeout = timeout
+        transport = Transport(session=session, timeout=timeout)
+        cam = ONVIFCamera(host, port, username, pw, no_cache=True,
+                          transport=transport)
 
         # Get device info
         try:
