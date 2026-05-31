@@ -330,8 +330,7 @@ def show_splash_screen(duration_seconds: float = 8.0, steps: int = 240):
     logo_radius_base = 52.0
     # Place text BELOW the outermost gradient circle (radius ~130)
     title_y = logo_cy + 165
-    dev_subtitle_y = title_y + 28
-    subtitle_y = dev_subtitle_y + 30
+    subtitle_y = title_y + 38
     progress_y = _SPLASH_H - 50
     progress_w = _SPLASH_W * 0.35
 
