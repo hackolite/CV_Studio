@@ -64,10 +64,49 @@ def _discover_onvif_devices(timeout=4):
     return xaddrs
 
 
+def _probe_ptz_on_ports(host, username="admin", pw="admin", timeout=3):
+    """
+    Probe common ONVIF ports (80, 8899, 8000) on a given host to detect
+    PTZ capabilities. Uses GetCapabilities to check for PTZ service exposure.
+
+    Returns:
+        tuple: (ptz_supported: bool, url_ptz: str or None)
+               url_ptz is the ONVIF device service URL on the port that
+               responded with PTZ capability.
+    """
+    ONVIF_PORTS = [80, 8899, 8000]
+
+    try:
+        from onvif import ONVIFCamera
+    except ImportError:
+        return False, None
+
+    for port in ONVIF_PORTS:
+        try:
+            cam = ONVIFCamera(host, port, username, pw, no_cache=True)
+            cam.devicemgmt.SetTimeout(timeout)
+
+            # Use GetCapabilities to check PTZ service presence
+            capabilities = cam.devicemgmt.GetCapabilities({"Category": "PTZ"})
+            if capabilities and getattr(capabilities, "PTZ", None):
+                ptz_xaddr = getattr(capabilities.PTZ, "XAddr", None)
+                if ptz_xaddr:
+                    # PTZ service confirmed – use the device service URL
+                    # (ptz_xaddr points to PTZ service, but we expose
+                    #  the device_service endpoint for ONVIF control entry)
+                    url_ptz = ptz_xaddr
+                    return True, url_ptz
+        except Exception:
+            # Port not responding, not ONVIF, or no PTZ – try next port
+            continue
+
+    return False, None
+
+
 def _get_device_profiles(xaddr, username="admin", pw="admin", timeout=5):
     """
     Connect to an ONVIF device and retrieve media profiles with stream URIs.
-    Returns a dict with device info, profiles, PTZ support.
+    Returns a dict with device info, profiles, PTZ support, url_video, url_ptz.
     """
     try:
         from onvif import ONVIFCamera
@@ -86,6 +125,8 @@ def _get_device_profiles(xaddr, username="admin", pw="admin", timeout=5):
         "port": port,
         "profiles": [],
         "ptz_supported": False,
+        "url_video": None,
+        "url_ptz": None,
         "error": None,
     }
 
@@ -106,13 +147,29 @@ def _get_device_profiles(xaddr, username="admin", pw="admin", timeout=5):
         media_service = cam.create_media_service()
         profiles = media_service.GetProfiles()
 
-        # Check PTZ support
+        # Check PTZ support: first try on current connection, then probe other ports
         try:
-            ptz_service = cam.create_ptz_service()
-            if ptz_service:
-                result["ptz_supported"] = True
+            capabilities = cam.devicemgmt.GetCapabilities({"Category": "PTZ"})
+            if capabilities and getattr(capabilities, "PTZ", None):
+                ptz_xaddr = getattr(capabilities.PTZ, "XAddr", None)
+                if ptz_xaddr:
+                    result["ptz_supported"] = True
+                    result["url_ptz"] = ptz_xaddr
         except Exception:
             pass
+
+        # If PTZ not found on the discovery port, probe other common ports
+        if not result["ptz_supported"]:
+            try:
+                ptz_supported, url_ptz = _probe_ptz_on_ports(
+                    host, username=username, pw=pw, timeout=min(timeout, 3)
+                )
+                result["ptz_supported"] = ptz_supported
+                result["url_ptz"] = url_ptz
+            except Exception:
+                # PTZ probe failed – camera may not be motorized
+                result["ptz_supported"] = False
+                result["url_ptz"] = None
 
         for profile in profiles:
             profile_info = {
@@ -156,6 +213,12 @@ def _get_device_profiles(xaddr, username="admin", pw="admin", timeout=5):
                 profile_info["audio_stream_uri"] = profile_info["video_stream_uri"]
 
             result["profiles"].append(profile_info)
+
+        # Set url_video from the first profile that has a video stream URI
+        for prof in result["profiles"]:
+            if prof.get("video_stream_uri"):
+                result["url_video"] = prof["video_stream_uri"]
+                break
 
     except Exception as e:
         result["error"] = str(e)
@@ -356,12 +419,16 @@ class ScanNode(Node):
                 manufacturer = dev.get("manufacturer", "Unknown")
                 model = dev.get("model", "Unknown")
                 ptz = "Yes" if dev.get("ptz_supported") else "No"
+                url_video = dev.get("url_video", "N/A")
+                url_ptz = dev.get("url_ptz", "N/A")
                 error = dev.get("error")
 
                 display_lines.append(f"═══ {host} ═══")
                 display_lines.append(f"  Manufacturer: {manufacturer}")
                 display_lines.append(f"  Model: {model}")
                 display_lines.append(f"  PTZ Control: {ptz}")
+                display_lines.append(f"  url_video: {url_video}")
+                display_lines.append(f"  url_ptz: {url_ptz}")
 
                 if error:
                     display_lines.append(f"  ⚠ Error: {error}")
@@ -429,6 +496,8 @@ class ScanNode(Node):
                     "manufacturer": dev.get("manufacturer", ""),
                     "model": dev.get("model", ""),
                     "ptz_supported": dev.get("ptz_supported", False),
+                    "url_video": dev.get("url_video"),
+                    "url_ptz": dev.get("url_ptz"),
                     "profiles": [],
                 }
                 for prof in dev.get("profiles", []):
