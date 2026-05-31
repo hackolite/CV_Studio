@@ -531,11 +531,12 @@ class ScanNode(Node):
                 url_ptz = _mask_credentials(dev.get("url_ptz")) or "N/A"
                 error = dev.get("error")
 
-                # Device header
-                dpg.add_text(
-                    f"  {host}",
+                # Device header (selectable)
+                dpg.add_input_text(
+                    default_value=host,
+                    readonly=True,
+                    width=280,
                     parent=results_panel,
-                    color=[255, 215, 0],  # Gold
                 )
                 dpg.add_separator(parent=results_panel)
 
@@ -556,21 +557,21 @@ class ScanNode(Node):
                     else:
                         dpg.add_text("NO", color=[255, 80, 80])  # Red
 
-                # URLs
+                # URLs (selectable input fields for copy-paste)
                 with dpg.group(horizontal=True, parent=results_panel):
                     dpg.add_text("  Video URL:", color=[160, 160, 160])
-                    dpg.add_text(
-                        url_video if url_video else "N/A",
-                        color=[100, 220, 255],  # Cyan
-                        wrap=300,
+                    dpg.add_input_text(
+                        default_value=url_video if url_video else "N/A",
+                        readonly=True,
+                        width=280,
                     )
 
                 with dpg.group(horizontal=True, parent=results_panel):
                     dpg.add_text("  PTZ URL:", color=[160, 160, 160])
-                    dpg.add_text(
-                        url_ptz if url_ptz else "N/A",
-                        color=[100, 220, 255],
-                        wrap=300,
+                    dpg.add_input_text(
+                        default_value=url_ptz if url_ptz else "N/A",
+                        readonly=True,
+                        width=280,
                     )
 
                 # Error if any
@@ -610,10 +611,10 @@ class ScanNode(Node):
 
                     with dpg.group(horizontal=True, parent=results_panel):
                         dpg.add_text("      RTSP:", color=[160, 160, 160])
-                        dpg.add_text(
-                            v_uri if v_uri else "N/A",
-                            color=[100, 220, 255],
-                            wrap=280,
+                        dpg.add_input_text(
+                            default_value=v_uri if v_uri else "N/A",
+                            readonly=True,
+                            width=260,
                         )
 
                 # Spacer between devices
