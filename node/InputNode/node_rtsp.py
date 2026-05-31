@@ -15,6 +15,7 @@ from node_editor.util import dpg_get_value, dpg_set_value
 
 from node.node_abc import DpgNodeABC
 from node.basenode import Node
+from node.VideoNode.sync import FramePacket
 
 try:
     import imageio_ffmpeg
@@ -452,17 +453,41 @@ class RtspNode(Node):
             except queue.Empty:
                 pass
 
-        # Calculate pts_ms for A/V sync
-        pts_ms = None
+        # Calculate FPS-based timestamp for this frame (approximate 30fps)
+        frame_timestamp = None
         if self._frame_count > 0:
-            pts_ms = self._frame_count * 33.0  # approximate 30fps
+            frame_timestamp = self._frame_count / 30.0
+        pts_ms = frame_timestamp * 1000.0 if frame_timestamp is not None else None
 
         # Inject pts_ms into audio dict for A/V sync alignment
         if audio_chunk_data is not None and pts_ms is not None:
             audio_chunk_data = dict(audio_chunk_data)
             audio_chunk_data["pts_ms"] = pts_ms
 
-        return {"image": frame, "json": None, "audio": audio_chunk_data}
+        # Build FramePacket JSON metadata (same as VideoNode and YouTubeNode)
+        json_output = None
+        if frame is not None and pts_ms is not None:
+            audio_chunk_index = 0
+            if isinstance(audio_chunk_data, dict):
+                audio_chunk_index = audio_chunk_data.get("chunk_index", 0)
+            now = time.monotonic()
+            fp = FramePacket(
+                frame_index=self._frame_count,
+                pts_ms=pts_ms,
+                audio_chunk_index=audio_chunk_index,
+                image=frame,
+                audio_data=audio_chunk_data,
+                pipeline_entry_ts=now,
+                pipeline_exit_ts=now,
+            )
+            json_output = fp.to_metadata()
+
+        return {
+            "image": frame,
+            "json": json_output,
+            "audio": audio_chunk_data,
+            "timestamp": frame_timestamp,
+        }
 
     def close(self, node_id):
         # Stop audio capture
