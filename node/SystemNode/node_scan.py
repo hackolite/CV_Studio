@@ -12,12 +12,36 @@ Outputs a JSON dictionary with discovered devices and their profiles.
 import threading
 import time
 import traceback
+from urllib.parse import urlparse, urlunparse
 
 import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node
+
+
+def _mask_credentials(url):
+    """Replace username and password in a URL with '****' for safe display."""
+    if not url or not isinstance(url, str):
+        return url
+    try:
+        parsed = urlparse(url)
+        if parsed.username or parsed.password:
+            # Rebuild netloc with masked credentials
+            masked_netloc = "****:****@"
+            if parsed.hostname:
+                masked_netloc += parsed.hostname
+            if parsed.port:
+                masked_netloc += f":{parsed.port}"
+            return urlunparse((
+                parsed.scheme, masked_netloc,
+                parsed.path, parsed.params,
+                parsed.query, parsed.fragment,
+            ))
+    except Exception:
+        pass
+    return url
 
 
 # ---------------------------------------------------------------------------
@@ -447,8 +471,8 @@ class ScanNode(Node):
                 manufacturer = dev.get("manufacturer", "Unknown")
                 model = dev.get("model", "Unknown")
                 ptz = dev.get("ptz_supported", False)
-                url_video = dev.get("url_video", "N/A")
-                url_ptz = dev.get("url_ptz", "N/A")
+                url_video = _mask_credentials(dev.get("url_video")) or "N/A"
+                url_ptz = _mask_credentials(dev.get("url_ptz")) or "N/A"
                 error = dev.get("error")
 
                 # Device header
@@ -505,7 +529,7 @@ class ScanNode(Node):
                     res = prof.get("resolution", "?")
                     v_enc = prof.get("video_encoding", "?")
                     a_enc = prof.get("audio_encoding", "None")
-                    v_uri = prof.get("video_stream_uri", "N/A")
+                    v_uri = _mask_credentials(prof.get("video_stream_uri")) or "N/A"
 
                     dpg.add_spacer(height=4, parent=results_panel)
                     dpg.add_text(
@@ -599,15 +623,15 @@ class ScanNode(Node):
                     "manufacturer": dev.get("manufacturer", ""),
                     "model": dev.get("model", ""),
                     "ptz_supported": dev.get("ptz_supported", False),
-                    "url_video": dev.get("url_video"),
-                    "url_ptz": dev.get("url_ptz"),
+                    "url_video": _mask_credentials(dev.get("url_video")),
+                    "url_ptz": _mask_credentials(dev.get("url_ptz")),
                     "profiles": [],
                 }
                 for prof in dev.get("profiles", []):
                     dev_entry["profiles"].append({
                         "name": prof.get("name", ""),
-                        "video_stream_uri": prof.get("video_stream_uri"),
-                        "audio_stream_uri": prof.get("audio_stream_uri"),
+                        "video_stream_uri": _mask_credentials(prof.get("video_stream_uri")),
+                        "audio_stream_uri": _mask_credentials(prof.get("audio_stream_uri")),
                         "video_encoding": prof.get("video_encoding"),
                         "audio_encoding": prof.get("audio_encoding"),
                         "resolution": prof.get("resolution"),
