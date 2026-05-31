@@ -330,16 +330,19 @@ class FactoryNode:
                 )
                 dpg.add_separator()
 
-                # Results display area
-                dpg.add_text("Discovered Devices:")
-                dpg.add_input_text(
-                    tag=node.tag_node_name + ":Results",
-                    default_value="",
-                    multiline=True,
-                    readonly=True,
-                    width=380,
-                    height=200,
-                )
+                # Results display area (rich formatted)
+                dpg.add_text("Discovered Devices:", color=[180, 180, 180])
+                with dpg.child_window(
+                    tag=node.tag_node_name + ":ResultsPanel",
+                    width=400,
+                    height=250,
+                    border=True,
+                ):
+                    dpg.add_text(
+                        tag=node.tag_node_name + ":ResultsPlaceholder",
+                        default_value="Press 'Scan Network' to discover devices.",
+                        color=[120, 120, 120],
+                    )
 
             # --- Output attribute (JSON) ---
             with dpg.node_attribute(
@@ -372,6 +375,16 @@ class ScanNode(Node):
     def __init__(self):
         pass
 
+    def _clear_results_panel(self, tag_node_name):
+        """Clear all children from the results panel."""
+        results_panel = tag_node_name + ":ResultsPanel"
+        placeholder_tag = tag_node_name + ":ResultsPlaceholder"
+        if dpg.does_item_exist(placeholder_tag):
+            dpg.delete_item(placeholder_tag)
+        for child in dpg.get_item_children(results_panel, 1) or []:
+            dpg.delete_item(child)
+        return results_panel
+
     def _callback_scan(self, sender, data, user_data):
         """Trigger an async network scan."""
         tag_node_name = user_data
@@ -401,7 +414,12 @@ class ScanNode(Node):
 
             if not xaddrs:
                 dpg_set_value(tag_node_name + ":Status", "No devices found")
-                dpg_set_value(tag_node_name + ":Results", "No ONVIF devices discovered on the network.")
+                results_panel = self._clear_results_panel(tag_node_name)
+                dpg.add_text(
+                    "No ONVIF devices discovered on the network.",
+                    parent=results_panel,
+                    color=[255, 165, 0],
+                )
                 with self._lock:
                     self._scan_results[tag_node_name] = []
                     self._scan_running[tag_node_name] = False
@@ -424,27 +442,68 @@ class ScanNode(Node):
             with self._lock:
                 self._scan_results[tag_node_name] = devices
 
-            # Format display text
-            display_lines = []
-            for dev in devices:
+            # Format display — rich text inside the results child_window
+            results_panel = self._clear_results_panel(tag_node_name)
+
+            # Populate with rich device cards
+            for idx, dev in enumerate(devices):
                 host = dev.get("host", "?")
                 manufacturer = dev.get("manufacturer", "Unknown")
                 model = dev.get("model", "Unknown")
-                ptz = "Yes" if dev.get("ptz_supported") else "No"
+                ptz = dev.get("ptz_supported", False)
                 url_video = dev.get("url_video", "N/A")
                 url_ptz = dev.get("url_ptz", "N/A")
                 error = dev.get("error")
 
-                display_lines.append(f"═══ {host} ═══")
-                display_lines.append(f"  Manufacturer: {manufacturer}")
-                display_lines.append(f"  Model: {model}")
-                display_lines.append(f"  PTZ Control: {ptz}")
-                display_lines.append(f"  url_video: {url_video}")
-                display_lines.append(f"  url_ptz: {url_ptz}")
+                # Device header
+                dpg.add_text(
+                    f"  {host}",
+                    parent=results_panel,
+                    color=[255, 215, 0],  # Gold
+                )
+                dpg.add_separator(parent=results_panel)
 
+                # Manufacturer / Model
+                with dpg.group(horizontal=True, parent=results_panel):
+                    dpg.add_text("  Manufacturer:")
+                    dpg.add_text(f"{manufacturer}", color=[200, 200, 255])
+
+                with dpg.group(horizontal=True, parent=results_panel):
+                    dpg.add_text("  Model:")
+                    dpg.add_text(f"{model}", color=[200, 200, 255])
+
+                # PTZ status with color indicator
+                with dpg.group(horizontal=True, parent=results_panel):
+                    dpg.add_text("  PTZ Control:")
+                    if ptz:
+                        dpg.add_text("YES", color=[0, 255, 0])  # Green
+                    else:
+                        dpg.add_text("NO", color=[255, 80, 80])  # Red
+
+                # URLs
+                with dpg.group(horizontal=True, parent=results_panel):
+                    dpg.add_text("  Video URL:", color=[160, 160, 160])
+                    dpg.add_text(
+                        url_video if url_video else "N/A",
+                        color=[100, 220, 255],  # Cyan
+                        wrap=300,
+                    )
+
+                with dpg.group(horizontal=True, parent=results_panel):
+                    dpg.add_text("  PTZ URL:", color=[160, 160, 160])
+                    dpg.add_text(
+                        url_ptz if url_ptz else "N/A",
+                        color=[100, 220, 255],
+                        wrap=300,
+                    )
+
+                # Error if any
                 if error:
-                    display_lines.append(f"  ⚠ Error: {error}")
+                    with dpg.group(horizontal=True, parent=results_panel):
+                        dpg.add_text("  ⚠ Error:", color=[255, 165, 0])
+                        dpg.add_text(f"{error}", color=[255, 165, 0], wrap=280)
 
+                # Profiles
                 for prof in dev.get("profiles", []):
                     name = prof.get("name", "?")
                     res = prof.get("resolution", "?")
@@ -452,15 +511,40 @@ class ScanNode(Node):
                     a_enc = prof.get("audio_encoding", "None")
                     v_uri = prof.get("video_stream_uri", "N/A")
 
-                    display_lines.append(f"  ── Profile: {name} ──")
-                    display_lines.append(f"    Video: {v_enc} @ {res}")
-                    display_lines.append(f"    Audio: {a_enc}")
-                    display_lines.append(f"    RTSP:  {v_uri}")
+                    dpg.add_spacer(height=4, parent=results_panel)
+                    dpg.add_text(
+                        f"    Profile: {name}",
+                        parent=results_panel,
+                        color=[180, 255, 180],  # Light green
+                    )
 
-                display_lines.append("")
+                    with dpg.group(horizontal=True, parent=results_panel):
+                        dpg.add_text("      Video:")
+                        dpg.add_text(
+                            f"{v_enc} @ {res}",
+                            color=[255, 255, 200],
+                        )
 
-            result_text = "\n".join(display_lines)
-            dpg_set_value(tag_node_name + ":Results", result_text)
+                    with dpg.group(horizontal=True, parent=results_panel):
+                        dpg.add_text("      Audio:")
+                        dpg.add_text(
+                            a_enc if a_enc else "None",
+                            color=[255, 255, 200],
+                        )
+
+                    with dpg.group(horizontal=True, parent=results_panel):
+                        dpg.add_text("      RTSP:", color=[160, 160, 160])
+                        dpg.add_text(
+                            v_uri if v_uri else "N/A",
+                            color=[100, 220, 255],
+                            wrap=280,
+                        )
+
+                # Spacer between devices
+                if idx < len(devices) - 1:
+                    dpg.add_spacer(height=8, parent=results_panel)
+                    dpg.add_separator(parent=results_panel)
+                    dpg.add_spacer(height=4, parent=results_panel)
             dpg_set_value(
                 tag_node_name + ":Status",
                 f"Done — {len(devices)} device(s), "
@@ -469,7 +553,18 @@ class ScanNode(Node):
 
         except Exception as e:
             dpg_set_value(tag_node_name + ":Status", f"Error: {e}")
-            dpg_set_value(tag_node_name + ":Results", traceback.format_exc())
+            results_panel = self._clear_results_panel(tag_node_name)
+            dpg.add_text(
+                "Error during scan:",
+                parent=results_panel,
+                color=[255, 80, 80],
+            )
+            dpg.add_text(
+                traceback.format_exc(),
+                parent=results_panel,
+                color=[255, 120, 120],
+                wrap=370,
+            )
             with self._lock:
                 self._scan_results[tag_node_name] = []
         finally:
