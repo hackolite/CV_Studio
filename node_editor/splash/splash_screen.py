@@ -49,10 +49,10 @@ def _ease_in_out_sine(t: float) -> float:
 
 
 
-def _generate_cabin_chime(duration: float = 5.0, sr: int = 44100) -> np.ndarray:
+def _generate_cabin_chime(duration: float = 8.0, sr: int = 44100) -> np.ndarray:
     """
-    Generate a soft, reassuring avionics-style chime.
-    Warm layered tones with very gentle attack/release – evokes
+    Generate a rich, immersive avionics-style generique chime.
+    Extended warm layered tones with gentle attack/release – evokes
     the quiet confidence of a cockpit power-on sequence.
     """
     t = np.linspace(0, duration, int(sr * duration), endpoint=False)
@@ -67,16 +67,29 @@ def _generate_cabin_chime(duration: float = 5.0, sr: int = 44100) -> np.ndarray:
         tone += amp * np.sin(2.0 * np.pi * freq * t)
         tone += amp * 0.15 * np.sin(2.0 * np.pi * (freq * 1.003) * t)
 
+    # Additional harmonic shimmer layer (adds richness and depth)
+    shimmer_freqs = [523.25, 783.99, 1046.50]  # C5, G5, C6
+    shimmer_amps = [0.05, 0.03, 0.02]
+    for freq, amp in zip(shimmer_freqs, shimmer_amps):
+        # Delayed entry – shimmer fades in after 1.5s
+        shimmer_env = np.clip((t - 1.5) / 2.0, 0.0, 1.0)
+        tone += amp * shimmer_env * np.sin(2.0 * np.pi * freq * t)
+
+    # Evolving pad layer (slow frequency sweep for cinematic feel)
+    sweep = 0.06 * np.sin(2.0 * np.pi * (155.56 + 8.0 * np.sin(0.3 * t)) * t)
+    pad_env = np.clip(t / 2.5, 0.0, 1.0) * np.clip((duration - t) / 2.0, 0.0, 1.0)
+    tone += sweep * pad_env
+
     # Sub-bass warmth (like avionics hum in background)
-    tone += 0.04 * np.sin(2.0 * np.pi * 98.0 * t)
+    tone += 0.05 * np.sin(2.0 * np.pi * 98.0 * t)
 
     # Very gentle amplitude modulation (slow tremolo – breathing feel)
-    tremolo = 1.0 - 0.08 * np.sin(2.0 * np.pi * 0.7 * t)
+    tremolo = 1.0 - 0.08 * np.sin(2.0 * np.pi * 0.5 * t)
     tone *= tremolo
 
-    # Envelope: very slow attack + long sustain + very gentle release
-    attack = 0.7
-    release = 1.2
+    # Envelope: slow attack + long sustain + gentle release (scaled to longer duration)
+    attack = 1.0
+    release = 2.0
     env = np.ones_like(t)
     attack_samples = int(attack * sr)
     release_samples = int(release * sr)
@@ -87,10 +100,10 @@ def _generate_cabin_chime(duration: float = 5.0, sr: int = 44100) -> np.ndarray:
 
     tone *= env
 
-    # Normalize to soft volume (quieter than before – reassuring, not startling)
+    # Normalize to audible volume (warm & present, not startling)
     peak = np.max(np.abs(tone))
     if peak > 0:
-        tone = tone / peak * 0.45
+        tone = tone / peak * 0.72
 
     return tone.astype(np.float32)
 
@@ -265,7 +278,7 @@ def _create_splash_theme():
             dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 0, 0, category=dpg.mvThemeCat_Core)
 
 
-def show_splash_screen(duration_seconds: float = 5.0, steps: int = 150):
+def show_splash_screen(duration_seconds: float = 8.0, steps: int = 240):
     """
     Display an elegant Apple-style splash screen with animated logo and progress.
 
@@ -333,6 +346,16 @@ def show_splash_screen(duration_seconds: float = 5.0, steps: int = 150):
         "Visual Data Charts & Heatmaps",
         "Multi-Source Video Concatenation",
         "Drag & Drop Workflow Editor",
+        "GPU-Accelerated Inference Engine",
+        "Multi-Object Tracking (MOT)",
+        "Audio Equalization & Processing",
+        "OpenStreetMap Geolocation Overlay",
+        "Frame-Accurate A/V Synchronization",
+        "Zoomable Node Graph Editor",
+        "Serial & MQTT Device Integration",
+        "Batch Export & Headless Mode",
+        "Plugin Architecture & Extensions",
+        "Cross-Platform (Windows, Linux, macOS)",
     ]
     feature_scroll_speed = 3.0  # seconds per feature
 
@@ -398,7 +421,7 @@ def show_splash_screen(duration_seconds: float = 5.0, steps: int = 150):
         # Title: "CvStudio.dev" – larger, dynamic typography
         _draw_text_label(
             _SPLASH_DRAW, "CvStudio.dev",
-            logo_cx, title_y, 32.0,
+            logo_cx + 8, title_y, 32.0,
             _TEXT_PRIMARY, fade,
         )
 
