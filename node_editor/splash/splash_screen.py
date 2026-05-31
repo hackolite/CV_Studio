@@ -5,8 +5,9 @@ Elegant Apple-style splash screen for CvStudio.dev.
 Features:
 - Dark cinematic background
 - Vector-drawn geometric logo (camera aperture / lens motif)
-- Smooth fade-in animation with eased progress and pulsed fading
-- Ambient design sound (airplane interior chime)
+- Smooth fade-in animation with slow, elegant pulsed breathing
+- Pulsating background gradient circles synchronized with logo
+- Soft reassuring avionics chime (warm Eb major voicing)
 - Minimalist typography
 """
 import math
@@ -48,46 +49,53 @@ def _ease_in_out_sine(t: float) -> float:
 
 
 
-def _generate_cabin_chime(duration: float = 2.8, sr: int = 44100) -> np.ndarray:
+def _generate_cabin_chime(duration: float = 3.4, sr: int = 44100) -> np.ndarray:
     """
-    Generate an ambient airplane-cabin-style design chime.
-    Soft layered tones with gentle attack and release.
+    Generate a soft, reassuring avionics-style chime.
+    Warm layered tones with very gentle attack/release – evokes
+    the quiet confidence of a cockpit power-on sequence.
     """
     t = np.linspace(0, duration, int(sr * duration), endpoint=False)
 
-    # Soft fundamental tone (C5 ~523 Hz) with harmonics
-    tone = 0.0
-    freqs = [523.25, 659.25, 783.99, 1046.50]  # C5, E5, G5, C6 – major chord
-    amps = [0.30, 0.20, 0.15, 0.08]
+    # Warm, low-register chord (Eb major spread voicing – calm & reassuring)
+    tone = np.zeros_like(t)
+    freqs = [311.13, 392.00, 466.16, 622.25]  # Eb4, G4, Bb4, Eb5
+    amps = [0.28, 0.18, 0.13, 0.07]
 
     for freq, amp in zip(freqs, amps):
+        # Slight detuning for warmth (chorus-like)
         tone += amp * np.sin(2.0 * np.pi * freq * t)
+        tone += amp * 0.15 * np.sin(2.0 * np.pi * (freq * 1.003) * t)
 
-    # Subtle low sub-bass warmth (like cabin hum)
-    tone += 0.05 * np.sin(2.0 * np.pi * 120.0 * t)
+    # Sub-bass warmth (like avionics hum in background)
+    tone += 0.04 * np.sin(2.0 * np.pi * 98.0 * t)
 
-    # Envelope: smooth attack + sustained + gentle release
-    attack = 0.4
-    release = 0.8
+    # Very gentle amplitude modulation (slow tremolo – breathing feel)
+    tremolo = 1.0 - 0.08 * np.sin(2.0 * np.pi * 0.7 * t)
+    tone *= tremolo
+
+    # Envelope: very slow attack + long sustain + very gentle release
+    attack = 0.7
+    release = 1.2
     env = np.ones_like(t)
     attack_samples = int(attack * sr)
     release_samples = int(release * sr)
-    # Smooth sine attack
+    # Smooth sine attack (slow fade-in)
     env[:attack_samples] = np.sin(np.linspace(0, np.pi / 2, attack_samples)) ** 2
-    # Smooth sine release
+    # Smooth sine release (gentle fade-out)
     env[-release_samples:] = np.sin(np.linspace(np.pi / 2, 0, release_samples)) ** 2
 
     tone *= env
 
-    # Normalize to safe volume
+    # Normalize to soft volume (quieter than before – reassuring, not startling)
     peak = np.max(np.abs(tone))
     if peak > 0:
-        tone = tone / peak * 0.35
+        tone = tone / peak * 0.25
 
     return tone.astype(np.float32)
 
 
-def _play_splash_sound(duration: float = 2.8):
+def _play_splash_sound(duration: float = 3.4):
     """Play the splash chime in a background thread (non-blocking)."""
     try:
         audio = _generate_cabin_chime(duration=duration)
@@ -257,7 +265,7 @@ def _create_splash_theme():
             dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 0, 0, category=dpg.mvThemeCat_Core)
 
 
-def show_splash_screen(duration_seconds: float = 2.8, steps: int = 90):
+def show_splash_screen(duration_seconds: float = 3.4, steps: int = 110):
     """
     Display an elegant Apple-style splash screen with animated logo and progress.
 
@@ -319,10 +327,10 @@ def show_splash_screen(duration_seconds: float = 2.8, steps: int = 90):
         daemon=True,
     ).start()
 
-    # Pulsed fading parameters
-    pulse_freq = 1.8  # Hz – gentle breathing pulse
-    pulse_depth = 0.15  # 15% intensity variation
-    radius_pulse_depth = 0.12  # 12% radius variation (shrink/grow)
+    # Pulsed fading parameters – slow, elegant breathing
+    pulse_freq = 0.8  # Hz – slow, elegant breathing pulse
+    pulse_depth = 0.10  # 10% intensity variation (subtler)
+    radius_pulse_depth = 0.08  # 8% radius variation (gentler shrink/grow)
 
     # Animation loop
     frame_time = duration_seconds / float(steps) if duration_seconds > 0 else 0
@@ -343,10 +351,14 @@ def show_splash_screen(duration_seconds: float = 2.8, steps: int = 90):
             parent=_SPLASH_DRAW,
         )
 
-        # Subtle radial gradient effect (concentric circles centered on logo)
+        # Subtle radial gradient effect with pulsating circles (sync with breathing)
+        grad_pulse = 0.5 + 0.5 * math.sin(2.0 * math.pi * pulse_freq * elapsed)
         for i in range(5):
-            r = 120 - i * 20
-            grad_alpha = int(6 - i)
+            base_r = 120 - i * 20
+            # Radius breathes gently outward/inward
+            r = base_r * (1.0 + 0.06 * grad_pulse)
+            # Alpha breathes: brighter on expansion, dimmer on contraction
+            grad_alpha = int((6 - i) * (0.7 + 0.6 * grad_pulse))
             dpg.draw_circle(
                 center=(logo_cx, logo_cy),
                 radius=r,
