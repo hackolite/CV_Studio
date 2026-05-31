@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-import copy
 import time
 import sys
-import multiprocessing as mp
+import threading
+import queue
 
 import cv2
 import numpy as np
@@ -92,8 +92,13 @@ class FactoryNode:
 
         return node
 
-def screen_capture_process(image_queue, request):
-    while True:
+def screen_capture_process(image_queue, request_event):
+    """Screen capture loop running in a background thread.
+    
+    Uses threading instead of multiprocessing to avoid Windows spawn issues
+    (module re-import, DPI awareness, desktop access in child process).
+    """
+    while not request_event.is_set():
         try:
             # On Windows, all_screens parameter can cause issues
             # Windows: Captures primary screen only (ImageGrab.grab())
@@ -110,17 +115,13 @@ def screen_capture_process(image_queue, request):
             cv_image = np.array(pil_image, dtype=np.uint8)
             frame = cv2.cvtColor(cv_image, cv2.COLOR_RGB2BGR)
 
-            if image_queue.qsize() == 0:
-                image_queue.put(frame)
+            if image_queue.empty():
+                image_queue.put_nowait(frame)
         except Exception as e:
-            # Log but continue - transient capture errors should not kill the subprocess
+            # Log but continue - transient capture errors should not kill the thread
             print(f"[ScreenCapture] capture error: {e}")
 
-
         time.sleep(0.001)
-
-        if request.value == 0:
-            break
 
 
 class CaptureNode(Node):
@@ -134,8 +135,8 @@ class CaptureNode(Node):
     _frame_count = {}
 
     _image_queue = None
-    _request = None
-    _process = None
+    _stop_event = None
+    _thread = None
     _prev_frame = None
 
     def __init__(self):
@@ -160,17 +161,18 @@ class CaptureNode(Node):
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
 
-        if self._process is None:
-            self._image_queue = mp.Queue(maxsize=1)
-            self._request = mp.Value('i', 1)
-            self._process = mp.Process(
+        if self._thread is None:
+            self._image_queue = queue.Queue(maxsize=1)
+            self._stop_event = threading.Event()
+            self._thread = threading.Thread(
                 target=screen_capture_process,
                 args=(
                     self._image_queue,
-                    self._request,
+                    self._stop_event,
                 ),
+                daemon=True,
             )
-            self._process.start()
+            self._thread.start()
 
 
         if use_pref_counter:
@@ -179,12 +181,11 @@ class CaptureNode(Node):
 
         frame = None
         if self._image_queue is not None:
-            num = self._image_queue.qsize()
-            if num > 0:
-                frame = self._image_queue.get()
-                self._prev_frame = copy.deepcopy(frame)
+            if not self._image_queue.empty():
+                frame = self._image_queue.get_nowait()
+                self._prev_frame = frame
             else:
-                frame = copy.deepcopy(self._prev_frame)
+                frame = self._prev_frame
 
 
         if use_pref_counter:
@@ -205,14 +206,13 @@ class CaptureNode(Node):
         return {"image":frame, "json":None, "audio":None}
 
     def close(self, node_id):
-        if self._request is not None:
-            self._request.value = 0
-            self._process.terminate()
-            self._process.join(timeout=2.0)
+        if self._stop_event is not None:
+            self._stop_event.set()
+            self._thread.join(timeout=2.0)
 
             self._image_queue = None
-            self._request = None
-            self._process = None
+            self._stop_event = None
+            self._thread = None
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
