@@ -35,7 +35,7 @@ _SPLASH_DRAW = "___splash_apple_drawlist"
 
 # ─── Dimensions ──────────────────────────────────────────────────────────────
 _SPLASH_W = 680
-_SPLASH_H = 420
+_SPLASH_H = 480
 
 
 def _ease_out_cubic(t: float) -> float:
