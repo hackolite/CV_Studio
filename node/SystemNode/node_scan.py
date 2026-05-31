@@ -22,14 +22,15 @@ from node.basenode import Node
 
 
 def _mask_credentials(url):
-    """Replace username and password in a URL with '****' for safe display."""
+    """Keep username but replace password with placeholder for easy RTSP use."""
     if not url or not isinstance(url, str):
         return url
     try:
         parsed = urlparse(url)
         if parsed.username or parsed.password:
-            # Rebuild netloc with masked credentials
-            masked_netloc = "****:****@"
+            # Keep username, replace password with placeholder
+            user = parsed.username or "admin"
+            masked_netloc = f"{user}:VOTRE_MOT_DE_PASSE@"
             if parsed.hostname:
                 masked_netloc += parsed.hostname
             if parsed.port:
