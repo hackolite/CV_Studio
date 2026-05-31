@@ -22,24 +22,23 @@ from node.basenode import Node
 
 
 def _mask_credentials(url):
-    """Keep username but replace password with placeholder for easy RTSP use."""
+    """Inject USERNAME:PASSWORD placeholder into URLs for easy copy-paste."""
     if not url or not isinstance(url, str):
         return url
     try:
         parsed = urlparse(url)
-        if parsed.username or parsed.password:
-            # Keep username, replace password with placeholder
-            user = parsed.username or "admin"
-            masked_netloc = f"{user}:VOTRE_MOT_DE_PASSE@"
-            if parsed.hostname:
-                masked_netloc += parsed.hostname
-            if parsed.port:
-                masked_netloc += f":{parsed.port}"
-            return urlunparse((
-                parsed.scheme, masked_netloc,
-                parsed.path, parsed.params,
-                parsed.query, parsed.fragment,
-            ))
+        if not parsed.scheme or not parsed.hostname:
+            return url
+        # Build netloc with USERNAME:PASSWORD@ placeholder
+        netloc = "USERNAME:PASSWORD@"
+        netloc += parsed.hostname
+        if parsed.port:
+            netloc += f":{parsed.port}"
+        return urlunparse((
+            parsed.scheme, netloc,
+            parsed.path, parsed.params,
+            parsed.query, parsed.fragment,
+        ))
     except Exception:
         pass
     return url
@@ -559,7 +558,7 @@ class ScanNode(Node):
 
                 # URLs (selectable input fields for copy-paste)
                 with dpg.group(horizontal=True, parent=results_panel):
-                    dpg.add_text("  Video URL:", color=[160, 160, 160])
+                    dpg.add_text("  Video URL:", color=[255, 180, 130])
                     dpg.add_input_text(
                         default_value=url_video if url_video else "N/A",
                         readonly=True,
@@ -567,7 +566,7 @@ class ScanNode(Node):
                     )
 
                 with dpg.group(horizontal=True, parent=results_panel):
-                    dpg.add_text("  PTZ URL:", color=[160, 160, 160])
+                    dpg.add_text("  PTZ URL:", color=[255, 180, 130])
                     dpg.add_input_text(
                         default_value=url_ptz if url_ptz else "N/A",
                         readonly=True,
@@ -610,7 +609,7 @@ class ScanNode(Node):
                         )
 
                     with dpg.group(horizontal=True, parent=results_panel):
-                        dpg.add_text("      RTSP:", color=[160, 160, 160])
+                        dpg.add_text("      RTSP:", color=[255, 180, 130])
                         dpg.add_input_text(
                             default_value=v_uri if v_uri else "N/A",
                             readonly=True,
