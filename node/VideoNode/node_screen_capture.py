@@ -94,19 +94,27 @@ class FactoryNode:
 
 def screen_capture_process(image_queue, request):
     while True:
-        # On Windows, all_screens parameter can cause issues
-        # Windows: Captures primary screen only (ImageGrab.grab())
-        # Other platforms: Captures all screens (ImageGrab.grab(all_screens=True))
-        if sys.platform == 'win32':
-            pil_image = ImageGrab.grab()
-        else:
-            pil_image = ImageGrab.grab(all_screens=True)
-        
-        cv_image = np.array(pil_image, dtype=np.uint8)
-        frame = cv2.cvtColor(cv_image, cv2.COLOR_RGB2BGR)
+        try:
+            # On Windows, all_screens parameter can cause issues
+            # Windows: Captures primary screen only (ImageGrab.grab())
+            # Other platforms: Captures all screens (ImageGrab.grab(all_screens=True))
+            if sys.platform == 'win32':
+                pil_image = ImageGrab.grab()
+            else:
+                pil_image = ImageGrab.grab(all_screens=True)
 
-        if image_queue.qsize() == 0:
-            image_queue.put(frame)
+            # Convert to RGB to handle RGBA images (macOS returns RGBA)
+            if pil_image.mode != 'RGB':
+                pil_image = pil_image.convert('RGB')
+
+            cv_image = np.array(pil_image, dtype=np.uint8)
+            frame = cv2.cvtColor(cv_image, cv2.COLOR_RGB2BGR)
+
+            if image_queue.qsize() == 0:
+                image_queue.put(frame)
+        except Exception:
+            pass
+
         time.sleep(0.001)
 
         if request.value == 0:
