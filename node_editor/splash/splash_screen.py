@@ -330,8 +330,7 @@ def show_splash_screen(duration_seconds: float = 8.0, steps: int = 240):
     logo_radius_base = 52.0
     # Place text BELOW the outermost gradient circle (radius ~130)
     title_y = logo_cy + 165
-    dev_subtitle_y = title_y + 28
-    subtitle_y = dev_subtitle_y + 30
+    subtitle_y = title_y + 38
     progress_y = _SPLASH_H - 50
     progress_w = _SPLASH_W * 0.35
 
@@ -419,21 +418,14 @@ def show_splash_screen(duration_seconds: float = 8.0, steps: int = 240):
         # Draw logo
         _draw_logo_vectors(_SPLASH_DRAW, logo_cx, logo_cy, logo_radius, fade)
 
-        # Title: "CvStudio" – larger, dynamic typography
+        # Title: "CvStudio.dev" – single line, dynamic typography
         _draw_text_label(
-            _SPLASH_DRAW, "CvStudio",
-            logo_cx + 8, title_y, 32.0,
+            _SPLASH_DRAW, "CvStudio.dev",
+            logo_cx, title_y, 32.0,
             _TEXT_PRIMARY, fade,
         )
 
-        # Subtitle: ".dev" – slightly indented below the title
-        _draw_text_label(
-            _SPLASH_DRAW, ".dev",
-            logo_cx + 12, dev_subtitle_y, 18.0,
-            _TEXT_SECONDARY, fade * 0.9,
-        )
-
-        # Subtitle: scrolling feature text
+        # Subtitle: scrolling feature text (slightly right for better centering)
         feature_idx = int(elapsed / feature_scroll_speed) % len(_feature_texts)
         feature_sub_t = (elapsed % feature_scroll_speed) / feature_scroll_speed
         # Fade in/out each feature text
@@ -445,7 +437,7 @@ def show_splash_screen(duration_seconds: float = 8.0, steps: int = 240):
             feat_alpha = 1.0
         _draw_text_label(
             _SPLASH_DRAW, _feature_texts[feature_idx],
-            logo_cx, subtitle_y, 14.0,
+            logo_cx + 10, subtitle_y, 14.0,
             _TEXT_SECONDARY, fade * 0.8 * feat_alpha,
         )
 
