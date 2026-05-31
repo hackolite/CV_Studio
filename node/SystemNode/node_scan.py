@@ -284,7 +284,6 @@ class FactoryNode:
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_text("ONVIF Network Scanner")
-                dpg.add_separator()
 
                 # Credentials
                 dpg.add_text("Username:")
@@ -300,7 +299,6 @@ class FactoryNode:
                     password=True,
                     width=200,
                 )
-                dpg.add_separator()
 
                 # Timeout
                 dpg.add_text("Discovery Timeout (s):")
@@ -311,7 +309,6 @@ class FactoryNode:
                     max_value=30,
                     width=100,
                 )
-                dpg.add_separator()
 
                 # Scan button
                 dpg.add_button(
@@ -328,7 +325,6 @@ class FactoryNode:
                     default_value="Ready",
                     color=(180, 180, 180, 255),
                 )
-                dpg.add_separator()
 
                 # Results display area (rich formatted)
                 dpg.add_text("Discovered Devices:", color=[180, 180, 180])
@@ -461,7 +457,6 @@ class ScanNode(Node):
                     parent=results_panel,
                     color=[255, 215, 0],  # Gold
                 )
-                dpg.add_separator(parent=results_panel)
 
                 # Manufacturer / Model
                 with dpg.group(horizontal=True, parent=results_panel):
@@ -543,7 +538,6 @@ class ScanNode(Node):
                 # Spacer between devices
                 if idx < len(devices) - 1:
                     dpg.add_spacer(height=8, parent=results_panel)
-                    dpg.add_separator(parent=results_panel)
                     dpg.add_spacer(height=4, parent=results_panel)
             dpg_set_value(
                 tag_node_name + ":Status",
