@@ -107,8 +107,8 @@ def _send_ptz_command(url_ptz, username, password, action, speed=0.5, timeout=3)
 # ---------------------------------------------------------------------------
 
 class FactoryNode:
-    node_label = "PTZ Control"
-    node_tag = "PTZControl"
+    node_label = "CamControl"
+    node_tag = "CamControl"
 
     def __init__(self):
         pass
@@ -172,7 +172,6 @@ class FactoryNode:
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_text("PTZ Camera Control")
-                dpg.add_separator()
 
                 # Manual URL override
                 dpg.add_text("ONVIF URL (auto from scan or manual):")
@@ -180,7 +179,7 @@ class FactoryNode:
                     tag=tag_node_name + ":UrlPtz",
                     default_value="",
                     hint="http://ip:port/onvif/device_service",
-                    width=280,
+                    width=200,
                 )
 
                 # Credentials
@@ -195,6 +194,7 @@ class FactoryNode:
                     tag=tag_node_name + ":Password",
                     default_value="admin",
                     password=True,
+                    width=200,
                 )
 
                 # Speed
@@ -206,7 +206,6 @@ class FactoryNode:
                     max_value=1.0,
                     width=200,
                 )
-                dpg.add_separator()
 
                 # --- Directional buttons ---
                 dpg.add_text("Direction:")
@@ -260,7 +259,6 @@ class FactoryNode:
                 )
                 dpg.bind_item_theme(btn_down, btn_theme)
 
-                dpg.add_separator()
 
                 # --- Zoom buttons ---
                 dpg.add_text("Zoom:")
@@ -283,7 +281,6 @@ class FactoryNode:
                     )
                     dpg.bind_item_theme(btn_zout, btn_theme)
 
-                dpg.add_separator()
 
                 # --- Stop button ---
                 btn_stop = dpg.add_button(
@@ -295,7 +292,6 @@ class FactoryNode:
                 )
                 dpg.bind_item_theme(btn_stop, stop_theme)
 
-                dpg.add_separator()
 
                 # Status
                 dpg.add_text(
@@ -314,8 +310,8 @@ class FactoryNode:
 class PTZControlNode(BaseNode):
     _ver = "0.0.1"
 
-    node_label = "PTZ Control"
-    node_tag = "PTZControl"
+    node_label = "CamControl"
+    node_tag = "CamControl"
 
     _opencv_setting_dict = None
     _last_url_ptz = None  # store url_ptz from upstream JSON
