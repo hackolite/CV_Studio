@@ -619,6 +619,12 @@ class DpgNodeEditor(object):
                 if node_id > self._node_id:
                     self._node_id = node_id
 
+                # Legacy name migration for saved files
+                _LEGACY_NODE_NAMES = {
+                    'Rtsp': 'RTSP',
+                }
+                node_name = _LEGACY_NODE_NAMES.get(node_name, node_name)
+
                 # Get the factory for this node type
                 factorynode = self._node_factory_list[node_name]
                 

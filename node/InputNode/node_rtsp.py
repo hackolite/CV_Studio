@@ -213,8 +213,8 @@ def receive_image_process(rtsp_url, image_queue, request):
 class RtspNode(Node):
     _ver = '0.0.1'
 
-    node_label = 'Rtsp'
-    node_tag = 'Rtsp'
+    node_label = 'RTSP'
+    node_tag = 'RTSP'
 
     _opencv_setting_dict = None
     _start_label = 'Start'
@@ -237,8 +237,8 @@ class RtspNode(Node):
         self._start_label = "Start"
         self._stop_label  = "Stop"
         
-        self.node_tag = "Rtsp"
-        self.node_label = "Rtsp"
+        self.node_tag = "RTSP"
+        self.node_label = "RTSP"
 
         self.yellow_button_theme = None
         self.default_button_theme = None
