@@ -313,7 +313,7 @@ def show_splash_screen(duration_seconds: float = 5.0, steps: int = 150):
 
     # Layout constants – center logo precisely in the drawlist
     logo_cx = _SPLASH_W / 2.0
-    logo_cy = _SPLASH_H * 0.36
+    logo_cy = _SPLASH_H * 0.40
     logo_radius_base = 52.0
     # Place text BELOW the outermost gradient circle (radius ~130)
     title_y = logo_cy + 145
