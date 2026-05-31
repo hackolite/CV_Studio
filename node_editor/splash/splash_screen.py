@@ -100,10 +100,10 @@ def _generate_cabin_chime(duration: float = 8.0, sr: int = 44100) -> np.ndarray:
 
     tone *= env
 
-    # Normalize to audible volume (warm & present, not startling)
+    # Normalize to audible volume (loud & immersive)
     peak = np.max(np.abs(tone))
     if peak > 0:
-        tone = tone / peak * 0.72
+        tone = tone / peak * 0.95
 
     return tone.astype(np.float32)
 
