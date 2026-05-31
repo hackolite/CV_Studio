@@ -49,7 +49,7 @@ def _ease_in_out_sine(t: float) -> float:
 
 
 
-def _generate_cabin_chime(duration: float = 3.4, sr: int = 44100) -> np.ndarray:
+def _generate_cabin_chime(duration: float = 5.0, sr: int = 44100) -> np.ndarray:
     """
     Generate a soft, reassuring avionics-style chime.
     Warm layered tones with very gentle attack/release – evokes
@@ -90,12 +90,12 @@ def _generate_cabin_chime(duration: float = 3.4, sr: int = 44100) -> np.ndarray:
     # Normalize to soft volume (quieter than before – reassuring, not startling)
     peak = np.max(np.abs(tone))
     if peak > 0:
-        tone = tone / peak * 0.25
+        tone = tone / peak * 0.45
 
     return tone.astype(np.float32)
 
 
-def _play_splash_sound(duration: float = 3.4):
+def _play_splash_sound(duration: float = 5.0):
     """Play the splash chime in a background thread (non-blocking)."""
     try:
         audio = _generate_cabin_chime(duration=duration)
@@ -205,8 +205,8 @@ def _draw_logo_vectors(drawlist, cx: float, cy: float, radius: float, alpha: flo
 def _draw_text_label(drawlist, text: str, cx: float, y: float, font_size: float,
                      color: tuple, alpha: float):
     """Draw text centered at position. DearPyGui draw_text is top-left aligned."""
-    # Approximate character width for centering
-    char_w = font_size * 0.48
+    # Approximate character width for centering (0.43 fits proportional fonts better)
+    char_w = font_size * 0.43
     text_w = len(text) * char_w
     x = cx - text_w / 2.0
     r, g, b, _ = color
@@ -265,7 +265,7 @@ def _create_splash_theme():
             dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 0, 0, category=dpg.mvThemeCat_Core)
 
 
-def show_splash_screen(duration_seconds: float = 3.4, steps: int = 110):
+def show_splash_screen(duration_seconds: float = 5.0, steps: int = 150):
     """
     Display an elegant Apple-style splash screen with animated logo and progress.
 
@@ -315,8 +315,8 @@ def show_splash_screen(duration_seconds: float = 3.4, steps: int = 110):
     logo_cx = _SPLASH_W / 2.0
     logo_cy = _SPLASH_H * 0.38
     logo_radius_base = 38.0
-    title_y = logo_cy + logo_radius_base + 30
-    subtitle_y = title_y + 36
+    title_y = logo_cy + logo_radius_base + 38
+    subtitle_y = title_y + 40
     progress_y = _SPLASH_H - 50
     progress_w = _SPLASH_W * 0.35
 
@@ -379,10 +379,10 @@ def show_splash_screen(duration_seconds: float = 3.4, steps: int = 110):
         # Draw logo
         _draw_logo_vectors(_SPLASH_DRAW, logo_cx, logo_cy, logo_radius, fade)
 
-        # Title: "CvStudio.dev"
+        # Title: "CvStudio.dev" – larger, dynamic typography
         _draw_text_label(
             _SPLASH_DRAW, "CvStudio.dev",
-            logo_cx, title_y, 28.0,
+            logo_cx, title_y, 32.0,
             _TEXT_PRIMARY, fade,
         )
 
