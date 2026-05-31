@@ -421,7 +421,7 @@ def show_splash_screen(duration_seconds: float = 8.0, steps: int = 240):
         # Title: "CvStudio.dev" – single line, dynamic typography
         _draw_text_label(
             _SPLASH_DRAW, "CvStudio.dev",
-            logo_cx, title_y, 32.0,
+            logo_cx + 10, title_y, 32.0,
             _TEXT_PRIMARY, fade,
         )
 
