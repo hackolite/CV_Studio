@@ -227,7 +227,7 @@ def update_node_info(
 
 
 
-def show_splash_screen(duration_seconds=2.8, steps=90):
+def show_splash_screen(duration_seconds=5.0, steps=150):
     """Delegate to the Apple-style splash screen module."""
     _show_splash_screen(duration_seconds=duration_seconds, steps=steps)
 
