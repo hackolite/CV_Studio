@@ -344,6 +344,15 @@ class FactoryNode:
                     user_data=node.tag_node_name,
                 )
 
+                # Copy results button
+                dpg.add_button(
+                    label="Copy Results",
+                    tag=node.tag_node_name + ":CopyBtn",
+                    width=200,
+                    callback=node._callback_copy,
+                    user_data=node.tag_node_name,
+                )
+
                 # Status text
                 dpg.add_text(
                     tag=node.tag_node_name + ":Status",
@@ -405,6 +414,52 @@ class ScanNode(Node):
         for child in dpg.get_item_children(results_panel, 1) or []:
             dpg.delete_item(child)
         return results_panel
+
+    def _callback_copy(self, sender, data, user_data):
+        """Copy scan results as text to the system clipboard."""
+        tag_node_name = user_data
+        with self._lock:
+            devices = self._scan_results.get(tag_node_name, [])
+
+        if not devices:
+            dpg_set_value(tag_node_name + ":Status", "Nothing to copy")
+            return
+
+        lines = []
+        for dev in devices:
+            host = dev.get("host", "?")
+            manufacturer = dev.get("manufacturer", "Unknown")
+            model = dev.get("model", "Unknown")
+            ptz = dev.get("ptz_supported", False)
+            url_video = _mask_credentials(dev.get("url_video")) or "N/A"
+            url_ptz = _mask_credentials(dev.get("url_ptz")) or "N/A"
+            error = dev.get("error")
+
+            lines.append(f"Host: {host}")
+            lines.append(f"  Manufacturer: {manufacturer}")
+            lines.append(f"  Model: {model}")
+            lines.append(f"  PTZ Control: {'YES' if ptz else 'NO'}")
+            lines.append(f"  Video URL: {url_video}")
+            lines.append(f"  PTZ URL: {url_ptz}")
+            if error:
+                lines.append(f"  Error: {error}")
+
+            for prof in dev.get("profiles", []):
+                name = prof.get("name", "?")
+                res = prof.get("resolution", "?")
+                v_enc = prof.get("video_encoding", "?")
+                a_enc = prof.get("audio_encoding", "None")
+                v_uri = _mask_credentials(prof.get("video_stream_uri")) or "N/A"
+                lines.append(f"  Profile: {name}")
+                lines.append(f"    Video: {v_enc} @ {res}")
+                lines.append(f"    Audio: {a_enc if a_enc else 'None'}")
+                lines.append(f"    RTSP: {v_uri}")
+
+            lines.append("")
+
+        text = "\n".join(lines)
+        dpg.set_clipboard_text(text)
+        dpg_set_value(tag_node_name + ":Status", "Copied to clipboard!")
 
     def _callback_scan(self, sender, data, user_data):
         """Trigger an async network scan."""
