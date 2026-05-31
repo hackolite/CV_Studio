@@ -537,7 +537,6 @@ class ScanNode(Node):
                     width=280,
                     parent=results_panel,
                 )
-                dpg.add_separator(parent=results_panel)
 
                 # Manufacturer / Model
                 with dpg.group(horizontal=True, parent=results_panel):
@@ -619,7 +618,6 @@ class ScanNode(Node):
                 # Spacer between devices
                 if idx < len(devices) - 1:
                     dpg.add_spacer(height=8, parent=results_panel)
-                    dpg.add_separator(parent=results_panel)
                     dpg.add_spacer(height=4, parent=results_panel)
             dpg_set_value(
                 tag_node_name + ":Status",
