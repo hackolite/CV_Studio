@@ -311,12 +311,13 @@ def show_splash_screen(duration_seconds: float = 5.0, steps: int = 150):
 
     dpg.bind_item_theme(_SPLASH_WIN, _SPLASH_THEME)
 
-    # Layout constants – center logo precisely in the drawlist
-    logo_cx = _SPLASH_W / 2.0
+    # Layout constants – logo on the left, text on the right
+    logo_cx = _SPLASH_W * 0.30
     logo_cy = _SPLASH_H * 0.40
     logo_radius_base = 52.0
-    # Place text BELOW the outermost gradient circle (radius ~130)
-    title_y = logo_cy + 145
+    # "CvStudio.dev" centered on the right half, pushed down
+    title_cx = _SPLASH_W * 0.68
+    title_y = logo_cy + 165
     subtitle_y = title_y + 36
     progress_y = _SPLASH_H - 50
     progress_w = _SPLASH_W * 0.35
@@ -398,7 +399,7 @@ def show_splash_screen(duration_seconds: float = 5.0, steps: int = 150):
         # Title: "CvStudio.dev" – larger, dynamic typography
         _draw_text_label(
             _SPLASH_DRAW, "CvStudio.dev",
-            logo_cx, title_y, 32.0,
+            title_cx, title_y, 32.0,
             _TEXT_PRIMARY, fade,
         )
 
@@ -414,7 +415,7 @@ def show_splash_screen(duration_seconds: float = 5.0, steps: int = 150):
             feat_alpha = 1.0
         _draw_text_label(
             _SPLASH_DRAW, _feature_texts[feature_idx],
-            logo_cx, subtitle_y, 14.0,
+            title_cx, subtitle_y, 14.0,
             _TEXT_SECONDARY, fade * 0.8 * feat_alpha,
         )
 
