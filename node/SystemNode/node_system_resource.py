@@ -96,36 +96,34 @@ class FactoryNode:
                     tag=node.tag_node_name + ':Static',
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
-                dpg.add_text(
-                    tag=node.tag_node_name + ':StatusHeader',
-                    default_value='System Resource Monitor',
-                )
-                dpg.add_separator()
+                dpg.add_spacer(height=2)
                 dpg.add_text(
                     tag=node.tag_node_name + ':CpuText',
-                    default_value='CPU: ---%',
+                    default_value='CPU  ---%',
                 )
                 dpg.add_text(
                     tag=node.tag_node_name + ':RamText',
-                    default_value='RAM: ---% (-.-- / -.-- GB)',
+                    default_value='RAM  ---%  -.-- / -.-- GB',
                 )
+                dpg.add_spacer(height=4)
                 dpg.add_text(
                     tag=node.tag_node_name + ':DiskText',
-                    default_value='Disk I/O: R -.-- MB/s | W -.-- MB/s',
+                    default_value='Disk R -.-- MB/s  W -.-- MB/s',
                 )
                 dpg.add_text(
                     tag=node.tag_node_name + ':NetText',
-                    default_value='Net: ↑ -.-- MB/s | ↓ -.-- MB/s',
+                    default_value='Net  ↑ -.-- MB/s  ↓ -.-- MB/s',
                 )
+                dpg.add_spacer(height=4)
                 dpg.add_text(
                     tag=node.tag_node_name + ':GpuText',
-                    default_value='GPU: ---% | VRAM: ---% (-.-- / -.-- GB)',
+                    default_value='GPU  ---%',
                 )
-                dpg.add_separator()
                 dpg.add_text(
-                    tag=node.tag_node_name + ':RefreshText',
-                    default_value='Refresh: 1s',
+                    tag=node.tag_node_name + ':VramText',
+                    default_value='VRAM ---%  -.-- / -.-- GB',
                 )
+                dpg.add_spacer(height=2)
 
             # Output JSON
             with dpg.node_attribute(
@@ -277,23 +275,27 @@ class _Node(Node):
             try:
                 dpg_set_value(
                     tag_node_name + ':CpuText',
-                    f"CPU: {data['cpu_percent']:.1f}%"
+                    f"CPU  {data['cpu_percent']:.1f}%"
                 )
                 dpg_set_value(
                     tag_node_name + ':RamText',
-                    f"RAM: {data['ram_percent']:.1f}% ({data['ram_used_gb']:.2f} / {data['ram_total_gb']:.2f} GB)"
+                    f"RAM  {data['ram_percent']:.1f}%  {data['ram_used_gb']:.2f} / {data['ram_total_gb']:.2f} GB"
                 )
                 dpg_set_value(
                     tag_node_name + ':DiskText',
-                    f"Disk I/O: R {data['disk_read_mb_s']:.2f} MB/s | W {data['disk_write_mb_s']:.2f} MB/s"
+                    f"Disk R {data['disk_read_mb_s']:.2f} MB/s  W {data['disk_write_mb_s']:.2f} MB/s"
                 )
                 dpg_set_value(
                     tag_node_name + ':NetText',
-                    f"Net: ↑ {data['net_sent_mb_s']:.2f} MB/s | ↓ {data['net_recv_mb_s']:.2f} MB/s"
+                    f"Net  ↑ {data['net_sent_mb_s']:.2f} MB/s  ↓ {data['net_recv_mb_s']:.2f} MB/s"
                 )
                 dpg_set_value(
                     tag_node_name + ':GpuText',
-                    f"GPU: {data['gpu_percent']:.1f}% | VRAM: {data['vram_percent']:.1f}% ({data['vram_used_gb']:.2f} / {data['vram_total_gb']:.2f} GB)"
+                    f"GPU  {data['gpu_percent']:.1f}%"
+                )
+                dpg_set_value(
+                    tag_node_name + ':VramText',
+                    f"VRAM {data['vram_percent']:.1f}%  {data['vram_used_gb']:.2f} / {data['vram_total_gb']:.2f} GB"
                 )
             except Exception:
                 pass
