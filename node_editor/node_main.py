@@ -697,7 +697,10 @@ class DpgNodeEditor(object):
                 node_instance = self.get_node_instances(node_id_name)
                 node_instance.close(node_id)
 
-                self._node_list.remove(node_id_name)
+                if node_id_name in self._node_list:
+                    self._node_list.remove(node_id_name)
+                else:
+                    return
 
                 copy_node_link_list = copy.deepcopy(self._node_link_list)
                 for link_info in copy_node_link_list:
