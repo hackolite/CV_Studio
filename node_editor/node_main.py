@@ -336,12 +336,6 @@ class DpgNodeEditor(object):
                 
                 # print(menu_dict.items())
 
-                # Uptime text (right-aligned in menu bar)
-                dpg.add_text(
-                    tag="uptime_display",
-                    default_value="Uptime: 00:00:00",
-                )
-
                 for menu_info in menu_dict.items():
                     menu_label = menu_info[0]
                     logger.debug(f"Creating menu: {menu_label}")
