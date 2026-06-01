@@ -28,23 +28,23 @@ def test_buzzer_sound_parameters():
     print("Testing Buzzer Node sound generation parameters...")
     print("=" * 60)
     
-    # Test different durations
+    # Test different durations - bip-bip sounds are always short regardless of duration param
     durations = [0.5, 1.0, 2.0, 5.0]
     
     for duration in durations:
-        print(f"\nGenerating {duration}s buzz sound...")
+        print(f"\nGenerating bip-bip with duration param={duration}s...")
         audio, samplerate = node._generate_buzz_sound(duration)
         
-        expected_length = int(samplerate * duration)
         actual_length = len(audio)
+        actual_duration = actual_length / samplerate
         
-        print(f"  Expected length: {expected_length} samples")
-        print(f"  Actual length: {actual_length} samples")
+        print(f"  Actual length: {actual_length} samples ({actual_duration:.3f}s)")
         print(f"  Max amplitude: {np.max(np.abs(audio)):.3f}")
         
-        assert actual_length == expected_length, f"Length mismatch for {duration}s"
+        # Bip-bip sounds are short regardless of requested duration
+        assert actual_duration < 0.5, f"Bip-bip should be < 0.5s, got {actual_duration:.3f}s"
         assert np.max(np.abs(audio)) <= 1.0, "Audio exceeds normalized range"
-        print(f"  ✓ {duration}s sound generated correctly")
+        print(f"  ✓ Bip-bip generated correctly (short duration)")
     
     print("\n" + "=" * 60)
     print("✓ All sound parameter tests passed!")
@@ -72,7 +72,7 @@ def test_buzzer_constants():
     assert BuzzerNode.DEFAULT_DURATION == 5.0, "DEFAULT_DURATION should be 5.0"
     assert BuzzerNode.DEFAULT_INSENSITIVITY_DELAY == 0.0, "DEFAULT_INSENSITIVITY_DELAY should be 0.0"
     assert len(BuzzerNode.SOUND_TYPES) >= 5, "Should have at least 5 sound types"
-    assert "Airplane Seatbelt Chime" in BuzzerNode.SOUND_TYPES, "Should have airplane chime"
+    assert "Bip-Bip (Default)" in BuzzerNode.SOUND_TYPES, "Should have default bip-bip"
     
     print("  ✓ Constants are correctly defined")
     

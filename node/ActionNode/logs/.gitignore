@@ -1,0 +1,3 @@
+# Buzzer crash dump logs (auto-generated at runtime)
+*.log
+!.gitkeep
