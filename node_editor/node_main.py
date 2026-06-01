@@ -694,6 +694,9 @@ class DpgNodeEditor(object):
             node_id, node_name = node_id_name.split(":")
 
             if node_name != "ExecPythonCode":
+                if node_id_name not in self._node_list:
+                    return
+
                 node_instance = self.get_node_instances(node_id_name)
                 node_instance.close(node_id)
 
