@@ -1,7 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import os
 import time
 import threading
+import traceback
+import logging
+from datetime import datetime
+
 import numpy as np
 import sounddevice as sd
 
@@ -10,6 +15,31 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node as BaseNode
+
+
+# ---------------------------------------------------------------------------
+# Crash-dump logger for Buzzer nodes
+# ---------------------------------------------------------------------------
+_BUZZER_LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
+os.makedirs(_BUZZER_LOG_DIR, exist_ok=True)
+
+_buzzer_logger = logging.getLogger("buzzer_crash_dump")
+_buzzer_logger.setLevel(logging.DEBUG)
+if not _buzzer_logger.handlers:
+    _log_path = os.path.join(_BUZZER_LOG_DIR, "buzzer_crash_dump.log")
+    _fh = logging.FileHandler(_log_path, encoding="utf-8")
+    _fh.setLevel(logging.DEBUG)
+    _fh.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    ))
+    _buzzer_logger.addHandler(_fh)
+
+# Global lock protecting sounddevice playback across all BuzzerNode instances
+_sd_playback_lock = threading.Lock()
+
+# Registry of active buzzer instances (for crash-dump context)
+_active_buzzers: dict = {}  # node_tag_name -> BuzzerNode
+_active_buzzers_lock = threading.Lock()
 
 
 class FactoryNode:
@@ -149,6 +179,7 @@ class BuzzerNode(BaseNode):
         self._is_buzzing = False
         self._buzz_thread = None
         self._insensitivity_end_time = 0
+        self._registered = False
         
     def _generate_buzz_sound(self, duration, sound_type="Default Buzzer"):
         """
@@ -280,16 +311,99 @@ class BuzzerNode(BaseNode):
         return audio, samplerate
     
     def _play_buzz_thread(self, duration, sound_type="Default Buzzer"):
-        """Thread function to play the buzzer sound"""
+        """Thread function to play the buzzer sound (thread-safe)"""
         try:
             self._is_buzzing = True
             audio, samplerate = self._generate_buzz_sound(duration, sound_type)
-            sd.play(audio, samplerate=samplerate)
-            sd.wait()  # Wait for playback to complete
+
+            # Acquire global lock to prevent concurrent sd.play() calls
+            acquired = _sd_playback_lock.acquire(timeout=duration + 2)
+            if not acquired:
+                _buzzer_logger.warning(
+                    "TIMEOUT acquiring playback lock for %s (sound=%s, duration=%.2f). "
+                    "Another buzzer is monopolizing playback.",
+                    self.tag_node_name, sound_type, duration
+                )
+                return
+
+            try:
+                _buzzer_logger.info(
+                    "START playback: node=%s sound=%s duration=%.2f",
+                    self.tag_node_name, sound_type, duration
+                )
+                sd.play(audio, samplerate=samplerate)
+                sd.wait()  # Wait for playback to complete
+                _buzzer_logger.info("END playback: node=%s", self.tag_node_name)
+            finally:
+                _sd_playback_lock.release()
+
         except Exception as e:
-            print(f"Buzzer error: {e}")
+            # --- Crash dump ---
+            self._write_crash_dump(e, sound_type, duration)
         finally:
             self._is_buzzing = False
+
+    def _write_crash_dump(self, exception, sound_type, duration):
+        """Write a detailed crash dump log when buzzer playback fails."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        dump_file = os.path.join(_BUZZER_LOG_DIR, f"crash_dump_{timestamp}.log")
+
+        # Gather context about all active buzzers
+        with _active_buzzers_lock:
+            active_snapshot = {
+                tag: {
+                    "is_buzzing": node._is_buzzing,
+                    "last_buzz_time": node._last_buzz_time,
+                    "insensitivity_end_time": node._insensitivity_end_time,
+                }
+                for tag, node in _active_buzzers.items()
+            }
+
+        crash_info = (
+            f"{'=' * 60}\n"
+            f"BUZZER CRASH DUMP - {datetime.now().isoformat()}\n"
+            f"{'=' * 60}\n"
+            f"Node:         {self.tag_node_name}\n"
+            f"Sound type:   {sound_type}\n"
+            f"Duration:     {duration:.2f}s\n"
+            f"Exception:    {type(exception).__name__}: {exception}\n"
+            f"\n--- Active Buzzer Nodes ({len(active_snapshot)}) ---\n"
+        )
+        for tag, info in active_snapshot.items():
+            crash_info += (
+                f"  {tag}: buzzing={info['is_buzzing']}, "
+                f"last_buzz={info['last_buzz_time']:.3f}, "
+                f"insensitivity_end={info['insensitivity_end_time']:.3f}\n"
+            )
+        crash_info += (
+            f"\n--- Traceback ---\n"
+            f"{traceback.format_exc()}\n"
+            f"\n--- Thread Info ---\n"
+            f"Current thread: {threading.current_thread().name}\n"
+            f"Active threads: {threading.active_count()}\n"
+        )
+        for th in threading.enumerate():
+            crash_info += f"  - {th.name} (daemon={th.daemon})\n"
+        crash_info += f"{'=' * 60}\n"
+
+        # Write to dedicated crash dump file
+        try:
+            with open(dump_file, "w", encoding="utf-8") as f:
+                f.write(crash_info)
+        except OSError:
+            pass
+
+        # Also log to the rolling log
+        _buzzer_logger.error(
+            "CRASH in node=%s sound=%s duration=%.2f | %s: %s | active_buzzers=%d",
+            self.tag_node_name, sound_type, duration,
+            type(exception).__name__, exception, len(active_snapshot)
+        )
+        _buzzer_logger.debug("Full crash dump written to %s", dump_file)
+
+        # Print to console as well for immediate visibility
+        print(f"[BUZZER CRASH] {type(exception).__name__}: {exception}")
+        print(f"[BUZZER CRASH] Dump saved to: {dump_file}")
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
         tag_node_name = f"{node_id}:{self.node_tag}"
@@ -297,6 +411,12 @@ class BuzzerNode(BaseNode):
         tag_node_duration_value_name = f"{tag_node_name}:DurationValue"
         tag_node_delay_value_name = f"{tag_node_name}:DelayValue"
         tag_node_status_value_name = f"{tag_node_name}:StatusValue"
+
+        # Register this instance in the active buzzers registry
+        if not self._registered:
+            with _active_buzzers_lock:
+                _active_buzzers[tag_node_name] = self
+            self._registered = True
         
         # Find connected source for JSON data
         connection_info_src = ''
@@ -382,6 +502,11 @@ class BuzzerNode(BaseNode):
 
     def close(self, node_id):
         """Clean up when node is closed"""
+        tag_node_name = f"{node_id}:{self.node_tag}"
+        # Unregister from active buzzers
+        with _active_buzzers_lock:
+            _active_buzzers.pop(tag_node_name, None)
+        self._registered = False
         # Stop any active buzzing
         try:
             if self._is_buzzing:
