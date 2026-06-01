@@ -26,13 +26,17 @@ logger = get_logger(__name__)
 
 
 def update_uptime_display():
-    """Update the uptime text in the menu bar."""
+    """Update the uptime text in the menu bar (far right)."""
     elapsed = int(time.time() - _start_time)
     hours = elapsed // 3600
     minutes = (elapsed % 3600) // 60
     seconds = elapsed % 60
     try:
         dpg.set_value("uptime_display", f"Uptime: {hours:02d}:{minutes:02d}:{seconds:02d}")
+        # Push the uptime text to the far right of the viewport
+        vp_width = dpg.get_viewport_client_width()
+        text_width = 160  # approximate width of "Uptime: HH:MM:SS"
+        dpg.set_item_indent("uptime_display", max(0, vp_width - text_width))
     except Exception:
         pass
 
@@ -388,6 +392,12 @@ class DpgNodeEditor(object):
                                 # Skip files without FactoryNode class (utility modules)
                                 logger.debug(f"Skipping {import_path}: no FactoryNode attribute")
                                 continue
+
+                # Uptime text (far right of menu bar)
+                dpg.add_text(
+                    tag="uptime_display",
+                    default_value="Uptime: 00:00:00",
+                )
 
             with dpg.node_editor(
                 tag=self._node_editor_tag,
