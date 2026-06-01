@@ -249,7 +249,7 @@ class BuzzerNode(BaseNode):
         
         return audio, samplerate
     
-    def _play_buzz_thread(self, duration, sound_type="Default Buzzer"):
+    def _play_buzz_thread(self, duration, sound_type="Bip-Bip (Default)"):
         """Thread function to play the buzzer sound (thread-safe)"""
         try:
             self._is_buzzing = True
