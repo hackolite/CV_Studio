@@ -694,13 +694,13 @@ class DpgNodeEditor(object):
             node_id, node_name = node_id_name.split(":")
 
             if node_name != "ExecPythonCode":
+                if node_id_name not in self._node_list:
+                    return
+
                 node_instance = self.get_node_instances(node_id_name)
                 node_instance.close(node_id)
 
-                if node_id_name in self._node_list:
-                    self._node_list.remove(node_id_name)
-                else:
-                    return
+                self._node_list.remove(node_id_name)
 
                 copy_node_link_list = copy.deepcopy(self._node_link_list)
                 for link_info in copy_node_link_list:
