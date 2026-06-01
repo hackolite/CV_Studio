@@ -317,7 +317,8 @@ class BuzzerNode(BaseNode):
             audio, samplerate = self._generate_buzz_sound(duration, sound_type)
 
             # Acquire global lock to prevent concurrent sd.play() calls
-            acquired = _sd_playback_lock.acquire(timeout=duration + 2)
+            # Use a generous timeout: multiple buzzers may queue up
+            acquired = _sd_playback_lock.acquire(timeout=30)
             if not acquired:
                 _buzzer_logger.warning(
                     "TIMEOUT acquiring playback lock for %s (sound=%s, duration=%.2f). "
@@ -390,8 +391,8 @@ class BuzzerNode(BaseNode):
         try:
             with open(dump_file, "w", encoding="utf-8") as f:
                 f.write(crash_info)
-        except OSError:
-            pass
+        except OSError as write_err:
+            _buzzer_logger.warning("Failed to write crash dump file: %s", write_err)
 
         # Also log to the rolling log
         _buzzer_logger.error(
