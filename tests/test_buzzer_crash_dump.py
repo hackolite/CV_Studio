@@ -54,7 +54,7 @@ def test_multi_buzzer_no_crash():
         for node in nodes:
             t = threading.Thread(
                 target=node._play_buzz_thread,
-                args=(0.1, "Default Buzzer"),
+                args=(0.1, "Bip-Bip (Default)"),
                 daemon=True,
             )
             threads.append(t)
@@ -95,7 +95,7 @@ def test_crash_dump_written_on_error():
         mock_sd.play = MagicMock(side_effect=RuntimeError("Device unavailable"))
         mock_sd.wait = MagicMock()
 
-        node._play_buzz_thread(0.5, "Default Buzzer")
+        node._play_buzz_thread(0.5, "Bip-Bip (Default)")
 
     # Verify crash dump was written
     dump_files = [f for f in os.listdir(_BUZZER_LOG_DIR) if f.startswith("crash_dump_")]
@@ -144,7 +144,7 @@ def test_lock_prevents_concurrent_sd_play():
         for node in nodes:
             t = threading.Thread(
                 target=node._play_buzz_thread,
-                args=(0.1, "Default Buzzer"),
+                args=(0.1, "Bip-Bip (Default)"),
                 daemon=True,
             )
             threads.append(t)

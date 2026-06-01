@@ -32,7 +32,7 @@ def test_buzzer_node_structure():
     # Verify sound types are defined
     assert hasattr(BuzzerNode, 'SOUND_TYPES'), "BuzzerNode should have SOUND_TYPES"
     assert len(BuzzerNode.SOUND_TYPES) >= 5, "Should have at least 5 sound types"
-    assert "Airplane Seatbelt Chime" in BuzzerNode.SOUND_TYPES, "Should include airplane seatbelt chime"
+    assert "Bip-Bip (Default)" in BuzzerNode.SOUND_TYPES, "Should include default bip-bip"
     print(f"  Sound types available: {len(BuzzerNode.SOUND_TYPES)}")
     for sound_type in BuzzerNode.SOUND_TYPES:
         print(f"    - {sound_type}")
@@ -68,7 +68,9 @@ def test_buzzer_sound_generation():
         # Verify audio properties
         assert isinstance(audio, np.ndarray), f"Audio should be numpy array for {sound_type}"
         assert samplerate == 44100, f"Sample rate should be 44100 for {sound_type}"
-        assert len(audio) == int(samplerate * 1.0), f"Audio length should match duration for {sound_type}"
+        # Bip-bip sounds are intentionally short (< 0.5s) for quick lock release
+        assert len(audio) > 0, f"Audio should have samples for {sound_type}"
+        assert len(audio) < int(samplerate * 0.6), f"Bip-bip should be short for {sound_type}"
         assert audio.dtype == np.float64, f"Audio should be float64 for {sound_type}"
         assert np.max(np.abs(audio)) <= 1.0, f"Audio amplitude should be normalized for {sound_type}"
     

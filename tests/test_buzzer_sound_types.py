@@ -49,11 +49,11 @@ def test_sound_types_available():
     
     # Verify required sound types
     assert len(sound_types) >= 5, "Should have at least 5 sound types"
-    assert "Default Buzzer" in sound_types, "Should include Default Buzzer"
-    assert "Airplane Seatbelt Chime" in sound_types, "Should include Airplane Seatbelt Chime"
-    assert "Gentle Beep" in sound_types, "Should include Gentle Beep"
-    assert "Soft Chime" in sound_types, "Should include Soft Chime"
-    assert "Ambient Tone" in sound_types, "Should include Ambient Tone"
+    assert "Bip-Bip (Default)" in sound_types, "Should include Bip-Bip (Default)"
+    assert "Bip-Bip (High)" in sound_types, "Should include Bip-Bip (High)"
+    assert "Bip-Bip (Low)" in sound_types, "Should include Bip-Bip (Low)"
+    assert "Bip-Bip (Double)" in sound_types, "Should include Bip-Bip (Double)"
+    assert "Bip-Bip (Triple)" in sound_types, "Should include Bip-Bip (Triple)"
     
     print("  Available sound types:")
     for sound_type in sound_types:
@@ -93,7 +93,9 @@ def test_sound_generation_for_each_type():
         # Verify audio properties
         assert isinstance(audio, np.ndarray), f"Audio should be numpy array for {sound_type}"
         assert samplerate == 44100, f"Sample rate should be 44100 for {sound_type}"
-        assert len(audio) == int(samplerate * 1.0), f"Audio length should match duration for {sound_type}"
+        # Bip-bip sounds are short (< 0.5s) regardless of requested duration
+        assert len(audio) > 0, f"Audio should have samples for {sound_type}"
+        assert len(audio) < int(samplerate * 0.6), f"Bip-bip should be short (< 0.6s) for {sound_type}"
         assert audio.dtype == np.float64, f"Audio should be float64 for {sound_type}"
         
         # Verify audio is normalized (amplitude <= 1.0)
@@ -110,9 +112,9 @@ def test_sound_generation_for_each_type():
     return True
 
 
-def test_airplane_seatbelt_chime_characteristics():
-    """Test that airplane seatbelt chime has expected characteristics"""
-    print("\nTesting airplane seatbelt chime characteristics...")
+def test_bip_bip_short_duration():
+    """Test that bip-bip sounds are short to release lock quickly"""
+    print("\nTesting bip-bip short duration...")
     
     # Mock dependencies
     import unittest.mock as mock
@@ -125,25 +127,27 @@ def test_airplane_seatbelt_chime_characteristics():
     
     node = BuzzerNode()
     
-    # Generate airplane seatbelt chime
-    audio, samplerate = node._generate_buzz_sound(
-        duration=2.0, 
-        sound_type="Airplane Seatbelt Chime"
-    )
+    # Generate each bip-bip type with a long requested duration
+    for sound_type in BuzzerNode.SOUND_TYPES:
+        audio, samplerate = node._generate_buzz_sound(
+            duration=10.0,  # Request 10s but bip-bip should be much shorter
+            sound_type=sound_type
+        )
+        
+        actual_duration = len(audio) / samplerate
+        max_amplitude = np.max(np.abs(audio))
+        
+        print(f"  {sound_type}: {actual_duration:.3f}s, amp={max_amplitude:.3f}")
+        
+        # All bip-bip sounds should be < 0.5s actual audio
+        assert actual_duration < 0.5, (
+            f"{sound_type} should be < 0.5s, got {actual_duration:.3f}s"
+        )
+        # Should have audible content
+        assert max_amplitude > 0.2, f"{sound_type} should be audible"
+        assert max_amplitude <= 0.5, f"{sound_type} should not be too loud"
     
-    # The airplane chime should be a two-tone sound (ding-dong)
-    # It should have lower amplitude (non-stressful) compared to default buzzer
-    max_amplitude = np.max(np.abs(audio))
-    
-    print(f"  Amplitude: {max_amplitude:.3f}")
-    print(f"  Duration: {len(audio) / samplerate:.1f}s")
-    print(f"  Sample rate: {samplerate} Hz")
-    
-    # Verify it's not too loud (non-stressful)
-    assert max_amplitude <= 0.6, "Airplane chime should be gentle (amplitude <= 0.6)"
-    assert max_amplitude > 0.0, "Airplane chime should have sound"
-    
-    print("✓ Airplane seatbelt chime has appropriate characteristics")
+    print("✓ All bip-bip sounds are short (< 0.5s)")
     
     return True
 
@@ -155,7 +159,7 @@ if __name__ == '__main__':
     tests = [
         ("Sound Types Available", test_sound_types_available),
         ("Sound Generation for Each Type", test_sound_generation_for_each_type),
-        ("Airplane Seatbelt Chime Characteristics", test_airplane_seatbelt_chime_characteristics),
+        ("Bip-Bip Short Duration", test_bip_bip_short_duration),
     ]
     
     passed = 0

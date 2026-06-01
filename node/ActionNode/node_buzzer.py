@@ -162,13 +162,13 @@ class BuzzerNode(BaseNode):
     DEFAULT_DURATION = 5.0
     DEFAULT_INSENSITIVITY_DELAY = 0.0
     
-    # Available sound types
+    # Available sound types — all produce short bip-bip patterns
     SOUND_TYPES = [
-        "Default Buzzer",
-        "Airplane Seatbelt Chime",
-        "Gentle Beep",
-        "Soft Chime",
-        "Ambient Tone"
+        "Bip-Bip (Default)",
+        "Bip-Bip (High)",
+        "Bip-Bip (Low)",
+        "Bip-Bip (Double)",
+        "Bip-Bip (Triple)"
     ]
 
     def __init__(self):
@@ -181,132 +181,71 @@ class BuzzerNode(BaseNode):
         self._insensitivity_end_time = 0
         self._registered = False
         
-    def _generate_buzz_sound(self, duration, sound_type="Default Buzzer"):
+    def _generate_buzz_sound(self, duration, sound_type="Bip-Bip (Default)"):
         """
-        Generate different types of buzzer sounds.
-        Uses various sound patterns depending on the selected type.
+        Generate short bip-bip sounds that release the audio lock quickly.
+        
+        All sound types produce very short beep patterns (< 0.5s actual audio)
+        regardless of the configured duration. The duration parameter only
+        affects the insensitivity period, not the sound length.
         
         Args:
-            duration: Duration of the sound in seconds
-            sound_type: Type of sound to generate (from SOUND_TYPES)
+            duration: Configured duration (used for insensitivity, not audio length)
+            sound_type: Type of bip pattern (from SOUND_TYPES)
         
         Returns:
             tuple: (audio array, sample rate)
         """
         samplerate = 44100  # samples per second
-        t = np.linspace(0, duration, int(samplerate * duration), endpoint=False)
         
-        if sound_type == "Airplane Seatbelt Chime":
-            # Two-tone chime similar to airplane seatbelt indicator
-            # Calm, pleasant ding-dong sound
-            freq1 = 800  # Hz - first tone (higher)
-            freq2 = 600  # Hz - second tone (lower)
+        # Each bip: short tone with fade in/out
+        def _make_bip(freq, bip_duration):
+            """Generate a single short bip tone."""
+            n = int(samplerate * bip_duration)
+            t = np.linspace(0, bip_duration, n, endpoint=False)
+            tone = 0.4 * np.sin(2 * np.pi * freq * t)
+            # Quick fade in/out (5ms) to avoid clicks
+            fade = int(samplerate * 0.005)
+            if n > 2 * fade:
+                tone[:fade] *= np.linspace(0, 1, fade)
+                tone[-fade:] *= np.linspace(1, 0, fade)
+            return tone
+        
+        def _make_silence(gap_duration):
+            """Generate a silence gap."""
+            return np.zeros(int(samplerate * gap_duration))
+        
+        if sound_type == "Bip-Bip (High)":
+            # Two short high-pitched bips
+            bip = _make_bip(1200, 0.08)
+            gap = _make_silence(0.06)
+            audio = np.concatenate([bip, gap, bip])
             
-            # First chime
-            tone_duration = min(0.3, duration / 2)
-            tone_samples = int(samplerate * tone_duration)
-            t1 = t[:tone_samples]
-            chime1 = 0.4 * np.sin(2 * np.pi * freq1 * t1)
+        elif sound_type == "Bip-Bip (Low)":
+            # Two short low-pitched bips
+            bip = _make_bip(500, 0.10)
+            gap = _make_silence(0.08)
+            audio = np.concatenate([bip, gap, bip])
             
-            # Add harmonics for richer sound
-            chime1 += 0.2 * np.sin(2 * np.pi * freq1 * 2 * t1)
+        elif sound_type == "Bip-Bip (Double)":
+            # Two pairs of quick bips (bip-bip ... bip-bip)
+            bip = _make_bip(880, 0.06)
+            short_gap = _make_silence(0.04)
+            long_gap = _make_silence(0.10)
+            pair = np.concatenate([bip, short_gap, bip])
+            audio = np.concatenate([pair, long_gap, pair])
             
-            # Fade out first chime
-            fade_out = np.exp(-5 * t1 / tone_duration)
-            chime1 = chime1 * fade_out
+        elif sound_type == "Bip-Bip (Triple)":
+            # Three quick bips
+            bip = _make_bip(1000, 0.07)
+            gap = _make_silence(0.05)
+            audio = np.concatenate([bip, gap, bip, gap, bip])
             
-            # Second chime (after a short pause)
-            if duration > tone_duration * 1.2:
-                pause_samples = int(samplerate * 0.05)
-                t2 = t[:tone_samples]
-                chime2 = 0.4 * np.sin(2 * np.pi * freq2 * t2)
-                chime2 += 0.2 * np.sin(2 * np.pi * freq2 * 2 * t2)
-                chime2 = chime2 * fade_out
-                
-                # Combine chimes with pause
-                audio = np.zeros(len(t))
-                audio[:tone_samples] = chime1
-                audio[tone_samples + pause_samples:tone_samples + pause_samples + tone_samples] = chime2
-            else:
-                audio = np.zeros(len(t))
-                audio[:tone_samples] = chime1
-                
-        elif sound_type == "Gentle Beep":
-            # Single gentle beep at a pleasant frequency
-            frequency = 650  # Hz - comfortable middle frequency
-            audio = 0.3 * np.sin(2 * np.pi * frequency * t)
-            
-            # Smooth envelope for gentle sound
-            attack = 0.05  # 50ms attack
-            release = 0.1  # 100ms release
-            attack_samples = int(samplerate * attack)
-            release_samples = int(samplerate * release)
-            
-            if len(audio) > attack_samples + release_samples:
-                audio[:attack_samples] *= np.linspace(0, 1, attack_samples)
-                audio[-release_samples:] *= np.linspace(1, 0, release_samples)
-                
-        elif sound_type == "Soft Chime":
-            # Bell-like sound using multiple harmonics
-            # Fundamental frequency
-            f0 = 520  # Hz
-            
-            # Create bell harmonics (non-integer ratios for realistic bell)
-            audio = (0.4 * np.sin(2 * np.pi * f0 * t) +
-                    0.3 * np.sin(2 * np.pi * f0 * 2.4 * t) +
-                    0.2 * np.sin(2 * np.pi * f0 * 3.8 * t) +
-                    0.1 * np.sin(2 * np.pi * f0 * 5.2 * t))
-            
-            # Exponential decay for bell-like fade
-            decay = np.exp(-2 * t / duration)
-            audio = audio * decay
-            
-        elif sound_type == "Ambient Tone":
-            # Very calm, low-stress ambient tone
-            # Low frequency with gentle modulation
-            base_freq = 350  # Hz - lower, calmer frequency
-            
-            # Gentle frequency modulation
-            mod_depth = 20  # Hz
-            mod_freq = 0.5  # Very slow modulation
-            frequency = base_freq + mod_depth * np.sin(2 * np.pi * mod_freq * t)
-            
-            # Generate sound with modulated frequency
-            phase = 2 * np.pi * np.cumsum(frequency) / samplerate
-            audio = 0.25 * np.sin(phase)
-            
-            # Very gentle amplitude modulation
-            amp_mod = 0.9 + 0.1 * np.sin(2 * np.pi * 0.3 * t)
-            audio = audio * amp_mod
-            
-            # Smooth fade in and out
-            fade_duration = min(0.2, duration / 4)
-            fade_samples = int(samplerate * fade_duration)
-            if len(audio) > 2 * fade_samples:
-                audio[:fade_samples] *= np.linspace(0, 1, fade_samples)
-                audio[-fade_samples:] *= np.linspace(1, 0, fade_samples)
-                
-        else:  # "Default Buzzer"
-            # Original modulated frequency sweep
-            start_freq = 400
-            end_freq = 600
-            frequency = start_freq + (end_freq - start_freq) * (t / duration)
-            
-            # Generate the base sine wave
-            audio = 0.3 * np.sin(2 * np.pi * frequency * t)
-            
-            # Apply amplitude modulation (tremolo)
-            mod_freq = 8  # Modulation frequency in Hz
-            modulation = 0.5 + 0.5 * np.sin(2 * np.pi * mod_freq * t)
-            audio = audio * modulation
-            
-            # Apply fade-in and fade-out
-            fade_duration = 0.05  # 50ms fade
-            fade_samples = int(samplerate * fade_duration)
-            
-            if len(audio) > 2 * fade_samples:
-                audio[:fade_samples] *= np.linspace(0, 1, fade_samples)
-                audio[-fade_samples:] *= np.linspace(1, 0, fade_samples)
+        else:  # "Bip-Bip (Default)"
+            # Two medium bips at comfortable frequency
+            bip = _make_bip(800, 0.09)
+            gap = _make_silence(0.07)
+            audio = np.concatenate([bip, gap, bip])
         
         return audio, samplerate
     
