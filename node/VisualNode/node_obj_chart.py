@@ -410,6 +410,8 @@ class Node(Chart):
                         label = "All Classes"
                     elif class_id == "dB":
                         label = "Decibel Intensity (dB)"
+                    elif isinstance(class_id, str) and class_id in merged_class_names:
+                        label = merged_class_names[class_id]
                     elif str(class_id) in merged_class_names:
                         label = f"{class_id}: {merged_class_names[str(class_id)]}"
                     else:
@@ -427,6 +429,8 @@ class Node(Chart):
                         label = "All Classes"
                     elif class_id == "dB":
                         label = "Decibel Intensity (dB)"
+                    elif isinstance(class_id, str) and class_id in merged_class_names:
+                        label = merged_class_names[class_id]
                     elif str(class_id) in merged_class_names:
                         label = f"{class_id}: {merged_class_names[str(class_id)]}"
                     else:
@@ -448,6 +452,8 @@ class Node(Chart):
                         label = "All Classes"
                     elif class_id == "dB":
                         label = "Decibel Intensity (dB)"
+                    elif isinstance(class_id, str) and class_id in merged_class_names:
+                        label = merged_class_names[class_id]
                     elif str(class_id) in merged_class_names:
                         label = f"{class_id}: {merged_class_names[str(class_id)]}"
                     else:
@@ -456,11 +462,20 @@ class Node(Chart):
                 
                 ax.stackplot(x_pos, *counts_by_class, labels=labels, alpha=0.7)
             
+            # Detect if this is numeric metric data (e.g. SystemResource)
+            is_metric_data = any(
+                isinstance(c, str) and c not in ("All", "dB")
+                for c in selected_classes
+            )
+
             # Set appropriate axis labels based on data type
             ax.set_xlabel(f'Time ({time_unit})')
             if is_db_data:
                 ax.set_ylabel('Decibel Intensity (dB)')
                 ax.set_title('Microphone Decibel Intensity Over Time')
+            elif is_metric_data:
+                ax.set_ylabel('Value')
+                ax.set_title('System Metrics Over Time')
             else:
                 ax.set_ylabel('Detection Count')
                 ax.set_title('Object Detection Accumulation Over Time')
@@ -544,6 +559,45 @@ class Node(Chart):
                 if should_render or self.cached_chart_image is None:
                     selected_classes = ["dB"]
                     chart_image = self.render_chart(time_unit, selected_classes, {"dB": "Decibel Intensity"}, chart_type)
+                    self.cached_chart_image = chart_image
+                    self.last_render_time = current_time
+                else:
+                    chart_image = self.cached_chart_image
+            elif 'class_ids' not in node_result and all(
+                isinstance(v, (int, float)) for v in node_result.values()
+            ) and node_result:
+                # Handle flat numeric dict (e.g. SystemResource output)
+                # Each key becomes a series plotted over time
+                current_bucket = self.get_time_bucket(time_unit)
+
+                for key, value in node_result.items():
+                    self.time_counts[key][current_bucket] = value
+
+                # Determine which series to display from class slots or default to all keys
+                selected_classes = []
+                class_slots_tag = f"{tag_node_name}:ClassSlots"
+                if dpg.does_item_exist(class_slots_tag):
+                    children = dpg.get_item_children(class_slots_tag, slot=1)
+                    if children:
+                        for child in children:
+                            try:
+                                selected_value = dpg_get_value(child)
+                                if selected_value and selected_value != "":
+                                    if selected_value in node_result:
+                                        selected_classes.append(selected_value)
+                            except (ValueError, TypeError):
+                                pass
+
+                if not selected_classes:
+                    # Default: show percent-type metrics for readability
+                    percent_keys = [k for k in node_result if 'percent' in k]
+                    selected_classes = percent_keys if percent_keys else list(node_result.keys())
+
+                # Build class_names_dict from keys
+                class_names_dict = {k: k for k in node_result}
+
+                if should_render or self.cached_chart_image is None:
+                    chart_image = self.render_chart(time_unit, selected_classes, class_names_dict, chart_type)
                     self.cached_chart_image = chart_image
                     self.last_render_time = current_time
                 else:
