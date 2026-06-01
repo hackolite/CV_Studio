@@ -17,9 +17,24 @@ from node_editor.style import STYLE
 from node_editor.util import _dpg_lock  # Import shared DearPyGUI lock
 from src.utils.logging import get_logger
 
+# Uptime tracking
+_start_time = time.time()
+
 dpg.create_context()
 
 logger = get_logger(__name__)
+
+
+def update_uptime_display():
+    """Update the uptime text in the menu bar."""
+    elapsed = int(time.time() - _start_time)
+    hours = elapsed // 3600
+    minutes = (elapsed % 3600) // 60
+    seconds = elapsed % 60
+    try:
+        dpg.set_value("uptime_display", f"Uptime: {hours:02d}:{minutes:02d}:{seconds:02d}")
+    except Exception:
+        pass
 
 
 # Constants for node selection color enhancement
@@ -320,6 +335,12 @@ class DpgNodeEditor(object):
                     )
                 
                 # print(menu_dict.items())
+
+                # Uptime text (right-aligned in menu bar)
+                dpg.add_text(
+                    tag="uptime_display",
+                    default_value="Uptime: 00:00:00",
+                )
 
                 for menu_info in menu_dict.items():
                     menu_label = menu_info[0]

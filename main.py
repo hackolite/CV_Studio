@@ -25,6 +25,7 @@ from src.utils.gpu_utils import log_gpu_info
 
 from node_editor.util import check_camera_connection
 from node_editor.node_main import DpgNodeEditor
+from node_editor.node_main import update_uptime_display
 
 # Import timestamped queue system
 from node.timestamped_queue import NodeDataQueueManager
@@ -118,6 +119,9 @@ def update_node_info(
 ):
     editor_width = dpg.get_viewport_client_width()
     editor_height = dpg.get_viewport_client_height()
+
+    # Update uptime display
+    update_uptime_display()
 
     try:
         dpg.set_item_pos(node_editor.window, [0, 0])
