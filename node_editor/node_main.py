@@ -587,9 +587,9 @@ class DpgNodeEditor(object):
                         break
                     check_index += 1
                 if not find_flag:
-                    for index, node_id_name in enumerate(node_list):
+                    for _idx, node_id_name in enumerate(node_list):
                         node_id, node_name = node_id_name.split(":")
-                        if node_id == check_id:
+                        if int(node_id) == check_id:
                             unfinded_id_dict[check_id] = node_id_name
                             break
             index += 1
@@ -711,6 +711,20 @@ class DpgNodeEditor(object):
                 dpg.get_selected_nodes(self._node_editor_tag)[0]
             )
 
+    def _delete_dpg_link(self, link_info):
+        """Delete the visual dpg node_link item matching link_info [source, dest]."""
+        try:
+            children = dpg.get_item_children(self._node_editor_tag, slot=0)
+            for child_id in children:
+                config = dpg.get_item_configuration(child_id)
+                attr_1_alias = dpg.get_item_alias(config.get("attr_1", 0))
+                attr_2_alias = dpg.get_item_alias(config.get("attr_2", 0))
+                if attr_1_alias == link_info[0] and attr_2_alias == link_info[1]:
+                    dpg.delete_item(child_id)
+                    break
+        except Exception:
+            pass
+
     def _callback_mv_key_del(self):
         if len(dpg.get_selected_nodes(self._node_editor_tag)) > 0:
             item_id = dpg.get_selected_nodes(self._node_editor_tag)[0]
@@ -723,10 +737,13 @@ class DpgNodeEditor(object):
                     return
 
                 node_instance = self.get_node_instances(node_id_name)
-                node_instance.close(node_id)
+                if node_instance is not None:
+                    node_instance.close(node_id)
 
                 self._node_list.remove(node_id_name)
 
+                # Remove links associated with the deleted node and
+                # delete the corresponding visual dpg link items.
                 copy_node_link_list = copy.deepcopy(self._node_link_list)
                 for link_info in copy_node_link_list:
                     source_node = link_info[0].split(":")[:2]
@@ -736,6 +753,8 @@ class DpgNodeEditor(object):
 
                     if source_node == node_id_name or destination_node == node_id_name:
                         self._node_link_list.remove(link_info)
+                        # Delete the visual link from the node editor
+                        self._delete_dpg_link(link_info)
 
                 self._node_connection_dict = self._sort_node_graph(
                     self._node_list,
