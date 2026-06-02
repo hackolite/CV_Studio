@@ -82,8 +82,9 @@ COPY msg_conv_config.txt* ./
 # Copy models (ONNX files to be converted to TensorRT on first run)
 COPY models/ ./models/
 
-# Copy custom parser libraries
-COPY libs/ ./libs/ 2>/dev/null || true
+# Copy custom parser libraries (optional - create empty dir if not present)
+RUN mkdir -p /app/libs
+COPY libs/ ./libs/
 
 # Output directory
 RUN mkdir -p /app/output
@@ -503,7 +504,7 @@ for onnx_file in "$MODELS_DIR"/*.onnx; do
         --saveEngine="$engine_file" \\
         {precision_flag} \\
         --workspace=$WORKSPACE_SIZE \\
-        --minShapes=input:1x3x{pipeline.profile.max_batch_size // 2}x{pipeline.profile.max_batch_size // 2} \\
+        --minShapes=input:1x3x320x320 \\
         --optShapes=input:1x3x640x640 \\
         --maxShapes=input:{pipeline.profile.max_batch_size}x3x1280x1280 \\
         --verbose 2>&1 | tee "/tmp/trtexec_$model_name.log"; then

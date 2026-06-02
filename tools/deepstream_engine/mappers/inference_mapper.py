@@ -133,7 +133,7 @@ def _map_object_detection(
     config = InferenceConfig(
         gie_id=gie_index + 1,
         gie_type="primary" if is_primary else "secondary",
-        node_tag=tag,
+        node_tag=node.node_tag,
         model_name=model_name,
         onnx_path=f"models/{_sanitize_filename(model_name)}.onnx",
         trt_engine_path=f"models/{_sanitize_filename(model_name)}.engine",
@@ -363,6 +363,3 @@ def _extract_float_value(settings: dict, key_suffix: str, default: float = 0.0) 
 def _sanitize_filename(name: str) -> str:
     """Convert a model name to a safe filename."""
     return name.lower().replace(" ", "_").replace("(", "").replace(")", "").replace("/", "_")
-
-# Alias for backward compat
-tag = "ObjectDetection"
