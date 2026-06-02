@@ -36,6 +36,10 @@ logger = get_logger(__name__)
 
 from node_editor.splash import show_splash_screen as _show_splash_screen
 
+# Reference to the node editor instance, used by nodes that need editor access
+# (e.g., Deploy node for schema export)
+_node_editor_ref = None
+
 
 def get_resource_path(relative_path):
     """
@@ -380,6 +384,10 @@ def main():
         use_debug_print=use_debug_print,
         node_dir=current_path + "/node",
     )
+
+    # Store reference for nodes that need access to the editor (e.g., Deploy node)
+    import sys
+    sys.modules[__name__]._node_editor_ref = node_editor
 
     logger.info("Starting main event loop")
     event_loop = None
