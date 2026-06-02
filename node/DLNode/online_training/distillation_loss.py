@@ -50,7 +50,7 @@ def match_detections(teacher_bboxes, teacher_scores, student_bboxes, student_sco
 
     while True:
         max_iou = iou_matrix.max()
-        if max_iou < iou_threshold:
+        if max_iou < iou_threshold or max_iou == 0:
             break
         t_idx, s_idx = np.unravel_index(iou_matrix.argmax(), iou_matrix.shape)
         matched_pairs.append((int(t_idx), int(s_idx)))
@@ -145,11 +145,13 @@ def compute_distillation_score(
     quality = avg_iou * class_accuracy if matched_count > 0 else 0.0
 
     # Combined score (F1-like with quality weighting)
+    _BASE_WEIGHT = 0.7
+    _QUALITY_WEIGHT = 0.3
     if precision + recall > 0:
         f1 = 2 * precision * recall / (precision + recall)
     else:
         f1 = 0.0
-    score = f1 * (0.7 + 0.3 * quality)  # Quality bonus
+    score = f1 * (_BASE_WEIGHT + _QUALITY_WEIGHT * quality)  # Quality bonus
 
     return {
         'score': float(np.clip(score, 0.0, 1.0)),

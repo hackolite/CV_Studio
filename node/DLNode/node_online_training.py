@@ -91,7 +91,7 @@ class FactoryNode:
         small_window_h = opencv_setting_dict['process_height']
         use_pref_counter = opencv_setting_dict['use_pref_counter']
 
-        black_image = np.zeros((small_window_w, small_window_h, 3))
+        black_image = np.zeros((small_window_h, small_window_w, 3))
         black_texture = node.convert_cv_to_dpg(
             black_image, small_window_w, small_window_h
         )
@@ -543,7 +543,7 @@ class Node(Node):
                         f"Best: {stats['best_score']:.2f}"
                     )
                     training_status = "active" if training_active else "paused"
-                    if not self._student_trainer._training_available:
+                    if not self._student_trainer.is_training_available:
                         training_status = "inference-only"
                     dpg_set_value(
                         stats_display_tag,

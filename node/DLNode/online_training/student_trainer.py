@@ -121,6 +121,11 @@ class StudentTrainer:
         )
 
     @property
+    def is_training_available(self) -> bool:
+        """Whether ORT Training is available for backpropagation."""
+        return self._training_available
+
+    @property
     def avg_score(self) -> float:
         """Average distillation score over all processed frames."""
         if self.frames_processed == 0:
@@ -175,14 +180,10 @@ class StudentTrainer:
             s_class_ids = s_class_ids[mask]
 
         # 2. Compute distillation score
-        t_bboxes = np.array(teacher_bboxes) if len(teacher_bboxes) > 0 else np.array([])
-        t_scores = np.array(teacher_scores) if len(teacher_scores) > 0 else np.array([])
-        t_class_ids = np.array(teacher_class_ids) if len(teacher_class_ids) > 0 else np.array([])
-
         distillation = compute_distillation_score(
-            t_bboxes.tolist() if len(t_bboxes) > 0 else [],
-            t_scores.tolist() if len(t_scores) > 0 else [],
-            t_class_ids.tolist() if len(t_class_ids) > 0 else [],
+            list(teacher_bboxes),
+            list(teacher_scores),
+            list(teacher_class_ids),
             s_bboxes.tolist() if len(s_bboxes) > 0 else [],
             s_scores.tolist() if len(s_scores) > 0 else [],
             s_class_ids.tolist() if len(s_class_ids) > 0 else [],
@@ -232,26 +233,21 @@ class StudentTrainer:
 
     def reset(self):
         """Reset the student model to its original weights."""
-        # Write original bytes to a temp file and reload
-        tmp_path = self.model_path + ".reset.tmp"
+        # Restore original bytes to model path and reload
         try:
-            with open(tmp_path, 'wb') as f:
+            with open(self.model_path, 'wb') as f:
                 f.write(self._original_model_bytes)
             self._student_model = CustomONNX(
-                model_path=tmp_path,
+                model_path=self.model_path,
                 input_width=self.input_width,
                 input_height=self.input_height,
                 output_format=self.output_format,
                 num_classes=self.num_classes,
                 providers=self.providers,
             )
-            # Copy back to original path
-            with open(self.model_path, 'wb') as f:
-                f.write(self._original_model_bytes)
             logger.info("[StudentTrainer] Model reset to original weights.")
-        finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+        except Exception as exc:
+            logger.error(f"[StudentTrainer] Reset failed: {exc}", exc_info=True)
 
         # Reset stats
         self.frames_processed = 0
