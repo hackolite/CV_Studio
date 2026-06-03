@@ -20,6 +20,143 @@ from node.DLNode.object_detection.onnx_session_utils import make_session
 logger = logging.getLogger(__name__)
 
 
+def _dim_value(dim) -> object:
+    """Extract an int value from an ONNX TensorShapeProto.Dimension, or a string param name."""
+    if dim.HasField("dim_value"):
+        return dim.dim_value
+    if dim.HasField("dim_param"):
+        return dim.dim_param
+    return None
+
+
+def _shape_from_type_proto(type_proto) -> list:
+    """Return the shape list from an ONNX TypeProto (tensor_type)."""
+    tensor_type = type_proto.tensor_type
+    if not tensor_type.HasField("shape"):
+        return []
+    return [_dim_value(d) for d in tensor_type.shape.dim]
+
+
+def _inspect_onnx_static(model_path: str) -> dict:
+    """Inspect ONNX model metadata using the ``onnx`` package only (no runtime session).
+
+    This fallback is used when onnxruntime cannot load the model (e.g. quantized
+    models with unsupported ops like ConvInteger).
+    """
+    try:
+        import onnx  # noqa: PLC0415
+    except ImportError:
+        raise RuntimeError(
+            "The 'onnx' package is required to inspect this model. "
+            "Install it: pip install onnx"
+        )
+
+    model_proto = onnx.load(model_path)
+    graph = model_proto.graph
+
+    # ---- Input info --------------------------------------------------------
+    # Skip initializer-only inputs (weights); find the real data input.
+    initializer_names = {init.name for init in graph.initializer}
+    data_inputs = [inp for inp in graph.input if inp.name not in initializer_names]
+    if not data_inputs:
+        data_inputs = list(graph.input)
+
+    input_info = data_inputs[0]
+    input_name = input_info.name
+    input_shape = _shape_from_type_proto(input_info.type)
+    logger.info(f"[ONNX Inspector/static] Input tensor: name='{input_name}', shape={input_shape}")
+
+    input_height = 640
+    input_width = 640
+    if len(input_shape) == 4:
+        if isinstance(input_shape[2], int) and input_shape[2] > 0:
+            input_height = input_shape[2]
+        if isinstance(input_shape[3], int) and input_shape[3] > 0:
+            input_width = input_shape[3]
+
+    # ---- Output info -------------------------------------------------------
+    output_info = graph.output[0]
+    output_name = output_info.name
+    output_shape = _shape_from_type_proto(output_info.type)
+    logger.info(f"[ONNX Inspector/static] Output tensor: name='{output_name}', shape={output_shape}")
+
+    num_outputs = len(graph.output)
+
+    # ---- Format detection (mirrors session-based logic) --------------------
+    output_format = "unknown"
+    num_classes = 0
+
+    if num_outputs >= 2:
+        has_boxes_output = False
+        for out in graph.output:
+            out_shape = _shape_from_type_proto(out.type)
+            if len(out_shape) >= 2:
+                last_dim = out_shape[-1]
+                if isinstance(last_dim, int) and last_dim == 4:
+                    has_boxes_output = True
+                    break
+        if has_boxes_output:
+            output_format = "ssd"
+            for out in graph.output:
+                out_shape = _shape_from_type_proto(out.type)
+                if len(out_shape) == 3 and isinstance(out_shape[-1], int) and out_shape[-1] > 4:
+                    num_classes = out_shape[-1]
+                    break
+
+    if output_format == "unknown" and len(output_shape) == 3:
+        dim1 = output_shape[1]
+        dim2 = output_shape[2]
+        if isinstance(dim1, int) and isinstance(dim2, int):
+            if dim1 < dim2 and dim1 > 4:
+                output_format = "yolo11"
+                num_classes = dim1 - 4
+            elif dim2 < dim1 and dim2 > 5:
+                output_format = "yolox"
+                num_classes = dim2 - 5
+
+    # ---- Embedded class names ----------------------------------------------
+    class_names: dict = {}
+    for prop in model_proto.metadata_props:
+        if prop.key == "names":
+            try:
+                parsed = ast.literal_eval(prop.value)
+                if isinstance(parsed, dict):
+                    class_names = {int(k): str(v) for k, v in parsed.items()}
+                    if num_classes == 0:
+                        num_classes = len(class_names)
+            except Exception:
+                pass
+        elif prop.key == "labels" and not class_names:
+            try:
+                parsed = json.loads(prop.value)
+                if isinstance(parsed, dict):
+                    class_names = {int(k): str(v) for k, v in parsed.items()}
+                elif isinstance(parsed, list):
+                    class_names = {i: str(v) for i, v in enumerate(parsed)}
+                if num_classes == 0:
+                    num_classes = len(class_names)
+            except Exception:
+                pass
+
+    result = {
+        "input_name": input_name,
+        "input_shape": input_shape,
+        "output_name": output_name,
+        "output_shape": output_shape,
+        "output_format": output_format,
+        "num_classes": num_classes,
+        "class_names": class_names,
+        "input_width": input_width,
+        "input_height": input_height,
+    }
+    logger.info(
+        f"[ONNX Inspector/static] Inspection complete — "
+        f"format='{output_format}', classes={num_classes}, "
+        f"input={input_width}x{input_height}"
+    )
+    return result
+
+
 def inspect_onnx_model(model_path: str) -> dict:
     """Inspect an ONNX model and return a metadata dictionary.
 
@@ -47,7 +184,17 @@ def inspect_onnx_model(model_path: str) -> dict:
 
     logger.info(f"[ONNX Inspector] Loading model: {model_path}")
 
-    session = make_session(model_path, providers=["CPUExecutionProvider"])
+    try:
+        session = make_session(model_path, providers=["CPUExecutionProvider"])
+    except Exception as exc:
+        # Quantized models (e.g. ConvInteger) may not be supported by the CPU
+        # execution provider.  Fall back to reading metadata directly via the
+        # ``onnx`` package without creating an inference session.
+        logger.warning(
+            f"[ONNX Inspector] Session creation failed ({exc}); "
+            f"falling back to static graph inspection via the onnx package."
+        )
+        return _inspect_onnx_static(model_path)
 
     # ---- Input info --------------------------------------------------------
     input_detail = session.get_inputs()[0]
