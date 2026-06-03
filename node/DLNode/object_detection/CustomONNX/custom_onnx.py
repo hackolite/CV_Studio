@@ -123,7 +123,23 @@ class CustomONNX:
             f"[CustomONNX] Preprocessed blob shape: {blob.shape}, "
             f"letterbox ratio: {ratio:.4f}"
         )
-        outputs = self.onnx_session.run(None, {self.input_name: blob})
+        try:
+            outputs = self.onnx_session.run(None, {self.input_name: blob})
+        except onnxruntime.capi.onnxruntime_pybind11_state.InvalidArgument as exc:
+            # Models with built-in NMS/post-processing may raise when there
+            # are zero detections (Gather into an empty tensor).  Return empty
+            # results rather than crashing the pipeline.
+            if "indices element out of data bounds" in str(exc):
+                logger.debug(
+                    "[CustomONNX] Model returned zero detections "
+                    "(Gather into empty tensor) — returning empty results."
+                )
+                return (
+                    np.empty((0, 4), dtype=np.float32),
+                    np.empty((0,), dtype=np.float32),
+                    np.empty((0,), dtype=np.int64),
+                )
+            raise
 
         if self.output_format == "ssd":
             bboxes, scores, class_ids = self._postprocess_ssd(
