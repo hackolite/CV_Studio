@@ -245,6 +245,10 @@ class Node(Chart):
         # Structure: {class_id: {time_bucket: count}}
         self.time_counts = defaultdict(lambda: defaultdict(int))
         
+        # Accumulator for computing averages (OnlineTraining distillation scores)
+        # Structure: {key: {time_bucket: [sum, count]}}
+        self._avg_accumulators = defaultdict(lambda: defaultdict(lambda: [0.0, 0]))
+        
         # 24-hour data retention (1440 minutes max)
         self.max_data_age_hours = 24
         
@@ -334,6 +338,17 @@ class Node(Chart):
             # Remove empty class entries
             if not self.time_counts[class_id]:
                 del self.time_counts[class_id]
+
+        # Clean up old accumulator buckets
+        for key in list(self._avg_accumulators.keys()):
+            buckets_to_remove = [
+                bucket for bucket in self._avg_accumulators[key].keys()
+                if bucket < cutoff_time
+            ]
+            for bucket in buckets_to_remove:
+                del self._avg_accumulators[key][bucket]
+            if not self._avg_accumulators[key]:
+                del self._avg_accumulators[key]
 
     def render_chart(self, time_unit, selected_classes, class_names_dict, chart_type="bar"):
         """Render the chart as an image using matplotlib
@@ -573,7 +588,11 @@ class Node(Chart):
 
                 for key, value in loss_data.items():
                     if isinstance(value, (int, float)):
-                        self.time_counts[key][current_bucket] = value
+                        # Accumulate sum and count to compute running average
+                        acc = self._avg_accumulators[key][current_bucket]
+                        acc[0] += value
+                        acc[1] += 1
+                        self.time_counts[key][current_bucket] = acc[0] / acc[1]
 
                 # Determine which series to display from class slots or default to all keys
                 selected_classes = []
