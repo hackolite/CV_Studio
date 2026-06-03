@@ -133,6 +133,9 @@ _BUILTIN_MODELS = [
         'num_classes': 80,
         'class_names': _COCO_CLASSES,
         'disable_optimizations': True,
+        # QDQ quantisation maps most class logits to 0, making the auto-detect
+        # heuristic mistake them for DFL regression values.  Force classes-first.
+        'nanodet_reg_first': False,
     },
 ]
 
@@ -541,6 +544,8 @@ class Node(Node):
             }
             if meta.get('disable_optimizations'):
                 entry['disable_optimizations'] = True
+            if meta.get('nanodet_reg_first') is not None:
+                entry['nanodet_reg_first'] = meta['nanodet_reg_first']
             try:
                 custom_models_registry.save_entry(entry)
                 logger.info(f"[Builtin] Registered built-in model: {name}")
@@ -580,15 +585,19 @@ class Node(Node):
             in_w = int(entry.get('input_width', 640))
             in_h = int(entry.get('input_height', 640))
             disable_opt = bool(entry.get('disable_optimizations', False))
+            nanodet_reg_first = entry.get('nanodet_reg_first', None)
+            if nanodet_reg_first is not None:
+                nanodet_reg_first = bool(nanodet_reg_first)
             cls._register_custom_model(name, path, class_names, output_fmt, in_w, in_h,
-                                       disable_optimizations=disable_opt)
+                                       disable_optimizations=disable_opt,
+                                       nanodet_reg_first=nanodet_reg_first)
             logger.info(f"Loaded model from registry: {name}")
 
     @classmethod
     def _register_custom_model(cls, name, path, class_names, output_fmt, in_w, in_h,
-                               disable_optimizations=False):
+                               disable_optimizations=False, nanodet_reg_first=None):
         """Add a model to the class-level runtime dictionaries."""
-        def _make_factory(p, fmt, w, h, disable_opt):
+        def _make_factory(p, fmt, w, h, disable_opt, nd_reg_first):
             def factory(model_path, providers=None):
                 if providers is None:
                     providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
@@ -599,10 +608,11 @@ class Node(Node):
                     output_format=fmt,
                     providers=providers,
                     disable_optimizations=disable_opt,
+                    nanodet_reg_first=nd_reg_first,
                 )
             return factory
 
-        cls._model_class[name] = _make_factory(path, output_fmt, in_w, in_h, disable_optimizations)
+        cls._model_class[name] = _make_factory(path, output_fmt, in_w, in_h, disable_optimizations, nanodet_reg_first)
         cls._model_path_setting[name] = path
         cls._model_class_name_list[name] = class_names
 
