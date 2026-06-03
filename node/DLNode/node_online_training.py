@@ -409,14 +409,58 @@ class Node(Node):
             # --- Get input image ---
             frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
 
+            # --- Get the source image timestamp ---
+            image_timestamp = None
+            image_source_node = None
+            for connection_info in connection_list:
+                connection_type = connection_info[0].split(':')[2]
+                if connection_type in [self.TYPE_IMAGE, self.TYPE_AUDIO]:
+                    image_source_node = ':'.join(connection_info[0].split(':')[:2])
+                    if connection_type == self.TYPE_IMAGE:
+                        image_timestamp = node_image_dict.get_timestamp(image_source_node)
+                    elif node_audio_dict is not None:
+                        image_timestamp = node_audio_dict.get_timestamp(image_source_node)
+                    break
+
             # --- Get teacher JSON from connected JSON input ---
+            # The student receives the image before the teacher result is ready,
+            # so we poll briefly to allow the teacher result to arrive.
             teacher_json = {}
+            teacher_source_node = None
             for connection_info in connection_list:
                 connection_type = connection_info[0].split(':')[2]
                 if connection_type == self.TYPE_JSON:
-                    connection_info_src = ':'.join(connection_info[0].split(':')[:2])
-                    teacher_json = node_result_dict.get(connection_info_src, {})
+                    teacher_source_node = ':'.join(connection_info[0].split(':')[:2])
                     break
+
+            if teacher_source_node is not None:
+                # Wait up to _MAX_TEACHER_WAIT for teacher result matching image timestamp
+                _MAX_TEACHER_WAIT = 0.15  # seconds (150ms max wait)
+                _POLL_INTERVAL = 0.01  # 10ms polling interval
+                _TIMESTAMP_MATCH_TOLERANCE = 0.05  # 50ms — teacher/image timestamps considered matching
+                waited = 0.0
+
+                teacher_json = node_result_dict.get(teacher_source_node, {})
+                teacher_timestamp = teacher_json.get('timestamp', None) if teacher_json else None
+
+                # If teacher result is stale or absent, wait briefly for a fresh one
+                if image_timestamp is not None and frame is not None:
+                    while waited < _MAX_TEACHER_WAIT:
+                        teacher_json = node_result_dict.get(teacher_source_node, {})
+                        teacher_timestamp = teacher_json.get('timestamp', None) if teacher_json else None
+                        if teacher_timestamp is not None and abs(teacher_timestamp - image_timestamp) < _TIMESTAMP_MATCH_TOLERANCE:
+                            # Teacher result matches our image — proceed
+                            break
+                        time.sleep(_POLL_INTERVAL)
+                        waited += _POLL_INTERVAL
+                    else:
+                        # Timed out — use whatever teacher data is available
+                        teacher_json = node_result_dict.get(teacher_source_node, {})
+                        if waited > 0:
+                            logger.debug(
+                                f"[OnlineTraining] Waited {waited:.3f}s for teacher result "
+                                f"(image_ts={image_timestamp}, teacher_ts={teacher_timestamp})"
+                            )
 
             # --- Get UI parameters ---
             score_th_tag = self.tag_node_name + ':ThresholdSlider'
@@ -455,14 +499,43 @@ class Node(Node):
                 teacher_scores_list = teacher_json.get('scores', [])
                 teacher_class_ids = teacher_json.get('class_ids', [])
                 teacher_score_th = teacher_json.get('score_th', 0.3)
+                teacher_timestamp = teacher_json.get('timestamp', None)
+
+                # Use the image timestamp as the authoritative frame timestamp
+                # (falls back to current time if image timestamp is unavailable)
+                frame_timestamp = image_timestamp if image_timestamp is not None else time.time()
+
+                # Timestamp alignment check: reject stale teacher data.
+                # _TIMESTAMP_MATCH_TOLERANCE (50ms) is used during the wait loop to detect
+                # that the teacher result corresponds to *this* frame. _MAX_TEACHER_STALENESS
+                # (500ms) is a broader safety net: if the teacher result is from a much older
+                # frame (e.g., pipeline stall), we skip distillation entirely.
+                _MAX_TEACHER_STALENESS = 0.5  # seconds
+                timestamp_aligned = True
+                if teacher_timestamp is not None and image_timestamp is not None:
+                    staleness = abs(image_timestamp - teacher_timestamp)
+                    if staleness > _MAX_TEACHER_STALENESS:
+                        timestamp_aligned = False
+                        logger.debug(
+                            f"[OnlineTraining] Skipping stale teacher data "
+                            f"(staleness={staleness:.3f}s > {_MAX_TEACHER_STALENESS}s)"
+                        )
+                elif teacher_timestamp is None and len(teacher_bboxes) == 0:
+                    # No teacher data at all — still aligned but empty
+                    timestamp_aligned = True
 
                 # Filter teacher by its own threshold
-                if len(teacher_scores_list) > 0:
+                if len(teacher_scores_list) > 0 and timestamp_aligned:
                     t_scores_arr = np.array(teacher_scores_list)
                     t_mask = t_scores_arr >= teacher_score_th
                     teacher_bboxes = [b for b, m in zip(teacher_bboxes, t_mask) if m]
                     teacher_scores_list = [s for s, m in zip(teacher_scores_list, t_mask) if m]
                     teacher_class_ids = [c for c, m in zip(teacher_class_ids, t_mask) if m]
+                elif not timestamp_aligned:
+                    # Stale teacher data — still run student inference but skip distillation
+                    teacher_bboxes = []
+                    teacher_scores_list = []
+                    teacher_class_ids = []
 
                 # Perform training step
                 step_result = self._student_trainer.train_step(
@@ -490,6 +563,21 @@ class Node(Node):
                 result['class_names'] = self._student_class_names
                 result['score_th'] = score_th
                 result['distillation'] = step_result['distillation']
+                result['timestamp'] = frame_timestamp
+                result['timestamp_aligned'] = timestamp_aligned
+
+                # Expose distillation loss metrics as flat numeric dict
+                # so ObjChart can display them directly
+                distillation = step_result['distillation']
+                result['distillation_losses'] = {
+                    'score': distillation.get('score', 0.0),
+                    'class_similarity': distillation.get('class_similarity', 0.0),
+                    'count_ratio': distillation.get('count_ratio', 0.0),
+                    'confidence_alignment': distillation.get('confidence_alignment', 0.0),
+                    'spatial_coverage': distillation.get('spatial_coverage', 0.0),
+                    'teacher_count': distillation.get('teacher_count', 0),
+                    'student_count': distillation.get('student_count', 0),
+                }
 
                 # Draw student predictions on frame
                 output_frame = copy.deepcopy(frame)
