@@ -923,6 +923,19 @@ class Node(Node):
                         dpg_set_value(destination_tag, input_value)
 
                 frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
+
+                # Get the timestamp of the source image for result alignment
+                _image_source_timestamp = None
+                for connection_info in connection_list:
+                    connection_type = connection_info[0].split(':')[2]
+                    if connection_type in [self.TYPE_IMAGE, self.TYPE_AUDIO]:
+                        _src_node_id = ':'.join(connection_info[0].split(':')[:2])
+                        if connection_type == self.TYPE_IMAGE:
+                            _image_source_timestamp = node_image_dict.get_timestamp(_src_node_id)
+                        elif node_audio_dict is not None:
+                            _image_source_timestamp = node_audio_dict.get_timestamp(_src_node_id)
+                        break
+
                 if frame is not None:
                     logger.debug(f"Frame shape: {frame.shape}")
 
@@ -1035,13 +1048,17 @@ class Node(Node):
                         except Exception as e:
                             logger.warning(f"Error applying class rejection filter: {e}")
 
+                    # Use the source image timestamp so downstream nodes can
+                    # correlate this result with the exact frame that was processed.
+                    _result_ts = _image_source_timestamp if _image_source_timestamp is not None else time.time()
+
                     if len(bboxes) > 0:
                         result['bboxes'] = bboxes.tolist()
                         result['scores'] = scores.tolist()
                         result['class_ids'] = class_ids.tolist()
                         result['class_names'] = class_name_dict
                         result['score_th'] = score_th
-                        result['timestamp'] = time.time()
+                        result['timestamp'] = _result_ts
                         logger.debug(f"JSON output: {len(bboxes)} detections, class_ids={class_ids.tolist()}")
                     else:
                         result['bboxes'] = []
@@ -1049,7 +1066,7 @@ class Node(Node):
                         result['class_ids'] = []
                         result['class_names'] = class_name_dict
                         result['score_th'] = score_th
-                        result['timestamp'] = time.time()
+                        result['timestamp'] = _result_ts
                         logger.debug(f"JSON output: 0 detections (all filtered out or no detections)")
 
 
