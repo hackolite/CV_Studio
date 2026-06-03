@@ -85,13 +85,42 @@ def inspect_onnx_model(model_path: str) -> dict:
     output_shape = list(output_detail.shape)
     logger.info(f"[ONNX Inspector] Output tensor: name='{output_name}', shape={output_shape}")
 
+    # Check for SSD-style multi-output model
+    all_outputs = session.get_outputs()
+    num_outputs = len(all_outputs)
+    logger.info(f"[ONNX Inspector] Model has {num_outputs} output(s).")
+
     # ---- Format detection --------------------------------------------------
     # YOLO11 / YOLOv8 Ultralytics:  output shape [1, num_classes+4, num_anchors]
     # YOLOX:                         output shape [1, num_anchors, num_classes+5]
+    # SSD:                           multiple outputs (boxes, scores, class_ids, ...)
     output_format = "unknown"
     num_classes = 0
 
-    if len(output_shape) == 3:
+    # SSD detection: multiple outputs where one has last dim == 4 (boxes)
+    if num_outputs >= 2:
+        has_boxes_output = False
+        for out in all_outputs:
+            out_shape = list(out.shape)
+            if len(out_shape) >= 2:
+                last_dim = out_shape[-1]
+                if isinstance(last_dim, int) and last_dim == 4:
+                    has_boxes_output = True
+                    break
+        if has_boxes_output:
+            output_format = "ssd"
+            # Try to determine num_classes from a multi-class scores output
+            for out in all_outputs:
+                out_shape = list(out.shape)
+                if len(out_shape) == 3 and isinstance(out_shape[-1], int) and out_shape[-1] > 4:
+                    num_classes = out_shape[-1]
+                    break
+            logger.info(
+                f"[ONNX Inspector] Detected SSD-style multi-output model "
+                f"({num_outputs} outputs). num_classes={num_classes}"
+            )
+
+    if output_format == "unknown" and len(output_shape) == 3:
         dim1 = output_shape[1]  # middle dimension
         dim2 = output_shape[2]  # last dimension
         if isinstance(dim1, int) and isinstance(dim2, int):
