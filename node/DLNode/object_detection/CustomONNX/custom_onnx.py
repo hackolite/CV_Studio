@@ -125,18 +125,23 @@ class CustomONNX:
         )
         outputs = self.onnx_session.run(None, {self.input_name: blob})
 
-        raw_output = outputs[0]
-        logger.debug(f"[CustomONNX] Raw output shape: {raw_output.shape}")
-
-        if self.output_format == "yolox":
-            bboxes, scores, class_ids = self._postprocess_yolox(
-                raw_output, orig_w, orig_h, ratio
+        if self.output_format == "ssd":
+            bboxes, scores, class_ids = self._postprocess_ssd(
+                outputs, orig_w, orig_h
             )
         else:
-            # Default: yolo11 / ultralytics
-            bboxes, scores, class_ids = self._postprocess_yolo11(
-                raw_output, orig_w, orig_h
-            )
+            raw_output = outputs[0]
+            logger.debug(f"[CustomONNX] Raw output shape: {raw_output.shape}")
+
+            if self.output_format == "yolox":
+                bboxes, scores, class_ids = self._postprocess_yolox(
+                    raw_output, orig_w, orig_h, ratio
+                )
+            else:
+                # Default: yolo11 / ultralytics
+                bboxes, scores, class_ids = self._postprocess_yolo11(
+                    raw_output, orig_w, orig_h
+                )
 
         logger.debug(f"[CustomONNX] Detections after NMS: {len(bboxes)}")
         return bboxes, scores, class_ids
@@ -163,6 +168,8 @@ class CustomONNX:
         """
         if self.output_format == "yolox":
             return self._preprocess_yolox(image)
+        elif self.output_format == "ssd":
+            return self._preprocess_ssd(image)
         return self._preprocess_yolo11(image)
 
     def _preprocess_yolox(self, image):
@@ -215,6 +222,42 @@ class CustomONNX:
         img = np.transpose(img, (2, 0, 1))  # HWC → CHW
         img = np.expand_dims(img, axis=0)   # CHW → BCHW
         return img, 1.0
+
+    def _preprocess_ssd(self, image):
+        """Preprocessing for SSD models (e.g. SSD MobileNet V2).
+
+        SSD models typically expect:
+          - Input shape: [1, 3, H, W] (BCHW) with pixel values in [0, 1]
+            or [1, H, W, 3] (BHWC) with uint8 values in [0, 255]
+          - Simple stretch-resize to the model input size
+          - RGB colour format
+
+        This method produces a [1, 3, H, W] float32 normalised blob by default.
+        The model's actual input shape is checked at session init and determines
+        whether BCHW or BHWC layout is used.
+
+        Returns (blob, 1.0).
+        """
+        img = cv2.resize(
+            image,
+            (self.input_width, self.input_height),
+            interpolation=cv2.INTER_LINEAR,
+        )
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        # Detect input layout from the ONNX session
+        actual_shape = list(self.onnx_session.get_inputs()[0].shape)
+        if len(actual_shape) == 4 and actual_shape[1] in (self.input_height, None, 'N'):
+            # BHWC layout — keep as uint8 [0, 255]
+            img = img.astype(np.uint8)
+            blob = np.expand_dims(img, axis=0).astype(np.float32)
+        else:
+            # BCHW layout — normalise to [0, 1]
+            img = img.astype(np.float32) / 255.0
+            img = np.transpose(img, (2, 0, 1))  # HWC → CHW
+            blob = np.expand_dims(img, axis=0)   # CHW → BCHW
+
+        return blob, 1.0
 
     # ------------------------------------------------------------------
     # Post-processing helpers
@@ -435,6 +478,194 @@ class CustomONNX:
             np.array(boxes_xyxy)[indices],
             np.array(scores_list)[indices],
             class_ids_all[indices],
+        )
+
+    def _postprocess_ssd(self, outputs, orig_w, orig_h):
+        """Post-process SSD-style multi-output ONNX models.
+
+        SSD MobileNet V2 (and similar) typically produce multiple output tensors.
+        Common patterns:
+
+        Pattern A (TF-exported / ONNX Model Zoo):
+          - output[0]: boxes      [1, num_det, 4]  (y1, x1, y2, x2) normalised [0,1]
+          - output[1]: class_ids  [1, num_det]
+          - output[2]: scores     [1, num_det]
+          - output[3]: num_detections [1]  (optional)
+
+        Pattern B (some TF2 exports):
+          - output[0]: boxes      [1, num_det, 4]  (y1, x1, y2, x2) normalised
+          - output[1]: scores     [1, num_det, num_classes] or [1, num_det]
+          - output[2]: class_ids  [1, num_det]
+          - (output[3]: num_detections)
+
+        Pattern C (Kalray / alternative):
+          - output[0]: boxes      [1, num_det, 4]
+          - output[1]: scores     [1, num_det]
+
+        The method auto-detects which pattern based on output shapes and count.
+        """
+        num_outputs = len(outputs)
+        logger.debug(
+            f"[CustomONNX] ssd post-process: {num_outputs} outputs, "
+            f"shapes={[o.shape for o in outputs]}"
+        )
+
+        if num_outputs == 0:
+            return np.array([]), np.array([]), np.array([])
+
+        # --- Identify boxes tensor (always the first 3D output with last dim == 4) ---
+        boxes_raw = None
+        scores_raw = None
+        class_ids_raw = None
+        num_det = None
+
+        # Squeeze batch dim from all outputs
+        squeezed = [np.squeeze(o) for o in outputs]
+
+        # Find boxes: shape (..., 4)
+        boxes_idx = -1
+        for i, s in enumerate(squeezed):
+            if s.ndim == 2 and s.shape[-1] == 4:
+                boxes_raw = s
+                boxes_idx = i
+                break
+            elif s.ndim == 1 and s.shape[0] == 4 and num_outputs > 1:
+                # Single detection squeezed from [1, 1, 4] → (4,)
+                boxes_raw = s.reshape(1, 4)
+                boxes_idx = i
+                break
+            elif s.ndim == 1 and num_outputs == 1:
+                # Single flat output — not SSD compatible
+                logger.warning("[CustomONNX] ssd post-process: single flat output, not SSD format.")
+                return np.array([]), np.array([]), np.array([])
+
+        if boxes_raw is None:
+            logger.warning(
+                "[CustomONNX] ssd post-process: could not identify boxes tensor. "
+                f"Output shapes: {[o.shape for o in outputs]}"
+            )
+            return np.array([]), np.array([]), np.array([])
+
+        n_detections = boxes_raw.shape[0]
+
+        # Find scores and class_ids from remaining outputs
+        remaining = [s for j, s in enumerate(squeezed) if j != boxes_idx]
+
+        for arr in remaining:
+            if arr.ndim == 2 and arr.shape[0] == n_detections and arr.shape[1] > 4:
+                # Multi-class scores: [num_det, num_classes]
+                scores_raw = arr.max(axis=1)
+                class_ids_raw = arr.argmax(axis=1).astype(np.int64)
+            elif arr.ndim == 1 and arr.shape[0] == n_detections:
+                if scores_raw is None:
+                    # Could be scores or class_ids — heuristic: float with values
+                    # in [0,1] range → scores; integer-like → class_ids
+                    if arr.dtype in (np.float32, np.float64) and arr.max() <= 1.0:
+                        scores_raw = arr
+                    elif np.all(arr == arr.astype(int)):
+                        class_ids_raw = arr.astype(np.int64)
+                    else:
+                        scores_raw = arr
+                elif class_ids_raw is None:
+                    class_ids_raw = arr.astype(np.int64)
+            elif arr.ndim == 0 or (arr.ndim == 1 and arr.shape[0] == 1):
+                # Could be num_detections scalar OR a score for a single detection
+                val = float(arr.flat[0])
+                if n_detections == 1 and 0.0 <= val <= 1.0 and scores_raw is None:
+                    # Likely a confidence score for the single detection
+                    scores_raw = np.array([val], dtype=np.float32)
+                else:
+                    num_det = int(val)
+
+        # If num_detections was provided, slice everything
+        if num_det is not None and num_det < n_detections:
+            boxes_raw = boxes_raw[:num_det]
+            if scores_raw is not None:
+                scores_raw = scores_raw[:num_det]
+            if class_ids_raw is not None:
+                class_ids_raw = class_ids_raw[:num_det]
+            n_detections = num_det
+
+        # Default class_ids to 0 if not provided
+        if class_ids_raw is None:
+            class_ids_raw = np.zeros(n_detections, dtype=np.int64)
+
+        # Default scores to 1.0 if not provided
+        if scores_raw is None:
+            scores_raw = np.ones(n_detections, dtype=np.float32)
+
+        # --- Determine if boxes are normalised [0,1] or absolute pixels ---
+        # If max coordinate <= 1.0 (with small tolerance), assume normalised
+        boxes_max = boxes_raw.max() if n_detections > 0 else 0.0
+        if boxes_max <= 1.5:
+            # Normalised coordinates — SSD standard format is (y1, x1, y2, x2)
+            y1 = boxes_raw[:, 0] * orig_h
+            x1 = boxes_raw[:, 1] * orig_w
+            y2 = boxes_raw[:, 2] * orig_h
+            x2 = boxes_raw[:, 3] * orig_w
+        else:
+            # Absolute pixel coordinates — assume already in (x1, y1, x2, y2) or (y1, x1, y2, x2)
+            # Heuristic: if col0 range ≈ height and col1 range ≈ width → (y1,x1,y2,x2)
+            col0_range = boxes_raw[:, 2].max() - boxes_raw[:, 0].min() if n_detections > 0 else 0
+            col1_range = boxes_raw[:, 3].max() - boxes_raw[:, 1].min() if n_detections > 0 else 0
+            if col0_range > 0 and col1_range > 0:
+                ratio_0 = col0_range / self.input_height if self.input_height > 0 else 1
+                ratio_1 = col1_range / self.input_width if self.input_width > 0 else 1
+                if abs(ratio_0 - 1.0) < 0.5 and abs(ratio_1 - 1.0) < 0.5:
+                    # Likely (y1, x1, y2, x2) in model-input pixel space
+                    scale_y = orig_h / self.input_height
+                    scale_x = orig_w / self.input_width
+                    y1 = boxes_raw[:, 0] * scale_y
+                    x1 = boxes_raw[:, 1] * scale_x
+                    y2 = boxes_raw[:, 2] * scale_y
+                    x2 = boxes_raw[:, 3] * scale_x
+                else:
+                    # Assume (x1, y1, x2, y2) in model-input pixel space
+                    scale_x = orig_w / self.input_width
+                    scale_y = orig_h / self.input_height
+                    x1 = boxes_raw[:, 0] * scale_x
+                    y1 = boxes_raw[:, 1] * scale_y
+                    x2 = boxes_raw[:, 2] * scale_x
+                    y2 = boxes_raw[:, 3] * scale_y
+            else:
+                x1 = boxes_raw[:, 0]
+                y1 = boxes_raw[:, 1]
+                x2 = boxes_raw[:, 2]
+                y2 = boxes_raw[:, 3]
+
+        # Clip to image bounds and convert to int
+        x1 = np.clip(x1, 0, orig_w).astype(int)
+        y1 = np.clip(y1, 0, orig_h).astype(int)
+        x2 = np.clip(x2, 0, orig_w).astype(int)
+        y2 = np.clip(y2, 0, orig_h).astype(int)
+
+        boxes_xyxy = np.stack([x1, y1, x2, y2], axis=1)
+
+        # Filter by score threshold
+        mask = scores_raw >= self.nms_score_th
+        if not mask.any():
+            logger.debug("[CustomONNX] ssd post-process: no detections above score threshold.")
+            return np.array([]), np.array([]), np.array([])
+
+        boxes_xyxy = boxes_xyxy[mask]
+        scores_raw = scores_raw[mask]
+        class_ids_raw = class_ids_raw[mask]
+
+        # NMS
+        boxes_list = boxes_xyxy.tolist()
+        scores_list = scores_raw.tolist()
+        indices = cv2.dnn.NMSBoxes(boxes_list, scores_list, self.nms_score_th, self.nms_th)
+
+        if len(indices) == 0:
+            logger.debug("[CustomONNX] ssd post-process: all candidates removed by NMS.")
+            return np.array([]), np.array([]), np.array([])
+
+        indices = np.array(indices).flatten()
+        logger.debug(f"[CustomONNX] ssd post-process: {len(indices)} detections after NMS.")
+        return (
+            boxes_xyxy[indices],
+            scores_raw[indices],
+            class_ids_raw[indices],
         )
 
     # ------------------------------------------------------------------
