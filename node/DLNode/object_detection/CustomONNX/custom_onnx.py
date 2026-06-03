@@ -45,6 +45,7 @@ class CustomONNX:
         nms_score_th: float = 0.1,
         providers=None,
         disable_optimizations: bool = False,
+        nanodet_reg_first: bool = None,
     ):
         if providers is None:
             providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
@@ -96,8 +97,11 @@ class CustomONNX:
                 )
                 self.input_width = actual_w
 
-        # Cache for nanodet channel layout detection (None = not yet detected)
-        self._nanodet_reg_first = None
+        # Channel layout for NanoDet post-processing.
+        # None = auto-detect on first inference (heuristic).
+        # True/False = caller-supplied override (avoids heuristic failures on
+        # QDQ models whose quantised class logits mimic DFL regression statistics).
+        self._nanodet_reg_first = nanodet_reg_first
 
         logger.info(
             f"[CustomONNX] Ready — input_name='{self.input_name}', "
@@ -781,10 +785,15 @@ class CustomONNX:
         reg_max_plus_1 = reg_channels // 4  # e.g., 8 for reg_max=7
 
         # Detect channel layout (cached after first inference).
+        # Skipped when caller supplied an explicit layout via nanodet_reg_first.
         # Some NanoDet models (e.g. nanodet_qdq) output regression channels
         # first [reg, classes] instead of [classes, reg].
         # Heuristic: DFL regression values are softmax outputs (bounded ~[0,1]
         # with low variance), while raw class logits have higher variance.
+        # NOTE: QDQ-quantised models can fool this heuristic because quantisation
+        # maps most class logits to 0, making them appear bounded.  Use the
+        # nanodet_reg_first constructor argument to bypass auto-detection for
+        # such models.
         if self._nanodet_reg_first is None:
             first_block = output[:, :reg_channels]
             last_block = output[:, reg_channels:]
