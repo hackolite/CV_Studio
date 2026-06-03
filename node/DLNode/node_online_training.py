@@ -567,18 +567,16 @@ class Node(Node):
                 result['timestamp_aligned'] = timestamp_aligned
 
                 # Expose distillation loss metrics as flat numeric dict
-                # so ObjChart can display them directly (line 566-604 branch)
+                # so ObjChart can display them directly
                 distillation = step_result['distillation']
-                matched = distillation.get('matched_count', 0)
-                missed = distillation.get('missed_count', 0)
-                fp = distillation.get('false_positive_count', 0)
                 result['distillation_losses'] = {
-                    'avg_iou': distillation.get('avg_iou', 0.0),
                     'score': distillation.get('score', 0.0),
-                    'class_accuracy': distillation.get('class_accuracy', 0.0),
-                    'avg_score_diff': distillation.get('avg_score_diff', 0.0),
-                    'recall': matched / max(matched + missed, 1),
-                    'precision': matched / max(matched + fp, 1),
+                    'class_similarity': distillation.get('class_similarity', 0.0),
+                    'count_ratio': distillation.get('count_ratio', 0.0),
+                    'confidence_alignment': distillation.get('confidence_alignment', 0.0),
+                    'spatial_coverage': distillation.get('spatial_coverage', 0.0),
+                    'teacher_count': distillation.get('teacher_count', 0),
+                    'student_count': distillation.get('student_count', 0),
                 }
 
                 # Draw student predictions on frame
