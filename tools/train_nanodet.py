@@ -1446,22 +1446,28 @@ class CheckpointManager:
 # BOUCLE D'ENTRAÎNEMENT
 # ============================================================
 def run_epoch(
-    model:       nn.Module,
-    loader:      DataLoader,
-    optimizer:   torch.optim.Optimizer,
-    scaler:      torch.amp.GradScaler,
-    cfg:         Config,
-    device:      torch.device,
+    model:        nn.Module,
+    loader:       DataLoader,
+    optimizer:    torch.optim.Optimizer,
+    scaler:       torch.amp.GradScaler,
+    cfg:          Config,
+    device:       torch.device,
     writer=None,
-    global_step: int  = 0,
-    train:       bool = True,
+    global_step:  int = 0,
+    train:        bool = True,
+    epoch:        int = 0,
+    total_epochs: int = 0,
 ) -> tuple[dict[str, float], int]:
     model.train(train)
     totals:    dict[str, float] = {}
     n_batches: int = 0
     ctx = torch.amp.autocast("cuda", enabled=(device.type == "cuda"))
 
-    with tqdm(loader, desc="train" if train else "val", leave=False) as pbar:
+    phase = "train" if train else "val"
+    desc  = (f"Epoch {epoch}/{total_epochs} [{phase}]"
+             if total_epochs > 0 else phase)
+
+    with tqdm(loader, desc=desc, leave=False) as pbar:
         for step, (imgs, cls_t, obj_t, box_t) in enumerate(pbar):
             imgs  = imgs.to(device,  non_blocking=True)
             cls_t = cls_t.to(device, non_blocking=True)
@@ -1577,6 +1583,7 @@ def train(cfg: Config = CFG) -> None:
         train_metrics, global_step = run_epoch(
             model, train_loader, optimizer, scaler, cfg, device,
             writer=writer, global_step=global_step, train=True,
+            epoch=epoch + 1, total_epochs=cfg.epochs,
         )
         scheduler.step()
 
@@ -1584,6 +1591,7 @@ def train(cfg: Config = CFG) -> None:
             val_metrics, _ = run_epoch(
                 model, val_loader, optimizer, scaler, cfg, device,
                 writer=writer, global_step=global_step, train=False,
+                epoch=epoch + 1, total_epochs=cfg.epochs,
             )
 
         # mAP + P/R/F1 sur un sous-ensemble pour limiter le temps de calcul
@@ -1664,6 +1672,18 @@ def export_onnx(
     )
     log.info("ONNX exporté : %s", cfg.onnx_path)
 
+    # Garantit un fichier ONNX unique (sans données externes séparées)
+    try:
+        import onnx as _onnx_mod
+        _proto = _onnx_mod.load(cfg.onnx_path)
+        _onnx_mod.save_model(
+            _proto, cfg.onnx_path,
+            save_as_external_data=False,
+        )
+        log.info("ONNX sauvegardé en fichier unique : %s", cfg.onnx_path)
+    except ImportError:
+        log.warning("onnx non installé — impossble de garantir le fichier unique.")
+
     try:
         import onnx
         import onnxruntime as ort
@@ -1690,6 +1710,125 @@ def export_onnx(
 
 
 # ============================================================
+# INFÉRENCE ONNX SUR IMAGE
+# ============================================================
+def infer_onnx(
+    image_path:  str,
+    onnx_path:   Optional[str]       = None,
+    cfg:         Config               = CFG,
+    class_names: Optional[list[str]] = None,
+    output_path: Optional[str]       = None,
+) -> list[dict]:
+    """
+    Lance l'inférence sur une image à partir du fichier ONNX produit.
+
+    Args:
+        image_path  : chemin vers l'image d'entrée (JPEG/PNG…)
+        onnx_path   : chemin vers le .onnx (défaut : cfg.onnx_path)
+        cfg         : configuration (conf_threshold, nms_iou_threshold, img_size…)
+        class_names : liste des noms de classes (ex. COCO 80 classes)
+        output_path : si fourni, sauvegarde l'image annotée à ce chemin
+
+    Returns:
+        Liste de dict {"box": [x1,y1,x2,y2], "score": float,
+                       "label": int, "class_name": str}
+    """
+    try:
+        import onnxruntime as ort
+    except ImportError:
+        raise ImportError("onnxruntime requis : pip install onnxruntime")
+
+    try:
+        from PIL import Image as PILImage
+    except ImportError:
+        raise ImportError("Pillow requis : pip install Pillow")
+
+    if onnx_path is None:
+        onnx_path = cfg.onnx_path
+
+    # ── Chargement & préprocessing ──────────────────────────────────────────
+    img      = PILImage.open(image_path).convert("RGB")
+    orig_w, orig_h = img.size
+    img_resized    = img.resize((cfg.img_size, cfg.img_size))
+    img_np         = np.array(img_resized, dtype=np.float32) / 255.0
+    img_tensor     = (
+        torch.from_numpy(img_np).permute(2, 0, 1).unsqueeze(0)
+    )  # [1, 3, H, W]
+
+    # ── Inférence ONNX ──────────────────────────────────────────────────────
+    log.info("Inférence ONNX sur %s (modèle : %s)", image_path, onnx_path)
+    sess = ort.InferenceSession(
+        onnx_path, providers=["CPUExecutionProvider"]
+    )
+    cls_np, obj_np, box_np = sess.run(None, {"input": img_tensor.numpy()})
+
+    cls_t = torch.from_numpy(cls_np)
+    obj_t = torch.from_numpy(obj_np)
+    box_t = torch.from_numpy(box_np)
+
+    # ── Décodage + NMS ──────────────────────────────────────────────────────
+    result = decode(cls_t, obj_t, box_t, cfg)
+    if result is None:
+        log.info("Aucune détection sur %s", image_path)
+        return []
+
+    boxes, scores, labels = result
+    keep_idx = nms(boxes, scores, cfg.nms_iou_threshold)
+    boxes    = boxes[keep_idx].numpy()
+    scores   = scores[keep_idx].numpy()
+    labels   = labels[keep_idx].numpy()
+
+    # ── Mise à l'échelle → coordonnées image originale ──────────────────────
+    scale_x = orig_w / cfg.img_size
+    scale_y = orig_h / cfg.img_size
+
+    detections: list[dict] = []
+    for box, score, label in zip(boxes, scores, labels):
+        x1 = float(box[0]) * scale_x
+        y1 = float(box[1]) * scale_y
+        x2 = float(box[2]) * scale_x
+        y2 = float(box[3]) * scale_y
+        cls_name = (
+            class_names[int(label)]
+            if class_names and int(label) < len(class_names)
+            else f"cls{int(label)}"
+        )
+        det = {
+            "box":        [x1, y1, x2, y2],
+            "score":      float(score),
+            "label":      int(label),
+            "class_name": cls_name,
+        }
+        detections.append(det)
+        log.info("  [%s] score=%.3f  box=[%.1f, %.1f, %.1f, %.1f]",
+                 cls_name, score, x1, y1, x2, y2)
+
+    # ── Annotation et sauvegarde ─────────────────────────────────────────────
+    if output_path and detections:
+        try:
+            import cv2
+            img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+            for det in detections:
+                bx1, by1, bx2, by2 = [int(v) for v in det["box"]]
+                cv2.rectangle(img_cv, (bx1, by1), (bx2, by2), (0, 255, 0), 2)
+                label_str = f"{det['class_name']} {det['score']:.2f}"
+                cv2.putText(
+                    img_cv, label_str, (bx1, max(by1 - 5, 0)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1,
+                )
+            cv2.imwrite(output_path, img_cv)
+            log.info("Image annotée sauvegardée : %s", output_path)
+        except ImportError:
+            log.warning(
+                "opencv-python non installé — annotation ignorée. "
+                "pip install opencv-python pour l'activer."
+            )
+
+    log.info("%d détection(s) sur %s", len(detections), image_path)
+    return detections
+
+
+# ============================================================
 # POINT D'ENTRÉE
 # ============================================================
 if __name__ == "__main__":
@@ -1699,3 +1838,31 @@ if __name__ == "__main__":
         cfg=CFG,
         weights_path=str(best_weights) if best_weights.exists() else None,
     )
+
+    # ── Exemple d'inférence ONNX sur une image ─────────────────────────────
+    # Décommentez et adaptez le chemin pour tester :
+    #
+    # COCO_CLASS_NAMES = [
+    #     "person","bicycle","car","motorcycle","airplane","bus","train",
+    #     "truck","boat","traffic light","fire hydrant","stop sign",
+    #     "parking meter","bench","bird","cat","dog","horse","sheep","cow",
+    #     "elephant","bear","zebra","giraffe","backpack","umbrella","handbag",
+    #     "tie","suitcase","frisbee","skis","snowboard","sports ball","kite",
+    #     "baseball bat","baseball glove","skateboard","surfboard",
+    #     "tennis racket","bottle","wine glass","cup","fork","knife","spoon",
+    #     "bowl","banana","apple","sandwich","orange","broccoli","carrot",
+    #     "hot dog","pizza","donut","cake","chair","couch","potted plant",
+    #     "bed","dining table","toilet","tv","laptop","mouse","remote",
+    #     "keyboard","cell phone","microwave","oven","toaster","sink",
+    #     "refrigerator","book","clock","vase","scissors","teddy bear",
+    #     "hair drier","toothbrush",
+    # ]
+    #
+    # detections = infer_onnx(
+    #     image_path="image.jpg",
+    #     onnx_path=CFG.onnx_path,
+    #     cfg=CFG,
+    #     class_names=COCO_CLASS_NAMES,
+    #     output_path="image_annotated.jpg",
+    # )
+    # print(detections)
