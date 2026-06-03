@@ -128,10 +128,14 @@ class CustomONNX:
         )
         try:
             outputs = self.onnx_session.run(None, {self.input_name: blob})
-        except onnxruntime.capi.onnxruntime_pybind11_state.InvalidArgument as exc:
-            # Models with built-in NMS/post-processing may raise when there
-            # are zero detections (Gather into an empty tensor).  Return empty
-            # results rather than crashing the pipeline.
+        except (
+            onnxruntime.capi.onnxruntime_pybind11_state.InvalidArgument,
+            onnxruntime.capi.onnxruntime_pybind11_state.Fail,
+            onnxruntime.capi.onnxruntime_pybind11_state.RuntimeException,
+        ) as exc:
+            # Models with built-in NMS/post-processing (e.g. nanodet_qdq) may
+            # raise when there are zero detections (Gather into an empty
+            # tensor).  Return empty results rather than crashing the pipeline.
             if "indices element out of data bounds" in str(exc):
                 logger.debug(
                     "[CustomONNX] Model returned zero detections "
