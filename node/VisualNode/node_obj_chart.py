@@ -563,6 +563,51 @@ class Node(Chart):
                     self.last_render_time = current_time
                 else:
                     chart_image = self.cached_chart_image
+            elif 'distillation_losses' in node_result and isinstance(
+                node_result.get('distillation_losses'), dict
+            ):
+                # Handle OnlineTraining distillation loss metrics
+                # distillation_losses is a flat numeric dict: {avg_iou, score, class_accuracy, ...}
+                loss_data = node_result['distillation_losses']
+                current_bucket = self.get_time_bucket(time_unit)
+
+                for key, value in loss_data.items():
+                    if isinstance(value, (int, float)):
+                        self.time_counts[key][current_bucket] = value
+
+                # Determine which series to display from class slots or default to all keys
+                selected_classes = []
+                class_slots_tag = f"{tag_node_name}:ClassSlots"
+                if dpg.does_item_exist(class_slots_tag):
+                    children = dpg.get_item_children(class_slots_tag, slot=1)
+                    if children:
+                        for child in children:
+                            try:
+                                selected_value = dpg_get_value(child)
+                                if selected_value and selected_value != "":
+                                    if selected_value in loss_data:
+                                        selected_classes.append(selected_value)
+                            except (ValueError, TypeError):
+                                pass
+
+                if not selected_classes:
+                    # Default: show avg_iou, score, class_accuracy
+                    selected_classes = [
+                        k for k in ['avg_iou', 'score', 'class_accuracy']
+                        if k in loss_data
+                    ]
+                    if not selected_classes:
+                        selected_classes = list(loss_data.keys())
+
+                # Build class_names_dict from keys
+                class_names_dict = {k: k for k in loss_data}
+
+                if should_render or self.cached_chart_image is None:
+                    chart_image = self.render_chart(time_unit, selected_classes, class_names_dict, chart_type)
+                    self.cached_chart_image = chart_image
+                    self.last_render_time = current_time
+                else:
+                    chart_image = self.cached_chart_image
             elif 'class_ids' not in node_result and all(
                 isinstance(v, (int, float)) for v in node_result.values()
             ) and node_result:

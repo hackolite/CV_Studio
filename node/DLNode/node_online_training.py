@@ -455,14 +455,33 @@ class Node(Node):
                 teacher_scores_list = teacher_json.get('scores', [])
                 teacher_class_ids = teacher_json.get('class_ids', [])
                 teacher_score_th = teacher_json.get('score_th', 0.3)
+                teacher_timestamp = teacher_json.get('timestamp', None)
+
+                # Timestamp alignment check: reject stale teacher data (>500ms old)
+                _MAX_TEACHER_STALENESS = 0.5  # seconds
+                frame_timestamp = time.time()
+                timestamp_aligned = True
+                if teacher_timestamp is not None:
+                    staleness = frame_timestamp - teacher_timestamp
+                    if staleness > _MAX_TEACHER_STALENESS:
+                        timestamp_aligned = False
+                        logger.debug(
+                            f"[OnlineTraining] Skipping stale teacher data "
+                            f"(staleness={staleness:.3f}s > {_MAX_TEACHER_STALENESS}s)"
+                        )
 
                 # Filter teacher by its own threshold
-                if len(teacher_scores_list) > 0:
+                if len(teacher_scores_list) > 0 and timestamp_aligned:
                     t_scores_arr = np.array(teacher_scores_list)
                     t_mask = t_scores_arr >= teacher_score_th
                     teacher_bboxes = [b for b, m in zip(teacher_bboxes, t_mask) if m]
                     teacher_scores_list = [s for s, m in zip(teacher_scores_list, t_mask) if m]
                     teacher_class_ids = [c for c, m in zip(teacher_class_ids, t_mask) if m]
+                elif not timestamp_aligned:
+                    # Stale teacher data — still run student inference but skip distillation
+                    teacher_bboxes = []
+                    teacher_scores_list = []
+                    teacher_class_ids = []
 
                 # Perform training step
                 step_result = self._student_trainer.train_step(
@@ -490,6 +509,24 @@ class Node(Node):
                 result['class_names'] = self._student_class_names
                 result['score_th'] = score_th
                 result['distillation'] = step_result['distillation']
+                result['timestamp'] = frame_timestamp
+                result['timestamp_aligned'] = timestamp_aligned
+
+                # Expose distillation loss metrics as flat numeric dict
+                # so ObjChart can display them directly (line 566-604 branch)
+                distillation = step_result['distillation']
+                result['distillation_losses'] = {
+                    'avg_iou': distillation.get('avg_iou', 0.0),
+                    'score': distillation.get('score', 0.0),
+                    'class_accuracy': distillation.get('class_accuracy', 0.0),
+                    'avg_score_diff': distillation.get('avg_score_diff', 0.0),
+                    'recall': distillation.get('matched_count', 0) / max(
+                        distillation.get('matched_count', 0) + distillation.get('missed_count', 0), 1
+                    ),
+                    'precision': distillation.get('matched_count', 0) / max(
+                        distillation.get('matched_count', 0) + distillation.get('false_positive_count', 0), 1
+                    ),
+                }
 
                 # Draw student predictions on frame
                 output_frame = copy.deepcopy(frame)

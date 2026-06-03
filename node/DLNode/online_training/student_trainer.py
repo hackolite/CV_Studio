@@ -201,7 +201,9 @@ class StudentTrainer:
         if self._training_available and self.training_active:
             # ORT Training backpropagation would go here
             # For now, this is a placeholder for the onnxruntime-training API
-            training_performed = self._do_backprop(frame, t_bboxes, t_scores, t_class_ids)
+            training_performed = self._do_backprop(
+                frame, teacher_bboxes, teacher_scores, teacher_class_ids
+            )
 
         return {
             'student_bboxes': s_bboxes,

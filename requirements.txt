@@ -6,6 +6,8 @@ openvino-dev
 nncf
 opencv-contrib-python>=4.8.1.78
 onnxruntime>=1.16.0
+# Optional: onnxruntime-training enables backpropagation in OnlineTraining node
+# Install with: pip install onnxruntime-training
 onnx>=1.14.0
 dearpygui>=2.0.0
 mediapipe>=0.10.0

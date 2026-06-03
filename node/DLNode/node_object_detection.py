@@ -1041,6 +1041,7 @@ class Node(Node):
                         result['class_ids'] = class_ids.tolist()
                         result['class_names'] = class_name_dict
                         result['score_th'] = score_th
+                        result['timestamp'] = time.time()
                         logger.debug(f"JSON output: {len(bboxes)} detections, class_ids={class_ids.tolist()}")
                     else:
                         result['bboxes'] = []
@@ -1048,6 +1049,7 @@ class Node(Node):
                         result['class_ids'] = []
                         result['class_names'] = class_name_dict
                         result['score_th'] = score_th
+                        result['timestamp'] = time.time()
                         logger.debug(f"JSON output: 0 detections (all filtered out or no detections)")
 
 
