@@ -133,7 +133,11 @@ class CustomONNX:
             raw_output = outputs[0]
             logger.debug(f"[CustomONNX] Raw output shape: {raw_output.shape}")
 
-            if self.output_format == "yolox":
+            if self.output_format == "nanodet":
+                bboxes, scores, class_ids = self._postprocess_nanodet(
+                    raw_output, orig_w, orig_h
+                )
+            elif self.output_format == "yolox":
                 bboxes, scores, class_ids = self._postprocess_yolox(
                     raw_output, orig_w, orig_h, ratio
                 )
@@ -160,16 +164,20 @@ class CustomONNX:
 
         Format-specific behaviour
         --------------------------
-        yolox  — letterbox padding (value=114) preserving aspect ratio, raw
-                 pixel values in [0, 255]. ``ratio`` is the scale factor used
-                 to map model-space coordinates back to original image space.
-        yolo11 — simple stretch resize, normalised to [0, 1]. ``ratio`` is
-                 always 1.0 (coordinate mapping uses scale_x/scale_y instead).
+        yolox   — letterbox padding (value=114) preserving aspect ratio, raw
+                  pixel values in [0, 255]. ``ratio`` is the scale factor used
+                  to map model-space coordinates back to original image space.
+        yolo11  — simple stretch resize, normalised to [0, 1]. ``ratio`` is
+                  always 1.0 (coordinate mapping uses scale_x/scale_y instead).
+        nanodet — letterbox padding preserving aspect ratio, normalised with
+                  ImageNet mean/std.
         """
         if self.output_format == "yolox":
             return self._preprocess_yolox(image)
         elif self.output_format == "ssd":
             return self._preprocess_ssd(image)
+        elif self.output_format == "nanodet":
+            return self._preprocess_nanodet(image)
         return self._preprocess_yolo11(image)
 
     def _preprocess_yolox(self, image):
@@ -675,6 +683,195 @@ class CustomONNX:
             boxes_xyxy[indices],
             scores_raw[indices],
             class_ids_raw[indices],
+        )
+
+    # ------------------------------------------------------------------
+    # NanoDet pre/post-processing
+    # ------------------------------------------------------------------
+
+    def _preprocess_nanodet(self, image):
+        """Letterbox preprocessing for NanoDet models.
+
+        NanoDet uses:
+          - Letterbox padding (value=0) maintaining aspect ratio.
+          - BGR → RGB, normalised with ImageNet mean=[103.53, 116.28, 123.675]
+            and std=[57.375, 57.12, 58.395] (BGR order, no /255).
+
+        Returns (blob, ratio) where ratio = resized / original.
+        """
+        orig_h, orig_w = image.shape[:2]
+        ratio = min(self.input_height / orig_h, self.input_width / orig_w)
+        new_h = int(orig_h * ratio)
+        new_w = int(orig_w * ratio)
+
+        padded = np.zeros(
+            (self.input_height, self.input_width, 3), dtype=np.float32
+        )
+        resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        padded[:new_h, :new_w] = resized.astype(np.float32)
+
+        # NanoDet normalisation (BGR order): (pixel - mean) / std
+        mean = np.array([103.53, 116.28, 123.675], dtype=np.float32)
+        std = np.array([57.375, 57.12, 58.395], dtype=np.float32)
+        padded = (padded - mean) / std
+
+        blob = np.transpose(padded, (2, 0, 1))          # HWC → CHW
+        blob = np.ascontiguousarray(blob, dtype=np.float32)
+        blob = np.expand_dims(blob, axis=0)             # CHW → BCHW
+        return blob, ratio
+
+    def _postprocess_nanodet(self, raw_output, orig_w, orig_h):
+        """Post-process NanoDet GFL/DFL output.
+
+        Expected raw_output shape: (1, num_anchors, num_classes + 4*(reg_max+1))
+        For NanoDet-m with 80 classes and reg_max=7: (1, 2125, 112)
+
+        The DFL (Distribution Focal Loss) regression encodes each of the 4 box
+        sides as a discrete distribution over reg_max+1 bins. The expected value
+        of this distribution gives the distance from anchor center to box edge.
+        """
+        output = np.squeeze(raw_output)
+        if output.ndim != 2:
+            logger.warning(
+                f"[CustomONNX] nanodet post-process: unexpected ndim={output.ndim}. "
+                f"Returning empty detections."
+            )
+            return np.array([]), np.array([]), np.array([])
+
+        num_anchors = output.shape[0]
+        total_channels = output.shape[1]
+
+        # Determine reg_max from the output shape
+        # total_channels = num_classes + 4 * (reg_max + 1)
+        reg_channels = total_channels - self.num_classes
+        if reg_channels <= 0 or reg_channels % 4 != 0:
+            logger.warning(
+                f"[CustomONNX] nanodet post-process: cannot determine reg_max. "
+                f"total_channels={total_channels}, num_classes={self.num_classes}. "
+                f"Returning empty detections."
+            )
+            return np.array([]), np.array([]), np.array([])
+
+        reg_max_plus_1 = reg_channels // 4  # e.g., 8 for reg_max=7
+
+        # Split output into class scores and regression
+        class_scores = output[:, :self.num_classes]  # (num_anchors, num_classes)
+        reg_output = output[:, self.num_classes:]    # (num_anchors, 4*(reg_max+1))
+
+        # Apply sigmoid to class scores (NanoDet outputs raw logits)
+        class_scores = 1.0 / (1.0 + np.exp(-class_scores))
+
+        # Get max class score and class id per anchor
+        max_scores = class_scores.max(axis=1)
+        class_ids_all = class_scores.argmax(axis=1)
+
+        # Filter by score threshold
+        mask = max_scores >= self.nms_score_th
+        if not mask.any():
+            logger.debug("[CustomONNX] nanodet post-process: no detections above threshold.")
+            return np.array([]), np.array([]), np.array([])
+
+        # Decode DFL regression to distances
+        # Reshape reg: (num_anchors, 4, reg_max+1)
+        reg_reshaped = reg_output.reshape(num_anchors, 4, reg_max_plus_1)
+
+        # Softmax on last dimension
+        reg_exp = np.exp(reg_reshaped - reg_reshaped.max(axis=2, keepdims=True))
+        reg_softmax = reg_exp / reg_exp.sum(axis=2, keepdims=True)
+
+        # Expected value: sum(i * softmax[i]) for i in 0..reg_max
+        proj = np.arange(reg_max_plus_1, dtype=np.float32)
+        distances = (reg_softmax * proj).sum(axis=2)  # (num_anchors, 4): left, top, right, bottom
+
+        # Generate grid centers for all anchor points
+        strides = [8, 16, 32, 64]
+        centers = []
+        stride_list = []
+        for stride in strides:
+            n_h = self.input_height // stride
+            n_w = self.input_width // stride
+            if n_h <= 0 or n_w <= 0:
+                continue
+            yv, xv = np.meshgrid(np.arange(n_h), np.arange(n_w), indexing='ij')
+            center_x = (xv.ravel() + 0.5) * stride
+            center_y = (yv.ravel() + 0.5) * stride
+            grid = np.stack([center_x, center_y], axis=1)  # (n_h*n_w, 2)
+            centers.append(grid)
+            stride_list.append(np.full(grid.shape[0], stride, dtype=np.float32))
+
+        centers = np.concatenate(centers, axis=0)       # (num_anchors, 2)
+        stride_arr = np.concatenate(stride_list, axis=0)  # (num_anchors,)
+
+        # If anchor count doesn't match, try without stride 64
+        if centers.shape[0] != num_anchors:
+            strides_alt = [8, 16, 32]
+            centers_alt = []
+            stride_list_alt = []
+            for stride in strides_alt:
+                n_h = self.input_height // stride
+                n_w = self.input_width // stride
+                if n_h <= 0 or n_w <= 0:
+                    continue
+                yv, xv = np.meshgrid(np.arange(n_h), np.arange(n_w), indexing='ij')
+                center_x = (xv.ravel() + 0.5) * stride
+                center_y = (yv.ravel() + 0.5) * stride
+                grid = np.stack([center_x, center_y], axis=1)
+                centers_alt.append(grid)
+                stride_list_alt.append(np.full(grid.shape[0], stride, dtype=np.float32))
+            centers_alt = np.concatenate(centers_alt, axis=0)
+            stride_arr_alt = np.concatenate(stride_list_alt, axis=0)
+            if centers_alt.shape[0] == num_anchors:
+                centers = centers_alt
+                stride_arr = stride_arr_alt
+            else:
+                logger.warning(
+                    f"[CustomONNX] nanodet post-process: anchor count mismatch. "
+                    f"Expected {num_anchors}, got {centers.shape[0]} (4 strides) "
+                    f"or {centers_alt.shape[0]} (3 strides). Returning empty."
+                )
+                return np.array([]), np.array([]), np.array([])
+
+        # Convert distances to absolute coordinates:
+        # x1 = cx - left * stride, y1 = cy - top * stride
+        # x2 = cx + right * stride, y2 = cy + bottom * stride
+        stride_col = stride_arr[:, np.newaxis]  # (num_anchors, 1)
+        x1_all = centers[:, 0] - distances[:, 0] * stride_arr
+        y1_all = centers[:, 1] - distances[:, 1] * stride_arr
+        x2_all = centers[:, 0] + distances[:, 2] * stride_arr
+        y2_all = centers[:, 1] + distances[:, 3] * stride_arr
+
+        # Scale from letterbox-input space to original image
+        ratio = min(self.input_height / orig_h, self.input_width / orig_w)
+        x1_all = x1_all / ratio
+        y1_all = y1_all / ratio
+        x2_all = x2_all / ratio
+        y2_all = y2_all / ratio
+
+        # Apply mask
+        x1 = np.clip(x1_all[mask], 0, orig_w).astype(int)
+        y1 = np.clip(y1_all[mask], 0, orig_h).astype(int)
+        x2 = np.clip(x2_all[mask], 0, orig_w).astype(int)
+        y2 = np.clip(y2_all[mask], 0, orig_h).astype(int)
+        filtered_scores = max_scores[mask]
+        filtered_class_ids = class_ids_all[mask]
+
+        boxes_xyxy = np.stack([x1, y1, x2, y2], axis=1).tolist()
+        scores_list = filtered_scores.tolist()
+
+        indices = cv2.dnn.NMSBoxes(
+            boxes_xyxy, scores_list, self.nms_score_th, self.nms_th
+        )
+
+        if len(indices) == 0:
+            logger.debug("[CustomONNX] nanodet post-process: all candidates removed by NMS.")
+            return np.array([]), np.array([]), np.array([])
+
+        indices = np.array(indices).flatten()
+        logger.debug(f"[CustomONNX] nanodet post-process: {len(indices)} detections after NMS.")
+        return (
+            np.array(boxes_xyxy)[indices],
+            np.array(scores_list)[indices],
+            filtered_class_ids[indices],
         )
 
     # ------------------------------------------------------------------
