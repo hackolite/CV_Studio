@@ -117,6 +117,7 @@ class FactoryNode:
         node.tag_node_stats_display = node.tag_node_name + ':StatsDisplay'
         node.tag_node_lr_slider = node.tag_node_name + ':LRSlider'
         node.tag_node_threshold_slider = node.tag_node_name + ':ThresholdSlider'
+        node.tag_node_bbox_thickness_slider = node.tag_node_name + ':BboxThicknessSlider'
         node.tag_node_training_checkbox = node.tag_node_name + ':TrainingActive'
         node.tag_node_model_combo = node.tag_node_name + ':ModelCombo'
 
@@ -261,6 +262,20 @@ class FactoryNode:
                     tag=node.tag_node_training_checkbox,
                     label="Training Active",
                     default_value=True,
+                )
+
+            # Bounding box thickness slider
+            with dpg.node_attribute(
+                tag=node.tag_node_name + ':BboxThicknessAttr',
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_int(
+                    tag=node.tag_node_bbox_thickness_slider,
+                    label="bbox_thickness",
+                    width=small_window_w - 80,
+                    default_value=2,
+                    min_value=1,
+                    max_value=10,
                 )
 
             # Score display
@@ -652,6 +667,12 @@ class Node(Node):
             except Exception:
                 training_active = True
 
+            try:
+                bbox_thickness = int(dpg_get_value(
+                    self.tag_node_bbox_thickness_slider))
+            except Exception:
+                bbox_thickness = 2
+
             # --- Process ---
             result = {}
             output_frame = frame
@@ -764,7 +785,7 @@ class Node(Node):
                     class_name = self._student_class_names.get(class_id, f"cls_{class_id}")
                     label = f"S:{class_name} {score:.2f}"
 
-                    cv2.rectangle(output_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.rectangle(output_frame, (x1, y1), (x2, y2), (0, 255, 0), bbox_thickness)
                     cv2.putText(
                         output_frame, label, (x1, y1 - 5),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1
@@ -774,7 +795,7 @@ class Node(Node):
                 for i in range(len(teacher_bboxes)):
                     bbox = teacher_bboxes[i]
                     x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
-                    cv2.rectangle(output_frame, (x1, y1), (x2, y2), (255, 100, 0), 1)
+                    cv2.rectangle(output_frame, (x1, y1), (x2, y2), (255, 100, 0), max(1, bbox_thickness - 1))
 
                 # Draw score overlay
                 score_text = f"Score: {distillation['score']:.2f}"
