@@ -44,6 +44,7 @@ class CustomONNX:
         nms_th: float = 0.45,
         nms_score_th: float = 0.1,
         providers=None,
+        disable_optimizations: bool = False,
     ):
         if providers is None:
             providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
@@ -62,7 +63,9 @@ class CustomONNX:
             f"num_classes={num_classes}, providers={providers}"
         )
 
-        self.onnx_session = make_session(model_path, providers)
+        self.onnx_session = make_session(
+            model_path, providers, disable_optimizations=disable_optimizations
+        )
 
         # Use provided input name, fall back to first input name from model
         if input_name:

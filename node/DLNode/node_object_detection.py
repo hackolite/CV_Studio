@@ -124,6 +124,16 @@ _BUILTIN_MODELS = [
         'num_classes': 3,
         'class_names': {0: 'player1', 1: 'player2', 2: 'ball'},
     },
+    {
+        'name': 'NanoDet-QDQ(320x320)',
+        'path': os.path.join(_OBJECT_DETECTION_BASE, 'NanoDet', 'model', 'nanodet_qdq.onnx'),
+        'output_format': 'nanodet',
+        'input_width': 320,
+        'input_height': 320,
+        'num_classes': 80,
+        'class_names': _COCO_CLASSES,
+        'disable_optimizations': True,
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -529,6 +539,8 @@ class Node(Node):
                 'num_classes': meta['num_classes'],
                 'class_names': {str(k): v for k, v in meta['class_names'].items()},
             }
+            if meta.get('disable_optimizations'):
+                entry['disable_optimizations'] = True
             try:
                 custom_models_registry.save_entry(entry)
                 logger.info(f"[Builtin] Registered built-in model: {name}")
@@ -567,13 +579,16 @@ class Node(Node):
             output_fmt = entry.get('output_format', 'yolo11')
             in_w = int(entry.get('input_width', 640))
             in_h = int(entry.get('input_height', 640))
-            cls._register_custom_model(name, path, class_names, output_fmt, in_w, in_h)
+            disable_opt = bool(entry.get('disable_optimizations', False))
+            cls._register_custom_model(name, path, class_names, output_fmt, in_w, in_h,
+                                       disable_optimizations=disable_opt)
             logger.info(f"Loaded model from registry: {name}")
 
     @classmethod
-    def _register_custom_model(cls, name, path, class_names, output_fmt, in_w, in_h):
+    def _register_custom_model(cls, name, path, class_names, output_fmt, in_w, in_h,
+                               disable_optimizations=False):
         """Add a model to the class-level runtime dictionaries."""
-        def _make_factory(p, fmt, w, h):
+        def _make_factory(p, fmt, w, h, disable_opt):
             def factory(model_path, providers=None):
                 if providers is None:
                     providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
@@ -583,10 +598,11 @@ class Node(Node):
                     input_height=h,
                     output_format=fmt,
                     providers=providers,
+                    disable_optimizations=disable_opt,
                 )
             return factory
 
-        cls._model_class[name] = _make_factory(path, output_fmt, in_w, in_h)
+        cls._model_class[name] = _make_factory(path, output_fmt, in_w, in_h, disable_optimizations)
         cls._model_path_setting[name] = path
         cls._model_class_name_list[name] = class_names
 
