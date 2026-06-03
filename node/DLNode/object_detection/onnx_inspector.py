@@ -126,24 +126,48 @@ def inspect_onnx_model(model_path: str) -> dict:
         if isinstance(dim1, int) and isinstance(dim2, int):
             # YOLO11: dim1 = num_classes+4, dim2 >> dim1 (many anchors)
             # YOLOX:  dim2 = num_classes+5, dim1 >> dim2 (many anchors)
-            if dim1 < dim2 and dim1 > 4:
-                # Likely YOLO11 style: [1, C+4, anchors]
-                output_format = "yolo11"
-                num_classes = dim1 - 4
-            elif dim2 < dim1 and dim2 > 5:
-                # Likely YOLOX style: [1, anchors, C+5]
-                output_format = "yolox"
-                num_classes = dim2 - 5
-            elif dim1 < dim2 and dim1 == 4:
-                # Edge case: exactly 4 dims on axis1 → treat as yolo11 with 0 classes
-                output_format = "yolo11"
-                num_classes = 0
-            else:
-                logger.warning(
-                    f"[ONNX Inspector] Cannot determine output format from shape "
-                    f"{output_shape} (dim1={dim1}, dim2={dim2}). "
-                    f"Will default to 'yolo11' at inference time."
-                )
+            # NanoDet/GFL: dim2 = num_classes + 4*(reg_max+1), dim1 >> dim2
+            #   e.g. 80 + 4*8 = 112 for reg_max=7
+
+            # Check NanoDet/GFL pattern first: dim1 > dim2 and dim2 matches
+            # num_classes + 4*(reg_max+1) for reg_max in [7, 15]
+            detected_nanodet = False
+            if dim1 > dim2 and dim2 > 5:
+                for reg_max in (7, 15):
+                    reg_channels = 4 * (reg_max + 1)
+                    candidate_classes = dim2 - reg_channels
+                    if candidate_classes > 0 and candidate_classes != (dim2 - 5):
+                        # Only pick nanodet when the YOLOX interpretation (dim2-5)
+                        # gives a non-standard class count but GFL gives a standard one
+                        if candidate_classes in (80, 1, 2, 3, 4, 5, 10, 20, 21, 91):
+                            output_format = "nanodet"
+                            num_classes = candidate_classes
+                            detected_nanodet = True
+                            logger.info(
+                                f"[ONNX Inspector] Detected NanoDet/GFL format: "
+                                f"num_classes={num_classes}, reg_max={reg_max}"
+                            )
+                            break
+
+            if not detected_nanodet:
+                if dim1 < dim2 and dim1 > 4:
+                    # Likely YOLO11 style: [1, C+4, anchors]
+                    output_format = "yolo11"
+                    num_classes = dim1 - 4
+                elif dim2 < dim1 and dim2 > 5:
+                    # Likely YOLOX style: [1, anchors, C+5]
+                    output_format = "yolox"
+                    num_classes = dim2 - 5
+                elif dim1 < dim2 and dim1 == 4:
+                    # Edge case: exactly 4 dims on axis1 → treat as yolo11 with 0 classes
+                    output_format = "yolo11"
+                    num_classes = 0
+                else:
+                    logger.warning(
+                        f"[ONNX Inspector] Cannot determine output format from shape "
+                        f"{output_shape} (dim1={dim1}, dim2={dim2}). "
+                        f"Will default to 'yolo11' at inference time."
+                    )
         else:
             logger.warning(
                 f"[ONNX Inspector] Output shape has dynamic dimensions "

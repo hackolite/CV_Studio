@@ -28,6 +28,7 @@ from node.DLNode.object_detection.CustomONNX.custom_onnx import CustomONNX
 from node.DLNode.object_detection import onnx_inspector
 from node.DLNode.online_training.student_trainer import StudentTrainer
 from node.DLNode.online_training.distillation_loss import compute_distillation_score
+from node.DLNode.online_training import student_models_registry
 from src.utils.logging import get_logger
 from src.utils.gpu_utils import get_execution_providers
 
@@ -43,6 +44,40 @@ if getattr(sys, 'frozen', False):
     _STUDENTS_DIR = get_models_dir('online_training')
 else:
     _STUDENTS_DIR = os.path.join(_ONLINE_TRAINING_BASE, 'models')
+
+# COCO 80-class names for NanoDet built-in
+_COCO_CLASSES = {
+    0: 'person', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 4: 'airplane',
+    5: 'bus', 6: 'train', 7: 'truck', 8: 'boat', 9: 'traffic light',
+    10: 'fire hydrant', 11: 'stop sign', 12: 'parking meter', 13: 'bench',
+    14: 'bird', 15: 'cat', 16: 'dog', 17: 'horse', 18: 'sheep', 19: 'cow',
+    20: 'elephant', 21: 'bear', 22: 'zebra', 23: 'giraffe', 24: 'backpack',
+    25: 'umbrella', 26: 'handbag', 27: 'tie', 28: 'suitcase', 29: 'frisbee',
+    30: 'skis', 31: 'snowboard', 32: 'sports ball', 33: 'kite', 34: 'baseball bat',
+    35: 'baseball glove', 36: 'skateboard', 37: 'surfboard', 38: 'tennis racket',
+    39: 'bottle', 40: 'wine glass', 41: 'cup', 42: 'fork', 43: 'knife',
+    44: 'spoon', 45: 'bowl', 46: 'banana', 47: 'apple', 48: 'sandwich',
+    49: 'orange', 50: 'broccoli', 51: 'carrot', 52: 'hot dog', 53: 'pizza',
+    54: 'donut', 55: 'cake', 56: 'chair', 57: 'couch', 58: 'potted plant',
+    59: 'bed', 60: 'dining table', 61: 'toilet', 62: 'tv', 63: 'laptop',
+    64: 'mouse', 65: 'remote', 66: 'keyboard', 67: 'cell phone', 68: 'microwave',
+    69: 'oven', 70: 'toaster', 71: 'sink', 72: 'refrigerator', 73: 'book',
+    74: 'clock', 75: 'vase', 76: 'scissors', 77: 'teddy bear', 78: 'hair drier',
+    79: 'toothbrush',
+}
+
+# Built-in student model
+_BUILTIN_STUDENT_MODELS = [
+    {
+        'name': 'NanoDet-m(320x320)',
+        'path': os.path.join(_STUDENTS_DIR, 'nanodet-m_320_int8.onnx'),
+        'output_format': 'nanodet',
+        'input_width': 320,
+        'input_height': 320,
+        'num_classes': 80,
+        'class_names': {str(k): v for k, v in _COCO_CLASSES.items()},
+    },
+]
 
 
 class FactoryNode:
@@ -261,7 +296,22 @@ class FactoryNode:
                 )
                 dpg.bind_item_theme(btn, json_button_theme)
 
-            # Load Student Model button
+            # Student model combobox
+            with dpg.node_attribute(
+                tag=node.tag_node_name + ':ModelComboAttr',
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                model_names = Node._get_student_model_names()
+                default_model = model_names[0] if model_names else ''
+                dpg.add_combo(
+                    model_names,
+                    default_value=default_model,
+                    width=small_window_w,
+                    tag=node.tag_node_model_combo,
+                    callback=lambda s, a, u: node._on_model_combo_change(a),
+                )
+
+            # Load Student Model button (upload new ONNX)
             def _on_load_student(sender, app_data, user_data):
                 dpg.show_item(onnx_file_dialog_tag)
 
@@ -320,11 +370,99 @@ class Node(Node):
     _student_trainer: StudentTrainer = None
     _student_class_names: dict = {}
 
+    # Class-level model registry cache
+    _student_models: dict = {}  # {name: entry_dict}
+
     def __init__(self):
         pass
 
+    @classmethod
+    def _ensure_builtin_student_models(cls):
+        """Register built-in student models to the registry if not already present."""
+        try:
+            existing = {e.get('name') for e in student_models_registry.load_registry()}
+        except Exception as exc:
+            logger.warning(f"[OnlineTraining] Could not read student registry: {exc}")
+            return
+        for meta in _BUILTIN_STUDENT_MODELS:
+            name = meta['name']
+            path = meta['path']
+            if name in existing:
+                continue
+            if not os.path.isfile(path):
+                logger.debug(f"[OnlineTraining] Skipping builtin '{name}' — file not found: {path}")
+                continue
+            try:
+                student_models_registry.save_entry(meta)
+                logger.info(f"[OnlineTraining] Registered built-in student model: {name}")
+            except Exception as exc:
+                logger.warning(f"[OnlineTraining] Could not register '{name}': {exc}")
+
+    @classmethod
+    def _load_student_models_from_registry(cls):
+        """Load all student models from registry into class-level cache."""
+        cls._student_models = {}
+        try:
+            entries = student_models_registry.load_registry()
+        except Exception as exc:
+            logger.warning(f"[OnlineTraining] Failed to load student registry: {exc}")
+            return
+        for entry in entries:
+            name = entry.get('name', '')
+            if name:
+                cls._student_models[name] = entry
+
+    @classmethod
+    def _get_student_model_names(cls) -> list:
+        """Return list of available student model names."""
+        cls._load_student_models_from_registry()
+        return list(cls._student_models.keys())
+
+    def _on_model_combo_change(self, selected_name):
+        """Handle student model selection from combobox."""
+        if not selected_name:
+            return
+        entry = Node._student_models.get(selected_name)
+        if entry is None:
+            # Try reloading from registry
+            Node._load_student_models_from_registry()
+            entry = Node._student_models.get(selected_name)
+        if entry is None:
+            logger.warning(f"[OnlineTraining] Model '{selected_name}' not found in registry.")
+            return
+
+        self._load_student_from_entry(entry)
+
+    def _load_student_from_entry(self, entry):
+        """Load a student model from a registry entry dict."""
+        path = entry.get('path', '')
+        if not os.path.isfile(path):
+            logger.warning(f"[OnlineTraining] Model file not found: {path}")
+            return
+
+        raw_classes = entry.get('class_names', {})
+        class_names = {int(k): str(v) for k, v in raw_classes.items()}
+        if not class_names:
+            num_classes = entry.get('num_classes', 0)
+            if num_classes > 0:
+                class_names = {i: f"class_{i}" for i in range(num_classes)}
+
+        self._student_class_names = class_names
+
+        self._student_trainer = StudentTrainer(
+            model_path=path,
+            input_width=entry.get('input_width', 320),
+            input_height=entry.get('input_height', 320),
+            output_format=entry.get('output_format', 'nanodet'),
+            num_classes=entry.get('num_classes', 80),
+            learning_rate=0.0001,
+            score_threshold=0.3,
+            providers=["CPUExecutionProvider"],
+        )
+        logger.info(f"[OnlineTraining] Student model loaded: {entry.get('name')}")
+
     def _callback_student_onnx_select(self, sender, data, user_data=None):
-        """Handle student ONNX file selection."""
+        """Handle student ONNX file selection (upload)."""
         if data.get("file_name") == ".":
             return
         onnx_path = data.get("file_path_name", "")
@@ -357,21 +495,51 @@ class Node(Node):
             if num_classes > 0:
                 class_names = {i: f"class_{i}" for i in range(num_classes)}
 
-        self._student_class_names = {int(k): str(v) for k, v in class_names.items()}
+        # Determine display name — create registry entry if it doesn't exist
+        base_name = os.path.splitext(basename)[0]
+        name = base_name
+        counter = 1
+        while name in Node._student_models:
+            name = f"{base_name}_{counter}"
+            counter += 1
 
-        # Create trainer
-        self._student_trainer = StudentTrainer(
-            model_path=dest_path,
-            input_width=meta.get('input_width', 640),
-            input_height=meta.get('input_height', 640),
-            output_format=meta.get('output_format', 'yolo11'),
-            num_classes=meta.get('num_classes', 80),
-            learning_rate=0.0001,
-            score_threshold=0.3,
-            providers=["CPUExecutionProvider"],
-        )
+        output_fmt = meta.get("output_format", "yolo11")
+        in_w = meta.get("input_width", 640)
+        in_h = meta.get("input_height", 640)
+        num_classes = meta.get("num_classes", len(class_names))
 
-        logger.info(f"[OnlineTraining] Student model loaded: {basename}")
+        # Save to registry
+        registry_entry = {
+            "name": name,
+            "path": dest_path,
+            "class_names": {str(k): v for k, v in class_names.items()},
+            "output_format": output_fmt,
+            "input_width": in_w,
+            "input_height": in_h,
+            "num_classes": num_classes,
+        }
+        try:
+            student_models_registry.save_entry(registry_entry)
+            logger.info(f"[OnlineTraining] Registry entry saved for '{name}'.")
+        except Exception as exc:
+            logger.warning(f"[OnlineTraining] Could not save registry entry for '{name}': {exc}")
+
+        # Update class-level cache
+        Node._student_models[name] = registry_entry
+
+        # Update combobox
+        combo_tag = self.tag_node_name + ':ModelCombo'
+        try:
+            current_items = dpg.get_item_configuration(combo_tag).get("items", [])
+            if name not in current_items:
+                current_items = list(current_items) + [name]
+            dpg.configure_item(combo_tag, items=current_items, default_value=name)
+            logger.info(f"[OnlineTraining] Model dropdown updated — '{name}' selected.")
+        except Exception as exc:
+            logger.warning(f"[OnlineTraining] Could not update model dropdown: {exc}")
+
+        # Load the model
+        self._load_student_from_entry(registry_entry)
 
     def _callback_export_student(self, sender, data, user_data=None):
         """Handle student ONNX export."""
@@ -675,6 +843,7 @@ class Node(Node):
         score_th_tag = self.tag_node_name + ':ThresholdSlider'
         lr_tag = self.tag_node_name + ':LRSlider'
         training_tag = self.tag_node_name + ':TrainingActive'
+        model_combo_tag = self.tag_node_name + ':ModelCombo'
 
         pos = dpg.get_item_pos(self.tag_node_name)
 
@@ -684,6 +853,7 @@ class Node(Node):
         setting_dict[score_th_tag] = dpg_get_value(score_th_tag)
         setting_dict[lr_tag] = dpg_get_value(lr_tag)
         setting_dict[training_tag] = dpg_get_value(training_tag)
+        setting_dict['student_model'] = dpg_get_value(model_combo_tag)
 
         return setting_dict
 
@@ -692,10 +862,23 @@ class Node(Node):
         score_th_tag = self.tag_node_name + ':ThresholdSlider'
         lr_tag = self.tag_node_name + ':LRSlider'
         training_tag = self.tag_node_name + ':TrainingActive'
+        model_combo_tag = self.tag_node_name + ':ModelCombo'
 
         try:
             dpg_set_value(score_th_tag, setting_dict.get(score_th_tag, 0.3))
             dpg_set_value(lr_tag, setting_dict.get(lr_tag, 0.0001))
             dpg_set_value(training_tag, setting_dict.get(training_tag, True))
+            # Restore student model selection
+            saved_model = setting_dict.get('student_model', '')
+            if saved_model:
+                dpg_set_value(model_combo_tag, saved_model)
+                self._on_model_combo_change(saved_model)
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# Module-level initialization
+# ---------------------------------------------------------------------------
+Node._ensure_builtin_student_models()
+Node._load_student_models_from_registry()
