@@ -23,6 +23,7 @@ _IR_VERSION_ERROR_RE = re.compile(
 def make_session(
     model_source: Union[str, bytes, bytearray],
     providers: List[str],
+    disable_optimizations: bool = False,
 ) -> onnxruntime.InferenceSession:
     """Create an onnxruntime InferenceSession, clamping IR version if needed.
 
@@ -37,13 +38,25 @@ def make_session(
         File path or serialised model bytes to load.
     providers : list[str]
         Execution providers passed to InferenceSession.
+    disable_optimizations : bool
+        If True, disable all graph optimizations.  Required for QDQ models
+        whose Gather nodes are broken by the optimizer.
 
     Returns
     -------
     onnxruntime.InferenceSession
     """
+    sess_options = None
+    if disable_optimizations:
+        sess_options = onnxruntime.SessionOptions()
+        sess_options.graph_optimization_level = (
+            onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
+        )
+
     try:
-        return onnxruntime.InferenceSession(model_source, providers=providers)
+        return onnxruntime.InferenceSession(
+            model_source, sess_options=sess_options, providers=providers
+        )
     except Exception as exc:
         # onnxruntime does not expose stable public exception sub-types, so we
         # inspect the message to distinguish an IR-version error from other
@@ -75,5 +88,7 @@ def make_session(
         model_proto.ir_version = max_ir
         logger.info(f"[ONNX] IR version clamped {original_ir} → {max_ir}.")
         return onnxruntime.InferenceSession(
-            model_proto.SerializeToString(), providers=providers
+            model_proto.SerializeToString(),
+            sess_options=sess_options,
+            providers=providers,
         )
