@@ -437,6 +437,7 @@ class Node(Node):
                 # Wait up to _MAX_TEACHER_WAIT for teacher result matching image timestamp
                 _MAX_TEACHER_WAIT = 0.15  # seconds (150ms max wait)
                 _POLL_INTERVAL = 0.01  # 10ms polling interval
+                _TIMESTAMP_MATCH_TOLERANCE = 0.05  # 50ms — teacher/image timestamps considered matching
                 waited = 0.0
 
                 teacher_json = node_result_dict.get(teacher_source_node, {})
@@ -447,7 +448,7 @@ class Node(Node):
                     while waited < _MAX_TEACHER_WAIT:
                         teacher_json = node_result_dict.get(teacher_source_node, {})
                         teacher_timestamp = teacher_json.get('timestamp', None) if teacher_json else None
-                        if teacher_timestamp is not None and abs(teacher_timestamp - image_timestamp) < 0.05:
+                        if teacher_timestamp is not None and abs(teacher_timestamp - image_timestamp) < _TIMESTAMP_MATCH_TOLERANCE:
                             # Teacher result matches our image — proceed
                             break
                         time.sleep(_POLL_INTERVAL)
@@ -504,8 +505,11 @@ class Node(Node):
                 # (falls back to current time if image timestamp is unavailable)
                 frame_timestamp = image_timestamp if image_timestamp is not None else time.time()
 
-                # Timestamp alignment check: reject stale teacher data
-                # Now compares teacher timestamp with the image timestamp directly
+                # Timestamp alignment check: reject stale teacher data.
+                # _TIMESTAMP_MATCH_TOLERANCE (50ms) is used during the wait loop to detect
+                # that the teacher result corresponds to *this* frame. _MAX_TEACHER_STALENESS
+                # (500ms) is a broader safety net: if the teacher result is from a much older
+                # frame (e.g., pipeline stall), we skip distillation entirely.
                 _MAX_TEACHER_STALENESS = 0.5  # seconds
                 timestamp_aligned = True
                 if teacher_timestamp is not None and image_timestamp is not None:
