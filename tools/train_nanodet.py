@@ -1445,6 +1445,28 @@ class CheckpointManager:
 # ============================================================
 # BOUCLE D'ENTRAÎNEMENT
 # ============================================================
+def _gpu_mem_str(device: torch.device) -> str:
+    """Retourne la mémoire GPU réservée formatée (ex: '3.2G'), ou '' sur CPU."""
+    if device.type != "cuda":
+        return ""
+    try:
+        mem = torch.cuda.memory_reserved(device) / 1e9
+        return f"{mem:.2f}G"
+    except Exception:
+        return ""
+
+
+def _print_epoch_header() -> None:
+    """Imprime l'en-tête de tableau style Ultralytics."""
+    print(
+        f"\n{'':>10s}{'gpu_mem':>10s}"
+        f"{'box_loss':>10s}{'cls_loss':>10s}{'obj_loss':>10s}"
+        f"{'val_box':>10s}{'val_cls':>10s}{'val_obj':>10s}"
+        f"{'P':>8s}{'R':>8s}{'mAP50':>9s}{'lr':>12s}",
+        flush=True,
+    )
+
+
 def run_epoch(
     model:        nn.Module,
     loader:       DataLoader,
@@ -1496,7 +1518,18 @@ def run_epoch(
             for k, v in details.items():
                 totals[k] = totals.get(k, 0.0) + v
             n_batches += 1
-            pbar.set_postfix(loss=f"{details['loss/total']:.4f}")
+            avg_box = totals.get("loss/box", 0.0) / n_batches
+            avg_cls = totals.get("loss/cls", 0.0) / n_batches
+            avg_obj = totals.get("loss/obj", 0.0) / n_batches
+            mem = _gpu_mem_str(device)
+            postfix: dict = {
+                "box": f"{avg_box:.4f}",
+                "cls": f"{avg_cls:.4f}",
+                "obj": f"{avg_obj:.4f}",
+            }
+            if mem:
+                postfix = {"mem": mem, **postfix}
+            pbar.set_postfix(postfix)
 
             if cfg.max_steps is not None and step >= cfg.max_steps - 1:
                 log.debug("max_steps=%d atteint.", cfg.max_steps)
@@ -1576,9 +1609,9 @@ def train(cfg: Config = CFG) -> None:
         start_epoch = ckpt_mgr.load(cfg.resume, model, optimizer, scheduler)
 
     best_map50 = 0.0
+    _print_epoch_header()
 
     for epoch in range(start_epoch, cfg.epochs):
-        log.info("── Epoch %d/%d ──", epoch + 1, cfg.epochs)
 
         train_metrics, global_step = run_epoch(
             model, train_loader, optimizer, scaler, cfg, device,
@@ -1599,17 +1632,36 @@ def train(cfg: Config = CFG) -> None:
             model, val_loader, cfg, device, max_images=500
         )
 
-        log.info(
-            "train_loss=%.4f  val_loss=%.4f  mAP@50=%.4f  "
-            "P=%.3f  R=%.3f  F1=%.3f  lr=%.2e",
-            train_metrics["loss/total"],
-            val_metrics["loss/total"],
-            map50,
-            det_metrics["metrics/precision"],
-            det_metrics["metrics/recall"],
-            det_metrics["metrics/f1"],
-            optimizer.param_groups[0]["lr"],
+        # ── Ligne de tableau style Ultralytics ──────────────────────────────
+        lr_now  = optimizer.param_groups[0]["lr"]
+        mem_str = _gpu_mem_str(device)
+        epoch_str = f"{epoch + 1}/{cfg.epochs}"
+        print(
+            f"{epoch_str:>10s}{mem_str:>10s}"
+            f"{train_metrics.get('loss/box', 0):>10.4f}"
+            f"{train_metrics.get('loss/cls', 0):>10.4f}"
+            f"{train_metrics.get('loss/obj', 0):>10.4f}"
+            f"{val_metrics.get('loss/box', 0):>10.4f}"
+            f"{val_metrics.get('loss/cls', 0):>10.4f}"
+            f"{val_metrics.get('loss/obj', 0):>10.4f}"
+            f"{det_metrics['metrics/precision']:>8.3f}"
+            f"{det_metrics['metrics/recall']:>8.3f}"
+            f"{map50:>9.4f}"
+            f"{lr_now:>12.2e}",
+            flush=True,
         )
+
+        # ── Tableau par classe style Ultralytics ────────────────────────────
+        valid_aps = [(c, v) for c, v in ap_dict.items() if not math.isnan(v)]
+        if valid_aps:
+            print(
+                f"\n{'':>18s}{'Class':>10s}{'AP50':>10s}",
+                flush=True,
+            )
+            for cls_id, ap in sorted(valid_aps, key=lambda x: -x[1])[:10]:
+                print(f"{'':>18s}{f'cls{cls_id}':>10s}{ap:>10.3f}", flush=True)
+            mean_ap = sum(v for _, v in valid_aps) / len(valid_aps)
+            print(f"{'':>18s}{'all':>10s}{mean_ap:>10.3f}\n", flush=True)
 
         if writer:
             for k, v in val_metrics.items():
@@ -1617,7 +1669,7 @@ def train(cfg: Config = CFG) -> None:
             writer.add_scalar("metrics/mAP50", map50, epoch)
             for k, v in det_metrics.items():
                 writer.add_scalar(k, v, epoch)
-            writer.add_scalar("lr", optimizer.param_groups[0]["lr"], epoch)
+            writer.add_scalar("lr", lr_now, epoch)
 
         if (epoch + 1) % cfg.save_every == 0:
             ckpt_mgr.save(
@@ -1629,17 +1681,11 @@ def train(cfg: Config = CFG) -> None:
             best_map50 = map50
             best_path  = Path(cfg.ckpt_dir) / "best.pt"
             torch.save(model.state_dict(), best_path)
-            log.info("→ Nouveau best model sauvegardé (mAP@50=%.4f)", best_map50)
-
-        # Log top-10 classes
-        valid_aps = [(c, v) for c, v in ap_dict.items() if not math.isnan(v)]
-        top10 = sorted(valid_aps, key=lambda x: -x[1])[:10]
-        log.info("  Top-10 AP : %s",
-                 "  ".join(f"cls{c}={v:.3f}" for c, v in top10))
+            print(f"  ✦ best model saved  mAP50={best_map50:.4f}", flush=True)
 
     if writer:
         writer.close()
-    log.info("✔ ENTRAÎNEMENT TERMINÉ (best mAP@50=%.4f)", best_map50)
+    print(f"\n✔ ENTRAÎNEMENT TERMINÉ  best mAP50={best_map50:.4f}", flush=True)
 
 
 # ============================================================
