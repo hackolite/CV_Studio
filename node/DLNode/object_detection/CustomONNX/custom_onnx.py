@@ -246,8 +246,17 @@ class CustomONNX:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         # Detect input layout from the ONNX session
+        # Some SSD models use BHWC layout (batch, height, width, channels)
+        # where dim[1] equals the input height. Others use BCHW (batch, channels, H, W).
         actual_shape = list(self.onnx_session.get_inputs()[0].shape)
-        if len(actual_shape) == 4 and actual_shape[1] in (self.input_height, None, 'N'):
+        is_bhwc = (
+            len(actual_shape) == 4
+            and isinstance(actual_shape[1], int)
+            and actual_shape[1] == self.input_height
+            and isinstance(actual_shape[3], int)
+            and actual_shape[3] == 3
+        )
+        if is_bhwc:
             # BHWC layout — keep as uint8 [0, 255]
             img = img.astype(np.uint8)
             blob = np.expand_dims(img, axis=0).astype(np.float32)
