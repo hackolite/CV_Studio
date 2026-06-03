@@ -96,6 +96,9 @@ class CustomONNX:
                 )
                 self.input_width = actual_w
 
+        # Cache for nanodet channel layout detection (None = not yet detected)
+        self._nanodet_reg_first = None
+
         logger.info(
             f"[CustomONNX] Ready — input_name='{self.input_name}', "
             f"output_name='{self.output_name}', "
@@ -777,9 +780,30 @@ class CustomONNX:
 
         reg_max_plus_1 = reg_channels // 4  # e.g., 8 for reg_max=7
 
-        # Split output into class scores and regression
-        class_scores = output[:, :self.num_classes]  # (num_anchors, num_classes)
-        reg_output = output[:, self.num_classes:]    # (num_anchors, 4*(reg_max+1))
+        # Detect channel layout (cached after first inference).
+        # Some NanoDet models (e.g. nanodet_qdq) output regression channels
+        # first [reg, classes] instead of [classes, reg].
+        # Heuristic: DFL regression values are softmax outputs (bounded ~[0,1]
+        # with low variance), while raw class logits have higher variance.
+        if self._nanodet_reg_first is None:
+            first_block = output[:, :reg_channels]
+            last_block = output[:, reg_channels:]
+            first_std = first_block.std()
+            last_std = last_block.std()
+            self._nanodet_reg_first = (
+                first_std < last_std
+                and first_block.min() >= -0.5
+                and first_block.max() <= 1.5
+            )
+            layout = "reg-first" if self._nanodet_reg_first else "classes-first"
+            logger.debug(f"[CustomONNX] nanodet post-process: detected {layout} layout.")
+
+        if self._nanodet_reg_first:
+            reg_output = output[:, :reg_channels]       # (num_anchors, 4*(reg_max+1))
+            class_scores = output[:, reg_channels:]     # (num_anchors, num_classes)
+        else:
+            class_scores = output[:, :self.num_classes]  # (num_anchors, num_classes)
+            reg_output = output[:, self.num_classes:]    # (num_anchors, 4*(reg_max+1))
 
         # Apply sigmoid to class scores (NanoDet outputs raw logits)
         class_scores = 1.0 / (1.0 + np.exp(-class_scores))
