@@ -777,9 +777,25 @@ class CustomONNX:
 
         reg_max_plus_1 = reg_channels // 4  # e.g., 8 for reg_max=7
 
-        # Split output into class scores and regression
-        class_scores = output[:, :self.num_classes]  # (num_anchors, num_classes)
-        reg_output = output[:, self.num_classes:]    # (num_anchors, 4*(reg_max+1))
+        # Detect channel layout: some NanoDet models (e.g. nanodet_qdq) output
+        # regression channels first [reg, classes] instead of [classes, reg].
+        # Heuristic: DFL regression values are softmax outputs (small, bounded
+        # in [0,1]), while raw class logits have larger magnitudes.
+        first_block = output[:, :reg_channels]
+        last_block = output[:, reg_channels:]
+        first_std = first_block.std()
+        last_std = last_block.std()
+
+        if first_std < last_std and first_block.min() >= -0.5 and first_block.max() <= 1.5:
+            # Regression is first (reg_channels cols), classes are last
+            reg_output = output[:, :reg_channels]       # (num_anchors, 4*(reg_max+1))
+            class_scores = output[:, reg_channels:]     # (num_anchors, num_classes)
+            logger.debug("[CustomONNX] nanodet post-process: detected reg-first layout.")
+        else:
+            # Classes are first (standard layout)
+            class_scores = output[:, :self.num_classes]  # (num_anchors, num_classes)
+            reg_output = output[:, self.num_classes:]    # (num_anchors, 4*(reg_max+1))
+            logger.debug("[CustomONNX] nanodet post-process: detected classes-first layout.")
 
         # Apply sigmoid to class scores (NanoDet outputs raw logits)
         class_scores = 1.0 / (1.0 + np.exp(-class_scores))
