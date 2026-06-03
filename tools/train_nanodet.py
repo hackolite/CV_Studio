@@ -812,18 +812,18 @@ def train(cfg: Config = CFG) -> None:
             )
 
     collate   = make_collate(cfg, label_map)
-    n_workers = min(4, os.cpu_count() or 1)
-    use_pw    = n_workers > 0   # persistent_workers requires num_workers > 0
+    n_workers             = min(4, os.cpu_count() or 1)
+    use_persistent_workers = n_workers > 0   # persistent_workers requires num_workers > 0
 
     train_loader = DataLoader(
         train_ds, batch_size=cfg.batch_size, shuffle=True,
         collate_fn=collate, num_workers=n_workers,
-        pin_memory=(device.type == "cuda"), persistent_workers=use_pw,
+        pin_memory=(device.type == "cuda"), persistent_workers=use_persistent_workers,
     )
     val_loader = DataLoader(
         val_ds, batch_size=cfg.batch_size, shuffle=False,
         collate_fn=collate, num_workers=max(1, n_workers // 2),
-        pin_memory=(device.type == "cuda"), persistent_workers=use_pw,
+        pin_memory=(device.type == "cuda"), persistent_workers=use_persistent_workers,
     )
 
     model = NanoDetLite(cfg.num_classes).to(device)
