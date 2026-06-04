@@ -499,7 +499,7 @@ class Config:
     opset:     int = 17
 
     # Inférence
-    conf_threshold:    float = 0.4
+    conf_threshold:    float = 0.05   # seuil bas pour ne pas masquer les détections en début d'entraînement
     nms_iou_threshold: float = 0.5
 
     # mAP
@@ -833,11 +833,13 @@ def focal_loss(
     alpha:  float = 0.25,
     gamma:  float = 2.0,
 ) -> torch.Tensor:
-    """Binary focal loss numériquement stable (via logits)."""
+    """Binary focal loss numériquement stable (via logits), alpha asymétrique."""
     pred_sig = torch.sigmoid(pred)
-    pt  = pred_sig * target + (1 - pred_sig) * (1 - target)
+    pt      = pred_sig * target + (1 - pred_sig) * (1 - target)
+    # alpha pour les positifs, (1-alpha) pour les négatifs — conforme RetinaNet
+    alpha_t = target * alpha + (1 - target) * (1 - alpha)
     bce = F.binary_cross_entropy_with_logits(pred, target, reduction="none")
-    return (alpha * (1 - pt) ** gamma * bce).mean()
+    return (alpha_t * (1 - pt) ** gamma * bce).mean()
 
 
 def compute_loss(
@@ -847,7 +849,13 @@ def compute_loss(
     device: torch.device,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     cls_loss = focal_loss(cls_p, cls_t, cfg.focal_alpha, cfg.focal_gamma)
-    obj_loss = F.binary_cross_entropy_with_logits(obj_p, obj_t)
+
+    # pos_weight compense le déséquilibre positifs/négatifs (~1.75% de positifs sur COCO).
+    # On calcule dynamiquement le ratio négatifs/positifs sur le batch courant.
+    n_pos = obj_t.sum().clamp(min=1.0)
+    n_neg = obj_t.numel() - n_pos
+    pos_weight = torch.tensor([n_neg / n_pos], device=device)
+    obj_loss = F.binary_cross_entropy_with_logits(obj_p, obj_t, pos_weight=pos_weight)
 
     mask = (obj_t > 0).squeeze(1)   # [B, H, W]
     if mask.any():
@@ -1592,13 +1600,10 @@ def train(cfg: Config = CFG) -> None:
     log.info("Paramètres : %.2f M",
              sum(p.numel() for p in model.parameters()) / 1e6)
 
-    optimizer   = torch.optim.AdamW(
+    optimizer = torch.optim.AdamW(
         model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay
     )
-    total_steps = cfg.epochs * len(train_loader)
-    scheduler   = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=total_steps, eta_min=cfg.lr * 1e-2
-    )
+
     scaler   = torch.amp.GradScaler("cuda", enabled=(device.type == "cuda"))
     ckpt_mgr = CheckpointManager(cfg.ckpt_dir)
     writer   = SummaryWriter(LOG_DIR / "tb") if _TB_AVAILABLE else None
@@ -1606,7 +1611,18 @@ def train(cfg: Config = CFG) -> None:
     start_epoch = 0
     global_step = 0
     if cfg.resume:
-        start_epoch = ckpt_mgr.load(cfg.resume, model, optimizer, scheduler)
+        # On charge model + optimizer depuis le checkpoint ; le scheduler sera
+        # recréé ci-dessous avec le bon T_max (pas besoin de restaurer son état).
+        ckpt = torch.load(cfg.resume, map_location="cpu")
+        model.load_state_dict(ckpt["model"])
+        optimizer.load_state_dict(ckpt["optimizer"])
+        start_epoch = ckpt["epoch"]
+        log.info("Reprise depuis %s (epoch %d)", cfg.resume, start_epoch)
+
+    # T_max = nombre d'epochs restantes (step() est appelé une fois par epoch)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=max(1, cfg.epochs - start_epoch), eta_min=cfg.lr * 1e-2
+    )
 
     best_map50 = 0.0
     _print_epoch_header()
