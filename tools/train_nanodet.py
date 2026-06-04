@@ -499,7 +499,7 @@ class Config:
     opset:     int = 17
 
     # Inférence
-    conf_threshold:    float = 0.4
+    conf_threshold:    float = 0.05   # seuil bas pour ne pas masquer les détections en début d'entraînement
     nms_iou_threshold: float = 0.5
 
     # mAP
@@ -833,11 +833,13 @@ def focal_loss(
     alpha:  float = 0.25,
     gamma:  float = 2.0,
 ) -> torch.Tensor:
-    """Binary focal loss numériquement stable (via logits)."""
+    """Binary focal loss numériquement stable (via logits), alpha asymétrique."""
     pred_sig = torch.sigmoid(pred)
-    pt  = pred_sig * target + (1 - pred_sig) * (1 - target)
+    pt      = pred_sig * target + (1 - pred_sig) * (1 - target)
+    # alpha pour les positifs, (1-alpha) pour les négatifs — conforme RetinaNet
+    alpha_t = target * alpha + (1 - target) * (1 - alpha)
     bce = F.binary_cross_entropy_with_logits(pred, target, reduction="none")
-    return (alpha * (1 - pt) ** gamma * bce).mean()
+    return (alpha_t * (1 - pt) ** gamma * bce).mean()
 
 
 def compute_loss(
@@ -847,7 +849,13 @@ def compute_loss(
     device: torch.device,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     cls_loss = focal_loss(cls_p, cls_t, cfg.focal_alpha, cfg.focal_gamma)
-    obj_loss = F.binary_cross_entropy_with_logits(obj_p, obj_t)
+
+    # pos_weight compense le déséquilibre positifs/négatifs (~1.75% de positifs sur COCO).
+    # On utilise les tensors existants pour éviter de créer un nouvel objet à chaque pas.
+    n_pos = obj_t.sum().clamp(min=1.0)
+    n_neg = float(obj_t.numel()) - n_pos
+    pos_weight = (n_neg / n_pos).reshape(1)   # tenseur déjà sur device, shape [1]
+    obj_loss = F.binary_cross_entropy_with_logits(obj_p, obj_t, pos_weight=pos_weight)
 
     mask = (obj_t > 0).squeeze(1)   # [B, H, W]
     if mask.any():
@@ -1432,12 +1440,13 @@ class CheckpointManager:
         path:      str,
         model:     nn.Module,
         optimizer: torch.optim.Optimizer,
-        scheduler,
+        scheduler=None,
     ) -> int:
         ckpt = torch.load(path, map_location="cpu")
         model.load_state_dict(ckpt["model"])
         optimizer.load_state_dict(ckpt["optimizer"])
-        scheduler.load_state_dict(ckpt["scheduler"])
+        if scheduler is not None and "scheduler" in ckpt:
+            scheduler.load_state_dict(ckpt["scheduler"])
         log.info("Reprise depuis %s (epoch %d)", path, ckpt["epoch"])
         return ckpt["epoch"]
 
@@ -1592,13 +1601,10 @@ def train(cfg: Config = CFG) -> None:
     log.info("Paramètres : %.2f M",
              sum(p.numel() for p in model.parameters()) / 1e6)
 
-    optimizer   = torch.optim.AdamW(
+    optimizer = torch.optim.AdamW(
         model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay
     )
-    total_steps = cfg.epochs * len(train_loader)
-    scheduler   = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=total_steps, eta_min=cfg.lr * 1e-2
-    )
+
     scaler   = torch.amp.GradScaler("cuda", enabled=(device.type == "cuda"))
     ckpt_mgr = CheckpointManager(cfg.ckpt_dir)
     writer   = SummaryWriter(LOG_DIR / "tb") if _TB_AVAILABLE else None
@@ -1606,7 +1612,14 @@ def train(cfg: Config = CFG) -> None:
     start_epoch = 0
     global_step = 0
     if cfg.resume:
-        start_epoch = ckpt_mgr.load(cfg.resume, model, optimizer, scheduler)
+        # Le scheduler sera recréé après avec le bon T_max ;
+        # on ne charge pas son état (scheduler=None).
+        start_epoch = ckpt_mgr.load(cfg.resume, model, optimizer)
+
+    # T_max = nombre d'epochs restantes (step() est appelé une fois par epoch)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=max(1, cfg.epochs - start_epoch), eta_min=cfg.lr * 1e-2
+    )
 
     best_map50 = 0.0
     _print_epoch_header()
