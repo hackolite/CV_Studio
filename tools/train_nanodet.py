@@ -1154,7 +1154,7 @@ def compute_map_50_95(
     Utilise compute_map_50 à chaque seuil pour ne pas dupliquer la logique.
     """
     aps = []
-    for thr in np.arange(0.5, 1.0, 0.05):
+    for thr in np.linspace(0.5, 0.95, 10):
         map_val, _ = compute_map_50(
             all_pred_boxes, all_pred_scores, all_pred_labels,
             all_gt_boxes,   all_gt_labels,
