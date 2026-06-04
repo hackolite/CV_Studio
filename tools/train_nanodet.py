@@ -1937,38 +1937,38 @@ def infer_onnx(
 # ============================================================
 # POINT D'ENTRÉE
 # ============================================================
-if __name__ == "__main__":
-    #train(CFG)
-    best_weights = Path(CFG.ckpt_dir) / "best.pt"
-    export_onnx(
-        cfg=CFG,
-        weights_path=str(best_weights) if best_weights.exists() else None,
-    )
 
-    # ── Exemple d'inférence ONNX sur une image ─────────────────────────────
-    # Décommentez et adaptez le chemin pour tester :
-    #
-    # COCO_CLASS_NAMES = [
-    #     "person","bicycle","car","motorcycle","airplane","bus","train",
-    #     "truck","boat","traffic light","fire hydrant","stop sign",
-    #     "parking meter","bench","bird","cat","dog","horse","sheep","cow",
-    #     "elephant","bear","zebra","giraffe","backpack","umbrella","handbag",
-    #     "tie","suitcase","frisbee","skis","snowboard","sports ball","kite",
-    #     "baseball bat","baseball glove","skateboard","surfboard",
-    #     "tennis racket","bottle","wine glass","cup","fork","knife","spoon",
-    #     "bowl","banana","apple","sandwich","orange","broccoli","carrot",
-    #     "hot dog","pizza","donut","cake","chair","couch","potted plant",
-    #     "bed","dining table","toilet","tv","laptop","mouse","remote",
-    #     "keyboard","cell phone","microwave","oven","toaster","sink",
-    #     "refrigerator","book","clock","vase","scissors","teddy bear",
-    #     "hair drier","toothbrush",
-    # ]
-    #
-    # detections = infer_onnx(
-    #     image_path="image.jpg",
-    #     onnx_path=CFG.onnx_path,
-    #     cfg=CFG,
-    #     class_names=COCO_CLASS_NAMES,
-    #     output_path="image_annotated.jpg",
-    # )
-    # print(detections)
+train(CFG)
+best_weights = Path(CFG.ckpt_dir) / "best.pt"
+export_onnx(
+    cfg=CFG,
+    weights_path=str(best_weights) if best_weights.exists() else None,
+)
+
+# ── Exemple d'inférence ONNX sur une image ─────────────────────────────
+# Décommentez et adaptez le chemin pour tester :
+#
+COCO_CLASS_NAMES = [
+      "person","bicycle","car","motorcycle","airplane","bus","train",
+      "truck","boat","traffic light","fire hydrant","stop sign",
+      "parking meter","bench","bird","cat","dog","horse","sheep","cow",
+      "elephant","bear","zebra","giraffe","backpack","umbrella","handbag",
+      "tie","suitcase","frisbee","skis","snowboard","sports ball","kite",
+      "baseball bat","baseball glove","skateboard","surfboard",
+      "tennis racket","bottle","wine glass","cup","fork","knife","spoon",
+      "bowl","banana","apple","sandwich","orange","broccoli","carrot",
+      "hot dog","pizza","donut","cake","chair","couch","potted plant",
+      "bed","dining table","toilet","tv","laptop","mouse","remote",
+      "keyboard","cell phone","microwave","oven","toaster","sink",
+      "refrigerator","book","clock","vase","scissors","teddy bear",
+      "hair drier","toothbrush",
+  ]
+
+detections = infer_onnx(
+      image_path="image.jpg",
+      onnx_path=CFG.onnx_path,
+      cfg=CFG,
+      class_names=COCO_CLASS_NAMES,
+      output_path="image_annotated.jpg",
+  )
+print(detections)
