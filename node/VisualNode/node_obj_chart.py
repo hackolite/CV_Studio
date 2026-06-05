@@ -29,6 +29,13 @@ def get_class_dropdown_items():
     return items
 
 
+def get_dict_dropdown_items(data_dict):
+    """Generate dropdown items from dictionary keys."""
+    if not isinstance(data_dict, dict):
+        return []
+    return [str(key) for key in data_dict.keys()]
+
+
 class FactoryNode:
     node_label = 'Chart'
     node_tag = 'ObjChart'
@@ -272,16 +279,33 @@ class Node(Chart):
             slot_count = len(children) if children else 0
             
             new_slot_tag = f"{node_tag}:ClassSlot:{slot_count}"
+            dropdown_items = Node.get_slot_dropdown_items(class_slots_tag)
+            default_value = dropdown_items[0] if dropdown_items else ""
             
             # Add new combo to the class slots container
             dpg.add_combo(
                 tag=new_slot_tag,
                 label=f"Class {slot_count + 1}",
-                items=get_class_dropdown_items(),
-                default_value="All",
+                items=dropdown_items,
+                default_value=default_value,
                 width=combo_width,
                 parent=class_slots_tag,
             )
+
+    @staticmethod
+    def get_slot_dropdown_items(class_slots_tag):
+        """Get current dropdown items from existing class slots."""
+        if dpg.does_item_exist(class_slots_tag):
+            children = dpg.get_item_children(class_slots_tag, slot=1)
+            if children:
+                try:
+                    config = dpg.get_item_configuration(children[0])
+                    items = config.get("items")
+                    if isinstance(items, list) and items:
+                        return items
+                except (KeyError, TypeError, AttributeError):
+                    pass
+        return get_class_dropdown_items()
     
     @staticmethod
     def save_chart_callback(sender, app_data, user_data):
@@ -349,6 +373,29 @@ class Node(Chart):
                 del self._avg_accumulators[key][bucket]
             if not self._avg_accumulators[key]:
                 del self._avg_accumulators[key]
+
+    def update_class_slot_items(self, tag_node_name, items):
+        """Update class slot combos with new available items."""
+        class_slots_tag = f"{tag_node_name}:ClassSlots"
+        if not dpg.does_item_exist(class_slots_tag):
+            return
+
+        normalized_items = [str(item) for item in items if str(item) != ""]
+        if not normalized_items:
+            return
+
+        children = dpg.get_item_children(class_slots_tag, slot=1)
+        if not children:
+            return
+
+        for child in children:
+            try:
+                previous_value = dpg_get_value(child)
+                dpg.configure_item(child, items=normalized_items)
+                if previous_value not in normalized_items:
+                    dpg_set_value(child, normalized_items[0])
+            except (KeyError, TypeError, AttributeError, ValueError):
+                pass
 
     def render_chart(self, time_unit, selected_classes, class_names_dict, chart_type="bar"):
         """Render the chart as an image using matplotlib
@@ -594,6 +641,8 @@ class Node(Chart):
                         acc[1] += 1
                         self.time_counts[key][current_bucket] = acc[0] / acc[1]
 
+                self.update_class_slot_items(tag_node_name, get_dict_dropdown_items(loss_data))
+
                 # Determine which series to display from class slots or default to all keys
                 selected_classes = []
                 class_slots_tag = f"{tag_node_name}:ClassSlots"
@@ -637,6 +686,8 @@ class Node(Chart):
                 for key, value in node_result.items():
                     self.time_counts[key][current_bucket] = value
 
+                self.update_class_slot_items(tag_node_name, get_dict_dropdown_items(node_result))
+
                 # Determine which series to display from class slots or default to all keys
                 selected_classes = []
                 class_slots_tag = f"{tag_node_name}:ClassSlots"
@@ -670,6 +721,7 @@ class Node(Chart):
                 # Extract detection data (original behavior)
                 class_ids = node_result.get('class_ids', [])
                 class_names = node_result.get('class_names', {})
+                self.update_class_slot_items(tag_node_name, get_class_dropdown_items())
             
                 if class_ids:
                     # Get current time bucket
