@@ -529,10 +529,11 @@ def _empty_loss_dict():
         'cardinality_error': 0,
         'fp_count': 0,
         'fn_count': 0,
-        'iou_mean_matched': 0.0,
+        # Both sides empty is a perfect agreement, so report a perfect IoU.
+        'iou_mean_matched': 1.0,
         'class_mismatch_rate': 0.0,
         'num_matched': 0,
-        'detection_score': 0.0,
+        'detection_score': 1.0,
         'teacher_count': 0,
         'student_count': 0,
     }
