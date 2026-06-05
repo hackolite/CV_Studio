@@ -561,6 +561,33 @@ class FactoryNode:
                 )
                 dpg.bind_item_theme(upload_btn, add_model_btn_theme)
 
+            # ---- Delete model button (removes the selected model) -----------
+            node.tag_delete_btn = node.tag_node_name + ':DeleteONNX'
+
+            def _on_delete_clicked(sender, app_data, user_data):
+                model_combo_tag = node.tag_node_input_text_value_name
+                selected = dpg_get_value(model_combo_tag)
+                node._delete_selected_model(selected)
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_name + ':DeleteAttr',
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                with dpg.theme() as delete_model_btn_theme:
+                    with dpg.theme_component(dpg.mvButton):
+                        dpg.add_theme_color(dpg.mvThemeCol_Button, (200, 60, 60, 255))
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (230, 90, 90, 255))
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (170, 40, 40, 255))
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))
+
+                delete_btn = dpg.add_button(
+                    label=u"Delete Model",
+                    tag=node.tag_delete_btn,
+                    width=small_window_w,
+                    callback=_on_delete_clicked,
+                )
+                dpg.bind_item_theme(delete_btn, delete_model_btn_theme)
+
 
 
         return node
@@ -978,6 +1005,63 @@ class Node(Node):
             dpg_set_value(node.tag_node_rejected_classes_value_name, "")
         except Exception as exc:
             logger.warning(f"[Upload] Could not update classes dropdown: {exc}")
+
+    # ------------------------------------------------------------------
+    # Delete model
+    # ------------------------------------------------------------------
+    @classmethod
+    def _delete_custom_model(cls, name: str) -> bool:
+        """Remove a model from the persistent registry and runtime dictionaries.
+
+        Returns True when the model was found and removed.
+        """
+        if not name:
+            return False
+        found = name in cls._model_class or name in cls._model_path_setting
+        try:
+            custom_models_registry.remove_entry(name)
+            logger.info(f"[Delete] Registry entry removed for '{name}'.")
+        except Exception as exc:
+            logger.warning(f"[Delete] Could not remove registry entry for '{name}': {exc}")
+        cls._model_class.pop(name, None)
+        cls._model_path_setting.pop(name, None)
+        cls._model_class_name_list.pop(name, None)
+        # Drop any cached inference instances for this model (name_provider keys).
+        for key in [k for k in cls._model_instance if k == name or k.startswith(name + '_')]:
+            cls._model_instance.pop(key, None)
+        return found
+
+    def _delete_selected_model(self, name: str):
+        """Delete the currently-selected model and refresh the node dropdowns."""
+        if not name:
+            logger.warning("[Delete] No model selected — nothing to delete.")
+            return
+        removed = Node._delete_custom_model(name)
+        if not removed:
+            logger.warning(f"[Delete] Model '{name}' not found in registry.")
+
+        # Update the model combobox with the remaining models.
+        model_combo_tag = self.tag_node_input_text_value_name
+        remaining = list(Node._model_class.keys())
+        new_default = remaining[0] if remaining else ""
+        try:
+            dpg.configure_item(model_combo_tag, items=remaining, default_value=new_default)
+            logger.info(f"[Delete] Model '{name}' deleted — '{new_default}' now selected.")
+        except Exception as exc:
+            logger.warning(f"[Delete] Could not update model dropdown: {exc}")
+
+        # Refresh the rejected-classes dropdown for the new selection.
+        try:
+            if new_default and new_default in Node._model_class_name_list:
+                class_items = get_class_rejection_dropdown_items(
+                    Node._model_class_name_list[new_default]
+                )
+            else:
+                class_items = []
+            dpg.configure_item(self.tag_node_rejected_classes_value_name, items=class_items)
+            dpg_set_value(self.tag_node_rejected_classes_value_name, "")
+        except Exception as exc:
+            logger.warning(f"[Delete] Could not update classes dropdown: {exc}")
 
     def _per_class_nms(self, bboxes, scores, class_ids):
         """Apply NMS per class to keep only the best detection per class.

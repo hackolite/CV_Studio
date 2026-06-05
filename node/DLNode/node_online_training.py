@@ -312,6 +312,30 @@ class FactoryNode:
                 )
                 dpg.bind_item_theme(load_btn, yellow_button_theme)
 
+            # Delete Student Model button (removes selected from registry)
+            def _on_delete_student(sender, app_data, user_data):
+                selected = dpg_get_value(node.tag_node_model_combo)
+                node._delete_selected_student_model(selected)
+
+            with dpg.node_attribute(
+                tag=node.tag_node_name + ':DeleteStudentAttr',
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                with dpg.theme() as red_button_theme:
+                    with dpg.theme_component(dpg.mvButton):
+                        dpg.add_theme_color(dpg.mvThemeCol_Button, (200, 60, 60, 255))
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (230, 90, 90, 255))
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (170, 40, 40, 255))
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))
+
+                delete_btn = dpg.add_button(
+                    label=u"Delete Student Model",
+                    tag=node.tag_node_name + ':DeleteStudentBtn',
+                    width=small_window_w,
+                    callback=_on_delete_student,
+                )
+                dpg.bind_item_theme(delete_btn, red_button_theme)
+
             # Export Student Model button
             def _on_export_student(sender, app_data, user_data):
                 dpg.show_item(export_file_dialog_tag)
@@ -525,6 +549,52 @@ class Node(Node):
 
         # Load the model
         self._load_student_from_entry(registry_entry)
+
+    @classmethod
+    def _delete_student_model(cls, name: str) -> bool:
+        """Remove a student model from the registry and class-level cache.
+
+        Returns True when the model was present and removed.
+        """
+        if not name:
+            return False
+        found = name in cls._student_models
+        try:
+            student_models_registry.remove_entry(name)
+            logger.info(f"[OnlineTraining] Registry entry removed for '{name}'.")
+        except Exception as exc:
+            logger.warning(f"[OnlineTraining] Could not remove registry entry for '{name}': {exc}")
+        cls._student_models.pop(name, None)
+        return found
+
+    def _delete_selected_student_model(self, name):
+        """Delete the selected student model and refresh the combobox."""
+        if not name:
+            logger.warning("[OnlineTraining] No model selected — nothing to delete.")
+            return
+        removed = Node._delete_student_model(name)
+        if not removed:
+            logger.warning(f"[OnlineTraining] Model '{name}' not found in registry.")
+
+        # If the deleted model is the one currently loaded, drop the trainer so a
+        # stale student is not used for further inference/training.
+        if removed:
+            self._student_trainer = None
+
+        combo_tag = self.tag_node_name + ':ModelCombo'
+        remaining = list(Node._student_models.keys())
+        new_default = remaining[0] if remaining else ""
+        try:
+            dpg.configure_item(combo_tag, items=remaining, default_value=new_default)
+            logger.info(
+                f"[OnlineTraining] Model '{name}' deleted — '{new_default}' now selected."
+            )
+        except Exception as exc:
+            logger.warning(f"[OnlineTraining] Could not update model dropdown: {exc}")
+
+        # Load the new selection (if any) so the node stays consistent.
+        if new_default:
+            self._on_model_combo_change(new_default)
 
     def _callback_export_student(self, sender, data, user_data=None):
         """Handle student ONNX export."""
