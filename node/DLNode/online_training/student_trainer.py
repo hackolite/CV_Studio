@@ -115,6 +115,7 @@ class StudentTrainer:
         self.training_active = False
         self._last_loss = None
         self.last_train_loss = None
+        self._nanodet_cls_pre_activated = None
 
         # Real, gradient-trained correction head for the requested loss. This is
         # what lets the student's *output* actually change (and improve) frame to
@@ -271,12 +272,33 @@ class StudentTrainer:
             # boxes (the "green blocks everywhere" symptom). Keeping the
             # inference layout in lock-step with the training decode avoids it.
             reg_first_override = bool(getattr(self._torch, "nanodet_reg_first", False))
+            cls_pre_activated = self._infer_nanodet_cls_pre_activated(
+                raw, reg_first_override
+            )
             return self._student_model._postprocess_nanodet(
                 raw, orig_w, orig_h,
-                cls_pre_activated=False,
+                cls_pre_activated=cls_pre_activated,
                 reg_first_override=reg_first_override,
             )
         return self._student_model._postprocess_yolo11(raw, orig_w, orig_h)
+
+    def _infer_nanodet_cls_pre_activated(self, raw_output: np.ndarray, reg_first: bool) -> bool:
+        """Detect whether NanoDet class channels are already sigmoid-activated."""
+        cached = getattr(self, "_nanodet_cls_pre_activated", None)
+        if cached is not None:
+            return bool(cached)
+
+        pre_activated = False
+        output = np.squeeze(raw_output)
+        num_classes = int(getattr(self, "num_classes", 0))
+        if output.ndim == 2 and num_classes > 0 and output.shape[1] > num_classes:
+            reg_channels = output.shape[1] - num_classes
+            cls_block = output[:, reg_channels:] if reg_first else output[:, :num_classes]
+            if cls_block.size > 0 and np.isfinite(cls_block).all():
+                pre_activated = bool(cls_block.min() >= 0.0 and cls_block.max() <= 1.0)
+
+        self._nanodet_cls_pre_activated = pre_activated
+        return pre_activated
 
     def _update_last_loss(self, distillation: Dict) -> None:
         """Store the latest reported loss from the requested set-based metrics.
