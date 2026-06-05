@@ -13,6 +13,7 @@ The wrapper is initialised from the metadata returned by
 
 import copy
 import logging
+import math
 import os
 
 import cv2
@@ -877,43 +878,33 @@ class CustomONNX:
         proj = np.arange(reg_max_plus_1, dtype=np.float32)
         distances = (reg_softmax * proj).sum(axis=2)  # (num_anchors, 4): left, top, right, bottom
 
-        # Generate grid centers for all anchor points
-        strides = [8, 16, 32, 64]
-        centers = []
-        stride_list = []
-        for stride in strides:
-            n_h = self.input_height // stride
-            n_w = self.input_width // stride
-            if n_h <= 0 or n_w <= 0:
-                continue
-            yv, xv = np.meshgrid(np.arange(n_h), np.arange(n_w), indexing='ij')
-            center_x = (xv.ravel() + 0.5) * stride
-            center_y = (yv.ravel() + 0.5) * stride
-            grid = np.stack([center_x, center_y], axis=1)  # (n_h*n_w, 2)
-            centers.append(grid)
-            stride_list.append(np.full(grid.shape[0], stride, dtype=np.float32))
-
-        centers = np.concatenate(centers, axis=0)       # (num_anchors, 2)
-        stride_arr = np.concatenate(stride_list, axis=0)  # (num_anchors,)
-
-        # If anchor count doesn't match, try without stride 64
-        if centers.shape[0] != num_anchors:
-            strides_alt = [8, 16, 32]
-            centers_alt = []
-            stride_list_alt = []
-            for stride in strides_alt:
-                n_h = self.input_height // stride
-                n_w = self.input_width // stride
+        # Generate grid centers for all anchor points. The number of cells per
+        # feature level uses ceil(input / stride): NanoDet-Plus pads the feature
+        # map up (e.g. 416/64 -> 7, not 6), so floor division undercounts the
+        # anchors and yields an empty result for nanodet-plus-m_416 (3598 vs 3585).
+        # Try the 4-stride (NanoDet-Plus) layout first, then the 3-stride
+        # (NanoDet-m) one, selecting whichever matches the raw output length.
+        def _build_grid(strides):
+            centers = []
+            stride_list = []
+            for stride in strides:
+                n_h = math.ceil(self.input_height / stride)
+                n_w = math.ceil(self.input_width / stride)
                 if n_h <= 0 or n_w <= 0:
                     continue
                 yv, xv = np.meshgrid(np.arange(n_h), np.arange(n_w), indexing='ij')
                 center_x = (xv.ravel() + 0.5) * stride
                 center_y = (yv.ravel() + 0.5) * stride
-                grid = np.stack([center_x, center_y], axis=1)
-                centers_alt.append(grid)
-                stride_list_alt.append(np.full(grid.shape[0], stride, dtype=np.float32))
-            centers_alt = np.concatenate(centers_alt, axis=0)
-            stride_arr_alt = np.concatenate(stride_list_alt, axis=0)
+                grid = np.stack([center_x, center_y], axis=1)  # (n_h*n_w, 2)
+                centers.append(grid)
+                stride_list.append(np.full(grid.shape[0], stride, dtype=np.float32))
+            if not centers:
+                return np.zeros((0, 2), np.float32), np.zeros((0,), np.float32)
+            return np.concatenate(centers, axis=0), np.concatenate(stride_list, axis=0)
+
+        centers, stride_arr = _build_grid([8, 16, 32, 64])
+        if centers.shape[0] != num_anchors:
+            centers_alt, stride_arr_alt = _build_grid([8, 16, 32])
             if centers_alt.shape[0] == num_anchors:
                 centers = centers_alt
                 stride_arr = stride_arr_alt

@@ -175,8 +175,8 @@ Le nœud **OnlineTraining** récupère la sortie d'`ObjectDetection` du teacher,
 calcule en interne la même sortie sur le student, puis appelle la même loss
 via `compute_distillation_score`. Les métriques sont exposées sous
 `distillation_losses` et peuvent être affichées dans le nœud **Chart**. Lorsque
-`onnxruntime-training` est disponible, `L_total` sert de signal de
-rétropropagation pour mettre à jour les poids du student.
+la rétropropagation (PyTorch ou tête affine) est active, `L_total` sert de signal
+de rétropropagation pour mettre à jour les poids du student.
 
 ---
 
