@@ -736,6 +736,23 @@ class Node(Node):
                     'spatial_coverage': distillation.get('spatial_coverage', 0.0),
                     'teacher_count': distillation.get('teacher_count', 0),
                     'student_count': distillation.get('student_count', 0),
+                    # Hungarian-matched set-based distillation loss + chart
+                    # metrics (lower loss = student closer to teacher).
+                    'loss': distillation.get('loss', 0.0),
+                    'loss_total': distillation.get('loss_total', 0.0),
+                    'loss_box': distillation.get('loss_box', 0.0),
+                    'loss_class': distillation.get('loss_class', 0.0),
+                    'loss_iou': distillation.get('loss_iou', 0.0),
+                    'loss_cardinality': distillation.get('loss_cardinality', 0.0),
+                    'loss_fp': distillation.get('loss_fp', 0.0),
+                    'loss_fn': distillation.get('loss_fn', 0.0),
+                    'loss_cls_mismatch': distillation.get('loss_cls_mismatch', 0.0),
+                    'cardinality_error': distillation.get('cardinality_error', 0),
+                    'fp_count': distillation.get('fp_count', 0),
+                    'fn_count': distillation.get('fn_count', 0),
+                    'iou_mean_matched': distillation.get('iou_mean_matched', 0.0),
+                    'class_mismatch_rate': distillation.get('class_mismatch_rate', 0.0),
+                    'detection_score': distillation.get('detection_score', 0.0),
                 }
 
                 # Draw student predictions on frame

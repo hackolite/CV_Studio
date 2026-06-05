@@ -234,5 +234,65 @@ def test_update_empty_detections():
     assert payload['diff_score_percent'] == 0.0
 
 
+def test_update_outputs_set_distillation_loss():
+    node = _make_node()
+
+    json_a = {
+        'bboxes': [[0, 0, 10, 10], [20, 20, 30, 30], [40, 40, 50, 50]],
+        'class_ids': [0, 1, 2],
+    }
+    json_b = {
+        'bboxes': [[0, 0, 10, 10], [21, 21, 31, 31]],
+        'class_ids': [0, 1],
+    }
+
+    node_result_dict = {'1:ObjectDetection': json_a, '2:ObjectDetection': json_b}
+    connection_list = [
+        ['1:ObjectDetection:JSON:Output01', '3:IoU:JSON:Input01'],
+        ['2:ObjectDetection:JSON:Output01', '3:IoU:JSON:Input02'],
+    ]
+
+    result = node.update(
+        node_id=3,
+        connection_list=connection_list,
+        node_image_dict={},
+        node_result_dict=node_result_dict,
+        node_audio_dict={},
+    )
+    payload = result['json']
+    # The set-based distillation loss and its components must be exposed as
+    # flat floats so the Chart node can average/plot them over time.
+    for key in ('loss', 'loss_total', 'loss_box', 'loss_iou',
+                'loss_cardinality', 'loss_class', 'loss_fp', 'loss_fn'):
+        assert key in payload
+        assert isinstance(payload[key], float)
+    for key in ('cardinality_error', 'fp_count', 'fn_count'):
+        assert key in payload
+        assert isinstance(payload[key], int)
+    # 3 vs 2 boxes → absolute cardinality error of |3-2| = 1.
+    assert payload['loss_cardinality'] == pytest.approx(1.0)
+    assert payload['cardinality_error'] == 1
+    assert payload['loss'] > 0.0
+
+
+def test_update_identical_sets_zero_loss():
+    node = _make_node()
+    boxes = {'bboxes': [[0, 0, 10, 10], [20, 20, 30, 30]], 'class_ids': [0, 1]}
+    node_result_dict = {'1:ObjectDetection': boxes, '2:ObjectDetection': boxes}
+    connection_list = [
+        ['1:ObjectDetection:JSON:Output01', '3:IoU:JSON:Input01'],
+        ['2:ObjectDetection:JSON:Output01', '3:IoU:JSON:Input02'],
+    ]
+    result = node.update(
+        node_id=3,
+        connection_list=connection_list,
+        node_image_dict={},
+        node_result_dict=node_result_dict,
+        node_audio_dict={},
+    )
+    payload = result['json']
+    assert payload['loss'] == pytest.approx(0.0, abs=1e-6)
+
+
 if __name__ == '__main__':
     raise SystemExit(pytest.main([__file__, '-v']))

@@ -7,6 +7,7 @@ import dearpygui.dearpygui as dpg
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node
+from node.DLNode.online_training.distillation_loss import compute_set_distillation_loss
 
 
 def _normalise_bbox(bbox):
@@ -365,6 +366,14 @@ class Node(Node):
                 iou_threshold=threshold,
             )
 
+            # Hungarian-matched set-based distillation loss (DETR-style).
+            # Detection A is the teacher/reference, Detection B the student.
+            set_loss = compute_set_distillation_loss(
+                boxes_a, boxes_b,
+                teacher_class_ids=classes_a,
+                student_class_ids=classes_b,
+            )
+
             diff_score = metrics['diff_score']
 
             # Flat numeric dict so the Chart (ObjChart) node can plot each metric
@@ -383,12 +392,29 @@ class Node(Node):
                 'num_boxes_b': int(metrics['num_boxes_b']),
                 'unmatched_a': int(metrics['unmatched_a']),
                 'unmatched_b': int(metrics['unmatched_b']),
+                # Set-based distillation loss + chart metrics (lower = closer).
+                'loss': float(set_loss['loss']),
+                'loss_total': float(set_loss['loss_total']),
+                'loss_box': float(set_loss['loss_box']),
+                'loss_class': float(set_loss['loss_class']),
+                'loss_iou': float(set_loss['loss_iou']),
+                'loss_cardinality': float(set_loss['loss_cardinality']),
+                'loss_fp': float(set_loss['loss_fp']),
+                'loss_fn': float(set_loss['loss_fn']),
+                'loss_cls_mismatch': float(set_loss['loss_cls_mismatch']),
+                'cardinality_error': int(set_loss['cardinality_error']),
+                'fp_count': int(set_loss['fp_count']),
+                'fn_count': int(set_loss['fn_count']),
+                'iou_mean_matched': float(set_loss['iou_mean_matched']),
+                'class_mismatch_rate': float(set_loss['class_mismatch_rate']),
+                'detection_score': float(set_loss['detection_score']),
             }
 
             dpg_set_value(
                 status_tag,
-                'bbox diff: {:.2f} ({} matched, {} diff)'.format(
+                'bbox diff: {:.2f} | loss: {:.3f} ({} matched, {} diff)'.format(
                     diff_score,
+                    set_loss['loss'],
                     metrics['matched_pairs'],
                     metrics['unmatched_a'] + metrics['unmatched_b'],
                 ),
