@@ -13,6 +13,7 @@ The wrapper is initialised from the metadata returned by
 
 import copy
 import logging
+import math
 import os
 
 import cv2
@@ -882,8 +883,11 @@ class CustomONNX:
         centers = []
         stride_list = []
         for stride in strides:
-            n_h = self.input_height // stride
-            n_w = self.input_width // stride
+            # NanoDet-Plus feature maps use ceil(input / stride): e.g. a 416
+            # input with stride 64 yields a 7x7 grid (not 6x6 from floor div),
+            # so the anchor count matches the network output (3598 for 416).
+            n_h = math.ceil(self.input_height / stride)
+            n_w = math.ceil(self.input_width / stride)
             if n_h <= 0 or n_w <= 0:
                 continue
             yv, xv = np.meshgrid(np.arange(n_h), np.arange(n_w), indexing='ij')
@@ -902,8 +906,8 @@ class CustomONNX:
             centers_alt = []
             stride_list_alt = []
             for stride in strides_alt:
-                n_h = self.input_height // stride
-                n_w = self.input_width // stride
+                n_h = math.ceil(self.input_height / stride)
+                n_w = math.ceil(self.input_width / stride)
                 if n_h <= 0 or n_w <= 0:
                     continue
                 yv, xv = np.meshgrid(np.arange(n_h), np.arange(n_w), indexing='ij')

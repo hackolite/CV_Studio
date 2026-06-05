@@ -104,6 +104,16 @@ class TestNanodetAnchorGrid:
         centers3, _ = nanodet_anchor_grid(64, 64, num_anchors=84)
         assert centers3.shape[0] == 84
 
+    def test_grid_uses_ceil_for_nanodet_plus_416(self):
+        from node.DLNode.online_training.ort_training_artifacts import nanodet_anchor_grid
+        # NanoDet-Plus-m at 416 uses ceil(input/stride) feature maps:
+        # 52²+26²+13²+7² = 3598 anchors (stride 64 -> 7x7, not floor's 6x6).
+        # The real nanodet-plus-m_416.onnx outputs [1, 3598, 112]; a floor-based
+        # grid (3585) would never match, leaving the student with no boxes.
+        centers, strides = nanodet_anchor_grid(416, 416, num_anchors=3598)
+        assert centers.shape[0] == 3598
+        assert sorted(set(strides[:, 0].tolist())) == [8.0, 16.0, 32.0, 64.0]
+
 
 # ─────────────────────────── ONNX graph (needs onnx) ─────────────────────────
 @pytest.mark.skipif(not _ONNX_AVAILABLE, reason="onnx not installed")

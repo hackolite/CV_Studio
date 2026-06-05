@@ -155,3 +155,38 @@ class TestNanodetRegFirstParameter:
             "'nanodet_reg_first': False to avoid heuristic failure on QDQ-quantised "
             "class logits"
         )
+
+class TestNanodetPlusCeilGrid:
+    """Regression tests for the NanoDet-Plus ceil(input/stride) anchor grid.
+
+    The real ``nanodet-plus-m_416.onnx`` outputs ``[1, 3598, 112]``. NanoDet-Plus
+    feature maps use ``ceil(input / stride)`` (stride 64 -> 7x7 for a 416 input),
+    so a floor-based grid (3585 anchors) never matches the network output and
+    ``_postprocess_nanodet`` would return empty — hence no green student boxes in
+    the Online Training node.
+    """
+
+    def test_postprocess_decodes_plus_416_output(self):
+        import math
+        strides = [8, 16, 32, 64]
+        input_size = 416
+        num_anchors = sum(math.ceil(input_size / s) ** 2 for s in strides)
+        assert num_anchors == 3598
+
+        reg_max = 7
+        reg_channels = 4 * (reg_max + 1)
+        num_classes = 80
+        output = np.zeros((num_anchors, num_classes + reg_channels), dtype=np.float32)
+        # One confident detection (class 0) at an arbitrary anchor.
+        det_anchor = 100
+        output[det_anchor, 0] = 10.0  # high logit -> high sigmoid score
+        raw = output[np.newaxis]
+
+        wrapper = _make_nanodet_wrapper(
+            nanodet_reg_first=False, num_classes=num_classes, input_size=input_size
+        )
+        bboxes, scores, class_ids = wrapper._postprocess_nanodet(raw, input_size, input_size)
+        assert len(bboxes) >= 1, (
+            "NanoDet-Plus 416 output (3598 anchors) must decode to at least one "
+            "box; an empty result means the ceil-based anchor grid regressed."
+        )

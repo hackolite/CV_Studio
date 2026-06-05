@@ -31,6 +31,7 @@ to the PyTorch path or the affine correction head.
 """
 
 import logging
+import math
 import os
 from typing import List, Optional, Tuple
 
@@ -379,8 +380,10 @@ def nanodet_anchor_grid(input_width: int, input_height: int,
         centers = []
         stride_col = []
         for s in strides_list:
-            n_h = int(input_height) // s
-            n_w = int(input_width) // s
+            # NanoDet-Plus feature maps use ceil(input / stride) so the anchor
+            # grid matches the network output (e.g. 7x7 for stride 64 at 416).
+            n_h = math.ceil(int(input_height) / s)
+            n_w = math.ceil(int(input_width) / s)
             if n_h <= 0 or n_w <= 0:
                 continue
             yv, xv = np.meshgrid(np.arange(n_h), np.arange(n_w), indexing="ij")
