@@ -1,0 +1,176 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+Tests for the IoU DataProcess node (node/StatsNode/node_iou.py).
+
+The IoU node compares two ObjectDetection JSON outputs, handles a different
+number of bounding boxes per input via greedy matching, and produces a flat
+numeric JSON dict consumable by the Chart (ObjChart) node.
+"""
+import os
+import sys
+
+import pytest
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+import dearpygui.dearpygui as dpg
+
+from node.StatsNode.node_iou import (
+    FactoryNode,
+    Node,
+    compute_iou,
+    match_detections,
+)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def dpg_context():
+    """A DearPyGui context is required so dpg.does_item_exist (used by the
+    node's dpg_get_value/dpg_set_value helpers) does not crash in update()."""
+    dpg.create_context()
+    yield
+    dpg.destroy_context()
+
+
+def test_iou_node_import():
+    factory = FactoryNode()
+    node = Node()
+    assert factory.node_tag == "IoU"
+    assert factory.node_label == "IoU"
+    assert node.node_tag == "IoU"
+
+
+def test_compute_iou_identical_boxes():
+    assert compute_iou([0, 0, 10, 10], [0, 0, 10, 10]) == 1.0
+
+
+def test_compute_iou_no_overlap():
+    assert compute_iou([0, 0, 10, 10], [20, 20, 30, 30]) == 0.0
+
+
+def test_compute_iou_partial_overlap():
+    # Two 10x10 boxes overlapping in a 5x5 region.
+    # intersection = 25, union = 100 + 100 - 25 = 175
+    iou = compute_iou([0, 0, 10, 10], [5, 5, 15, 15])
+    assert abs(iou - (25.0 / 175.0)) < 1e-9
+
+
+def test_compute_iou_handles_unordered_coords():
+    # x2<x1 / y2<y1 should be normalised, not produce negative areas.
+    assert compute_iou([10, 10, 0, 0], [0, 0, 10, 10]) == 1.0
+
+
+def test_match_detections_different_counts():
+    # 3 boxes in A, 2 in B. Only 2 can be matched.
+    boxes_a = [[0, 0, 10, 10], [20, 20, 30, 30], [40, 40, 50, 50]]
+    boxes_b = [[0, 0, 10, 10], [20, 20, 30, 30]]
+    matched, used_a, used_b = match_detections(boxes_a, [], boxes_b, [])
+    assert len(matched) == 2
+    assert all(abs(iou - 1.0) < 1e-9 for iou in matched)
+    assert len(used_a) == 2
+    assert len(used_b) == 2
+
+
+def test_match_detections_by_class():
+    boxes_a = [[0, 0, 10, 10]]
+    boxes_b = [[0, 0, 10, 10]]
+    # Same geometry but different class -> no match when match_by_class=True
+    matched, _, _ = match_detections(boxes_a, [1], boxes_b, [2], match_by_class=True)
+    assert matched == []
+    # Same class -> matched
+    matched, _, _ = match_detections(boxes_a, [1], boxes_b, [1], match_by_class=True)
+    assert len(matched) == 1
+
+
+def _make_node():
+    node = Node()
+    node._opencv_setting_dict = {'use_pref_counter': False, 'process_width': 320}
+    return node
+
+
+def test_update_outputs_flat_numeric_dict():
+    node = _make_node()
+
+    json_a = {
+        'bboxes': [[0, 0, 10, 10], [20, 20, 30, 30], [40, 40, 50, 50]],
+        'class_ids': [0, 1, 2],
+    }
+    json_b = {
+        'bboxes': [[0, 0, 10, 10], [21, 21, 31, 31]],
+        'class_ids': [0, 1],
+    }
+
+    node_result_dict = {'1:ObjectDetection': json_a, '2:ObjectDetection': json_b}
+    connection_list = [
+        ['1:ObjectDetection:JSON:Output01', '3:IoU:JSON:Input01'],
+        ['2:ObjectDetection:JSON:Output01', '3:IoU:JSON:Input02'],
+    ]
+
+    result = node.update(
+        node_id=3,
+        connection_list=connection_list,
+        node_image_dict={},
+        node_result_dict=node_result_dict,
+        node_audio_dict={},
+    )
+
+    payload = result['json']
+    assert payload is not None
+    # Must be a flat numeric dict (Chart node requirement) without 'class_ids'.
+    assert 'class_ids' not in payload
+    assert all(isinstance(v, (int, float)) for v in payload.values())
+
+    assert payload['num_boxes_a'] == 3
+    assert payload['num_boxes_b'] == 2
+    assert payload['matched_pairs'] == 2
+    assert payload['unmatched_a'] == 1
+    assert payload['unmatched_b'] == 0
+    assert payload['mean_iou'] > 0.0
+    assert abs(payload['mean_iou_percent'] - payload['mean_iou'] * 100.0) < 1e-9
+
+
+def test_update_waiting_for_two_inputs_returns_none():
+    node = _make_node()
+    json_a = {'bboxes': [[0, 0, 10, 10]], 'class_ids': [0]}
+    node_result_dict = {'1:ObjectDetection': json_a}
+    connection_list = [
+        ['1:ObjectDetection:JSON:Output01', '3:IoU:JSON:Input01'],
+    ]
+
+    result = node.update(
+        node_id=3,
+        connection_list=connection_list,
+        node_image_dict={},
+        node_result_dict=node_result_dict,
+        node_audio_dict={},
+    )
+    assert result['json'] is None
+
+
+def test_update_empty_detections():
+    node = _make_node()
+    json_a = {'bboxes': [], 'class_ids': []}
+    json_b = {'bboxes': [], 'class_ids': []}
+    node_result_dict = {'1:ObjectDetection': json_a, '2:ObjectDetection': json_b}
+    connection_list = [
+        ['1:ObjectDetection:JSON:Output01', '3:IoU:JSON:Input01'],
+        ['2:ObjectDetection:JSON:Output01', '3:IoU:JSON:Input02'],
+    ]
+    result = node.update(
+        node_id=3,
+        connection_list=connection_list,
+        node_image_dict={},
+        node_result_dict=node_result_dict,
+        node_audio_dict={},
+    )
+    payload = result['json']
+    assert payload['matched_pairs'] == 0
+    assert payload['mean_iou'] == 0.0
+    assert payload['match_ratio_percent'] == 0.0
+
+
+if __name__ == '__main__':
+    import pytest
+
+    raise SystemExit(pytest.main([__file__, '-v']))
