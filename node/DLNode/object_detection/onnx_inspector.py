@@ -90,8 +90,10 @@ def _inspect_onnx_static(model_path: str) -> dict:
     if num_outputs == 6:
         out_shapes = [_shape_from_type_proto(out.type) for out in graph.output]
         if all(len(s) == 3 for s in out_shapes):
-            last_dims = [s[2] for s in out_shapes if isinstance(s[2], int)]
-            if len(last_dims) == 6:
+            # Require all last dimensions to be concrete integers; dynamic dims
+            # prevent reliable format detection and must be treated as unknown.
+            if all(isinstance(s[2], int) for s in out_shapes):
+                last_dims = [s[2] for s in out_shapes]
                 unique_last = set(last_dims)
                 if len(unique_last) == 2:
                     d1, d2 = sorted(unique_last)  # d1 < d2
@@ -269,8 +271,10 @@ def inspect_onnx_model(model_path: str) -> dict:
         out_shapes = [list(out.shape) for out in all_outputs]
         # All must be rank-3 (1, n_anchors, channels)
         if all(len(s) == 3 for s in out_shapes):
-            last_dims = [s[2] for s in out_shapes if isinstance(s[2], int)]
-            if len(last_dims) == 6:
+            # Require all last dimensions to be concrete integers; dynamic dims
+            # prevent reliable format detection and must be treated as unknown.
+            if all(isinstance(s[2], int) for s in out_shapes):
+                last_dims = [s[2] for s in out_shapes]
                 unique_last = set(last_dims)
                 # Expect exactly 2 distinct last dims: cls channels and reg channels
                 if len(unique_last) == 2:

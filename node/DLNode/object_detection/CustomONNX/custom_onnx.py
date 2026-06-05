@@ -964,25 +964,23 @@ class CustomONNX:
             )
             return np.array([]), np.array([]), np.array([])
 
+        # Validate that cls and reg heads are paired (same set of anchor counts).
+        if cls_by_anchors.keys() != reg_by_anchors.keys():
+            logger.warning(
+                "[CustomONNX] nanodet_multi: cls and reg heads have mismatched anchor counts. "
+                f"cls anchor counts={sorted(cls_by_anchors)}, "
+                f"reg anchor counts={sorted(reg_by_anchors)}. "
+                "Returning empty detections."
+            )
+            return np.array([]), np.array([]), np.array([])
+
         # Build combined tensor by pairing cls+reg per anchor count, sorted descending
         anchor_counts = sorted(cls_by_anchors.keys(), reverse=True)
         combined_parts = []
         for n in anchor_counts:
-            if n not in reg_by_anchors:
-                logger.warning(
-                    f"[CustomONNX] nanodet_multi: no reg output for anchor count {n}. Skipping."
-                )
-                continue
             cls = cls_by_anchors[n]   # (n, num_classes)
             reg = reg_by_anchors[n]   # (n, 4*(reg_max+1))
             combined_parts.append(np.concatenate([cls, reg], axis=1))  # (n, num_classes+reg)
-
-        if not combined_parts:
-            logger.warning(
-                "[CustomONNX] nanodet_multi: no valid cls+reg pairs found. "
-                "Returning empty detections."
-            )
-            return np.array([]), np.array([]), np.array([])
 
         combined = np.concatenate(combined_parts, axis=0)  # (total_anchors, num_classes+reg)
         combined = combined[np.newaxis, ...]               # (1, total_anchors, num_classes+reg)
