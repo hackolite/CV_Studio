@@ -728,6 +728,7 @@ class Node(Node):
                 # Expose distillation loss metrics as flat numeric dict
                 # so ObjChart can display them directly
                 distillation = step_result['distillation']
+                step_stats = self._student_trainer.get_stats()
                 result['distillation_losses'] = {
                     'score': distillation.get('score', 0.0),
                     'class_similarity': distillation.get('class_similarity', 0.0),
@@ -753,6 +754,17 @@ class Node(Node):
                     'iou_mean_matched': distillation.get('iou_mean_matched', 0.0),
                     'class_mismatch_rate': distillation.get('class_mismatch_rate', 0.0),
                     'detection_score': distillation.get('detection_score', 0.0),
+                    # Best/current requested loss (lower = better student).
+                    'current_loss': float(self._student_trainer.current_loss),
+                    'best_loss': float(self._student_trainer.best_loss),
+                    # Visible improvement of the student since the first frame.
+                    'improvement': float(self._student_trainer.improvement),
+                    'improvement_pct': float(self._student_trainer.improvement_pct),
+                    # Real network backprop bookkeeping.
+                    'backprop_mode': step_stats.get('backprop_mode', 'affine-head'),
+                    'network_updates': step_stats.get('network_updates', 0),
+                    'adapter_updates': step_stats.get('adapter_updates', 0),
+                    'train_loss': step_stats.get('train_loss') or 0.0,
                 }
 
                 # Draw student predictions on frame
@@ -784,15 +796,23 @@ class Node(Node):
                     x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
                     cv2.rectangle(output_frame, (x1, y1), (x2, y2), (255, 100, 0), max(1, bbox_thickness - 1))
 
-                # Draw score overlay
-                score_text = f"Score: {distillation['score']:.2f}"
+                # Draw score + loss overlay
+                loss_val = distillation.get('loss', 0.0)
+                score_text = f"Score: {distillation['score']:.2f} | Loss: {loss_val:.3f}"
                 cv2.putText(
                     output_frame, score_text, (10, 25),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2
                 )
 
                 stats = self._student_trainer.get_stats()
-                avg_text = f"Avg: {stats['avg_score']:.2f} | Best: {stats['best_score']:.2f}"
+                best_loss = stats.get('best_loss', float('inf'))
+                best_loss_text = f"{best_loss:.3f}" if best_loss != float('inf') else "--"
+                improvement_pct = stats.get('improvement_pct', 0.0)
+                mode_text = stats.get('backprop_mode', 'affine-head')
+                avg_text = (
+                    f"Best: {stats['best_score']:.2f} | BestLoss: {best_loss_text} "
+                    f"| Improv: {improvement_pct:.1f}% | {mode_text}"
+                )
                 cv2.putText(
                     output_frame, avg_text, (10, 50),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1
@@ -803,15 +823,24 @@ class Node(Node):
                     dpg_set_value(
                         score_display_tag,
                         f"Score: {distillation['score']:.2f} | "
-                        f"Avg: {stats['avg_score']:.2f} | "
-                        f"Best: {stats['best_score']:.2f}"
+                        f"Loss: {loss_val:.3f} | "
+                        f"BestLoss: {best_loss_text} | "
+                        f"Improv: {improvement_pct:.1f}%"
                     )
                     training_status = "active" if training_active else "paused"
                     if not self._student_trainer.is_training_available:
                         training_status = "inference-only"
+                    # In the PyTorch path report real network weight updates;
+                    # otherwise the affine correction-head updates.
+                    if mode_text.startswith("pytorch"):
+                        updates_text = f"NetUpdates: {stats.get('network_updates', 0)}"
+                    else:
+                        updates_text = f"Updates: {stats.get('adapter_updates', 0)}"
                     dpg_set_value(
                         stats_display_tag,
-                        f"Frames: {stats['frames_processed']} | Training: {training_status}"
+                        f"Frames: {stats['frames_processed']} | "
+                        f"Training: {training_status} ({mode_text}) | "
+                        f"{updates_text}"
                     )
                 except Exception:
                     pass

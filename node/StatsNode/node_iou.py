@@ -10,6 +10,27 @@ from node.basenode import Node
 from node.DLNode.online_training.distillation_loss import compute_set_distillation_loss
 
 
+def _format_status(diff_score, loss, matched, unmatched):
+    """Build a constant-width status line for the IoU node.
+
+    The node auto-sizes to its widest widget, so every numeric field is clamped
+    to a bounded range and rendered with a fixed-width format specifier. This
+    guarantees the string length never changes, keeping the node a fixed size
+    regardless of how variable the underlying detection counts/loss are.
+    """
+    ds = min(max(float(diff_score), 0.0), 1.0)        # always "0.00".."1.00"
+    ls = min(max(float(loss), 0.0), 999.99)            # clamp large losses (6 wide)
+    mp = min(max(int(matched), 0), 999)
+    un = min(max(int(unmatched), 0), 999)
+    return 'diff {:4.2f} | loss {:6.2f} | m {:3d} u {:3d}'.format(ds, ls, mp, un)
+
+
+# Fixed-width placeholder shown before any data arrives. Derived from
+# ``_format_status`` itself so it always stays the same constant width as the
+# live status, even if the format string changes.
+_STATUS_PLACEHOLDER = _format_status(0.0, 0.0, 0, 0)
+
+
 def _normalise_bbox(bbox):
     """Return a bbox as (x1, y1, x2, y2) with x1<=x2 and y1<=y2."""
     if bbox is None or len(bbox) < 4:
@@ -274,7 +295,7 @@ class FactoryNode:
             ):
                 dpg.add_text(
                     tag=node.tag_node_status_value_name,
-                    default_value='bbox diff: --',
+                    default_value=_STATUS_PLACEHOLDER,
                 )
 
             with dpg.node_attribute(
@@ -412,7 +433,7 @@ class Node(Node):
 
             dpg_set_value(
                 status_tag,
-                'bbox diff: {:.2f} | loss: {:.3f} ({} matched, {} diff)'.format(
+                _format_status(
                     diff_score,
                     set_loss['loss'],
                     metrics['matched_pairs'],
@@ -420,7 +441,7 @@ class Node(Node):
                 ),
             )
         else:
-            dpg_set_value(status_tag, 'bbox diff: -- (waiting for 2 inputs)')
+            dpg_set_value(status_tag, _STATUS_PLACEHOLDER)
 
         if use_pref_counter:
             elapsed_time = time.monotonic() - start_time

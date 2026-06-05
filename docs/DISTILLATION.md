@@ -48,6 +48,8 @@ Dans CV Studio, le nœud **OnlineTraining** implémente cette technique en temps
 |---------|------|
 | `node/DLNode/node_online_training.py` | Nœud principal (UI DearPyGUI + logique de pipeline) |
 | `node/DLNode/online_training/student_trainer.py` | Gestionnaire du cycle de vie de l'élève (inférence, scoring, entraînement) |
+| `node/DLNode/online_training/torch_student.py` | Élève PyTorch : conversion ONNX→PyTorch (`onnx2torch`) + **vraie rétropropagation** à travers la backbone et/ou les têtes |
+| `node/DLNode/online_training/online_adapter.py` | Tête de correction affine entraînée par gradient sur la loss demandée (repli quand PyTorch est indisponible) |
 | `node/DLNode/online_training/distillation_loss.py` | Fonctions de perte et score de distillation (IoU, matching, F1) |
 | `node/DLNode/online_training/models/` | Répertoire de stockage des modèles élèves |
 
@@ -57,9 +59,13 @@ Dans CV Studio, le nœud **OnlineTraining** implémente cette technique en temps
 1. Réception de l'image (input IMAGE)
 2. Réception du JSON du professeur (input JSON) : {bboxes, scores, class_ids}
 3. Inférence de l'élève sur l'image → prédictions student
-4. Calcul du score de distillation (teacher vs student)
-5. [Si ORT Training disponible] Rétropropagation et mise à jour des poids
-6. Affichage : bounding boxes élève (vert) + professeur (bleu)
+   • Mode PyTorch : forward du réseau entraîné (poids à jour)
+   • Mode repli   : forward onnxruntime + tête de correction affine apprise
+4. Calcul du score + de la loss de distillation demandée (teacher vs student)
+5. [Si Training Active] Rétropropagation de la loss demandée :
+   • Mode PyTorch : backward + optimizer.step() à travers backbone/têtes
+   • Mode repli   : descente de (sous-)gradient sur la tête affine
+6. Affichage : bounding boxes élève (vert) + professeur (bleu) + score/loss/amélioration/mode
 7. Sortie : IMAGE annotée + JSON des prédictions élève
 ```
 
@@ -67,8 +73,24 @@ Dans CV Studio, le nœud **OnlineTraining** implémente cette technique en temps
 
 | Mode | Condition | Comportement |
 |------|-----------|--------------|
-| **Inférence seule** | `onnxruntime` standard | L'élève infère et est scoré, mais ses poids ne changent pas |
-| **Entraînement complet** | `onnxruntime-training` installé | Rétropropagation active, les poids sont mis à jour à chaque frame |
+| **Rétropropagation réseau (PyTorch)** (préféré) | `torch` **et** `onnx2torch` installés **et** conversion réussie | Le modèle ONNX de l'élève est chargé en PyTorch ; la loss demandée est **réellement rétropropagée** à travers les têtes (`train_scope='head'`, défaut) et/ou la backbone (`train_scope='all'`) via un `optimizer.step()`. L'inférence utilise les **poids mis à jour** → amélioration observable. `backprop_mode = pytorch-head`/`pytorch-all`. |
+| **Adaptation en ligne (tête affine)** (repli) | `onnxruntime` standard seul | Une tête de correction affine `(sx, sy, tx, ty)` est entraînée par descente de gradient sur la **loss demandée**. `backprop_mode = affine-head`. |
+| **Entraînement ORT** | `onnxruntime-training` câblé | Rétropropagation via une session ORT Training. `backprop_mode = ort-training`. |
+
+> ℹ️ **PyTorch d'abord, tête affine en repli.** Le post-traitement de l'élève
+> (décodage des boxes + NMS) est en NumPy : il ne fait pas partie d'un graphe
+> ONNX différentiable, donc `onnxruntime` standard ne permet pas la
+> rétropropagation. Pour entraîner **réellement** le réseau, `torch_student.py`
+> convertit le graphe ONNX en `torch.nn.Module` (`onnx2torch`), rend les têtes
+> (et optionnellement la backbone) entraînables, décode les sorties brutes de
+> façon différentiable (yolo11 / yolox), apparie les boxes professeur↔élève
+> (matching sans gradient) puis rétropropage la loss demandée (box L1 + (1−IoU)
+> + classification) avec un `optimizer.step()`. Quand `torch`/`onnx2torch` sont
+> absents ou que la conversion échoue, on retombe sur la **tête affine**
+> `(sx, sy, tx, ty)` (voir `online_adapter.py`), qui démarre à l'identité puis
+> rapproche les boxes de l'élève de celles du professeur. Dans les deux cas
+> l'amélioration est visible via la loss décroissante et le champ `Improv:` de
+> l'overlay.
 
 ---
 
@@ -97,32 +119,48 @@ Cliquez **"Reset Student"** pour restaurer les poids originaux du modèle élèv
 
 ## Score de distillation
 
-Le score mesure la similarité entre les prédictions du professeur et celles de l'élève. Il est calculé à chaque frame.
+Le score mesure la similarité **ensembliste** entre les prédictions du
+professeur et celles de l'élève. Il est calculé à chaque frame et ne dépend pas
+d'un appariement strict 1-à-1.
 
 ### Métriques retournées
 
 | Métrique | Description |
 |----------|-------------|
-| `score` | Score global [0, 1] — 1.0 = correspondance parfaite |
-| `matched_count` | Nombre de détections correctement appariées |
-| `missed_count` | Détections du professeur non trouvées par l'élève (faux négatifs) |
-| `false_positive_count` | Détections de l'élève sans correspondance chez le professeur |
-| `avg_iou` | IoU moyen des paires appariées |
-| `avg_score_diff` | Différence moyenne de confiance entre paires |
-| `class_accuracy` | Fraction des paires ayant la bonne classe |
+| `score` | Score global [0, 1] — 1.0 = correspondance parfaite (plus haut = mieux) |
+| `class_similarity` | Similarité cosinus des histogrammes de classes |
+| `count_ratio` | Ratio `min/max` du nombre de détections |
+| `confidence_alignment` | Similarité des profils de confiance |
+| `spatial_coverage` | IoU des masques de couverture spatiale agrégés |
+| `loss` | Loss de distillation set-based demandée (plus bas = mieux) |
+| `teacher_count` / `student_count` | Nombre de détections de chaque côté |
 
-### Algorithme de calcul
+### Algorithme de calcul (score `[0, 1]`)
 
-1. **Matching** : Les détections élève sont appariées aux détections professeur par IoU greedy (seuil par défaut : 0.5)
-2. **Rappel** : `matched / total_teacher`
-3. **Précision** : `matched / total_student`
-4. **Qualité** : `avg_iou × class_accuracy`
-5. **Score final** : `F1 × (0.7 + 0.3 × qualité)`
+Le score est une combinaison pondérée de quatre composantes ensemblistes,
+robustes à un nombre de boxes différent :
 
 ```python
-F1 = 2 × precision × recall / (precision + recall)
-score = F1 × (0.7 + 0.3 × quality)  # bonus qualité
+score = 0.30 * class_similarity
+      + 0.35 * spatial_coverage
+      + 0.15 * count_ratio
+      + 0.20 * confidence_alignment
 ```
+
+### `score`, `loss` et `best` — que représentent-ils ?
+
+| Grandeur | Sens | Direction | Source |
+|----------|------|-----------|--------|
+| `score` | Accord global élève↔professeur (composantes ci-dessus) | **plus haut = mieux** | `compute_distillation_score` |
+| `loss` | Loss set-based demandée (DETR : box L1 + 1-IoU + classe + cardinalité + FP/FN) | **plus bas = mieux** | `compute_set_distillation_loss` |
+| `best_score` | Meilleur (max) `score` observé depuis le dernier reset | plus haut = mieux | `StudentTrainer.best_score` |
+| `best_loss` | Meilleure (min) `loss` demandée observée depuis le dernier reset | plus bas = mieux | `StudentTrainer.best_loss` |
+| `improvement` / `improvement_pct` | Réduction de la loss depuis la 1ʳᵉ frame (absolue / %) — c'est l'amélioration visible de l'élève | plus haut = mieux | `StudentTrainer.improvement` |
+
+> La **loss demandée** (set-based, hongroise) est l'unique source de vérité :
+> c'est exactement la même valeur que celle affichée par les nœuds **IoU** /
+> **Chart** et celle utilisée comme signal d'entraînement quand la
+> rétropropagation est active.
 
 ### Loss de distillation *set-based* (DETR-style)
 
@@ -146,7 +184,7 @@ Le nœud OnlineTraining expose les contrôles suivants :
 | **score_th** (slider) | Seuil de confiance minimum pour les prédictions de l'élève (0.0–1.0) |
 | **learning_rate** (slider) | Taux d'apprentissage (0.00001–0.01) |
 | **Training Active** (checkbox) | Active/désactive l'entraînement (l'inférence continue) |
-| **Score display** | Affiche : score courant, moyenne, meilleur score |
+| **Score display** | Affiche : score courant, loss courante, meilleur score, meilleure loss |
 | **Stats display** | Affiche : nombre de frames traitées, état de l'entraînement |
 | **Load Student ONNX** (bouton jaune) | Charger un modèle ONNX élève |
 | **Export Student ONNX** (bouton vert) | Exporter le modèle courant |
@@ -202,13 +240,26 @@ def compute_distillation_score(teacher_bboxes, teacher_scores, teacher_class_ids
 pip install onnxruntime numpy opencv-python
 ```
 
-### Complet (avec entraînement)
+### Complet (vraie rétropropagation réseau — recommandé)
+
+```bash
+pip install torch onnx2torch numpy opencv-python
+```
+
+> **Recommandé** : avec `torch` + `onnx2torch`, l'élève est converti en PyTorch
+> et la loss demandée est **réellement rétropropagée** à travers les têtes
+> (et/ou la backbone). C'est le mode qui entraîne effectivement le réseau.
+
+### Alternative (entraînement ORT)
 
 ```bash
 pip install onnxruntime-training numpy opencv-python
 ```
 
-> **Note** : Sans `onnxruntime-training`, le nœud fonctionne en mode inférence seule — l'élève est évalué mais ses poids ne sont pas mis à jour.
+> **Note** : Sans `torch`/`onnx2torch` ni `onnxruntime-training`, le nœud
+> retombe sur la **tête de correction affine** — l'élève s'améliore toujours sur
+> la loss demandée, mais seuls les paramètres `(sx, sy, tx, ty)` sont appris, pas
+> les poids internes du réseau.
 
 ### Modèles compatibles
 
