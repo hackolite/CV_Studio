@@ -124,6 +124,17 @@ F1 = 2 × precision × recall / (precision + recall)
 score = F1 × (0.7 + 0.3 × quality)  # bonus qualité
 ```
 
+### Loss de distillation *set-based* (DETR-style)
+
+En complément du score `[0, 1]`, une **loss de distillation set-based** est
+calculée : matching hongrois (`cost = (1-IoU) + class_cost`), puis box
+regression (L1 + 1-IoU), distillation de classe, cardinalité `|N_s - N_t|`,
+pénalités faux positifs / faux négatifs et mismatch de classe. Elle est exposée
+sous `distillation_losses` (affichable dans le nœud **Chart**) et sert de signal
+d'entraînement quand `onnxruntime-training` est disponible. Voir
+**[`distillation_loss.md`](distillation_loss.md)** pour la description complète
+de la méthode et des métriques.
+
 ---
 
 ## Interface utilisateur

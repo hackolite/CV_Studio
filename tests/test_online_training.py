@@ -9,6 +9,8 @@ from node.DLNode.online_training.distillation_loss import (
     compute_iou,
     match_detections,
     compute_distillation_score,
+    hungarian_match_boxes,
+    compute_set_distillation_loss,
     _class_distribution_similarity,
     _count_ratio_score,
     _confidence_alignment,
@@ -242,3 +244,143 @@ class TestDistillationScore:
         # Count ratio = 1/5 = 0.2, class similarity low → score should be low
         assert result['score'] < 0.5
         assert result['count_ratio'] == pytest.approx(0.2)
+
+
+class TestHungarianMatchBoxes:
+    def test_empty_sets(self):
+        pairs, cost = hungarian_match_boxes([], [])
+        assert pairs == []
+        assert cost.shape == (0, 0)
+
+    def test_one_empty(self):
+        pairs, _ = hungarian_match_boxes([[0, 0, 10, 10]], [])
+        assert pairs == []
+
+    def test_optimal_assignment(self):
+        # A clear best assignment: A0↔B1 (identical), A1↔B0 (identical).
+        boxes_a = [[0, 0, 10, 10], [100, 100, 110, 110]]
+        boxes_b = [[100, 100, 110, 110], [0, 0, 10, 10]]
+        pairs, _ = hungarian_match_boxes(boxes_a, boxes_b)
+        assert set(pairs) == {(0, 1), (1, 0)}
+
+    def test_class_cost_influences_match(self):
+        # Two overlapping candidates; class cost breaks the tie toward the
+        # same-class student box.
+        boxes_a = [[0, 0, 10, 10]]
+        boxes_b = [[0, 0, 10, 10], [0, 0, 10, 10]]
+        pairs, _ = hungarian_match_boxes(
+            boxes_a, boxes_b, classes_a=[5], classes_b=[9, 5]
+        )
+        assert pairs == [(0, 1)]
+
+    def test_returns_min_count_pairs(self):
+        boxes_a = [[0, 0, 10, 10], [20, 20, 30, 30], [40, 40, 50, 50]]
+        boxes_b = [[0, 0, 10, 10], [20, 20, 30, 30]]
+        pairs, _ = hungarian_match_boxes(boxes_a, boxes_b)
+        assert len(pairs) == 2
+
+
+class TestComputeSetDistillationLoss:
+    def test_both_empty(self):
+        r = compute_set_distillation_loss([], [])
+        assert r['loss'] == pytest.approx(0.0)
+        assert r['loss_cardinality'] == pytest.approx(0.0)
+        assert r['cardinality_error'] == 0
+
+    def test_identical_sets_zero_loss(self):
+        boxes = [[0, 0, 10, 10], [50, 50, 70, 70]]
+        classes = [0, 1]
+        r = compute_set_distillation_loss(boxes, boxes, classes, classes)
+        assert r['loss'] == pytest.approx(0.0, abs=1e-6)
+        assert r['loss_box'] == pytest.approx(0.0, abs=1e-6)
+        assert r['loss_iou'] == pytest.approx(0.0, abs=1e-6)
+        assert r['loss_cardinality'] == pytest.approx(0.0)
+        assert r['loss_class'] == pytest.approx(0.0)
+        assert r['fp_count'] == 0
+        assert r['fn_count'] == 0
+        assert r['iou_mean_matched'] == pytest.approx(1.0)
+
+    def test_cardinality_is_absolute_count_difference(self):
+        t = [[0, 0, 10, 10], [50, 50, 60, 60], [80, 80, 90, 90]]
+        s = [[0, 0, 10, 10]]
+        r = compute_set_distillation_loss(t, s)
+        # |1 - 3| = 2
+        assert r['loss_cardinality'] == pytest.approx(2.0)
+        assert r['cardinality_error'] == 2
+        # 2 teacher boxes go unmatched → false negatives.
+        assert r['fn_count'] == 2
+        assert r['fp_count'] == 0
+
+    def test_false_positive_counted(self):
+        t = [[0, 0, 10, 10]]
+        s = [[0, 0, 10, 10], [500, 500, 510, 510]]
+        r = compute_set_distillation_loss(t, s)
+        assert r['fp_count'] == 1
+        assert r['fn_count'] == 0
+        # The extra student box has no teacher overlap → loss_fp ≈ 1.
+        assert r['loss_fp'] == pytest.approx(1.0, abs=1e-6)
+
+    def test_class_mismatch_scored(self):
+        boxes = [[0, 0, 10, 10]]
+        r_match = compute_set_distillation_loss(boxes, boxes, [0], [0])
+        r_mismatch = compute_set_distillation_loss(boxes, boxes, [0], [1])
+        assert r_match['loss_class'] == pytest.approx(0.0)
+        assert r_match['class_mismatch_rate'] == pytest.approx(0.0)
+        assert r_mismatch['loss_class'] == pytest.approx(1.0)
+        assert r_mismatch['class_mismatch_rate'] == pytest.approx(1.0)
+        assert r_mismatch['loss_cls_mismatch'] == pytest.approx(1.0)
+        assert r_mismatch['loss'] > r_match['loss']
+
+    def test_box_loss_combines_l1_and_iou(self):
+        t = [[0, 0, 10, 10]]
+        s = [[5, 5, 15, 15]]
+        r = compute_set_distillation_loss(t, s)
+        # boxes overlap partially → 0 < loss_iou < 1, positive box term
+        assert 0.0 < r['loss_iou'] < 1.0
+        assert r['loss_box'] > 0.0
+
+    def test_detection_score_prefers_perfect_match(self):
+        boxes = [[0, 0, 10, 10]]
+        good = compute_set_distillation_loss(boxes, boxes, [0], [0])
+        bad = compute_set_distillation_loss(
+            boxes, [[0, 0, 10, 10], [99, 99, 100, 100]], [0], [0, 0]
+        )
+        assert good['detection_score'] > bad['detection_score']
+
+    def test_soft_class_distillation_with_logits(self):
+        boxes = [[0, 0, 10, 10]]
+        # Matching teacher/student logits → low KL; divergent → higher KL.
+        r_close = compute_set_distillation_loss(
+            boxes, boxes, [0], [0],
+            teacher_logits=[[2.0, 0.1, 0.1]], student_logits=[[2.0, 0.1, 0.1]],
+        )
+        r_far = compute_set_distillation_loss(
+            boxes, boxes, [0], [0],
+            teacher_logits=[[2.0, 0.1, 0.1]], student_logits=[[0.1, 0.1, 2.0]],
+        )
+        assert r_close['loss_class'] == pytest.approx(0.0, abs=1e-6)
+        assert r_far['loss_class'] > r_close['loss_class']
+
+    def test_one_empty_side(self):
+        r = compute_set_distillation_loss([[0, 0, 10, 10]], [])
+        assert r['loss_cardinality'] == pytest.approx(1.0)
+        assert r['cardinality_error'] == 1
+        assert r['fn_count'] == 1
+        assert r['loss'] > 0.0
+
+
+class TestDistillationScoreExposesLoss:
+    def test_score_dict_has_loss_keys(self):
+        boxes = [[0, 0, 10, 10]]
+        scores = [0.9]
+        classes = [0]
+        r = compute_distillation_score(
+            boxes, scores, classes, boxes, scores, classes
+        )
+        for key in ('loss', 'loss_total', 'loss_box', 'loss_iou',
+                    'loss_cardinality', 'loss_class', 'fp_count', 'fn_count',
+                    'cardinality_error', 'iou_mean_matched',
+                    'class_mismatch_rate', 'detection_score'):
+            assert key in r
+        # Identical → near-zero loss
+        assert r['loss'] == pytest.approx(0.0, abs=1e-6)
