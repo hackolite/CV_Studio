@@ -403,6 +403,9 @@ def nanodet_anchor_grid(input_width: int, input_height: int,
         built.append((c, st))
     # No exact match (or num_anchors unknown): prefer the 3-stride layout, the
     # most common for the mono-output NanoDet export.
+    if not built:
+        return (np.zeros((0, 2), dtype=np.float32),
+                np.zeros((0, 1), dtype=np.float32))
     return built[-1]
 
 
