@@ -86,5 +86,42 @@ def test_no_update_when_training_paused():
     assert np.allclose(res['student_bboxes'][0], raw[0])
 
 
+def test_ort_branch_is_used_and_skips_affine_head():
+    """When an ORT-training session is present, train_step routes to it and the
+    affine correction head is bypassed (the network weights carry the learning)."""
+    tr = _make_trainer(training_active=True)
+    teacher = [[20, 20, 60, 60]]
+    raw = np.array([[38, 38, 78, 78]], dtype=np.float32)
+    tr.infer = lambda f: (raw.copy(),
+                          np.array([0.9], dtype=np.float32),
+                          np.array([0], dtype=np.int64))
+    frame = np.zeros((100, 100, 3), dtype=np.uint8)
+
+    # Simulate a wired ORT-training session without installing onnxruntime-training.
+    tr._training_available = True
+    tr._ort_training_session = object()
+    calls = {"backprop": 0, "adapt": 0}
+
+    def fake_backprop(*a, **k):
+        calls["backprop"] += 1
+        return True
+
+    def fake_adapt(*a, **k):
+        calls["adapt"] += 1
+        return True
+
+    tr._do_backprop = fake_backprop
+    tr._adapt_step = fake_adapt
+
+    res = tr.train_step(frame, teacher, [0.9], [0], score_threshold=0.3)
+
+    assert res['training_step'] is True
+    assert calls["backprop"] == 1      # ORT path taken
+    assert calls["adapt"] == 0         # affine head bypassed
+    assert tr.backprop_mode == "ort-training"
+    # No affine correction applied → returned boxes equal the raw inference.
+    assert np.allclose(res['student_bboxes'][0], raw[0])
+
+
 if __name__ == '__main__':
     raise SystemExit(pytest.main([__file__, '-v']))

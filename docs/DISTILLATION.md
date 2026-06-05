@@ -49,6 +49,7 @@ Dans CV Studio, le nœud **OnlineTraining** implémente cette technique en temps
 | `node/DLNode/node_online_training.py` | Nœud principal (UI DearPyGUI + logique de pipeline) |
 | `node/DLNode/online_training/student_trainer.py` | Gestionnaire du cycle de vie de l'élève (inférence, scoring, entraînement) |
 | `node/DLNode/online_training/torch_student.py` | Élève PyTorch : conversion ONNX→PyTorch (`onnx2torch`) + **vraie rétropropagation** à travers la backbone et/ou les têtes |
+| `node/DLNode/online_training/ort_training_artifacts.py` | Chemin **onnxruntime-training** : décodage différentiable + loss appairée dans un graphe ONNX, fusion avec l'élève, génération des artefacts d'entraînement et matcher NumPy |
 | `node/DLNode/online_training/online_adapter.py` | Tête de correction affine entraînée par gradient sur la loss demandée (repli quand PyTorch est indisponible) |
 | `node/DLNode/online_training/distillation_loss.py` | Fonctions de perte et score de distillation (IoU, matching, F1) |
 | `node/DLNode/online_training/models/` | Répertoire de stockage des modèles élèves |
@@ -75,7 +76,15 @@ Dans CV Studio, le nœud **OnlineTraining** implémente cette technique en temps
 |------|-----------|--------------|
 | **Rétropropagation réseau (PyTorch)** (préféré) | `torch` **et** `onnx2torch` installés **et** conversion réussie | Le modèle ONNX de l'élève est chargé en PyTorch ; la loss demandée est **réellement rétropropagée** à travers les têtes (`train_scope='head'`, défaut) et/ou la backbone (`train_scope='all'`) via un `optimizer.step()`. L'inférence utilise les **poids mis à jour** → amélioration observable. `backprop_mode = pytorch-head`/`pytorch-all`. |
 | **Adaptation en ligne (tête affine)** (repli) | `onnxruntime` standard seul | Une tête de correction affine `(sx, sy, tx, ty)` est entraînée par descente de gradient sur la **loss demandée**. `backprop_mode = affine-head`. |
-| **Entraînement ORT** | `onnxruntime-training` câblé | Rétropropagation via une session ORT Training. `backprop_mode = ort-training`. |
+| **Entraînement ORT** | `onnxruntime-training` installé | Le graphe ONNX de l'élève est **fusionné** avec un sous-graphe de décodage différentiable + loss appairée (`ort_training_artifacts.py`), les artefacts d'entraînement sont générés (`generate_artifacts`), et une `TrainingSession` (Module + Optimizer) rétropropage réellement la loss à chaque frame. L'inférence ré-exporte périodiquement les poids entraînés. `backprop_mode = ort-training`. |
+
+> 🔧 **Chemin ORT-training (section C).** Le matching professeur↔élève
+> (Hungarian/greedy) n'est pas différentiable : il est calculé **hors-graphe**
+> en NumPy (`greedy_match_anchors`), et seules les paires appariées sont
+> injectées dans le graphe ORT. Tout le reste du chemin de loss (décodage des
+> boxes + L1 + (1−IoU) + CE classe) vit **dans le graphe ONNX** ; le NMS reste
+> exclu. C'est ce câblage du décodage différentiable dans le graphe qui rend la
+> rétropropagation ORT possible.
 
 > ℹ️ **PyTorch d'abord, tête affine en repli.** Le post-traitement de l'élève
 > (décodage des boxes + NMS) est en NumPy : il ne fait pas partie d'un graphe
