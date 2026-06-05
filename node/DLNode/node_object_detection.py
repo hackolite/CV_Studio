@@ -124,28 +124,6 @@ _BUILTIN_MODELS = [
         'num_classes': 3,
         'class_names': {0: 'player1', 1: 'player2', 2: 'ball'},
     },
-    {
-        'name': 'NanoDet-QDQ(320x320)',
-        'path': os.path.join(_OBJECT_DETECTION_BASE, 'NanoDet', 'model', 'nanodet_qdq.onnx'),
-        'output_format': 'nanodet',
-        'input_width': 320,
-        'input_height': 320,
-        'num_classes': 80,
-        'class_names': _COCO_CLASSES,
-        'disable_optimizations': True,
-        # QDQ quantisation maps most class logits to 0, making the auto-detect
-        # heuristic mistake them for DFL regression values.  Force classes-first.
-        'nanodet_reg_first': False,
-    },
-    {
-        'name': 'NanoDet(416x416)',
-        'path': os.path.join(_OBJECT_DETECTION_BASE, 'NanoDet', 'model', 'object_detection_nanodet_2022nov.onnx'),
-        'output_format': 'nanodet_multi',
-        'input_width': 416,
-        'input_height': 416,
-        'num_classes': 80,
-        'class_names': _COCO_CLASSES,
-    },
 ]
 
 # ---------------------------------------------------------------------------
