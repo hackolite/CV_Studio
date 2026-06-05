@@ -754,7 +754,8 @@ class CustomONNX:
         blob = np.expand_dims(blob, axis=0)             # CHW → BCHW
         return blob, ratio
 
-    def _postprocess_nanodet(self, raw_output, orig_w, orig_h):
+    def _postprocess_nanodet(self, raw_output, orig_w, orig_h,
+                             cls_pre_activated=None, reg_first_override=None):
         """Post-process NanoDet GFL/DFL output.
 
         Expected raw_output shape: (1, num_anchors, num_classes + 4*(reg_max+1))
@@ -763,6 +764,22 @@ class CustomONNX:
         The DFL (Distribution Focal Loss) regression encodes each of the 4 box
         sides as a discrete distribution over reg_max+1 bins. The expected value
         of this distribution gives the distance from anchor center to box edge.
+
+        Parameters
+        ----------
+        cls_pre_activated : bool or None
+            Whether the class scores are already passed through sigmoid in the
+            model graph.  Some exports (e.g. OpenCV Zoo NanoDet) apply the
+            activation in-graph; applying sigmoid a second time pushes every
+            anchor's score to ~0.5 and floods NMS with thousands of boxes.
+            Defaults to ``None``/``False`` (treat scores as raw logits and apply
+            sigmoid), preserving the standard NanoDet behaviour.  Callers that
+            know the scores are already activated pass ``True``.
+        reg_first_override : bool or None
+            Force the channel layout (``True`` = ``[reg, classes]``,
+            ``False`` = ``[classes, reg]``) instead of relying on the
+            statistical heuristic.  Callers that build the combined tensor with
+            a known layout (e.g. the multi-head path) should set this.
         """
         output = np.squeeze(raw_output)
         if output.ndim != 2:
@@ -789,37 +806,54 @@ class CustomONNX:
         reg_max_plus_1 = reg_channels // 4  # e.g., 8 for reg_max=7
 
         # Detect channel layout (cached after first inference).
-        # Skipped when caller supplied an explicit layout via nanodet_reg_first.
+        # Skipped when the caller forces a layout via reg_first_override, or
+        # when an explicit layout was supplied via the nanodet_reg_first
+        # constructor argument.
         # Some NanoDet models (e.g. nanodet_qdq) output regression channels
         # first [reg, classes] instead of [classes, reg].
         # Heuristic: DFL regression values are softmax outputs (bounded ~[0,1]
         # with low variance), while raw class logits have higher variance.
         # NOTE: QDQ-quantised models can fool this heuristic because quantisation
-        # maps most class logits to 0, making them appear bounded.  Use the
-        # nanodet_reg_first constructor argument to bypass auto-detection for
-        # such models.
-        if self._nanodet_reg_first is None:
-            first_block = output[:, :reg_channels]
-            last_block = output[:, reg_channels:]
-            first_std = first_block.std()
-            last_std = last_block.std()
-            self._nanodet_reg_first = (
-                first_std < last_std
-                and first_block.min() >= -0.5
-                and first_block.max() <= 1.5
+        # maps most class logits to 0, making them appear bounded.  Multi-head
+        # exports whose class heads are already sigmoid-activated also fool it,
+        # which is why the multi path forces reg_first_override=False.
+        if reg_first_override is not None:
+            reg_first = bool(reg_first_override)
+            logger.debug(
+                f"[CustomONNX] nanodet post-process: layout forced by caller to "
+                f"{'reg-first' if reg_first else 'classes-first'}."
             )
-            layout = "reg-first" if self._nanodet_reg_first else "classes-first"
-            logger.debug(f"[CustomONNX] nanodet post-process: detected {layout} layout.")
+        else:
+            if self._nanodet_reg_first is None:
+                first_block = output[:, :reg_channels]
+                last_block = output[:, reg_channels:]
+                first_std = first_block.std()
+                last_std = last_block.std()
+                self._nanodet_reg_first = (
+                    first_std < last_std
+                    and first_block.min() >= -0.5
+                    and first_block.max() <= 1.5
+                )
+                layout = "reg-first" if self._nanodet_reg_first else "classes-first"
+                logger.debug(f"[CustomONNX] nanodet post-process: detected {layout} layout.")
+            reg_first = self._nanodet_reg_first
 
-        if self._nanodet_reg_first:
+        if reg_first:
             reg_output = output[:, :reg_channels]       # (num_anchors, 4*(reg_max+1))
             class_scores = output[:, reg_channels:]     # (num_anchors, num_classes)
         else:
             class_scores = output[:, :self.num_classes]  # (num_anchors, num_classes)
             reg_output = output[:, self.num_classes:]    # (num_anchors, 4*(reg_max+1))
 
-        # Apply sigmoid to class scores (NanoDet outputs raw logits)
-        class_scores = 1.0 / (1.0 + np.exp(-class_scores))
+        # Apply sigmoid to class scores only when they are raw logits.
+        # NanoDet GFL heads normally output logits, but some exports (e.g.
+        # OpenCV Zoo NanoDet) bake the sigmoid into the graph.  Re-applying it
+        # would map every near-zero probability to ~0.5, so every anchor would
+        # clear the score threshold and NMS would emit a flood of boxes.
+        # Default (None/False) preserves the historical logits behaviour; only
+        # callers that know the scores are already activated pass True.
+        if not cls_pre_activated:
+            class_scores = 1.0 / (1.0 + np.exp(-class_scores))
 
         # Get max class score and class id per anchor
         max_scores = class_scores.max(axis=1)
@@ -985,10 +1019,27 @@ class CustomONNX:
         combined = np.concatenate(combined_parts, axis=0)  # (total_anchors, num_classes+reg)
         combined = combined[np.newaxis, ...]               # (1, total_anchors, num_classes+reg)
 
-        logger.debug(
-            f"[CustomONNX] nanodet_multi: combined tensor shape={combined.shape}"
+        # The combined tensor is built as [classes, reg] per stride, so the
+        # layout is unambiguously classes-first; bypass the statistical
+        # heuristic (which mistakes the low-variance, already-activated class
+        # block for the DFL regression block).  Detect whether the class heads
+        # are already sigmoid-activated so we do not apply sigmoid twice.
+        cls_concat = np.concatenate(
+            [cls_by_anchors[n] for n in anchor_counts], axis=0
         )
-        return self._postprocess_nanodet(combined, orig_w, orig_h)
+        cls_pre_activated = bool(
+            cls_concat.min() >= 0.0 and cls_concat.max() <= 1.0
+        )
+
+        logger.debug(
+            f"[CustomONNX] nanodet_multi: combined tensor shape={combined.shape}, "
+            f"cls_pre_activated={cls_pre_activated}"
+        )
+        return self._postprocess_nanodet(
+            combined, orig_w, orig_h,
+            cls_pre_activated=cls_pre_activated,
+            reg_first_override=False,
+        )
 
     # ------------------------------------------------------------------
     # YOLOX grid decoding
