@@ -289,7 +289,7 @@ class Node(Node):
                 ),
             )
         else:
-            dpg_set_value(status_tag, 'mean IoU: -- (waiting 2 inputs)')
+            dpg_set_value(status_tag, 'mean IoU: -- (waiting for 2 inputs)')
 
         if use_pref_counter:
             elapsed_time = time.monotonic() - start_time
