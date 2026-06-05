@@ -78,7 +78,7 @@ class StudentTrainer:
     input_height : int
         Model input height.
     output_format : str
-        Output format ('yolo11' or 'yolox').
+        Output format ('yolo11', 'yolox' or 'nanodet').
     num_classes : int
         Number of detection classes.
     learning_rate : float
@@ -434,6 +434,8 @@ class StudentTrainer:
         raw = self._torch.forward_numpy(blob)
         if self.output_format == "yolox":
             return self._student_model._postprocess_yolox(raw, orig_w, orig_h, ratio)
+        if self.output_format == "nanodet":
+            return self._student_model._postprocess_nanodet(raw, orig_w, orig_h)
         return self._student_model._postprocess_yolo11(raw, orig_w, orig_h)
 
     def _update_last_loss(self, distillation: Dict) -> None:
@@ -685,9 +687,16 @@ class StudentTrainer:
             return False
 
         # 2. Scale teacher boxes into network-input space and match out-of-graph.
-        sx = self.input_width / max(1, int(frame_w))
-        sy = self.input_height / max(1, int(frame_h))
-        teacher_boxes_in = teacher_boxes_orig * np.array([sx, sy, sx, sy], dtype=np.float32)
+        if self.output_format == "nanodet":
+            # NanoDet uses letterbox (uniform aspect-ratio-preserving) preproc.
+            ratio = min(self.input_height / max(1, int(frame_h)),
+                        self.input_width / max(1, int(frame_w)))
+            scale = np.array([ratio, ratio, ratio, ratio], dtype=np.float32)
+        else:
+            sx = self.input_width / max(1, int(frame_w))
+            sy = self.input_height / max(1, int(frame_h))
+            scale = np.array([sx, sy, sx, sy], dtype=np.float32)
+        teacher_boxes_in = teacher_boxes_orig * scale
         anchor_idx = ort_art.greedy_match_anchors(pred_boxes_in, teacher_boxes_in)
         matched = ort_art.build_matched_targets(
             teacher_boxes_in, list(teacher_class_ids), anchor_idx, self.num_classes,
@@ -741,6 +750,8 @@ class StudentTrainer:
         out = np.squeeze(np.asarray(raw_out))
         if out.ndim != 2:
             return None
+        if self.output_format == "nanodet":
+            return self._decode_pred_boxes_nanodet(out)
         if self.output_format == "yolox":
             if out.shape[1] != self.num_classes + 5 and out.shape[0] == self.num_classes + 5:
                 out = out.T
@@ -752,6 +763,38 @@ class StudentTrainer:
             cxcywh = out[:, :4]
         cx, cy, w, h = cxcywh[:, 0], cxcywh[:, 1], cxcywh[:, 2], cxcywh[:, 3]
         return np.stack([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], axis=1)
+
+    def _decode_pred_boxes_nanodet(self, out):  # pragma: no cover - needs ORT training
+        """NumPy NanoDet GFL/DFL decode → ``[A,4]`` xyxy anchor boxes (input space).
+
+        Used only to obtain candidate anchors for the (non-differentiable) match;
+        mirrors the in-graph decode in ``build_student_loss_graph``.
+        """
+        a = out.shape[0]
+        reg_channels = out.shape[1] - self.num_classes
+        if reg_channels <= 0 or reg_channels % 4 != 0:
+            return None
+        reg_bins = reg_channels // 4
+        # Standard mono-output NanoDet is classes-first.
+        reg_flat = out[:, self.num_classes:]
+        reg = reg_flat.reshape(a, 4, reg_bins)
+        reg = reg - reg.max(axis=2, keepdims=True)
+        sm = np.exp(reg)
+        sm /= sm.sum(axis=2, keepdims=True)
+        proj = np.arange(reg_bins, dtype=np.float32)
+        distances = (sm * proj).sum(axis=2)  # [A,4]
+        centers, strides = ort_art.nanodet_anchor_grid(
+            self.input_width, self.input_height, a)
+        if centers.shape[0] != a:
+            return None
+        cx = centers[:, 0]
+        cy = centers[:, 1]
+        st = strides[:, 0]
+        x1 = cx - distances[:, 0] * st
+        y1 = cy - distances[:, 1] * st
+        x2 = cx + distances[:, 2] * st
+        y2 = cy + distances[:, 3] * st
+        return np.stack([x1, y1, x2, y2], axis=1).astype(np.float32)
 
     @staticmethod
     def _extract_scalar(outputs):  # pragma: no cover - needs ORT training

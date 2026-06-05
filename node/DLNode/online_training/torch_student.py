@@ -16,7 +16,8 @@ the conversion of a particular model fails, the caller falls back to the affine
 correction head in :mod:`online_adapter`. Import errors never propagate.
 
 Supported output formats for the differentiable decode: ``yolo11`` (Ultralytics
-YOLOv8/v11, boxes already in input pixels) and ``yolox`` (grid + objectness).
+YOLOv8/v11, boxes already in input pixels), ``yolox`` (grid + objectness) and
+``nanodet`` (GFL/DFL distribution heads, single concatenated output).
 """
 
 import contextlib
@@ -26,6 +27,8 @@ import tempfile
 from typing import List, Optional, Tuple
 
 import numpy as np
+
+from node.DLNode.online_training.ort_training_artifacts import nanodet_anchor_grid
 
 logger = logging.getLogger(__name__)
 
@@ -55,11 +58,12 @@ def is_torch_backprop_available() -> bool:
 
 
 # Output formats for which the differentiable decode (``TorchStudent._decode``)
-# and the matched distillation loss are implemented. Detectors using a different
-# decode (e.g. ``nanodet``/``nanodet_multi`` with GFL distribution heads, or
+# and the matched distillation loss are implemented. ``nanodet`` is the
+# single-output GFL/DFL export (one concatenated tensor). Detectors using a
+# different decode (e.g. ``nanodet_multi`` with separate per-level heads, or
 # ``ssd``) must NOT take the PyTorch backprop path: their raw outputs cannot be
 # decoded here, so it would yield no student boxes and no real weight updates.
-SUPPORTED_FORMATS = ("yolo11", "yolox")
+SUPPORTED_FORMATS = ("yolo11", "yolox", "nanodet")
 
 
 def is_format_supported(output_format: str) -> bool:
@@ -118,7 +122,7 @@ class TorchStudent:
     input_width, input_height : int
         Network input resolution.
     output_format : str
-        ``'yolo11'`` or ``'yolox'``.
+        ``'yolo11'``, ``'yolox'`` or ``'nanodet'``.
     num_classes : int
         Number of detection classes.
     learning_rate : float
@@ -126,6 +130,9 @@ class TorchStudent:
     train_scope : str
         ``'head'`` to train only the last few parameter tensors (detection
         heads), or ``'all'`` to fine-tune the whole backbone + heads.
+    nanodet_reg_first : bool
+        NanoDet channel layout: ``False`` (default) for ``[classes, reg]``,
+        ``True`` for ``[reg, classes]``.
     """
 
     def __init__(
@@ -138,6 +145,7 @@ class TorchStudent:
         learning_rate: float = 1e-4,
         train_scope: str = "head",
         head_params: int = _DEFAULT_HEAD_PARAMS,
+        nanodet_reg_first: bool = False,
     ):
         if not is_torch_backprop_available():
             raise RuntimeError(
@@ -156,6 +164,11 @@ class TorchStudent:
         self.num_classes = int(num_classes)
         self.learning_rate = float(learning_rate)
         self.train_scope = train_scope
+        # NanoDet GFL/DFL: channel layout ([classes, reg] vs [reg, classes]) and
+        # a small cache of the (anchor centres, strides) grid keyed by anchor
+        # count, built lazily from the first decoded tensor.
+        self.nanodet_reg_first = bool(nanodet_reg_first)
+        self._nanodet_grid_cache = {}
 
         # Convert ONNX -> torch.nn.Module (raises on failure; caller handles it).
         # Resilient to read-only model directories (see ``_convert_onnx_to_torch``).
@@ -225,6 +238,8 @@ class TorchStudent:
             obj = torch.sigmoid(out[:, 4:5])
             cls = torch.sigmoid(out[:, 5:])
             scores = obj * cls
+        elif self.output_format == "nanodet":
+            return self._decode_nanodet(out)
         else:
             # yolo11: (C+4, anchors) -> (anchors, C+4)
             expected = self.num_classes + 4
@@ -237,6 +252,63 @@ class TorchStudent:
             scores = out[:, 4:]
 
         boxes_xyxy = self._cxcywh_to_xyxy(cxcywh)
+        return boxes_xyxy, scores
+
+    def _nanodet_grid(self, num_anchors: int):
+        """Return cached ``(centers[A,2], strides[A,1])`` torch tensors."""
+        cached = self._nanodet_grid_cache.get(num_anchors)
+        if cached is None:
+            centers_np, strides_np = nanodet_anchor_grid(
+                self.input_width, self.input_height, num_anchors)
+            centers = torch.from_numpy(centers_np).float()
+            strides = torch.from_numpy(strides_np).float()
+            cached = (centers, strides)
+            self._nanodet_grid_cache[num_anchors] = cached
+        return cached
+
+    def _decode_nanodet(self, out):
+        """Differentiable NanoDet GFL/DFL decode of ``(anchors, channels)``.
+
+        Each of the 4 box sides is the expectation of a softmax distribution over
+        ``reg_max+1`` bins; boxes are anchor-centre ± distance*stride. Mirrors
+        :meth:`CustomONNX._postprocess_nanodet` (without NMS), so the anchor
+        ordering and geometry match the inference path.
+        """
+        a = out.shape[0]
+        total = out.shape[1]
+        reg_channels = total - self.num_classes
+        if reg_channels <= 0 or reg_channels % 4 != 0:
+            raise RuntimeError(
+                f"NanoDet decode: cannot infer reg_max from channels={total}, "
+                f"num_classes={self.num_classes}."
+            )
+        reg_bins = reg_channels // 4
+
+        if self.nanodet_reg_first:
+            reg_flat = out[:, :reg_channels]
+            cls_raw = out[:, reg_channels:]
+        else:
+            cls_raw = out[:, :self.num_classes]
+            reg_flat = out[:, self.num_classes:]
+
+        scores = torch.sigmoid(cls_raw)
+
+        reg = reg_flat.reshape(a, 4, reg_bins)
+        reg_sm = torch.softmax(reg, dim=2)
+        proj = torch.arange(reg_bins, dtype=reg_sm.dtype, device=reg_sm.device)
+        distances = (reg_sm * proj).sum(dim=2)  # [A,4] = left, top, right, bottom
+
+        centers, strides = self._nanodet_grid(a)
+        centers = centers.to(out.dtype)
+        strides = strides.to(out.dtype)
+        cx = centers[:, 0]
+        cy = centers[:, 1]
+        st = strides[:, 0]
+        x1 = cx - distances[:, 0] * st
+        y1 = cy - distances[:, 1] * st
+        x2 = cx + distances[:, 2] * st
+        y2 = cy + distances[:, 3] * st
+        boxes_xyxy = torch.stack([x1, y1, x2, y2], dim=1)
         return boxes_xyxy, scores
 
     def _decode_yolox_grid(self, out):
@@ -371,9 +443,7 @@ class TorchStudent:
         raw = self._forward_raw(blob)
         pred_boxes, pred_scores = self._decode(raw)
 
-        sx = self.input_width / max(1, int(orig_w))
-        sy = self.input_height / max(1, int(orig_h))
-        scale = torch.tensor([sx, sy, sx, sy], dtype=pred_boxes.dtype)
+        scale = self._teacher_input_scale(orig_w, orig_h, pred_boxes.dtype)
         teacher_in = torch.tensor(
             np.asarray(teacher_boxes_orig, dtype=np.float32)
         ).reshape(-1, 4) * scale
@@ -387,6 +457,21 @@ class TorchStudent:
         self.optimizer.step()
         self.updates += 1
         return float(loss.detach().cpu().item())
+
+    def _teacher_input_scale(self, orig_w: int, orig_h: int, dtype):
+        """Scale factor mapping original-image boxes into network-input space.
+
+        NanoDet preprocessing is letterbox (aspect-ratio preserving, top-left
+        aligned), so a single uniform ``ratio`` maps original pixels to input
+        pixels. yolo11/yolox keep the historical per-axis stretch mapping.
+        """
+        if self.output_format == "nanodet":
+            ratio = min(self.input_height / max(1, int(orig_h)),
+                        self.input_width / max(1, int(orig_w)))
+            return torch.tensor([ratio, ratio, ratio, ratio], dtype=dtype)
+        sx = self.input_width / max(1, int(orig_w))
+        sy = self.input_height / max(1, int(orig_h))
+        return torch.tensor([sx, sy, sx, sy], dtype=dtype)
 
     # ------------------------------------------------------------------
     # Inference with the (updated) weights

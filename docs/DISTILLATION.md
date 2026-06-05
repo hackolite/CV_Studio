@@ -92,7 +92,7 @@ Dans CV Studio, le nœud **OnlineTraining** implémente cette technique en temps
 > rétropropagation. Pour entraîner **réellement** le réseau, `torch_student.py`
 > convertit le graphe ONNX en `torch.nn.Module` (`onnx2torch`), rend les têtes
 > (et optionnellement la backbone) entraînables, décode les sorties brutes de
-> façon différentiable (yolo11 / yolox), apparie les boxes professeur↔élève
+> façon différentiable (yolo11 / yolox / nanodet), apparie les boxes professeur↔élève
 > (matching sans gradient) puis rétropropage la loss demandée (box L1 + (1−IoU)
 > + classification) avec un `optimizer.step()`. Quand `torch`/`onnx2torch` sont
 > absents ou que la conversion échoue, on retombe sur la **tête affine**
@@ -275,6 +275,8 @@ pip install onnxruntime-training numpy opencv-python
 Le modèle élève doit être au format ONNX avec un format de sortie supporté :
 - **yolo11** (YOLO v11 / Ultralytics)
 - **yolox** (YOLOX)
+- **nanodet** (NanoDet / NanoDet-Plus, sortie unique GFL/DFL) — décodage DFL
+  différentiable (distances de bord softmax×stride, géométrie letterbox uniforme)
 
 Le modèle doit contenir les métadonnées suivantes (inspectées automatiquement) :
 - Dimensions d'entrée (input_width × input_height)

@@ -79,6 +79,9 @@ def build_student_loss_graph(
     raw_input_name: str = "raw_output",
     transpose_output: bool = True,
     class_weight: float = _CLASS_LOSS_WEIGHT,
+    reg_max: int = 7,
+    nanodet_reg_first: bool = False,
+    num_anchors: Optional[int] = None,
 ):
     """Build the differentiable decode + matched-pair distillation loss model.
 
@@ -92,12 +95,25 @@ def build_student_loss_graph(
         Raw student network output. For ``yolo11`` the canonical Ultralytics
         layout ``[1, C+4, A]`` is expected (set ``transpose_output`` to control
         the leading transpose). For ``yolox`` a ``[1, A, C+5]`` layout is used.
+        For ``nanodet`` a ``[1, A, C + 4*(reg_max+1)]`` GFL/DFL layout is used.
     anchor_idx : int64 ``[T]``
         Index of the student anchor matched to each teacher box (NumPy match).
     teacher_boxes_in : float32 ``[T, 4]``
         Teacher boxes (``x1,y1,x2,y2``) in **network-input** pixel space.
     teacher_onehot : float32 ``[T, C]``
         One-hot (or soft) teacher class target per matched box.
+
+    NanoDet parameters
+    ------------------
+    reg_max : int
+        Maximum bin index of the DFL distribution; each side distance is the
+        expectation over ``reg_max+1`` softmax bins.
+    nanodet_reg_first : bool
+        Channel layout of the raw output: ``False`` (default) for
+        ``[classes, reg]``, ``True`` for ``[reg, classes]``.
+    num_anchors : int, optional
+        Anchor count of the student output, used to select the NanoDet stride
+        set when building the constant anchor grid.
 
     Outputs
     -------
@@ -109,7 +125,7 @@ def build_student_loss_graph(
     """
     if not _ONNX_AVAILABLE:
         raise RuntimeError("onnx package required to build the loss graph")
-    if output_format not in ("yolo11", "yolox"):
+    if output_format not in ("yolo11", "yolox", "nanodet"):
         raise ValueError(f"unsupported output_format for ORT loss: {output_format}")
 
     nodes = []
@@ -139,7 +155,7 @@ def build_student_loss_graph(
         inits.append(split_init)
         nodes.append(helper.make_node("Split", ["ld_dec", "ld_split_bc"],
                                       ["ld_cxcywh", "ld_scores"], axis=1))
-    else:  # yolox: [1, A, C+5] → [A, C+5], grid-decode boxes, scores = obj*cls
+    elif output_format == "yolox":  # [1, A, C+5] → [A, C+5], grid-decode boxes, scores = obj*cls
         nodes.append(helper.make_node("Squeeze", [raw_input_name, "ld_axis0"], ["ld_dec"]))
         grid, strides = _yolox_grid(input_width, input_height)
         inits.append(numpy_helper.from_array(grid.astype(np.float32), "ld_grid"))      # [A,2]
@@ -160,17 +176,74 @@ def build_student_loss_graph(
         nodes.append(helper.make_node("Sigmoid", ["ld_cls_raw"], ["ld_cls"]))
         nodes.append(helper.make_node("Mul", ["ld_obj", "ld_cls"], ["ld_scores"]))
 
-    # ── cxcywh → xyxy (boxes in input space) ─────────────────────────────────
-    nodes.append(helper.make_node("Split", ["ld_cxcywh"],
-                                  ["ld_cx", "ld_cy", "ld_w", "ld_h"], axis=1, num_outputs=4))
-    nodes.append(helper.make_node("Div", ["ld_w", "ld_two"], ["ld_hw"]))
-    nodes.append(helper.make_node("Div", ["ld_h", "ld_two"], ["ld_hh"]))
-    nodes.append(helper.make_node("Sub", ["ld_cx", "ld_hw"], ["ld_x1"]))
-    nodes.append(helper.make_node("Sub", ["ld_cy", "ld_hh"], ["ld_y1"]))
-    nodes.append(helper.make_node("Add", ["ld_cx", "ld_hw"], ["ld_x2"]))
-    nodes.append(helper.make_node("Add", ["ld_cy", "ld_hh"], ["ld_y2"]))
-    nodes.append(helper.make_node("Concat", ["ld_x1", "ld_y1", "ld_x2", "ld_y2"],
-                                  ["ld_boxes"], axis=1))  # [A,4]
+    if output_format == "nanodet":
+        # nanodet GFL/DFL: [1, A, C + 4*(reg_max+1)] → [A, ...]. Each side
+        # distance (l, t, r, b) is the expectation of a softmax over reg_max+1
+        # bins; boxes are anchor-centre ± distance*stride (FCOS-style grid).
+        reg_bins = int(reg_max) + 1
+        reg_channels = 4 * reg_bins
+        nodes.append(helper.make_node("Squeeze", [raw_input_name, "ld_axis0"], ["ld_dec"]))
+        # Split classes / regression according to the channel layout.
+        if nanodet_reg_first:
+            split_nd = numpy_helper.from_array(
+                np.array([reg_channels, num_classes], dtype=np.int64), "ld_split_nd")
+            inits.append(split_nd)
+            nodes.append(helper.make_node("Split", ["ld_dec", "ld_split_nd"],
+                                          ["ld_reg_flat", "ld_cls_raw"], axis=1))
+        else:
+            split_nd = numpy_helper.from_array(
+                np.array([num_classes, reg_channels], dtype=np.int64), "ld_split_nd")
+            inits.append(split_nd)
+            nodes.append(helper.make_node("Split", ["ld_dec", "ld_split_nd"],
+                                          ["ld_cls_raw", "ld_reg_flat"], axis=1))
+        nodes.append(helper.make_node("Sigmoid", ["ld_cls_raw"], ["ld_scores"]))
+
+        # Anchor grid (constant) — centres and per-anchor stride.
+        centers, strides_nd = nanodet_anchor_grid(input_width, input_height, num_anchors)
+        inits.append(numpy_helper.from_array(
+            centers[:, 0:1].astype(np.float32), "ld_nd_cx"))   # [A,1]
+        inits.append(numpy_helper.from_array(
+            centers[:, 1:2].astype(np.float32), "ld_nd_cy"))   # [A,1]
+        inits.append(numpy_helper.from_array(
+            strides_nd.astype(np.float32), "ld_nd_stride"))    # [A,1]
+        inits.append(numpy_helper.from_array(
+            np.array([-1, 4, reg_bins], dtype=np.int64), "ld_nd_rshape"))
+        inits.append(numpy_helper.from_array(
+            np.arange(reg_bins, dtype=np.float32), "ld_nd_proj"))  # [reg_bins]
+        inits.append(numpy_helper.from_array(np.array([2], dtype=np.int64), "ld_nd_axis2"))
+
+        # reg → [A,4,reg_bins] → softmax → expectation over bins → distances [A,4]
+        nodes.append(helper.make_node("Reshape", ["ld_reg_flat", "ld_nd_rshape"], ["ld_nd_reg"]))
+        nodes.append(helper.make_node("Softmax", ["ld_nd_reg"], ["ld_nd_sm"], axis=2))
+        nodes.append(helper.make_node("Mul", ["ld_nd_sm", "ld_nd_proj"], ["ld_nd_wsum"]))
+        nodes.append(helper.make_node("ReduceSum", ["ld_nd_wsum", "ld_nd_axis2"],
+                                      ["ld_nd_dist"], keepdims=0))  # [A,4]
+        # distances l,t,r,b → xyxy in input space.
+        nodes.append(helper.make_node("Split", ["ld_nd_dist"],
+                                      ["ld_nd_l", "ld_nd_t", "ld_nd_r", "ld_nd_b"],
+                                      axis=1, num_outputs=4))
+        nodes.append(helper.make_node("Mul", ["ld_nd_l", "ld_nd_stride"], ["ld_nd_ls"]))
+        nodes.append(helper.make_node("Mul", ["ld_nd_t", "ld_nd_stride"], ["ld_nd_ts"]))
+        nodes.append(helper.make_node("Mul", ["ld_nd_r", "ld_nd_stride"], ["ld_nd_rs"]))
+        nodes.append(helper.make_node("Mul", ["ld_nd_b", "ld_nd_stride"], ["ld_nd_bs"]))
+        nodes.append(helper.make_node("Sub", ["ld_nd_cx", "ld_nd_ls"], ["ld_x1"]))
+        nodes.append(helper.make_node("Sub", ["ld_nd_cy", "ld_nd_ts"], ["ld_y1"]))
+        nodes.append(helper.make_node("Add", ["ld_nd_cx", "ld_nd_rs"], ["ld_x2"]))
+        nodes.append(helper.make_node("Add", ["ld_nd_cy", "ld_nd_bs"], ["ld_y2"]))
+        nodes.append(helper.make_node("Concat", ["ld_x1", "ld_y1", "ld_x2", "ld_y2"],
+                                      ["ld_boxes"], axis=1))  # [A,4]
+    else:
+        # ── cxcywh → xyxy (boxes in input space) ─────────────────────────────
+        nodes.append(helper.make_node("Split", ["ld_cxcywh"],
+                                      ["ld_cx", "ld_cy", "ld_w", "ld_h"], axis=1, num_outputs=4))
+        nodes.append(helper.make_node("Div", ["ld_w", "ld_two"], ["ld_hw"]))
+        nodes.append(helper.make_node("Div", ["ld_h", "ld_two"], ["ld_hh"]))
+        nodes.append(helper.make_node("Sub", ["ld_cx", "ld_hw"], ["ld_x1"]))
+        nodes.append(helper.make_node("Sub", ["ld_cy", "ld_hh"], ["ld_y1"]))
+        nodes.append(helper.make_node("Add", ["ld_cx", "ld_hw"], ["ld_x2"]))
+        nodes.append(helper.make_node("Add", ["ld_cy", "ld_hh"], ["ld_y2"]))
+        nodes.append(helper.make_node("Concat", ["ld_x1", "ld_y1", "ld_x2", "ld_y2"],
+                                      ["ld_boxes"], axis=1))  # [A,4]
 
     # ── Gather the matched anchors (NumPy match → anchor_idx) ─────────────────
     nodes.append(helper.make_node("Gather", ["ld_boxes", "anchor_idx"], ["ld_mp_boxes"], axis=0))
@@ -235,6 +308,8 @@ def build_student_loss_graph(
 
     if output_format == "yolo11":
         raw_shape = [1, num_classes + 4, "A"] if transpose_output else [1, "A", num_classes + 4]
+    elif output_format == "nanodet":
+        raw_shape = [1, "A", num_classes + 4 * (int(reg_max) + 1)]
     else:  # yolox
         raw_shape = [1, "A", num_classes + 5]
     graph_inputs = [
@@ -270,9 +345,99 @@ def _yolox_grid(input_width: int, input_height: int,
     return np.concatenate(grids, 0), np.concatenate(expanded, 0)
 
 
+# Stride sets tried (in priority order) when building the NanoDet anchor grid,
+# mirroring ``CustomONNX._postprocess_nanodet``: NanoDet-Plus uses 4 strides,
+# the legacy NanoDet-m uses 3.
+_NANODET_STRIDE_SETS: Tuple[Tuple[int, ...], ...] = ((8, 16, 32, 64), (8, 16, 32))
+
+
+def nanodet_anchor_grid(input_width: int, input_height: int,
+                        num_anchors: Optional[int] = None):
+    """Precompute NanoDet anchor centres + per-anchor strides (FCOS-style grid).
+
+    NanoDet's GFL/DFL head predicts, for every anchor point, four side distances
+    (left, top, right, bottom) as the expectation of a softmax distribution. The
+    anchor point is the **centre** of a grid cell, ``(x + 0.5) * stride``, with
+    the grid built per feature level (stride) in row-major (``indexing='ij'``)
+    order — identical to :meth:`CustomONNX._postprocess_nanodet` so the anchor
+    ordering matches the raw network output.
+
+    Parameters
+    ----------
+    num_anchors : int, optional
+        When given, the stride set whose total anchor count equals this value is
+        selected (4-stride NanoDet-Plus first, then 3-stride NanoDet-m). This
+        keeps the decode aligned with the actual student output.
+
+    Returns
+    -------
+    (centers, strides) : (np.ndarray[A, 2], np.ndarray[A, 1]) float32
+        Anchor centres ``(cx, cy)`` in input-pixel space and the matching stride
+        of each anchor.
+    """
+    def _build(strides_list):
+        centers = []
+        stride_col = []
+        for s in strides_list:
+            n_h = int(input_height) // s
+            n_w = int(input_width) // s
+            if n_h <= 0 or n_w <= 0:
+                continue
+            yv, xv = np.meshgrid(np.arange(n_h), np.arange(n_w), indexing="ij")
+            cx = (xv.ravel() + 0.5) * s
+            cy = (yv.ravel() + 0.5) * s
+            centers.append(np.stack([cx, cy], axis=1))
+            stride_col.append(np.full(n_h * n_w, float(s)))
+        if not centers:
+            return (np.zeros((0, 2), dtype=np.float32),
+                    np.zeros((0, 1), dtype=np.float32))
+        c = np.concatenate(centers, axis=0).astype(np.float32)
+        st = np.concatenate(stride_col, axis=0).astype(np.float32).reshape(-1, 1)
+        return c, st
+
+    built = []
+    for strides_list in _NANODET_STRIDE_SETS:
+        c, st = _build(strides_list)
+        if num_anchors is not None and c.shape[0] == num_anchors:
+            return c, st
+        built.append((c, st))
+    # No exact match (or num_anchors unknown): prefer the 3-stride layout, the
+    # most common for the mono-output NanoDet export.
+    if not built:
+        return (np.zeros((0, 2), dtype=np.float32),
+                np.zeros((0, 1), dtype=np.float32))
+    return built[-1]
+
+
 # ---------------------------------------------------------------------------
 # 2. Merge the student model with the loss graph (plan section A.1)
 # ---------------------------------------------------------------------------
+def _infer_nanodet_shape(output_vi, num_classes: int):
+    """Infer ``(num_anchors, reg_max)`` from a NanoDet student output value-info.
+
+    Returns ``(num_anchors, reg_max)`` where either value may be ``None`` when
+    the corresponding dimension is dynamic/unknown. The channel dimension is the
+    last static dim of a ``[1, A, C]`` output; ``A`` is the (static) anchor dim.
+    """
+    num_anchors = None
+    reg_max = None
+    try:
+        dims = output_vi.type.tensor_type.shape.dim
+        shape = [d.dim_value if (d.HasField("dim_value") and d.dim_value > 0) else None
+                 for d in dims]
+        if len(shape) == 3:
+            # Anchors-first [1, A, C]; channel is the last dim.
+            num_anchors = shape[1]
+            channels = shape[2]
+            if channels is not None and channels > num_classes:
+                reg_channels = channels - num_classes
+                if reg_channels > 0 and reg_channels % 4 == 0:
+                    reg_max = reg_channels // 4 - 1
+    except Exception:  # pragma: no cover - defensive
+        pass
+    return num_anchors, reg_max
+
+
 def merge_student_with_loss(
     student_model_path: str,
     num_classes: int,
@@ -280,6 +445,8 @@ def merge_student_with_loss(
     input_height: int,
     output_format: str = "yolo11",
     transpose_output: bool = True,
+    reg_max: int = 7,
+    nanodet_reg_first: bool = False,
 ):
     """Splice the differentiable loss graph onto a student ONNX model.
 
@@ -287,6 +454,10 @@ def merge_student_with_loss(
     ``raw_output`` input, so the merged model's only output is the scalar
     ``total_loss`` (plus the two component losses), differentiable w.r.t. the
     student weights.
+
+    For ``nanodet`` the DFL ``reg_max`` and the anchor count are inferred from
+    the student output shape when static; the supplied ``reg_max`` is used as a
+    fallback.
 
     Returns
     -------
@@ -303,6 +474,14 @@ def merge_student_with_loss(
         )
     student_out = student.graph.output[0].name
 
+    num_anchors = None
+    if output_format == "nanodet":
+        inferred_anchors, inferred_reg_max = _infer_nanodet_shape(
+            student.graph.output[0], num_classes)
+        num_anchors = inferred_anchors
+        if inferred_reg_max is not None:
+            reg_max = inferred_reg_max
+
     loss_model = build_student_loss_graph(
         num_classes=num_classes,
         input_width=input_width,
@@ -310,6 +489,9 @@ def merge_student_with_loss(
         output_format=output_format,
         raw_input_name="raw_output",
         transpose_output=transpose_output,
+        reg_max=reg_max,
+        nanodet_reg_first=nanodet_reg_first,
+        num_anchors=num_anchors,
     )
 
     # Align opset/IR so the two models can be composed.
