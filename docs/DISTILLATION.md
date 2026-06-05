@@ -67,8 +67,14 @@ Dans CV Studio, le nœud **OnlineTraining** implémente cette technique en temps
 
 | Mode | Condition | Comportement |
 |------|-----------|--------------|
-| **Inférence seule** | `onnxruntime` standard | L'élève infère et est scoré, mais ses poids ne changent pas |
-| **Entraînement complet** | `onnxruntime-training` installé | Rétropropagation active, les poids sont mis à jour à chaque frame |
+| **Inférence seule** | `onnxruntime` standard (défaut) | L'élève infère et est scoré, mais ses poids ne changent pas. `train_step` renvoie `training_step=False`. |
+| **Entraînement complet** | `onnxruntime-training` installé **et** session d'entraînement câblée | Rétropropagation de la loss demandée, mise à jour des poids. `train_step` renvoie `training_step=True` uniquement quand une mise à jour réelle a eu lieu. |
+
+> ⚠️ La rétropropagation de bout en bout nécessite que le post-traitement
+> (décodage + NMS) soit différentiable. Le post-traitement étant réalisé en
+> NumPy, le mode entraînement complet reste désactivé tant qu'une session
+> `onnxruntime-training` n'est pas explicitement attachée : le nœud n'annonce
+> jamais une étape d'entraînement fictive.
 
 ---
 
@@ -97,32 +103,47 @@ Cliquez **"Reset Student"** pour restaurer les poids originaux du modèle élèv
 
 ## Score de distillation
 
-Le score mesure la similarité entre les prédictions du professeur et celles de l'élève. Il est calculé à chaque frame.
+Le score mesure la similarité **ensembliste** entre les prédictions du
+professeur et celles de l'élève. Il est calculé à chaque frame et ne dépend pas
+d'un appariement strict 1-à-1.
 
 ### Métriques retournées
 
 | Métrique | Description |
 |----------|-------------|
-| `score` | Score global [0, 1] — 1.0 = correspondance parfaite |
-| `matched_count` | Nombre de détections correctement appariées |
-| `missed_count` | Détections du professeur non trouvées par l'élève (faux négatifs) |
-| `false_positive_count` | Détections de l'élève sans correspondance chez le professeur |
-| `avg_iou` | IoU moyen des paires appariées |
-| `avg_score_diff` | Différence moyenne de confiance entre paires |
-| `class_accuracy` | Fraction des paires ayant la bonne classe |
+| `score` | Score global [0, 1] — 1.0 = correspondance parfaite (plus haut = mieux) |
+| `class_similarity` | Similarité cosinus des histogrammes de classes |
+| `count_ratio` | Ratio `min/max` du nombre de détections |
+| `confidence_alignment` | Similarité des profils de confiance |
+| `spatial_coverage` | IoU des masques de couverture spatiale agrégés |
+| `loss` | Loss de distillation set-based demandée (plus bas = mieux) |
+| `teacher_count` / `student_count` | Nombre de détections de chaque côté |
 
-### Algorithme de calcul
+### Algorithme de calcul (score `[0, 1]`)
 
-1. **Matching** : Les détections élève sont appariées aux détections professeur par IoU greedy (seuil par défaut : 0.5)
-2. **Rappel** : `matched / total_teacher`
-3. **Précision** : `matched / total_student`
-4. **Qualité** : `avg_iou × class_accuracy`
-5. **Score final** : `F1 × (0.7 + 0.3 × qualité)`
+Le score est une combinaison pondérée de quatre composantes ensemblistes,
+robustes à un nombre de boxes différent :
 
 ```python
-F1 = 2 × precision × recall / (precision + recall)
-score = F1 × (0.7 + 0.3 × quality)  # bonus qualité
+score = 0.30 * class_similarity
+      + 0.35 * spatial_coverage
+      + 0.15 * count_ratio
+      + 0.20 * confidence_alignment
 ```
+
+### `score`, `loss` et `best` — que représentent-ils ?
+
+| Grandeur | Sens | Direction | Source |
+|----------|------|-----------|--------|
+| `score` | Accord global élève↔professeur (composantes ci-dessus) | **plus haut = mieux** | `compute_distillation_score` |
+| `loss` | Loss set-based demandée (DETR : box L1 + 1-IoU + classe + cardinalité + FP/FN) | **plus bas = mieux** | `compute_set_distillation_loss` |
+| `best_score` | Meilleur (max) `score` observé depuis le dernier reset | plus haut = mieux | `StudentTrainer.best_score` |
+| `best_loss` | Meilleure (min) `loss` demandée observée depuis le dernier reset | plus bas = mieux | `StudentTrainer.best_loss` |
+
+> La **loss demandée** (set-based, hongroise) est l'unique source de vérité :
+> c'est exactement la même valeur que celle affichée par les nœuds **IoU** /
+> **Chart** et celle utilisée comme signal d'entraînement quand la
+> rétropropagation est active.
 
 ### Loss de distillation *set-based* (DETR-style)
 
@@ -146,7 +167,7 @@ Le nœud OnlineTraining expose les contrôles suivants :
 | **score_th** (slider) | Seuil de confiance minimum pour les prédictions de l'élève (0.0–1.0) |
 | **learning_rate** (slider) | Taux d'apprentissage (0.00001–0.01) |
 | **Training Active** (checkbox) | Active/désactive l'entraînement (l'inférence continue) |
-| **Score display** | Affiche : score courant, moyenne, meilleur score |
+| **Score display** | Affiche : score courant, loss courante, meilleur score, meilleure loss |
 | **Stats display** | Affiche : nombre de frames traitées, état de l'entraînement |
 | **Load Student ONNX** (bouton jaune) | Charger un modèle ONNX élève |
 | **Export Student ONNX** (bouton vert) | Exporter le modèle courant |

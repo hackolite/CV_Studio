@@ -23,6 +23,8 @@ from node.StatsNode.node_iou import (
     match_detections,
     bbox_pair_difference,
     score_bbox_difference,
+    _format_status,
+    _STATUS_PLACEHOLDER,
 )
 
 
@@ -292,6 +294,31 @@ def test_update_identical_sets_zero_loss():
     )
     payload = result['json']
     assert payload['loss'] == pytest.approx(0.0, abs=1e-6)
+
+
+class TestFixedSizeStatus:
+    """The IoU node must keep a constant size, so its status string must have a
+    constant length regardless of how variable the diff/loss/counts are."""
+
+    def test_status_constant_width(self):
+        cases = [
+            (0.0, 0.0, 0, 0),
+            (1.0, 12.345, 7, 3),
+            (0.5, 9_999_999.0, 1000, 999),   # clamped, must not widen
+            (0.123, 0.5, 5, 1),
+            (-1.0, -5.0, -2, -9),            # clamped to lower bounds
+        ]
+        widths = {len(_format_status(*c)) for c in cases}
+        assert len(widths) == 1
+        # Placeholder shown before any data must share the same fixed width.
+        assert widths == {len(_STATUS_PLACEHOLDER)}
+
+    def test_status_clamps_extremes(self):
+        s = _format_status(2.0, 10_000.0, 5000, 5000)
+        assert len(s) == len(_STATUS_PLACEHOLDER)
+        assert '1.00' in s        # diff clamped to 1.0
+        assert '999.99' in s      # loss clamped
+        assert 'm 999' in s and 'u 999' in s  # counts clamped
 
 
 if __name__ == '__main__':

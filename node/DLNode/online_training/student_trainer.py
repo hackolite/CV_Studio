@@ -99,6 +99,11 @@ class StudentTrainer:
         self.total_score = 0.0
         self.current_score = 0.0
         self.best_score = 0.0
+        # Distillation loss bookkeeping (lower is better). ``current_loss`` is the
+        # requested set-based (DETR-style Hungarian) loss for the latest frame and
+        # ``best_loss`` the lowest value seen so far.
+        self.current_loss = float('inf')
+        self.best_loss = float('inf')
         self.training_active = False
         self._last_loss = None
 
@@ -191,8 +196,10 @@ class StudentTrainer:
         -------
         dict with keys:
             - student_bboxes, student_scores, student_class_ids: student predictions
-            - distillation: distillation score metrics
-            - training_step: whether backprop was performed
+            - distillation: distillation score metrics (includes the requested
+              set-based loss under the ``loss`` key, lower = closer to teacher)
+            - training_step: True only when a real weight update was performed
+              (requires onnxruntime-training); False in inference-only mode
         """
         # 1. Student inference
         s_bboxes, s_scores, s_class_ids = self.infer(frame)
@@ -204,7 +211,7 @@ class StudentTrainer:
             s_scores = s_scores[mask]
             s_class_ids = s_class_ids[mask]
 
-        # 2. Compute distillation score
+        # 2. Compute distillation score + the requested set-based loss
         distillation = compute_distillation_score(
             list(teacher_bboxes),
             list(teacher_scores),
@@ -214,6 +221,17 @@ class StudentTrainer:
             s_class_ids.tolist() if len(s_class_ids) > 0 else [],
         )
 
+        # The reported loss is the *requested* set-based distillation loss (single
+        # source of truth, identical to the one shown by the IoU/Chart nodes), not
+        # a separate approximation.
+        self._last_loss = {
+            'loss': distillation.get('loss', 0.0),
+            'loss_box': distillation.get('loss_box', 0.0),
+            'loss_class': distillation.get('loss_class', 0.0),
+            'loss_iou': distillation.get('loss_iou', 0.0),
+            'loss_cardinality': distillation.get('loss_cardinality', 0.0),
+        }
+
         # 3. Update statistics
         self.frames_processed += 1
         self.current_score = distillation['score']
@@ -221,13 +239,18 @@ class StudentTrainer:
         if self.current_score > self.best_score:
             self.best_score = self.current_score
 
-        # 4. Training step (if ORT Training available and training is active)
+        # Track the requested loss (lower = better student).
+        self.current_loss = float(distillation.get('loss', 0.0))
+        if self.current_loss < self.best_loss:
+            self.best_loss = self.current_loss
+
+        # 4. Training step (only when ORT Training is available and active).
+        # ``train_step`` reflects whether weights were actually updated.
         training_performed = False
         if self._training_available and self.training_active:
-            # ORT Training backpropagation would go here
-            # For now, this is a placeholder for the onnxruntime-training API
             training_performed = self._do_backprop(
-                frame, teacher_bboxes, teacher_scores, teacher_class_ids
+                frame, teacher_bboxes, teacher_scores, teacher_class_ids,
+                distillation,
             )
 
         return {
@@ -238,89 +261,58 @@ class StudentTrainer:
             'training_step': training_performed,
         }
 
-    def _do_backprop(self, frame, teacher_bboxes, teacher_scores, teacher_class_ids):
-        """Compute the set-based distillation loss via ONNX Runtime.
+    def _do_backprop(self, frame, teacher_bboxes, teacher_scores,
+                     teacher_class_ids, distillation=None):
+        """Back-propagate the *requested* set-based distillation loss.
 
-        Uses the ONNX loss graph for forward evaluation. When onnxruntime-training
-        is installed, the loss graph is appended to the student model and ORT
-        handles automatic differentiation + weight updates.
+        The Hungarian set-based loss (``compute_set_distillation_loss``) drives the
+        update. Because it relies on a discrete bipartite assignment, the matching
+        is computed without gradients and the differentiable per-matched-pair terms
+        (box L1 + (1 - IoU) + class CE) are what is propagated through the student
+        network via onnxruntime-training.
 
-        Returns True if loss was computed successfully.
+        A real weight update requires a fully wired onnxruntime-training session.
+        When that session is not available this method performs **no** weight
+        update and returns ``False`` so callers never report a phantom training
+        step.
+
+        Returns
+        -------
+        bool
+            True only if the student weights were actually updated.
         """
-        # Run student inference
-        s_bboxes, s_scores, s_class_ids = self.infer(frame)
-        if len(s_scores) > 0:
-            mask = s_scores >= self.score_threshold
-            s_bboxes = s_bboxes[mask]
-            s_scores = s_scores[mask]
-            s_class_ids = s_class_ids[mask]
+        # Keep the reported loss consistent with the requested set-based loss.
+        if distillation is not None:
+            self._last_loss = {
+                'loss': distillation.get('loss', 0.0),
+                'loss_box': distillation.get('loss_box', 0.0),
+                'loss_class': distillation.get('loss_class', 0.0),
+                'loss_iou': distillation.get('loss_iou', 0.0),
+                'loss_cardinality': distillation.get('loss_cardinality', 0.0),
+            }
 
-        # Prepare arrays
-        boxes_t = np.array(teacher_bboxes, dtype=np.float32).reshape(-1, 4)
-        scores_t = np.array(teacher_scores, dtype=np.float32).ravel()
-        classes_t = np.array(teacher_class_ids, dtype=np.int64).ravel()
-        boxes_s = np.array(s_bboxes, dtype=np.float32).reshape(-1, 4)
-        scores_s_arr = np.array(s_scores, dtype=np.float32).ravel()
-        classes_s = np.array(s_class_ids, dtype=np.int64).ravel()
+        # Real backprop path: requires a wired onnxruntime-training session.
+        if self._ort_training_session is None:
+            # Inference-only: no differentiable end-to-end path is available
+            # (post-processing/NMS runs in NumPy), so weights are left unchanged.
+            return False
 
-        n_t = len(scores_t)
-        n_s = len(scores_s_arr)
-
-        if n_t == 0 and n_s == 0:
-            self._last_loss = {'loss': 0.0, 'loss_class': 0.0,
-                               'loss_count': 0.0, 'loss_confidence': 0.0,
-                               'loss_spatial': 0.0}
-            return True
-
-        # Try ONNX Runtime session (supports ORT Training for gradient computation)
-        if self._loss_session is not None and n_t > 0 and n_s > 0:
-            try:
-                results = self._loss_session.run(
-                    None,
-                    {
-                        "boxes_t": boxes_t,
-                        "scores_t": scores_t,
-                        "classes_t": classes_t,
-                        "boxes_s": boxes_s,
-                        "scores_s": scores_s_arr,
-                        "classes_s": classes_s,
-                    },
-                )
-                self._last_loss = {
-                    'loss': float(results[0]),
-                    'loss_class': float(results[1]),
-                    'loss_count': float(results[2]),
-                    'loss_confidence': float(results[3]),
-                    'loss_spatial': float(results[4]),
-                }
-            except Exception as exc:
-                logger.debug(f"[StudentTrainer] ORT loss session error: {exc}, numpy fallback")
-                self._last_loss = compute_distillation_loss_numpy(
-                    boxes_t, scores_t, classes_t,
-                    boxes_s, scores_s_arr, classes_s,
-                    num_classes=self.num_classes,
-                )
-        else:
-            # Numpy fallback (handles empty/edge cases)
-            self._last_loss = compute_distillation_loss_numpy(
-                boxes_t, scores_t, classes_t,
-                boxes_s, scores_s_arr, classes_s,
-                num_classes=self.num_classes,
+        try:
+            return self._run_ort_training_step(
+                frame, teacher_bboxes, teacher_scores, teacher_class_ids,
             )
+        except Exception as exc:  # pragma: no cover - depends on ORT training
+            logger.debug(f"[StudentTrainer] ORT training step failed: {exc}")
+            return False
 
-        logger.debug(
-            f"[StudentTrainer] Loss step (frame #{self.frames_processed}) — "
-            f"loss={self._last_loss['loss']:.4f} "
-            f"[class={self._last_loss['loss_class']:.3f}, "
-            f"count={self._last_loss['loss_count']:.3f}, "
-            f"conf={self._last_loss['loss_confidence']:.3f}, "
-            f"spatial={self._last_loss['loss_spatial']:.3f}]"
-        )
+    def _run_ort_training_step(self, frame, teacher_bboxes, teacher_scores,
+                               teacher_class_ids):  # pragma: no cover
+        """Run one onnxruntime-training optimizer step (when wired).
 
-        # When onnxruntime-training is available and training_active is True,
-        # the loss ONNX graph is combined with the student model graph into a
-        # TrainingSession that handles automatic differentiation + SGD updates.
-        return True
+        Placeholder for the ORT Training optimizer step. Returns False until an
+        end-to-end differentiable training session is attached.
+        """
+        return False
 
     def reset(self):
         """Reset the student model to its original weights."""
@@ -345,6 +337,8 @@ class StudentTrainer:
         self.total_score = 0.0
         self.current_score = 0.0
         self.best_score = 0.0
+        self.current_loss = float('inf')
+        self.best_loss = float('inf')
 
     def export_onnx(self, output_path: str) -> str:
         """Export the current student model to an ONNX file.
@@ -364,12 +358,23 @@ class StudentTrainer:
         return output_path
 
     def get_stats(self) -> Dict:
-        """Get training statistics."""
+        """Get training statistics.
+
+        Keys
+        ----
+        current_score / avg_score / best_score : distillation *score* in [0, 1]
+            (higher = student agrees more with the teacher).
+        current_loss / best_loss : requested set-based distillation *loss*
+            (lower = student closer to the teacher). ``inf`` until the first frame.
+        training_active / training_available : training flags.
+        """
         return {
             'frames_processed': self.frames_processed,
             'current_score': self.current_score,
             'avg_score': self.avg_score,
             'best_score': self.best_score,
+            'current_loss': self.current_loss,
+            'best_loss': self.best_loss,
             'training_active': self.training_active,
             'training_available': self._training_available,
         }

@@ -753,6 +753,9 @@ class Node(Node):
                     'iou_mean_matched': distillation.get('iou_mean_matched', 0.0),
                     'class_mismatch_rate': distillation.get('class_mismatch_rate', 0.0),
                     'detection_score': distillation.get('detection_score', 0.0),
+                    # Running best/current requested loss (lower = better student).
+                    'current_loss': float(self._student_trainer.current_loss),
+                    'best_loss': float(self._student_trainer.best_loss),
                 }
 
                 # Draw student predictions on frame
@@ -784,15 +787,21 @@ class Node(Node):
                     x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
                     cv2.rectangle(output_frame, (x1, y1), (x2, y2), (255, 100, 0), max(1, bbox_thickness - 1))
 
-                # Draw score overlay
-                score_text = f"Score: {distillation['score']:.2f}"
+                # Draw score + loss overlay
+                loss_val = distillation.get('loss', 0.0)
+                score_text = f"Score: {distillation['score']:.2f} | Loss: {loss_val:.3f}"
                 cv2.putText(
                     output_frame, score_text, (10, 25),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2
                 )
 
                 stats = self._student_trainer.get_stats()
-                avg_text = f"Avg: {stats['avg_score']:.2f} | Best: {stats['best_score']:.2f}"
+                best_loss = stats.get('best_loss', float('inf'))
+                best_loss_text = f"{best_loss:.3f}" if best_loss != float('inf') else "--"
+                avg_text = (
+                    f"Avg: {stats['avg_score']:.2f} | Best: {stats['best_score']:.2f} "
+                    f"| BestLoss: {best_loss_text}"
+                )
                 cv2.putText(
                     output_frame, avg_text, (10, 50),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1
@@ -803,8 +812,9 @@ class Node(Node):
                     dpg_set_value(
                         score_display_tag,
                         f"Score: {distillation['score']:.2f} | "
-                        f"Avg: {stats['avg_score']:.2f} | "
-                        f"Best: {stats['best_score']:.2f}"
+                        f"Loss: {loss_val:.3f} | "
+                        f"Best: {stats['best_score']:.2f} | "
+                        f"BestLoss: {best_loss_text}"
                     )
                     training_status = "active" if training_active else "paused"
                     if not self._student_trainer.is_training_available:
