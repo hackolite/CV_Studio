@@ -262,7 +262,20 @@ class StudentTrainer:
         if self.output_format == "yolox":
             return self._student_model._postprocess_yolox(raw, orig_w, orig_h, ratio)
         if self.output_format == "nanodet":
-            return self._student_model._postprocess_nanodet(raw, orig_w, orig_h)
+            # Force the exact channel layout / activation used by the
+            # differentiable training decode (TorchStudent._decode_nanodet)
+            # instead of relying on the statistical reg-first heuristic.
+            # The heuristic inspects the *torch-converted* output and can
+            # misdetect the layout, which scrambles the class/reg split and
+            # floods the display with thousands of false-positive student
+            # boxes (the "green blocks everywhere" symptom). Keeping the
+            # inference layout in lock-step with the training decode avoids it.
+            reg_first_override = bool(getattr(self._torch, "nanodet_reg_first", False))
+            return self._student_model._postprocess_nanodet(
+                raw, orig_w, orig_h,
+                cls_pre_activated=False,
+                reg_first_override=reg_first_override,
+            )
         return self._student_model._postprocess_yolo11(raw, orig_w, orig_h)
 
     def _update_last_loss(self, distillation: Dict) -> None:
