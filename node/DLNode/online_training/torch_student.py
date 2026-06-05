@@ -19,7 +19,10 @@ Supported output formats for the differentiable decode: ``yolo11`` (Ultralytics
 YOLOv8/v11, boxes already in input pixels) and ``yolox`` (grid + objectness).
 """
 
+import contextlib
 import logging
+import os
+import tempfile
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -49,6 +52,41 @@ except Exception:  # pragma: no cover
 def is_torch_backprop_available() -> bool:
     """True when both PyTorch and onnx2torch can be used for real backprop."""
     return _TORCH_AVAILABLE and _ONNX2TORCH_AVAILABLE
+
+
+def _convert_onnx_to_torch(model_path: str):
+    """Convert an ONNX model to a ``torch.nn.Module`` with ``onnx2torch``.
+
+    ``onnx2torch.convert`` (and the ONNX shape-inference it triggers) may try to
+    create temporary files **next to the model file**. When the model lives in a
+    read-only directory this fails with ``PermissionError`` and would otherwise
+    disable the whole PyTorch backprop path. To stay robust we first attempt the
+    plain conversion and, on any ``OSError`` (e.g. ``[Errno 13] Permission
+    denied``), retry by loading the model into memory and running the conversion
+    from a writable temporary working directory so the temp files land there.
+    """
+    try:
+        return _onnx2torch_convert(model_path)
+    except OSError as exc:
+        logger.warning(
+            "[TorchStudent] onnx2torch could not write next to the model (%s); "
+            "retrying conversion from a writable temporary directory.", exc,
+        )
+
+    # Fallback: load the model (resolving any external data) into memory and run
+    # the conversion with the working directory pointed at the system temp dir,
+    # so onnx2torch/onnx never need to write into the read-only model directory.
+    import onnx  # local import: onnx2torch already depends on onnx
+
+    model_proto = onnx.load(model_path)
+    original_cwd = os.getcwd()
+    with tempfile.TemporaryDirectory(prefix="onnx2torch_") as tmp_dir:
+        try:
+            os.chdir(tmp_dir)
+            return _onnx2torch_convert(model_proto)
+        finally:
+            with contextlib.suppress(OSError):
+                os.chdir(original_cwd)
 
 
 # Number of trailing parameter tensors trained when ``train_scope='head'``.
@@ -102,7 +140,8 @@ class TorchStudent:
         self.train_scope = train_scope
 
         # Convert ONNX -> torch.nn.Module (raises on failure; caller handles it).
-        self.module = _onnx2torch_convert(model_path)
+        # Resilient to read-only model directories (see ``_convert_onnx_to_torch``).
+        self.module = _convert_onnx_to_torch(model_path)
         self.module.train()
 
         # Select which parameters receive gradients.
