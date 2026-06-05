@@ -283,7 +283,12 @@ class StudentTrainer:
         return self._student_model._postprocess_yolo11(raw, orig_w, orig_h)
 
     def _infer_nanodet_cls_pre_activated(self, raw_output: np.ndarray, reg_first: bool) -> bool:
-        """Detect whether NanoDet class channels are already sigmoid-activated."""
+        """Detect whether NanoDet class channels are already sigmoid-activated.
+
+        Uses the same bounded-range heuristic as CustomONNX nanodet_multi
+        (scores in [0,1] => pre-activated), then caches the result per trainer.
+        This keeps torch inference aligned with the existing NanoDet decode path.
+        """
         cached = getattr(self, "_nanodet_cls_pre_activated", None)
         if cached is not None:
             return bool(cached)
