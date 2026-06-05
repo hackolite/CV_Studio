@@ -39,6 +39,19 @@ def test_obj_chart_class_dropdown_items():
     assert len(items) == 81
 
 
+def test_obj_chart_dict_dropdown_items():
+    """Test that dict dropdown items are built from dictionary keys."""
+    from node.VisualNode.node_obj_chart import get_dict_dropdown_items
+
+    data = {"cpu_percent": 10, "memory_percent": 20, 3: 30}
+    items = get_dict_dropdown_items(data)
+
+    assert items == ["cpu_percent", "memory_percent", "3"]
+
+    assert get_dict_dropdown_items(None) == []
+    assert get_dict_dropdown_items(["cpu_percent"]) == []
+
+
 def test_obj_chart_time_bucket():
     """Test that time bucket calculation works correctly"""
     from node.VisualNode.node_obj_chart import Node
