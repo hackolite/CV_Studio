@@ -67,10 +67,9 @@ def test_make_session_strips_initializer_inputs():
     # The redundant 'w' input is gone; only the real runtime input remains.
     assert [i.name for i in session.get_inputs()] == ["x"]
 
-    out = session.run(
-        None, {"x": np.zeros((2, 2), dtype=np.float32)}
-    )[0]
-    assert np.allclose(out, np.ones((2, 2), dtype=np.float32))
+    outputs = session.run(None, {"x": np.zeros((2, 2), dtype=np.float32)})
+    result = outputs[0]  # single 'y' output tensor
+    assert np.allclose(result, np.ones((2, 2), dtype=np.float32))
 
 
 def test_strip_initializer_inputs_roundtrip():
