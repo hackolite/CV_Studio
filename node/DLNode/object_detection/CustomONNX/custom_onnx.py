@@ -1017,19 +1017,38 @@ class CustomONNX:
             Raw squeezed model output — columns 0-3 are modified in-place.
         """
         strides = [8, 16, 32]
+        num_anchors = output.shape[0]
         grids = []
-        expanded_strides = []
+        expanded_strides_list = []
+        total = 0
         for stride in strides:
             n_h = self.input_height // stride
             n_w = self.input_width // stride
+            head_anchors = n_h * n_w
+            if total + head_anchors > num_anchors:
+                # Adding this head would exceed the anchor count; stop here.
+                break
             xv, yv = np.meshgrid(np.arange(n_w), np.arange(n_h))
             grid = np.stack((xv, yv), axis=2).reshape(-1, 2)   # (n_h*n_w, 2)
             grids.append(grid)
-            expanded_strides.append(
-                np.full((grid.shape[0], 1), stride, dtype=np.float32)
+            expanded_strides_list.append(
+                np.full((head_anchors, 1), stride, dtype=np.float32)
             )
+            total += head_anchors
+            if total == num_anchors:
+                break
+
+        if total != num_anchors:
+            logger.warning(
+                f"[CustomONNX] yolox decode: anchor count mismatch — output has "
+                f"{num_anchors} anchors but grid built from input "
+                f"{self.input_width}x{self.input_height} with strides {strides} "
+                f"accumulated {total}. Skipping grid decoding; coordinates will be raw."
+            )
+            return
+
         grids = np.concatenate(grids, axis=0)             # (num_anchors, 2)
-        expanded_strides = np.concatenate(expanded_strides, axis=0)  # (num_anchors, 1)
+        expanded_strides = np.concatenate(expanded_strides_list, axis=0)  # (num_anchors, 1)
 
         output[:, :2] = (output[:, :2] + grids) * expanded_strides
         output[:, 2:4] = np.exp(output[:, 2:4]) * expanded_strides
