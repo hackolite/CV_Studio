@@ -29,6 +29,7 @@ import onnxruntime
 from node.DLNode.object_detection.onnx_session_utils import make_session
 from node.DLNode.object_detection.CustomONNX.custom_onnx import CustomONNX
 from node.DLNode.online_training.distillation_loss import compute_distillation_score
+from node.DLNode.online_training.online_adapter import BoxAffineAdapter
 from node.DLNode.online_training.distillation_loss_ort import (
     compute_distillation_loss_numpy,
     build_distillation_loss_graph,
@@ -36,6 +37,15 @@ from node.DLNode.online_training.distillation_loss_ort import (
 )
 
 logger = logging.getLogger(__name__)
+
+# The student CNN is inference-only under plain onnxruntime, so the requested
+# distillation loss is back-propagated through a small affine box-correction head
+# (see online_adapter.py). The node learning-rate slider (~1e-5 .. 1e-2) is scaled
+# into the normalised coordinate space the head works in so that improvement is
+# actually visible within a reasonable number of frames.
+_ADAPTER_LR_GAIN = 500.0
+_ADAPTER_LR_MIN = 1e-3
+_ADAPTER_LR_MAX = 0.5
 
 # Check if onnxruntime-training is available
 _ORT_TRAINING_AVAILABLE = False
@@ -101,11 +111,19 @@ class StudentTrainer:
         self.best_score = 0.0
         # Distillation loss bookkeeping (lower is better). ``current_loss`` is the
         # requested set-based (DETR-style Hungarian) loss for the latest frame and
-        # ``best_loss`` the lowest value seen so far.
+        # ``best_loss`` the lowest value seen so far. ``initial_loss`` is the very
+        # first measured loss, used to report the student's improvement over time.
         self.current_loss = float('inf')
         self.best_loss = float('inf')
+        self.initial_loss = None
         self.training_active = False
         self._last_loss = None
+
+        # Real, gradient-trained correction head for the requested loss. This is
+        # what lets the student's *output* actually change (and improve) frame to
+        # frame even without onnxruntime-training.
+        self._adapter = BoxAffineAdapter(learning_rate=_ADAPTER_LR_MIN)
+        self._adaptation_available = True
 
         # Load the student model for inference
         self._student_model = CustomONNX(
@@ -152,8 +170,26 @@ class StudentTrainer:
 
     @property
     def is_training_available(self) -> bool:
-        """Whether ORT Training is available for backpropagation."""
-        return self._training_available
+        """Whether a real weight/parameter update can be performed.
+
+        True when either onnxruntime-training is installed (full-network backprop)
+        or the built-in affine adaptation head is available (always the case).
+        """
+        return self._training_available or self._adaptation_available
+
+    @property
+    def improvement(self) -> float:
+        """Absolute loss reduction since the first frame (>= 0 means better)."""
+        if self.initial_loss is None or self.current_loss == float('inf'):
+            return 0.0
+        return max(0.0, float(self.initial_loss - self.current_loss))
+
+    @property
+    def improvement_pct(self) -> float:
+        """Relative loss reduction since the first frame, in percent."""
+        if not self.initial_loss or self.initial_loss <= 0.0:
+            return 0.0
+        return 100.0 * self.improvement / float(self.initial_loss)
 
     @property
     def avg_score(self) -> float:
@@ -168,6 +204,20 @@ class StudentTrainer:
         Returns (bboxes, scores, class_ids).
         """
         return self._student_model(frame)
+
+    def _update_last_loss(self, distillation: Dict) -> None:
+        """Store the latest reported loss from the requested set-based metrics.
+
+        Keeps a single source of truth for the loss across the inference and
+        training paths.
+        """
+        self._last_loss = {
+            'loss': distillation.get('loss', 0.0),
+            'loss_box': distillation.get('loss_box', 0.0),
+            'loss_class': distillation.get('loss_class', 0.0),
+            'loss_iou': distillation.get('loss_iou', 0.0),
+            'loss_cardinality': distillation.get('loss_cardinality', 0.0),
+        }
 
     def train_step(
         self,
@@ -196,12 +246,14 @@ class StudentTrainer:
         -------
         dict with keys:
             - student_bboxes, student_scores, student_class_ids: student predictions
+              **after** the correction head has been applied (so the values you
+              see reflect the current trained state)
             - distillation: distillation score metrics (includes the requested
               set-based loss under the ``loss`` key, lower = closer to teacher)
-            - training_step: True only when a real weight update was performed
-              (requires onnxruntime-training); False in inference-only mode
+            - training_step: True when a real parameter update was performed this
+              frame (the correction head learned from the requested loss)
         """
-        # 1. Student inference
+        # 1. Student inference (raw network output, before correction)
         s_bboxes, s_scores, s_class_ids = self.infer(frame)
 
         # Apply score threshold to student predictions
@@ -210,6 +262,12 @@ class StudentTrainer:
             s_bboxes = s_bboxes[mask]
             s_scores = s_scores[mask]
             s_class_ids = s_class_ids[mask]
+
+        # 1b. Apply the learned correction head so the returned predictions
+        # reflect everything the student has learned so far.
+        frame_h, frame_w = self._frame_size(frame)
+        if len(s_bboxes) > 0:
+            s_bboxes = self._adapter.apply(s_bboxes, frame_w, frame_h).astype(np.float32)
 
         # 2. Compute distillation score + the requested set-based loss
         distillation = compute_distillation_score(
@@ -224,13 +282,7 @@ class StudentTrainer:
         # The reported loss is the *requested* set-based distillation loss (single
         # source of truth, identical to the one shown by the IoU/Chart nodes), not
         # a separate approximation.
-        self._last_loss = {
-            'loss': distillation.get('loss', 0.0),
-            'loss_box': distillation.get('loss_box', 0.0),
-            'loss_class': distillation.get('loss_class', 0.0),
-            'loss_iou': distillation.get('loss_iou', 0.0),
-            'loss_cardinality': distillation.get('loss_cardinality', 0.0),
-        }
+        self._update_last_loss(distillation)
 
         # 3. Update statistics
         self.frames_processed += 1
@@ -241,17 +293,27 @@ class StudentTrainer:
 
         # Track the requested loss (lower = better student).
         self.current_loss = float(distillation.get('loss', 0.0))
+        if self.initial_loss is None:
+            self.initial_loss = self.current_loss
         if self.current_loss < self.best_loss:
             self.best_loss = self.current_loss
 
-        # 4. Training step (only when ORT Training is available and active).
-        # ``train_step`` reflects whether weights were actually updated.
+        # 4. Training step — back-propagate the requested loss through the
+        # correction head (real sub-gradient descent). ``training_step`` is True
+        # only when a parameter update actually happened.
         training_performed = False
-        if self._training_available and self.training_active:
-            training_performed = self._do_backprop(
-                frame, teacher_bboxes, teacher_scores, teacher_class_ids,
-                distillation,
+        if self.training_active:
+            training_performed = self._adapt_step(
+                frame_w, frame_h,
+                teacher_bboxes, teacher_class_ids,
+                s_bboxes, s_class_ids,
             )
+            # Optional: full-network backprop when onnxruntime-training is wired.
+            if self._training_available and self._ort_training_session is not None:
+                self._do_backprop(
+                    frame, teacher_bboxes, teacher_scores, teacher_class_ids,
+                    distillation,
+                )
 
         return {
             'student_bboxes': s_bboxes,
@@ -260,6 +322,33 @@ class StudentTrainer:
             'distillation': distillation,
             'training_step': training_performed,
         }
+
+    @staticmethod
+    def _frame_size(frame):
+        """Return (height, width) of ``frame`` with a safe fallback."""
+        if frame is not None and hasattr(frame, 'shape') and len(frame.shape) >= 2:
+            return int(frame.shape[0]), int(frame.shape[1])
+        return 1, 1
+
+    def _adapt_step(self, frame_w, frame_h, teacher_bboxes, teacher_class_ids,
+                    student_bboxes, student_class_ids):
+        """One sub-gradient descent step of the correction head (requested loss).
+
+        Returns True when the head parameters were updated.
+        """
+        # Scale the user learning rate into the head's normalised space so the
+        # improvement is visible within a reasonable number of frames.
+        eff_lr = float(np.clip(
+            self.learning_rate * _ADAPTER_LR_GAIN,
+            _ADAPTER_LR_MIN, _ADAPTER_LR_MAX,
+        ))
+        updated, _loss_before = self._adapter.update(
+            teacher_bboxes, student_bboxes, frame_w, frame_h,
+            teacher_classes=teacher_class_ids,
+            student_classes=student_class_ids,
+            learning_rate=eff_lr,
+        )
+        return bool(updated)
 
     def _do_backprop(self, frame, teacher_bboxes, teacher_scores,
                      teacher_class_ids, distillation=None):
@@ -283,13 +372,7 @@ class StudentTrainer:
         """
         # Keep the reported loss consistent with the requested set-based loss.
         if distillation is not None:
-            self._last_loss = {
-                'loss': distillation.get('loss', 0.0),
-                'loss_box': distillation.get('loss_box', 0.0),
-                'loss_class': distillation.get('loss_class', 0.0),
-                'loss_iou': distillation.get('loss_iou', 0.0),
-                'loss_cardinality': distillation.get('loss_cardinality', 0.0),
-            }
+            self._update_last_loss(distillation)
 
         # Real backprop path: requires a wired onnxruntime-training session.
         if self._ort_training_session is None:
@@ -339,6 +422,9 @@ class StudentTrainer:
         self.best_score = 0.0
         self.current_loss = float('inf')
         self.best_loss = float('inf')
+        self.initial_loss = None
+        # Restore the correction head to the identity (no learned correction).
+        self._adapter.reset()
 
     def export_onnx(self, output_path: str) -> str:
         """Export the current student model to an ONNX file.
@@ -366,6 +452,9 @@ class StudentTrainer:
             (higher = student agrees more with the teacher).
         current_loss / best_loss : requested set-based distillation *loss*
             (lower = student closer to the teacher). ``inf`` until the first frame.
+        improvement / improvement_pct : loss reduction since the first frame
+            (absolute and percentage; > 0 means the student got better).
+        adapter_updates : number of correction-head gradient steps performed.
         training_active / training_available : training flags.
         """
         return {
@@ -375,6 +464,9 @@ class StudentTrainer:
             'best_score': self.best_score,
             'current_loss': self.current_loss,
             'best_loss': self.best_loss,
+            'improvement': self.improvement,
+            'improvement_pct': self.improvement_pct,
+            'adapter_updates': self._adapter.updates,
             'training_active': self.training_active,
-            'training_available': self._training_available,
+            'training_available': self.is_training_available,
         }

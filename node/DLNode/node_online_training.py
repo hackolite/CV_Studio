@@ -756,6 +756,9 @@ class Node(Node):
                     # Running best/current requested loss (lower = better student).
                     'current_loss': float(self._student_trainer.current_loss),
                     'best_loss': float(self._student_trainer.best_loss),
+                    # Visible improvement of the student since the first frame.
+                    'improvement': float(self._student_trainer.improvement),
+                    'improvement_pct': float(self._student_trainer.improvement_pct),
                 }
 
                 # Draw student predictions on frame
@@ -798,9 +801,10 @@ class Node(Node):
                 stats = self._student_trainer.get_stats()
                 best_loss = stats.get('best_loss', float('inf'))
                 best_loss_text = f"{best_loss:.3f}" if best_loss != float('inf') else "--"
+                improvement_pct = stats.get('improvement_pct', 0.0)
                 avg_text = (
-                    f"Avg: {stats['avg_score']:.2f} | Best: {stats['best_score']:.2f} "
-                    f"| BestLoss: {best_loss_text}"
+                    f"Best: {stats['best_score']:.2f} | BestLoss: {best_loss_text} "
+                    f"| Improv: {improvement_pct:.1f}%"
                 )
                 cv2.putText(
                     output_frame, avg_text, (10, 50),
@@ -813,15 +817,17 @@ class Node(Node):
                         score_display_tag,
                         f"Score: {distillation['score']:.2f} | "
                         f"Loss: {loss_val:.3f} | "
-                        f"Best: {stats['best_score']:.2f} | "
-                        f"BestLoss: {best_loss_text}"
+                        f"BestLoss: {best_loss_text} | "
+                        f"Improv: {improvement_pct:.1f}%"
                     )
                     training_status = "active" if training_active else "paused"
                     if not self._student_trainer.is_training_available:
                         training_status = "inference-only"
                     dpg_set_value(
                         stats_display_tag,
-                        f"Frames: {stats['frames_processed']} | Training: {training_status}"
+                        f"Frames: {stats['frames_processed']} | "
+                        f"Training: {training_status} | "
+                        f"Updates: {stats.get('adapter_updates', 0)}"
                     )
                 except Exception:
                     pass

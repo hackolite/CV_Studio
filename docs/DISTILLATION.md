@@ -48,6 +48,7 @@ Dans CV Studio, le nœud **OnlineTraining** implémente cette technique en temps
 |---------|------|
 | `node/DLNode/node_online_training.py` | Nœud principal (UI DearPyGUI + logique de pipeline) |
 | `node/DLNode/online_training/student_trainer.py` | Gestionnaire du cycle de vie de l'élève (inférence, scoring, entraînement) |
+| `node/DLNode/online_training/online_adapter.py` | Tête de correction affine entraînée par gradient sur la loss demandée (apprentissage réel & observable) |
 | `node/DLNode/online_training/distillation_loss.py` | Fonctions de perte et score de distillation (IoU, matching, F1) |
 | `node/DLNode/online_training/models/` | Répertoire de stockage des modèles élèves |
 
@@ -56,25 +57,32 @@ Dans CV Studio, le nœud **OnlineTraining** implémente cette technique en temps
 ```
 1. Réception de l'image (input IMAGE)
 2. Réception du JSON du professeur (input JSON) : {bboxes, scores, class_ids}
-3. Inférence de l'élève sur l'image → prédictions student
-4. Calcul du score de distillation (teacher vs student)
-5. [Si ORT Training disponible] Rétropropagation et mise à jour des poids
-6. Affichage : bounding boxes élève (vert) + professeur (bleu)
-7. Sortie : IMAGE annotée + JSON des prédictions élève
+3. Inférence de l'élève sur l'image → prédictions student (réseau brut)
+4. Application de la tête de correction apprise → prédictions student corrigées
+5. Calcul du score + de la loss de distillation demandée (teacher vs student corrigé)
+6. [Si Training Active] Rétropropagation de la loss demandée → mise à jour de la tête
+7. Affichage : bounding boxes élève (vert) + professeur (bleu) + score/loss/amélioration
+8. Sortie : IMAGE annotée + JSON des prédictions élève corrigées
 ```
 
 ### Modes de fonctionnement
 
 | Mode | Condition | Comportement |
 |------|-----------|--------------|
-| **Inférence seule** | `onnxruntime` standard (défaut) | L'élève infère et est scoré, mais ses poids ne changent pas. `train_step` renvoie `training_step=False`. |
-| **Entraînement complet** | `onnxruntime-training` installé **et** session d'entraînement câblée | Rétropropagation de la loss demandée, mise à jour des poids. `train_step` renvoie `training_step=True` uniquement quand une mise à jour réelle a eu lieu. |
+| **Adaptation en ligne** (défaut) | `onnxruntime` standard | L'élève infère, est scoré, **et** une tête de correction affine est entraînée par descente de gradient sur la **loss demandée**. Les prédictions renvoyées changent et s'améliorent ; `train_step` renvoie `training_step=True` à chaque mise à jour. |
+| **Entraînement complet du réseau** | `onnxruntime-training` installé **et** session câblée | Rétropropagation à travers tout le réseau élève (en plus de la tête). |
 
-> ⚠️ La rétropropagation de bout en bout nécessite que le post-traitement
-> (décodage + NMS) soit différentiable. Le post-traitement étant réalisé en
-> NumPy, le mode entraînement complet reste désactivé tant qu'une session
-> `onnxruntime-training` n'est pas explicitement attachée : le nœud n'annonce
-> jamais une étape d'entraînement fictive.
+> ℹ️ **Pourquoi une tête de correction ?** Le réseau élève complet n'est pas
+> rétropropageable sous `onnxruntime` standard (inférence seule) car son
+> post-traitement — décodage des boxes + NMS — est réalisé en NumPy et ne fait
+> donc pas partie d'un graphe ONNX différentiable. Pour donner malgré tout un
+> **signal d'apprentissage réel et observable**, la loss demandée est
+> rétropropagée à travers une petite **tête affine** `(sx, sy, tx, ty)` appliquée
+> aux détections de l'élève (voir `online_adapter.py`). Elle démarre à
+> l'identité (élève inchangé) puis rapproche progressivement les boxes de
+> l'élève de celles du professeur — c'est l'amélioration que l'on observe via la
+> loss décroissante et le champ `Improv:` de l'overlay. La rétropropagation
+> complète du réseau nécessite en plus `onnxruntime-training`.
 
 ---
 
@@ -139,6 +147,7 @@ score = 0.30 * class_similarity
 | `loss` | Loss set-based demandée (DETR : box L1 + 1-IoU + classe + cardinalité + FP/FN) | **plus bas = mieux** | `compute_set_distillation_loss` |
 | `best_score` | Meilleur (max) `score` observé depuis le dernier reset | plus haut = mieux | `StudentTrainer.best_score` |
 | `best_loss` | Meilleure (min) `loss` demandée observée depuis le dernier reset | plus bas = mieux | `StudentTrainer.best_loss` |
+| `improvement` / `improvement_pct` | Réduction de la loss depuis la 1ʳᵉ frame (absolue / %) — c'est l'amélioration visible de l'élève | plus haut = mieux | `StudentTrainer.improvement` |
 
 > La **loss demandée** (set-based, hongroise) est l'unique source de vérité :
 > c'est exactement la même valeur que celle affichée par les nœuds **IoU** /
