@@ -149,8 +149,8 @@ class BoxAffineAdapter:
         grad_sy = float(np.sum(gy * sy_in)) / n_terms
         grad_ty = float(np.sum(gy)) / n_terms
 
-        # Compose the incremental step into the running parameters:
-        #   new_norm = old_norm * ds + dt   (ds = 1 - lr*grad_s, dt = -lr*grad_t)
+        # Compose the incremental step into the running parameters (sx, sy, tx,
+        # ty): new = old * ds + dt   (ds = 1 - lr*grad_s, dt = -lr*grad_t)
         ds_x = 1.0 - lr * grad_sx
         ds_y = 1.0 - lr * grad_sy
         dt_x = -lr * grad_tx

@@ -10,12 +10,6 @@ from node.basenode import Node
 from node.DLNode.online_training.distillation_loss import compute_set_distillation_loss
 
 
-# Fixed-width placeholder so the node keeps a constant size before any data
-# arrives (must be the same length as the formatted status produced by
-# ``_format_status`` below).
-_STATUS_PLACEHOLDER = 'diff  --- | loss   ---- | m --- u ---'
-
-
 def _format_status(diff_score, loss, matched, unmatched):
     """Build a constant-width status line for the IoU node.
 
@@ -29,6 +23,12 @@ def _format_status(diff_score, loss, matched, unmatched):
     mp = min(max(int(matched), 0), 999)
     un = min(max(int(unmatched), 0), 999)
     return 'diff {:4.2f} | loss {:6.2f} | m {:3d} u {:3d}'.format(ds, ls, mp, un)
+
+
+# Fixed-width placeholder shown before any data arrives. Derived from
+# ``_format_status`` itself so it always stays the same constant width as the
+# live status, even if the format string changes.
+_STATUS_PLACEHOLDER = _format_status(0.0, 0.0, 0, 0)
 
 
 def _normalise_bbox(bbox):

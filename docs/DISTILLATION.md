@@ -48,7 +48,8 @@ Dans CV Studio, le nœud **OnlineTraining** implémente cette technique en temps
 |---------|------|
 | `node/DLNode/node_online_training.py` | Nœud principal (UI DearPyGUI + logique de pipeline) |
 | `node/DLNode/online_training/student_trainer.py` | Gestionnaire du cycle de vie de l'élève (inférence, scoring, entraînement) |
-| `node/DLNode/online_training/online_adapter.py` | Tête de correction affine entraînée par gradient sur la loss demandée (apprentissage réel & observable) |
+| `node/DLNode/online_training/torch_student.py` | Élève PyTorch : conversion ONNX→PyTorch (`onnx2torch`) + **vraie rétropropagation** à travers la backbone et/ou les têtes |
+| `node/DLNode/online_training/online_adapter.py` | Tête de correction affine entraînée par gradient sur la loss demandée (repli quand PyTorch est indisponible) |
 | `node/DLNode/online_training/distillation_loss.py` | Fonctions de perte et score de distillation (IoU, matching, F1) |
 | `node/DLNode/online_training/models/` | Répertoire de stockage des modèles élèves |
 
@@ -57,32 +58,39 @@ Dans CV Studio, le nœud **OnlineTraining** implémente cette technique en temps
 ```
 1. Réception de l'image (input IMAGE)
 2. Réception du JSON du professeur (input JSON) : {bboxes, scores, class_ids}
-3. Inférence de l'élève sur l'image → prédictions student (réseau brut)
-4. Application de la tête de correction apprise → prédictions student corrigées
-5. Calcul du score + de la loss de distillation demandée (teacher vs student corrigé)
-6. [Si Training Active] Rétropropagation de la loss demandée → mise à jour de la tête
-7. Affichage : bounding boxes élève (vert) + professeur (bleu) + score/loss/amélioration
-8. Sortie : IMAGE annotée + JSON des prédictions élève corrigées
+3. Inférence de l'élève sur l'image → prédictions student
+   • Mode PyTorch : forward du réseau entraîné (poids à jour)
+   • Mode repli   : forward onnxruntime + tête de correction affine apprise
+4. Calcul du score + de la loss de distillation demandée (teacher vs student)
+5. [Si Training Active] Rétropropagation de la loss demandée :
+   • Mode PyTorch : backward + optimizer.step() à travers backbone/têtes
+   • Mode repli   : descente de (sous-)gradient sur la tête affine
+6. Affichage : bounding boxes élève (vert) + professeur (bleu) + score/loss/amélioration/mode
+7. Sortie : IMAGE annotée + JSON des prédictions élève
 ```
 
 ### Modes de fonctionnement
 
 | Mode | Condition | Comportement |
 |------|-----------|--------------|
-| **Adaptation en ligne** (défaut) | `onnxruntime` standard | L'élève infère, est scoré, **et** une tête de correction affine est entraînée par descente de gradient sur la **loss demandée**. Les prédictions renvoyées changent et s'améliorent ; `train_step` renvoie `training_step=True` à chaque mise à jour. |
-| **Entraînement complet du réseau** | `onnxruntime-training` installé **et** session câblée | Rétropropagation à travers tout le réseau élève (en plus de la tête). |
+| **Rétropropagation réseau (PyTorch)** (préféré) | `torch` **et** `onnx2torch` installés **et** conversion réussie | Le modèle ONNX de l'élève est chargé en PyTorch ; la loss demandée est **réellement rétropropagée** à travers les têtes (`train_scope='head'`, défaut) et/ou la backbone (`train_scope='all'`) via un `optimizer.step()`. L'inférence utilise les **poids mis à jour** → amélioration observable. `backprop_mode = pytorch-head`/`pytorch-all`. |
+| **Adaptation en ligne (tête affine)** (repli) | `onnxruntime` standard seul | Une tête de correction affine `(sx, sy, tx, ty)` est entraînée par descente de gradient sur la **loss demandée**. `backprop_mode = affine-head`. |
+| **Entraînement ORT** | `onnxruntime-training` câblé | Rétropropagation via une session ORT Training. `backprop_mode = ort-training`. |
 
-> ℹ️ **Pourquoi une tête de correction ?** Le réseau élève complet n'est pas
-> rétropropageable sous `onnxruntime` standard (inférence seule) car son
-> post-traitement — décodage des boxes + NMS — est réalisé en NumPy et ne fait
-> donc pas partie d'un graphe ONNX différentiable. Pour donner malgré tout un
-> **signal d'apprentissage réel et observable**, la loss demandée est
-> rétropropagée à travers une petite **tête affine** `(sx, sy, tx, ty)` appliquée
-> aux détections de l'élève (voir `online_adapter.py`). Elle démarre à
-> l'identité (élève inchangé) puis rapproche progressivement les boxes de
-> l'élève de celles du professeur — c'est l'amélioration que l'on observe via la
-> loss décroissante et le champ `Improv:` de l'overlay. La rétropropagation
-> complète du réseau nécessite en plus `onnxruntime-training`.
+> ℹ️ **PyTorch d'abord, tête affine en repli.** Le post-traitement de l'élève
+> (décodage des boxes + NMS) est en NumPy : il ne fait pas partie d'un graphe
+> ONNX différentiable, donc `onnxruntime` standard ne permet pas la
+> rétropropagation. Pour entraîner **réellement** le réseau, `torch_student.py`
+> convertit le graphe ONNX en `torch.nn.Module` (`onnx2torch`), rend les têtes
+> (et optionnellement la backbone) entraînables, décode les sorties brutes de
+> façon différentiable (yolo11 / yolox), apparie les boxes professeur↔élève
+> (matching sans gradient) puis rétropropage la loss demandée (box L1 + (1−IoU)
+> + classification) avec un `optimizer.step()`. Quand `torch`/`onnx2torch` sont
+> absents ou que la conversion échoue, on retombe sur la **tête affine**
+> `(sx, sy, tx, ty)` (voir `online_adapter.py`), qui démarre à l'identité puis
+> rapproche les boxes de l'élève de celles du professeur. Dans les deux cas
+> l'amélioration est visible via la loss décroissante et le champ `Improv:` de
+> l'overlay.
 
 ---
 
@@ -232,13 +240,26 @@ def compute_distillation_score(teacher_bboxes, teacher_scores, teacher_class_ids
 pip install onnxruntime numpy opencv-python
 ```
 
-### Complet (avec entraînement)
+### Complet (vraie rétropropagation réseau — recommandé)
+
+```bash
+pip install torch onnx2torch numpy opencv-python
+```
+
+> **Recommandé** : avec `torch` + `onnx2torch`, l'élève est converti en PyTorch
+> et la loss demandée est **réellement rétropropagée** à travers les têtes
+> (et/ou la backbone). C'est le mode qui entraîne effectivement le réseau.
+
+### Alternative (entraînement ORT)
 
 ```bash
 pip install onnxruntime-training numpy opencv-python
 ```
 
-> **Note** : Sans `onnxruntime-training`, le nœud fonctionne en mode inférence seule — l'élève est évalué mais ses poids ne sont pas mis à jour.
+> **Note** : Sans `torch`/`onnx2torch` ni `onnxruntime-training`, le nœud
+> retombe sur la **tête de correction affine** — l'élève s'améliore toujours sur
+> la loss demandée, mais seuls les paramètres `(sx, sy, tx, ty)` sont appris, pas
+> les poids internes du réseau.
 
 ### Modèles compatibles
 

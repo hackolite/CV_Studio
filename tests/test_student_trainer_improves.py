@@ -26,6 +26,9 @@ def _make_trainer(training_active=True, lr=1e-4):
     tr._adaptation_available = True
     tr._ort_training_session = None
     tr._last_loss = None
+    tr.last_train_loss = None
+    tr._torch = None
+    tr._torch_backprop = False
     tr.score_threshold = 0.3
     tr.learning_rate = lr
     tr.num_classes = 80
