@@ -54,6 +54,19 @@ def is_torch_backprop_available() -> bool:
     return _TORCH_AVAILABLE and _ONNX2TORCH_AVAILABLE
 
 
+# Output formats for which the differentiable decode (``TorchStudent._decode``)
+# and the matched distillation loss are implemented. Detectors using a different
+# decode (e.g. ``nanodet``/``nanodet_multi`` with GFL distribution heads, or
+# ``ssd``) must NOT take the PyTorch backprop path: their raw outputs cannot be
+# decoded here, so it would yield no student boxes and no real weight updates.
+SUPPORTED_FORMATS = ("yolo11", "yolox")
+
+
+def is_format_supported(output_format: str) -> bool:
+    """True when ``output_format`` can be decoded/trained by :class:`TorchStudent`."""
+    return str(output_format).lower() in SUPPORTED_FORMATS
+
+
 def _convert_onnx_to_torch(model_path: str):
     """Convert an ONNX model to a ``torch.nn.Module`` with ``onnx2torch``.
 
@@ -129,6 +142,11 @@ class TorchStudent:
         if not is_torch_backprop_available():
             raise RuntimeError(
                 "PyTorch backprop unavailable: install 'torch' and 'onnx2torch'."
+            )
+        if not is_format_supported(output_format):
+            raise RuntimeError(
+                f"PyTorch backprop does not support output_format "
+                f"'{output_format}' (supported: {', '.join(SUPPORTED_FORMATS)})."
             )
 
         self.model_path = model_path
