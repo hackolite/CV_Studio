@@ -3,15 +3,17 @@
 """
 Student model trainer for online knowledge distillation.
 
-Uses onnxruntime-training (ORT Training) when available, falling back to
-a pure-onnxruntime inference-only mode (no backprop) with an EMA-based
-soft-label approach for progressive model refinement.
+Real network backprop is performed through PyTorch (the student ONNX is
+converted to a trainable ``torch.nn.Module`` via onnx2torch). When PyTorch /
+onnx2torch are unavailable, or the student's decode format is unsupported, the
+trainer falls back to a lightweight affine box-correction head (see
+``online_adapter.py``).
 
 The primary workflow:
 1. Load student ONNX model
 2. Run student inference on incoming frame
 3. Compute distillation loss vs teacher predictions
-4. If ORT Training available: backpropagate and update weights
+4. If PyTorch backprop available: backpropagate and update weights
 5. Export updated ONNX model on demand
 """
 
@@ -35,12 +37,6 @@ from node.DLNode.online_training.torch_student import (
     is_torch_backprop_available,
     is_format_supported as _torch_format_supported,
 )
-from node.DLNode.online_training.distillation_loss_ort import (
-    compute_distillation_loss_numpy,
-    build_distillation_loss_graph,
-    _ONNX_AVAILABLE,
-)
-from node.DLNode.online_training import ort_training_artifacts as ort_art
 
 logger = logging.getLogger(__name__)
 
@@ -52,18 +48,6 @@ logger = logging.getLogger(__name__)
 _ADAPTER_LR_GAIN = 500.0
 _ADAPTER_LR_MIN = 1e-3
 _ADAPTER_LR_MAX = 0.5
-
-# Check if onnxruntime-training is available
-_ORT_TRAINING_AVAILABLE = False
-try:
-    from onnxruntime.training import api as ort_training_api
-    _ORT_TRAINING_AVAILABLE = True
-    logger.info("[StudentTrainer] onnxruntime-training is available — full backprop enabled.")
-except ImportError:
-    logger.info(
-        "[StudentTrainer] onnxruntime-training not available — "
-        "inference-only mode (no weight updates). Install with: pip install onnxruntime-training"
-    )
 
 
 class StudentTrainer:
@@ -188,176 +172,51 @@ class StudentTrainer:
             # supported by the differentiable TorchStudent path (e.g.
             # ``nanodet_multi``). Using it would yield no student boxes and no
             # weight updates, so keep ONNX inference (CustomONNX) and rely on the
-            # ORT-training / affine-head path for learning instead.
+            # affine-head path for learning instead.
             logger.info(
                 "[StudentTrainer] PyTorch backprop not used for output_format "
                 "'%s' (unsupported decode); using ONNX inference with "
-                "ORT-training/affine-head updates.", output_format,
+                "affine-head updates.", output_format,
             )
-
-
-        # Training state
-        self._ort_training_session = None
-        self._training_available = _ORT_TRAINING_AVAILABLE
-        # ORT Training handles (set up below when available and the PyTorch path
-        # is not already driving the backprop).
-        self._ort_module = None
-        self._ort_optimizer = None
-        self._ort_checkpoint = None
-        self._ort_student_out = None
-        self._ort_artifact_dir = None
-        self._ort_infer_dirty = False
-        self._ort_export_every = 1
-        self._ort_updates = 0
-
-        # Real end-to-end ORT-training backprop. Built only when onnxruntime-training
-        # is installed and the PyTorch path is not already active (PyTorch is
-        # preferred when present). On any failure we silently keep the existing
-        # fallbacks (affine correction head / inference-only loss).
-        if self._training_available and not self._torch_backprop:
-            self._setup_ort_training()
-
-        # ONNX-based differentiable loss for training
-        self._loss_session = None
-        if _ONNX_AVAILABLE:
-            try:
-                loss_model = build_distillation_loss_graph(num_classes=num_classes)
-                self._loss_model_path = os.path.join(
-                    tempfile.gettempdir(), f"distillation_loss_{id(self)}.onnx"
-                )
-                import onnx as _onnx
-                _onnx.save(loss_model, self._loss_model_path)
-                self._loss_session = onnxruntime.InferenceSession(
-                    self._loss_model_path, providers=["CPUExecutionProvider"]
-                )
-                logger.info("[StudentTrainer] ONNX distillation loss graph built and loaded.")
-            except Exception as exc:
-                logger.warning(f"[StudentTrainer] Failed to build ONNX loss graph: {exc}")
-                self._loss_session = None
 
         logger.info(
             f"[StudentTrainer] Initialized — model={os.path.basename(model_path)}, "
             f"input={input_width}x{input_height}, format={output_format}, "
-            f"training={'enabled' if self._training_available else 'inference-only'}, "
-            f"ort_loss={'yes' if self._loss_session else 'numpy-fallback'}"
+            f"backprop={self.backprop_mode}"
         )
-
-    def _setup_ort_training(self):
-        """Build ORT-training artifacts and create the training session.
-
-        Implements plan sections A.1/A.2: merge the student ONNX with the
-        differentiable decode + matched-distillation-loss graph, generate the
-        ``training``/``eval``/``optimizer`` models + ``checkpoint`` via
-        ``onnxruntime.training.artifacts``, then instantiate the
-        ``CheckpointState`` + ``Module`` + ``Optimizer``. Stored on success in
-        ``self._ort_training_session``; left as ``None`` on any failure so the
-        caller falls back to the affine head.
-        """
-        if not ort_art.is_ort_training_available():
-            logger.info(
-                "[StudentTrainer] ORT-training artifacts module unavailable; "
-                "skipping ORT backprop setup."
-            )
-            return
-        try:
-            merged, student_out = ort_art.merge_student_with_loss(
-                self.model_path,
-                num_classes=self.num_classes,
-                input_width=self.input_width,
-                input_height=self.input_height,
-                output_format=self.output_format,
-            )
-            trainable, frozen = ort_art.select_trainable_params(
-                merged, train_scope=self.train_scope,
-            )
-            if not trainable:
-                logger.warning(
-                    "[StudentTrainer] No trainable weights found for ORT training; "
-                    "falling back to the affine head."
-                )
-                return
-
-            self._ort_artifact_dir = os.path.join(
-                tempfile.gettempdir(), f"ort_student_{id(self)}"
-            )
-            paths = ort_art.generate_training_artifacts(
-                merged, trainable, frozen, self._ort_artifact_dir,
-                optimizer="sgd",
-            )
-
-            self._ort_checkpoint = ort_training_api.CheckpointState.load_checkpoint(
-                paths["checkpoint"]
-            )
-            self._ort_module = ort_training_api.Module(
-                paths["training_model"],
-                self._ort_checkpoint,
-                paths["eval_model"],
-            )
-            self._ort_optimizer = ort_training_api.Optimizer(
-                paths["optimizer_model"], self._ort_module
-            )
-            # Apply the requested learning rate to the optimizer.
-            try:
-                self._ort_optimizer.set_learning_rate(float(self.learning_rate))
-            except Exception as exc:  # pragma: no cover - older ORT API
-                logger.debug("ORT set_learning_rate unavailable: %s", exc)
-
-            self._ort_student_out = student_out
-            self._ort_training_session = self._ort_module
-            self._ort_paths = paths
-            logger.info(
-                "[StudentTrainer] ORT-training backprop ENABLED — %d trainable "
-                "weight tensors (scope=%s).", len(trainable), self.train_scope,
-            )
-        except Exception as exc:  # pragma: no cover - depends on ORT training
-            logger.warning(
-                "[StudentTrainer] Could not enable ORT-training backprop (%s). "
-                "Falling back to the affine correction head.", exc,
-            )
-            self._ort_training_session = None
-            self._ort_module = None
-            self._ort_optimizer = None
-            self._ort_checkpoint = None
 
     @property
     def is_training_available(self) -> bool:
         """Whether a real weight/parameter update can be performed.
 
-        True when the PyTorch backprop path is active (real network training),
-        when onnxruntime-training is installed (full-network backprop), or via
-        the built-in affine adaptation head (always the case).
+        True when the PyTorch backprop path is active (real network training) or
+        via the built-in affine adaptation head (always the case).
         """
-        return (
-            self._torch_backprop
-            or self._training_available
-            or self._adaptation_available
-        )
+        return self._torch_backprop or self._adaptation_available
 
     @property
     def backprop_mode(self) -> str:
         """Human-readable description of the active learning path."""
         if self._torch_backprop:
             return f"pytorch-{self.train_scope}"
-        if self._training_available and self._ort_training_session is not None:
-            return "ort-training"
         return "affine-head"
 
     @property
     def _network_update_count(self) -> int:
-        """Number of real network backprop steps (PyTorch or ORT-training)."""
+        """Number of real network backprop steps (PyTorch)."""
         if self._torch is not None:
             return int(self._torch.updates)
-        return int(getattr(self, "_ort_updates", 0))
+        return 0
 
     @property
     def _network_backprop_active(self) -> bool:
-        """True when a real-network backprop path (PyTorch or ORT) is active.
+        """True when the real-network (PyTorch) backprop path is active.
 
         In that case ``infer`` already returns predictions from the updated
         network weights, so the affine correction head must not be applied on
         top of them.
         """
-        return bool(self._torch_backprop) or (self._ort_training_session is not None)
+        return bool(self._torch_backprop)
 
     @property
     def improvement(self) -> float:
@@ -384,10 +243,7 @@ class StudentTrainer:
         """Run student model inference on a frame.
 
         When the PyTorch backprop path is active, inference uses the *trained*
-        torch weights. When the ORT-training path is active, the trained weights
-        are periodically exported back into a detection ONNX so the plain
-        inference session reflects the learning (plan section B). Otherwise the
-        original onnxruntime session is used.
+        torch weights. Otherwise the original onnxruntime session is used.
 
         Returns (bboxes, scores, class_ids).
         """
@@ -396,36 +252,7 @@ class StudentTrainer:
                 return self._torch_infer(frame)
             except Exception as exc:  # pragma: no cover - defensive
                 logger.debug(f"[StudentTrainer] torch inference failed: {exc}")
-        elif self._ort_training_session is not None and self._ort_infer_dirty:
-            self._refresh_ort_inference_model()
         return self._student_model(frame)
-
-    def _refresh_ort_inference_model(self):  # pragma: no cover - needs ORT training
-        """Export the trained ORT weights into a detection ONNX and reload it.
-
-        Implements plan section B: ``Module.export_model_for_inferencing`` prunes
-        the loss subgraph and emits a detection model carrying the updated
-        weights (requesting the original student output tensor). The CustomONNX
-        inference session is then rebuilt from it so displayed detections reflect
-        the training.
-        """
-        try:
-            infer_path = os.path.join(self._ort_artifact_dir, "student_trained.onnx")
-            self._ort_module.export_model_for_inferencing(
-                infer_path, [self._ort_student_out]
-            )
-            self._student_model = CustomONNX(
-                model_path=infer_path,
-                input_width=self.input_width,
-                input_height=self.input_height,
-                output_format=self.output_format,
-                num_classes=self.num_classes,
-                providers=self.providers,
-            )
-            self._ort_infer_dirty = False
-            logger.debug("[StudentTrainer] Refreshed inference model from ORT weights.")
-        except Exception as exc:
-            logger.debug(f"[StudentTrainer] ORT inference refresh failed: {exc}")
 
     def _torch_infer(self, frame: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Inference through the trained torch weights, reusing CustomONNX decode."""
@@ -498,8 +325,8 @@ class StudentTrainer:
 
         # 1b. When training only the affine correction head (no real-network
         # backprop path), apply it so the returned predictions reflect what the
-        # head has learned so far. With the PyTorch or ORT-training backprop path
-        # the network weights themselves are updated, so ``infer`` already returns
+        # head has learned so far. With the PyTorch backprop path the network
+        # weights themselves are updated, so ``infer`` already returns
         # the improved predictions and no extra correction is applied.
         frame_h, frame_w = self._frame_size(frame)
         if not self._network_backprop_active and len(s_bboxes) > 0:
@@ -544,14 +371,6 @@ class StudentTrainer:
                 # propagated through the student backbone/heads via PyTorch.
                 training_performed = self._torch_train_step(
                     frame, teacher_bboxes, teacher_class_ids, frame_w, frame_h,
-                )
-            elif self._ort_training_session is not None:
-                # Real network backprop via onnxruntime-training: the merged
-                # student+loss graph is differentiated and the optimizer updates
-                # the trainable weights in-place.
-                training_performed = self._do_backprop(
-                    frame, teacher_bboxes, teacher_scores, teacher_class_ids,
-                    distillation,
                 )
             else:
                 # Fallback: sub-gradient descent on the affine correction head.
@@ -616,197 +435,6 @@ class StudentTrainer:
         )
         return bool(updated)
 
-    def _do_backprop(self, frame, teacher_bboxes, teacher_scores,
-                     teacher_class_ids, distillation=None):
-        """Back-propagate the *requested* set-based distillation loss.
-
-        The Hungarian set-based loss (``compute_set_distillation_loss``) drives the
-        update. Because it relies on a discrete bipartite assignment, the matching
-        is computed without gradients and the differentiable per-matched-pair terms
-        (box L1 + (1 - IoU) + class CE) are what is propagated through the student
-        network via onnxruntime-training.
-
-        A real weight update requires a fully wired onnxruntime-training session.
-        When that session is not available this method performs **no** weight
-        update and returns ``False`` so callers never report a phantom training
-        step.
-
-        Returns
-        -------
-        bool
-            True only if the student weights were actually updated.
-        """
-        # Keep the reported loss consistent with the requested set-based loss.
-        if distillation is not None:
-            self._update_last_loss(distillation)
-
-        # Real backprop path: requires a wired onnxruntime-training session.
-        if self._ort_training_session is None:
-            # Inference-only: no differentiable end-to-end path is available
-            # (post-processing/NMS runs in NumPy), so weights are left unchanged.
-            return False
-
-        try:
-            return self._run_ort_training_step(
-                frame, teacher_bboxes, teacher_scores, teacher_class_ids,
-            )
-        except Exception as exc:  # pragma: no cover - depends on ORT training
-            logger.debug(f"[StudentTrainer] ORT training step failed: {exc}")
-            return False
-
-    def _run_ort_training_step(self, frame, teacher_bboxes, teacher_scores,
-                               teacher_class_ids):  # pragma: no cover - needs ORT training
-        """Run one onnxruntime-training optimizer step (plan sections A.3/A.4).
-
-        Steps:
-        1. Forward the student to get its raw output and decode it (NumPy) to
-           obtain candidate anchor boxes in network-input space.
-        2. Greedily match each teacher box to a unique student anchor
-           out-of-graph (the discrete assignment is not differentiable).
-        3. Feed the preprocessed image + matched anchor indices + teacher targets
-           into the merged training graph; ``module.train_step`` runs the
-           forward+backward, ``optimizer.step`` updates the trainable weights and
-           ``module.lazy_reset_grad`` clears the gradients for the next frame.
-
-        Returns True only when an optimizer step actually updated the weights.
-        """
-        teacher_boxes_orig = np.asarray(list(teacher_bboxes), dtype=np.float32).reshape(-1, 4)
-        if len(teacher_boxes_orig) == 0:
-            return False
-
-        # 1. Preprocess once; reuse the blob for both the match forward and train.
-        blob, _ratio = self._student_model._preprocess(frame)
-        frame_h, frame_w = self._frame_size(frame)
-
-        # Raw forward to decode candidate anchors for matching.
-        raw_out = self._ort_student_raw_forward(blob)
-        if raw_out is None:
-            return False
-        pred_boxes_in = self._decode_pred_boxes(raw_out)
-        if pred_boxes_in is None or len(pred_boxes_in) == 0:
-            return False
-
-        # 2. Scale teacher boxes into network-input space and match out-of-graph.
-        if self.output_format == "nanodet":
-            # NanoDet uses letterbox (uniform aspect-ratio-preserving) preproc.
-            ratio = min(self.input_height / max(1, int(frame_h)),
-                        self.input_width / max(1, int(frame_w)))
-            scale = np.array([ratio, ratio, ratio, ratio], dtype=np.float32)
-        else:
-            sx = self.input_width / max(1, int(frame_w))
-            sy = self.input_height / max(1, int(frame_h))
-            scale = np.array([sx, sy, sx, sy], dtype=np.float32)
-        teacher_boxes_in = teacher_boxes_orig * scale
-        anchor_idx = ort_art.greedy_match_anchors(pred_boxes_in, teacher_boxes_in)
-        matched = ort_art.build_matched_targets(
-            teacher_boxes_in, list(teacher_class_ids), anchor_idx, self.num_classes,
-        )
-        if matched is None:
-            return False
-        idx, tb, oh = matched
-
-        # 3. One real forward+backward+optimizer step.
-        inputs = [
-            np.ascontiguousarray(blob, dtype=np.float32),
-            np.ascontiguousarray(idx, dtype=np.int64),
-            np.ascontiguousarray(tb, dtype=np.float32),
-            np.ascontiguousarray(oh, dtype=np.float32),
-        ]
-        self._ort_module.train()
-        outputs = self._ort_module.train_step(inputs)
-        self._ort_optimizer.step()
-        self._ort_module.lazy_reset_grad()
-
-        loss_val = self._extract_scalar(outputs)
-        if loss_val is not None:
-            self.last_train_loss = float(loss_val)
-        self._ort_updates += 1
-        # The weights changed, so the cached inference model is now stale.
-        self._ort_infer_dirty = True
-        return True
-
-    def _ort_student_raw_forward(self, blob):  # pragma: no cover - needs ORT training
-        """Raw student forward used only to obtain anchors for the match.
-
-        Uses the plain CustomONNX session (frozen at the latest exported weights),
-        which is an acceptable approximation because the assignment is discrete
-        and non-differentiable anyway.
-        """
-        try:
-            session = self._student_model.onnx_session
-            input_name = session.get_inputs()[0].name
-            outputs = session.run(None, {input_name: blob})
-            return outputs[0]
-        except Exception as exc:
-            logger.debug(f"[StudentTrainer] raw forward for match failed: {exc}")
-            return None
-
-    def _decode_pred_boxes(self, raw_out):  # pragma: no cover - needs ORT training
-        """Decode raw student output to xyxy boxes in input space (NumPy).
-
-        Mirrors the in-graph decode used by the training graph (without NMS), so
-        the matcher sees the same anchor boxes the graph will score.
-        """
-        out = np.squeeze(np.asarray(raw_out))
-        if out.ndim != 2:
-            return None
-        if self.output_format == "nanodet":
-            return self._decode_pred_boxes_nanodet(out)
-        if self.output_format == "yolox":
-            if out.shape[1] != self.num_classes + 5 and out.shape[0] == self.num_classes + 5:
-                out = out.T
-            cxcywh = out[:, :4]
-        else:  # yolo11
-            expected = self.num_classes + 4
-            if out.shape[0] == expected and out.shape[1] != expected:
-                out = out.T
-            cxcywh = out[:, :4]
-        cx, cy, w, h = cxcywh[:, 0], cxcywh[:, 1], cxcywh[:, 2], cxcywh[:, 3]
-        return np.stack([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], axis=1)
-
-    def _decode_pred_boxes_nanodet(self, out):  # pragma: no cover - needs ORT training
-        """NumPy NanoDet GFL/DFL decode → ``[A,4]`` xyxy anchor boxes (input space).
-
-        Used only to obtain candidate anchors for the (non-differentiable) match;
-        mirrors the in-graph decode in ``build_student_loss_graph``.
-        """
-        a = out.shape[0]
-        reg_channels = out.shape[1] - self.num_classes
-        if reg_channels <= 0 or reg_channels % 4 != 0:
-            return None
-        reg_bins = reg_channels // 4
-        # Standard mono-output NanoDet is classes-first.
-        reg_flat = out[:, self.num_classes:]
-        reg = reg_flat.reshape(a, 4, reg_bins)
-        reg = reg - reg.max(axis=2, keepdims=True)
-        sm = np.exp(reg)
-        sm /= sm.sum(axis=2, keepdims=True)
-        proj = np.arange(reg_bins, dtype=np.float32)
-        distances = (sm * proj).sum(axis=2)  # [A,4]
-        centers, strides = ort_art.nanodet_anchor_grid(
-            self.input_width, self.input_height, a)
-        if centers.shape[0] != a:
-            return None
-        cx = centers[:, 0]
-        cy = centers[:, 1]
-        st = strides[:, 0]
-        x1 = cx - distances[:, 0] * st
-        y1 = cy - distances[:, 1] * st
-        x2 = cx + distances[:, 2] * st
-        y2 = cy + distances[:, 3] * st
-        return np.stack([x1, y1, x2, y2], axis=1).astype(np.float32)
-
-    @staticmethod
-    def _extract_scalar(outputs):  # pragma: no cover - needs ORT training
-        """Pull a scalar loss value out of an ORT ``train_step`` result."""
-        if outputs is None:
-            return None
-        val = outputs[0] if isinstance(outputs, (list, tuple)) else outputs
-        try:
-            return float(np.asarray(val).reshape(-1)[0])
-        except Exception:
-            return None
-
     def reset(self):
         """Reset the student model to its original weights."""
         # Restore original bytes to model path and reload
@@ -842,18 +470,6 @@ class StudentTrainer:
                 self._torch.reset()
             except Exception as exc:  # pragma: no cover - defensive
                 logger.debug(f"[StudentTrainer] torch reset failed: {exc}")
-        # Rebuild the ORT-training session from the pristine model so the trained
-        # weights are discarded along with the inference session above.
-        if self._ort_training_session is not None:
-            self._ort_training_session = None
-            self._ort_module = None
-            self._ort_optimizer = None
-            self._ort_checkpoint = None
-            self._ort_infer_dirty = False
-            try:
-                self._setup_ort_training()
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.debug(f"[StudentTrainer] ORT reset failed: {exc}")
 
     def export_onnx(self, output_path: str) -> str:
         """Export the current student model to an ONNX file.
@@ -881,22 +497,6 @@ class StudentTrainer:
                     f"[StudentTrainer] torch ONNX export failed ({exc}); "
                     "falling back to the original model bytes."
                 )
-        # With the ORT-training path the trained weights live in the ORT module;
-        # export a detection model (loss subgraph pruned) carrying them.
-        if self._ort_training_session is not None:
-            try:
-                self._ort_module.export_model_for_inferencing(
-                    output_path, [self._ort_student_out]
-                )
-                logger.info(
-                    f"[StudentTrainer] Exported trained ORT student to: {output_path}"
-                )
-                return output_path
-            except Exception as exc:  # pragma: no cover - depends on ORT training
-                logger.warning(
-                    f"[StudentTrainer] ORT ONNX export failed ({exc}); "
-                    "falling back to the original model bytes."
-                )
         import shutil
         shutil.copy2(self.model_path, output_path)
         logger.info(f"[StudentTrainer] Exported student model to: {output_path}")
@@ -916,7 +516,7 @@ class StudentTrainer:
         adapter_updates : number of correction-head gradient steps performed.
         network_updates : number of real network backprop steps performed.
         backprop_mode : active learning path ('pytorch-head'/'pytorch-all'/
-            'ort-training'/'affine-head').
+            'affine-head').
         train_loss : differentiable training loss of the last network backprop.
         training_active / training_available : training flags.
         """

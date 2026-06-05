@@ -128,7 +128,7 @@ def test_forward_numpy_returns_array():
 def _make_nanodet_student(num_classes=3, input_size=64, reg_max=7, seed=0):
     """Build a TorchStudent around a tiny NanoDet-shaped raw output tensor."""
     import torch.nn as nn
-    from node.DLNode.online_training.ort_training_artifacts import nanodet_anchor_grid
+    from node.DLNode.online_training.torch_student import nanodet_anchor_grid
 
     centers, strides = nanodet_anchor_grid(input_size, input_size)
     anchors = centers.shape[0]

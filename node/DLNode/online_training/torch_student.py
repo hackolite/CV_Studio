@@ -22,15 +22,83 @@ YOLOv8/v11, boxes already in input pixels), ``yolox`` (grid + objectness) and
 
 import contextlib
 import logging
+import math
 import os
 import tempfile
 from typing import List, Optional, Tuple
 
 import numpy as np
 
-from node.DLNode.online_training.ort_training_artifacts import nanodet_anchor_grid
-
 logger = logging.getLogger(__name__)
+
+# NanoDet feature-pyramid stride sets: NanoDet-Plus uses 4 levels (8/16/32/64),
+# the original NanoDet-m only 3 (8/16/32). The first whose total anchor count
+# matches the network output is selected.
+_NANODET_STRIDE_SETS: Tuple[Tuple[int, ...], ...] = ((8, 16, 32, 64), (8, 16, 32))
+
+
+def nanodet_anchor_grid(input_width: int, input_height: int,
+                        num_anchors: Optional[int] = None):
+    """Precompute NanoDet anchor centres + per-anchor strides (FCOS-style grid).
+
+    NanoDet's GFL/DFL head predicts, for every anchor point, four side distances
+    (left, top, right, bottom) as the expectation of a softmax distribution. The
+    anchor point is the **centre** of a grid cell, ``(x + 0.5) * stride``, with
+    the grid built per feature level (stride) in row-major (``indexing='ij'``)
+    order — identical to :meth:`CustomONNX._postprocess_nanodet` so the anchor
+    ordering matches the raw network output.
+
+    The number of cells per level is ``ceil(input / stride)``: NanoDet-Plus pads
+    the feature map up (e.g. 416/64 -> 7, not 6), so floor division undercounts
+    the anchors (3585 vs 3598 for nanodet-plus-m_416) and breaks the decode.
+
+    Parameters
+    ----------
+    num_anchors : int, optional
+        When given, the stride set whose total anchor count equals this value is
+        selected (4-stride NanoDet-Plus first, then 3-stride NanoDet-m). This
+        keeps the decode aligned with the actual student output.
+
+    Returns
+    -------
+    (centers, strides) : (np.ndarray[A, 2], np.ndarray[A, 1]) float32
+        Anchor centres ``(cx, cy)`` in input-pixel space and the matching stride
+        of each anchor.
+    """
+    def _build(strides_list):
+        centers = []
+        stride_col = []
+        for s in strides_list:
+            n_h = math.ceil(int(input_height) / s)
+            n_w = math.ceil(int(input_width) / s)
+            if n_h <= 0 or n_w <= 0:
+                continue
+            yv, xv = np.meshgrid(np.arange(n_h), np.arange(n_w), indexing="ij")
+            cx = (xv.ravel() + 0.5) * s
+            cy = (yv.ravel() + 0.5) * s
+            centers.append(np.stack([cx, cy], axis=1))
+            stride_col.append(np.full(n_h * n_w, float(s)))
+        if not centers:
+            return (np.zeros((0, 2), dtype=np.float32),
+                    np.zeros((0, 1), dtype=np.float32))
+        c = np.concatenate(centers, axis=0).astype(np.float32)
+        st = np.concatenate(stride_col, axis=0).astype(np.float32).reshape(-1, 1)
+        return c, st
+
+    built = []
+    for strides_list in _NANODET_STRIDE_SETS:
+        c, st = _build(strides_list)
+        if num_anchors is not None and c.shape[0] == num_anchors:
+            return c, st
+        built.append((c, st))
+    # No exact match (or num_anchors unknown): prefer the 3-stride layout, the
+    # most common for the mono-output NanoDet export.
+    if not built:
+        return (np.zeros((0, 2), dtype=np.float32),
+                np.zeros((0, 1), dtype=np.float32))
+    return built[-1]
+
+
 
 # ---------------------------------------------------------------------------
 # Optional heavy dependencies — never fail to import this module because of them
