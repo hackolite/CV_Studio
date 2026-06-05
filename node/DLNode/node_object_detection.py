@@ -51,6 +51,35 @@ else:
 
 _COCO_CLASSES = {k: v for k, v in coco_class_names.items()}
 
+# ---------------------------------------------------------------------------
+# Class-name sources offered in the upload preview when an ONNX model does not
+# embed its own class names.  This mirrors the behaviour of the built-in YOLO
+# models which default to the COCO dataset labels.
+# ---------------------------------------------------------------------------
+_CLASS_SOURCE_COCO = "COCO dataset (80 classes)"
+_CLASS_SOURCE_GENERIC = "Generic (class_0, class_1, …)"
+_CLASS_SOURCE_OPTIONS = [_CLASS_SOURCE_COCO, _CLASS_SOURCE_GENERIC]
+
+
+def build_class_names_from_source(source_label, num_classes):
+    """Build a ``{int_id: str_name}`` class dict from a chosen source label.
+
+    Used when the uploaded ONNX model does not embed class names, letting the
+    user pick the COCO dataset labels (like the built-in YOLO models) or fall
+    back to generic ``class_<i>`` placeholders.
+    """
+    try:
+        num_classes = int(num_classes)
+    except (TypeError, ValueError):
+        num_classes = 0
+
+    if source_label == _CLASS_SOURCE_COCO:
+        count = num_classes if num_classes > 0 else len(coco_class_names)
+        return {i: coco_class_names.get(i, f"class_{i}") for i in range(count)}
+
+    # Generic fallback
+    return {i: f"class_{i}" for i in range(num_classes)}
+
 _BUILTIN_MODELS = [
     {
         'name': 'YOLOX-Nano(416x416)',
@@ -262,6 +291,8 @@ class FactoryNode:
         preview_confirm_tag = "onnx_preview_confirm:" + str(node_id)
         preview_cancel_tag  = "onnx_preview_cancel:"  + str(node_id)
         preview_quit_tag    = "onnx_preview_quit:"    + str(node_id)
+        preview_class_source_group_tag = "onnx_preview_class_source_group:" + str(node_id)
+        preview_class_source_tag       = "onnx_preview_class_source:"       + str(node_id)
 
         node.tag_preview_window  = preview_window_tag
         node.tag_preview_name    = preview_name_tag
@@ -270,12 +301,17 @@ class FactoryNode:
         node.tag_preview_confirm = preview_confirm_tag
         node.tag_preview_cancel  = preview_cancel_tag
         node.tag_preview_quit    = preview_quit_tag
+        node.tag_preview_class_source_group = preview_class_source_group_tag
+        node.tag_preview_class_source       = preview_class_source_tag
 
         def _on_upload_confirm(sender, app_data, user_data):
             node._do_confirm_upload()
 
         def _on_close_preview(sender, app_data, user_data):
             node._close_upload_preview()
+
+        def _on_class_source_change(sender, app_data, user_data):
+            node._on_class_source_change(app_data)
 
         with dpg.window(
             label="ONNX Model Preview",
@@ -290,6 +326,23 @@ class FactoryNode:
             dpg.add_separator()
             # Dynamic details area — cleared and repopulated on each upload
             dpg.add_group(tag=preview_details_tag)
+            # Class-source picker — only shown when the ONNX has no embedded
+            # class names, letting the user choose COCO labels like the
+            # built-in YOLO models (or generic placeholders).
+            with dpg.group(tag=preview_class_source_group_tag, show=False):
+                dpg.add_separator()
+                dpg.add_text(
+                    "No class names embedded in this model.\n"
+                    "Choose which class labels to use:",
+                    color=(255, 200, 100, 255),
+                )
+                dpg.add_combo(
+                    _CLASS_SOURCE_OPTIONS,
+                    default_value=_CLASS_SOURCE_COCO,
+                    width=410,
+                    tag=preview_class_source_tag,
+                    callback=_on_class_source_change,
+                )
             dpg.add_separator()
             dpg.add_text("", tag=preview_status_tag)
             dpg.add_spacer(height=4)
@@ -346,6 +399,41 @@ class FactoryNode:
                     tag=node.tag_node_input_text_value_name,
                     callback=on_model_change,
                 )
+
+            # ---- Collapse / expand toggle for the settings section ----------
+            # The configuration widgets below (provider, score, reject, draw,
+            # thickness) make the node tall.  This arrow folds them away.
+            node.tag_collapse_btn = node.tag_node_name + ':CollapseToggle'
+            node._collapsible_attr_tags = []
+            node._settings_collapsed = False
+
+            def _on_collapse_toggle(sender, app_data, user_data):
+                node._settings_collapsed = not node._settings_collapsed
+                for attr_tag in node._collapsible_attr_tags:
+                    try:
+                        dpg.configure_item(attr_tag, show=not node._settings_collapsed)
+                    except Exception:
+                        pass
+                try:
+                    dpg.configure_item(
+                        node.tag_collapse_btn,
+                        label=(u"\u25B6 Settings" if node._settings_collapsed
+                               else u"\u25BC Settings"),
+                    )
+                except Exception:
+                    pass
+
+            with dpg.node_attribute(
+                    tag=node.tag_node_name + ':CollapseAttr',
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_button(
+                    label=u"\u25BC Settings",
+                    tag=node.tag_collapse_btn,
+                    width=small_window_w,
+                    callback=_on_collapse_toggle,
+                )
+
             if use_gpu:
 
                 with dpg.node_attribute(
@@ -358,6 +446,7 @@ class FactoryNode:
                         default_value='CPU',
                         horizontal=True,
                     )
+                node._collapsible_attr_tags.append(node.tag_provider_select_name)
 
             with dpg.node_attribute(
                     tag=node.tag_node_input_float_name,
@@ -372,6 +461,7 @@ class FactoryNode:
                     max_value=node._max_val,
                     callback=None,
                 )
+            node._collapsible_attr_tags.append(node.tag_node_input_float_name)
 
             # Rejected classes dropdown
             with dpg.node_attribute(
@@ -390,6 +480,7 @@ class FactoryNode:
                     width=small_window_w - 80,
                     default_value="",
                 )
+            node._collapsible_attr_tags.append(node.tag_node_rejected_classes_name)
             
             # Draw bounding boxes checkbox
             with dpg.node_attribute(
@@ -401,6 +492,7 @@ class FactoryNode:
                     label="Draw Bounding Boxes",
                     default_value=True,
                 )
+            node._collapsible_attr_tags.append(node.tag_node_draw_bbox_name)
 
             # Bounding box thickness slider
             with dpg.node_attribute(
@@ -415,6 +507,7 @@ class FactoryNode:
                     min_value=1,
                     max_value=10,
                 )
+            node._collapsible_attr_tags.append(node.tag_node_bbox_thickness_name)
 
             if use_pref_counter:
                 with dpg.node_attribute(
@@ -653,16 +746,22 @@ class Node(Node):
                 pass
             return
 
-        # Class names come exclusively from the ONNX file metadata
-        class_names = meta.get("class_names", {})
-        if not class_names:
-            num_classes = meta.get("num_classes", 0)
+        # Class names come from the ONNX file metadata when available.  If the
+        # model embeds no class names, fall back to a user-selectable source
+        # (COCO labels like the built-in YOLO models, or generic placeholders).
+        embedded_class_names = meta.get("class_names", {})
+        num_classes = meta.get("num_classes", 0)
+        self._pending_classes_embedded = bool(embedded_class_names)
+
+        if embedded_class_names:
+            class_names = embedded_class_names
+            logger.info("[Upload] Using class names embedded in ONNX metadata.")
+        else:
             logger.info(
-                f"[Upload] No class names in metadata — "
-                f"{'generating generic names for ' + str(num_classes) + ' classes' if num_classes > 0 else 'no num_classes either'}"
+                f"[Upload] No class names in metadata — offering class-source "
+                f"selection (num_classes={num_classes})."
             )
-            if num_classes > 0:
-                class_names = {i: f"class_{i}" for i in range(num_classes)}
+            class_names = build_class_names_from_source(_CLASS_SOURCE_COCO, num_classes)
 
         # Store pending upload data on the instance
         self._pending_onnx_path = onnx_path
@@ -673,6 +772,26 @@ class Node(Node):
         base_name = os.path.splitext(os.path.basename(onnx_path))[0]
         dpg.set_value(self.tag_preview_name, base_name)
 
+        # Show/hide the class-source picker depending on whether the ONNX
+        # already provides class names.
+        try:
+            if self._pending_classes_embedded:
+                dpg.configure_item(self.tag_preview_class_source_group, show=False)
+            else:
+                dpg.set_value(self.tag_preview_class_source, _CLASS_SOURCE_COCO)
+                dpg.configure_item(self.tag_preview_class_source_group, show=True)
+        except Exception:
+            pass
+
+        self._render_preview_details(meta, class_names)
+
+        # Clear any previous status message and show the dialog
+        self._set_upload_preview_actions(upload_succeeded=False)
+        dpg.set_value(self.tag_preview_status, "")
+        dpg.show_item(self.tag_preview_window)
+
+    def _render_preview_details(self, meta, class_names):
+        """Render the model metadata + class list into the preview dialog."""
         dpg.delete_item(self.tag_preview_details, children_only=True)
 
         in_w = meta.get("input_width", 640)
@@ -710,10 +829,16 @@ class Node(Node):
                 color=(255, 200, 100, 255),
             )
 
-        # Clear any previous status message and show the dialog
-        self._set_upload_preview_actions(upload_succeeded=False)
-        dpg.set_value(self.tag_preview_status, "")
-        dpg.show_item(self.tag_preview_window)
+    def _on_class_source_change(self, source_label):
+        """Rebuild pending class names when the user changes the class source."""
+        meta = getattr(self, '_pending_meta', None)
+        if meta is None:
+            return
+        num_classes = meta.get("num_classes", 0)
+        class_names = build_class_names_from_source(source_label, num_classes)
+        self._pending_class_names = class_names
+        self._render_preview_details(meta, class_names)
+
 
     def _set_upload_preview_actions(self, upload_succeeded: bool):
         """Show the appropriate action buttons for the current preview state."""
