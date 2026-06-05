@@ -287,8 +287,8 @@ class StudentTrainer:
             # Apply the requested learning rate to the optimizer.
             try:
                 self._ort_optimizer.set_learning_rate(float(self.learning_rate))
-            except Exception:  # pragma: no cover - older ORT API
-                pass
+            except Exception as exc:  # pragma: no cover - older ORT API
+                logger.debug("ORT set_learning_rate unavailable: %s", exc)
 
             self._ort_student_out = student_out
             self._ort_training_session = self._ort_module
