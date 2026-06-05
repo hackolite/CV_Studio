@@ -33,6 +33,7 @@ from node.DLNode.online_training.online_adapter import BoxAffineAdapter
 from node.DLNode.online_training.torch_student import (
     TorchStudent,
     is_torch_backprop_available,
+    is_format_supported as _torch_format_supported,
 )
 from node.DLNode.online_training.distillation_loss_ort import (
     compute_distillation_loss_numpy,
@@ -158,7 +159,7 @@ class StudentTrainer:
         # fails, we silently fall back to the affine adaptation head.
         self._torch = None
         self._torch_backprop = False
-        if is_torch_backprop_available():
+        if is_torch_backprop_available() and _torch_format_supported(output_format):
             try:
                 self._torch = TorchStudent(
                     model_path=model_path,
@@ -182,6 +183,17 @@ class StudentTrainer:
                 )
                 self._torch = None
                 self._torch_backprop = False
+        elif is_torch_backprop_available():
+            # PyTorch is installed but the student's decode format is not
+            # supported by the differentiable TorchStudent path (e.g.
+            # ``nanodet_multi``). Using it would yield no student boxes and no
+            # weight updates, so keep ONNX inference (CustomONNX) and rely on the
+            # ORT-training / affine-head path for learning instead.
+            logger.info(
+                "[StudentTrainer] PyTorch backprop not used for output_format "
+                "'%s' (unsupported decode); using ONNX inference with "
+                "ORT-training/affine-head updates.", output_format,
+            )
 
 
         # Training state
