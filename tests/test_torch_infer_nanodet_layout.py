@@ -13,10 +13,10 @@ score threshold — flooding the OnlineTraining display with thousands of
 false-positive green student boxes (nanodet-plus-m_416 symptom).
 
 The fix forces ``_torch_infer`` to decode NanoDet with the *same* explicit
-layout / activation used by the differentiable training decode
-(``TorchStudent._decode_nanodet``): classes-first (``reg_first_override`` taken
-from ``TorchStudent.nanodet_reg_first``) and raw logits (``cls_pre_activated=
-False``). This test pins that contract.
+layout used by the differentiable training decode (``reg_first_override`` taken
+from ``TorchStudent.nanodet_reg_first``) and auto-detects whether class scores
+are already sigmoid-activated to avoid double-sigmoid floods. This test pins
+that contract.
 """
 
 import numpy as np
@@ -54,12 +54,14 @@ class _StubModel:
         return np.array([]), np.array([]), np.array([])
 
 
-def _make_trainer(nanodet_reg_first=False):
+def _make_trainer(nanodet_reg_first=False, raw=None):
     tr = st.StudentTrainer.__new__(st.StudentTrainer)
     tr.output_format = "nanodet"
+    tr.num_classes = 80
+    if raw is None:
+        raw = np.full((1, 4, 112), -2.0, np.float32)
     tr._student_model = _StubModel()
-    tr._torch = _StubTorch(np.zeros((1, 4, 112), np.float32),
-                           nanodet_reg_first=nanodet_reg_first)
+    tr._torch = _StubTorch(raw, nanodet_reg_first=nanodet_reg_first)
     tr._torch_backprop = True
     return tr
 
@@ -86,3 +88,17 @@ def test_torch_infer_nanodet_propagates_reg_first_layout():
 
     call = tr._student_model.calls[-1]
     assert call["reg_first_override"] is True
+
+
+def test_torch_infer_nanodet_detects_preactivated_classes():
+    raw = np.concatenate([
+        np.full((4, 80), 0.2, np.float32),
+        np.full((4, 32), 3.0, np.float32),
+    ], axis=1)[np.newaxis, ...]
+    tr = _make_trainer(nanodet_reg_first=False, raw=raw)
+    frame = np.zeros((8, 8, 3), np.uint8)
+
+    tr._torch_infer(frame)
+
+    call = tr._student_model.calls[-1]
+    assert call["cls_pre_activated"] is True
