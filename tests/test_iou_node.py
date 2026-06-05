@@ -21,6 +21,8 @@ from node.StatsNode.node_iou import (
     Node,
     compute_iou,
     match_detections,
+    bbox_pair_difference,
+    score_bbox_difference,
 )
 
 
@@ -67,7 +69,8 @@ def test_match_detections_different_counts():
     boxes_b = [[0, 0, 10, 10], [20, 20, 30, 30]]
     matched, used_a, used_b = match_detections(boxes_a, [], boxes_b, [])
     assert len(matched) == 2
-    assert all(abs(iou - 1.0) < 1e-9 for iou in matched)
+    # matched is a list of (index_a, index_b, iou) tuples
+    assert all(abs(iou - 1.0) < 1e-9 for (_i, _j, iou) in matched)
     assert len(used_a) == 2
     assert len(used_b) == 2
 
@@ -81,6 +84,63 @@ def test_match_detections_by_class():
     # Same class -> matched
     matched, _, _ = match_detections(boxes_a, [1], boxes_b, [1], match_by_class=True)
     assert len(matched) == 1
+
+
+def test_bbox_pair_difference():
+    # Identical boxes -> zero difference everywhere.
+    diff = bbox_pair_difference([0, 0, 10, 10], [0, 0, 10, 10])
+    assert diff['iou_diff'] == 0.0
+    assert diff['center_distance'] == 0.0
+    assert diff['size_diff'] == 0.0
+
+    # Shifted box -> non-zero center distance, same size.
+    diff = bbox_pair_difference([0, 0, 10, 10], [2, 0, 12, 10])
+    assert diff['center_distance'] == 2.0
+    assert diff['size_diff'] == 0.0
+    assert diff['iou_diff'] > 0.0
+
+
+def test_score_identical_sets_is_zero():
+    boxes = [[0, 0, 10, 10], [20, 20, 30, 30]]
+    metrics = score_bbox_difference(boxes, [0, 1], boxes, [0, 1])
+    assert metrics['diff_score'] == 0.0
+    assert metrics['matched_pairs'] == 2
+    assert metrics['unmatched_a'] == 0
+    assert metrics['unmatched_b'] == 0
+
+
+def test_score_completely_different_sets_is_one():
+    boxes_a = [[0, 0, 10, 10]]
+    boxes_b = [[100, 100, 110, 110]]
+    metrics = score_bbox_difference(boxes_a, [0], boxes_b, [0])
+    # No overlap -> nothing matched, both boxes count as full difference.
+    assert metrics['matched_pairs'] == 0
+    assert metrics['diff_score'] == 1.0
+
+
+def test_score_different_counts():
+    # 3 boxes vs 2 boxes, 2 overlap exactly -> 1 extra box is a difference.
+    boxes_a = [[0, 0, 10, 10], [20, 20, 30, 30], [40, 40, 50, 50]]
+    boxes_b = [[0, 0, 10, 10], [20, 20, 30, 30]]
+    metrics = score_bbox_difference(boxes_a, [], boxes_b, [])
+    assert metrics['matched_pairs'] == 2
+    assert metrics['count_diff'] == 1
+    assert metrics['unmatched_a'] == 1
+    assert metrics['unmatched_b'] == 0
+    # union = 3, total diff = 0 (matched) + 1 (unmatched) -> 1/3
+    assert abs(metrics['diff_score'] - (1.0 / 3.0)) < 1e-9
+
+
+def test_score_threshold_rejects_low_iou_pairs():
+    # Two boxes overlap a little (IoU below 0.5); with a high threshold they
+    # should be treated as different rather than matched.
+    boxes_a = [[0, 0, 10, 10]]
+    boxes_b = [[8, 0, 18, 10]]
+    low = score_bbox_difference(boxes_a, [], boxes_b, [], iou_threshold=0.0)
+    high = score_bbox_difference(boxes_a, [], boxes_b, [], iou_threshold=0.9)
+    assert low['matched_pairs'] == 1
+    assert high['matched_pairs'] == 0
+    assert high['diff_score'] > low['diff_score']
 
 
 def _make_node():
@@ -126,8 +186,10 @@ def test_update_outputs_flat_numeric_dict():
     assert payload['matched_pairs'] == 2
     assert payload['unmatched_a'] == 1
     assert payload['unmatched_b'] == 0
-    assert payload['mean_iou'] > 0.0
-    assert abs(payload['mean_iou_percent'] - payload['mean_iou'] * 100.0) < 1e-9
+    # Difference score is the primary metric and is in [0, 1].
+    assert 0.0 <= payload['diff_score'] <= 1.0
+    assert payload['diff_score'] > 0.0
+    assert abs(payload['diff_score_percent'] - payload['diff_score'] * 100.0) < 1e-9
 
 
 def test_update_waiting_for_two_inputs_returns_none():
@@ -167,7 +229,9 @@ def test_update_empty_detections():
     payload = result['json']
     assert payload['matched_pairs'] == 0
     assert payload['mean_iou'] == 0.0
-    assert payload['match_ratio_percent'] == 0.0
+    # Two empty sets means no difference at all.
+    assert payload['diff_score'] == 0.0
+    assert payload['diff_score_percent'] == 0.0
 
 
 if __name__ == '__main__':

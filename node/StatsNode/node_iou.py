@@ -45,8 +45,8 @@ def match_detections(boxes_a, classes_a, boxes_b, classes_b, match_by_class=Fals
     """Greedily match boxes from set A to set B by descending IoU.
 
     Handles a different number of boxes in each set: every box can be matched
-    at most once, leftover boxes stay unmatched. Returns the list of IoU values
-    for the matched pairs along with the matched index sets.
+    at most once, leftover boxes stay unmatched. Returns the matched pairs as a
+    list of (index_a, index_b, iou) tuples along with the matched index sets.
     """
     candidates = []
     for i, box_a in enumerate(boxes_a):
@@ -63,15 +63,125 @@ def match_detections(boxes_a, classes_a, boxes_b, classes_b, match_by_class=Fals
 
     used_a = set()
     used_b = set()
-    matched_ious = []
+    matched_pairs = []
     for iou, i, j in candidates:
         if i in used_a or j in used_b:
             continue
         used_a.add(i)
         used_b.add(j)
-        matched_ious.append(iou)
+        matched_pairs.append((i, j, iou))
 
-    return matched_ious, used_a, used_b
+    return matched_pairs, used_a, used_b
+
+
+def _bbox_geometry(box):
+    """Return (cx, cy, w, h) for a [x1, y1, x2, y2] box, or None."""
+    b = _normalise_bbox(box)
+    if b is None:
+        return None
+    w = b[2] - b[0]
+    h = b[3] - b[1]
+    cx = b[0] + w / 2.0
+    cy = b[1] + h / 2.0
+    return (cx, cy, w, h)
+
+
+def bbox_pair_difference(box_a, box_b):
+    """Per-pair geometric difference between two boxes.
+
+    Returns a dict with:
+      - iou_diff: 1 - IoU (0 = identical overlap, 1 = no overlap)
+      - center_distance: Euclidean distance between box centers (pixels)
+      - size_diff: |w_a - w_b| + |h_a - h_b| (pixels)
+    """
+    iou = compute_iou(box_a, box_b)
+    ga = _bbox_geometry(box_a)
+    gb = _bbox_geometry(box_b)
+    if ga is None or gb is None:
+        return {'iou_diff': 1.0, 'center_distance': 0.0, 'size_diff': 0.0}
+
+    center_distance = ((ga[0] - gb[0]) ** 2 + (ga[1] - gb[1]) ** 2) ** 0.5
+    size_diff = abs(ga[2] - gb[2]) + abs(ga[3] - gb[3])
+    return {
+        'iou_diff': 1.0 - iou,
+        'center_distance': center_distance,
+        'size_diff': size_diff,
+    }
+
+
+def score_bbox_difference(boxes_a, classes_a, boxes_b, classes_b,
+                          match_by_class=False, iou_threshold=0.0):
+    """Score the difference between two sets of bounding boxes.
+
+    A normalised difference score in [0, 1] is produced where 0 means the two
+    detection outputs are identical and 1 means they are completely different.
+
+    Matched pairs (greedy by IoU) whose IoU is at least ``iou_threshold`` are
+    considered to be the same detection and contribute their per-pair IoU
+    difference (1 - IoU). Pairs below the threshold are rejected: their two
+    boxes are then counted as unmatched. Every unmatched box (present in one
+    set but missing from the other) is treated as a maximal difference of 1.0.
+    The total is normalised by the union count (num_a + num_b - accepted
+    matches), so the score behaves even when the two sets have a different
+    number of boxes.
+    """
+    raw_pairs, _used_a, _used_b = match_detections(
+        boxes_a, classes_a, boxes_b, classes_b, match_by_class
+    )
+
+    # Apply the IoU acceptance threshold: only pairs at/above the threshold
+    # are treated as the same detection.
+    matched_pairs = [(i, j, iou) for (i, j, iou) in raw_pairs if iou >= iou_threshold]
+    used_a = {i for (i, _j, _iou) in matched_pairs}
+    used_b = {j for (_i, j, _iou) in matched_pairs}
+
+    num_a = len(boxes_a)
+    num_b = len(boxes_b)
+    matched = len(matched_pairs)
+    unmatched_a = num_a - len(used_a)
+    unmatched_b = num_b - len(used_b)
+
+    iou_diffs = []
+    center_distances = []
+    size_diffs = []
+    for i, j, _iou in matched_pairs:
+        diff = bbox_pair_difference(boxes_a[i], boxes_b[j])
+        iou_diffs.append(diff['iou_diff'])
+        center_distances.append(diff['center_distance'])
+        size_diffs.append(diff['size_diff'])
+
+    # Union count: accepted matched pairs counted once + all unmatched boxes.
+    union_count = num_a + num_b - matched
+
+    if union_count == 0:
+        # Both sets empty -> no difference.
+        diff_score = 0.0
+    else:
+        total_diff = sum(iou_diffs) + float(unmatched_a + unmatched_b)
+        diff_score = total_diff / union_count
+
+    mean_matched_diff = (sum(iou_diffs) / matched) if matched > 0 else 0.0
+    mean_center_distance = (sum(center_distances) / matched) if matched > 0 else 0.0
+    mean_size_diff = (sum(size_diffs) / matched) if matched > 0 else 0.0
+    mean_iou = (
+        sum(1.0 - d for d in iou_diffs) / matched if matched > 0 else 0.0
+    )
+
+    return {
+        'diff_score': float(diff_score),
+        'mean_matched_diff': float(mean_matched_diff),
+        'mean_center_distance': float(mean_center_distance),
+        'mean_size_diff': float(mean_size_diff),
+        'mean_iou': float(mean_iou),
+        'count_diff': int(abs(num_a - num_b)),
+        'matched_pairs': int(matched),
+        'num_boxes_a': int(num_a),
+        'num_boxes_b': int(num_b),
+        'unmatched_a': int(unmatched_a),
+        'unmatched_b': int(unmatched_b),
+    }
+
+
 
 
 class FactoryNode:
@@ -140,7 +250,7 @@ class FactoryNode:
             ):
                 dpg.add_slider_float(
                     tag=node.tag_node_threshold_value_name,
-                    label="IoU th",
+                    label="IoU match th",
                     width=small_window_w - 80,
                     default_value=0.5,
                     min_value=0.0,
@@ -163,7 +273,7 @@ class FactoryNode:
             ):
                 dpg.add_text(
                     tag=node.tag_node_status_value_name,
-                    default_value='mean IoU: --',
+                    default_value='bbox diff: --',
                 )
 
             with dpg.node_attribute(
@@ -172,7 +282,7 @@ class FactoryNode:
             ):
                 dpg.add_text(
                     tag=node.tag_node_output_json_value_name,
-                    default_value='IoU metrics (JSON)',
+                    default_value='BBox diff metrics (JSON)',
                 )
 
             if use_pref_counter:
@@ -249,47 +359,42 @@ class Node(Node):
             classes_a = json_a.get('class_ids', []) or []
             classes_b = json_b.get('class_ids', []) or []
 
-            matched_ious, used_a, used_b = match_detections(
-                boxes_a, classes_a, boxes_b, classes_b, match_by_class
+            metrics = score_bbox_difference(
+                boxes_a, classes_a, boxes_b, classes_b,
+                match_by_class=match_by_class,
+                iou_threshold=threshold,
             )
 
-            above_th = [iou for iou in matched_ious if iou >= threshold]
-            matched_pairs = len(above_th)
-            mean_iou = (sum(above_th) / matched_pairs) if matched_pairs > 0 else 0.0
-            max_iou = max(above_th) if above_th else 0.0
-            min_iou = min(above_th) if above_th else 0.0
-
-            num_a = len(boxes_a)
-            num_b = len(boxes_b)
-            max_count = max(num_a, num_b)
-            # Matching ratio normalises matches against the larger detection set
-            # so it stays meaningful when the two sets differ in size.
-            match_ratio = (matched_pairs / max_count) if max_count > 0 else 0.0
+            diff_score = metrics['diff_score']
 
             # Flat numeric dict so the Chart (ObjChart) node can plot each metric
             # over time. Do NOT include 'class_ids' or non-numeric values here,
             # otherwise the Chart treats the payload as a raw detection result.
             result = {
-                'mean_iou': float(mean_iou),
-                'mean_iou_percent': float(mean_iou * 100.0),
-                'max_iou': float(max_iou),
-                'min_iou': float(min_iou),
-                'match_ratio_percent': float(match_ratio * 100.0),
-                'matched_pairs': int(matched_pairs),
-                'num_boxes_a': int(num_a),
-                'num_boxes_b': int(num_b),
-                'unmatched_a': int(num_a - len(used_a)),
-                'unmatched_b': int(num_b - len(used_b)),
+                'diff_score': float(diff_score),
+                'diff_score_percent': float(diff_score * 100.0),
+                'mean_matched_diff': float(metrics['mean_matched_diff']),
+                'mean_center_distance': float(metrics['mean_center_distance']),
+                'mean_size_diff': float(metrics['mean_size_diff']),
+                'mean_iou': float(metrics['mean_iou']),
+                'count_diff': int(metrics['count_diff']),
+                'matched_pairs': int(metrics['matched_pairs']),
+                'num_boxes_a': int(metrics['num_boxes_a']),
+                'num_boxes_b': int(metrics['num_boxes_b']),
+                'unmatched_a': int(metrics['unmatched_a']),
+                'unmatched_b': int(metrics['unmatched_b']),
             }
 
             dpg_set_value(
                 status_tag,
-                'mean IoU: {:.2f} ({}/{} matched)'.format(
-                    mean_iou, matched_pairs, max_count
+                'bbox diff: {:.2f} ({} matched, {} diff)'.format(
+                    diff_score,
+                    metrics['matched_pairs'],
+                    metrics['unmatched_a'] + metrics['unmatched_b'],
                 ),
             )
         else:
-            dpg_set_value(status_tag, 'mean IoU: -- (waiting for 2 inputs)')
+            dpg_set_value(status_tag, 'bbox diff: -- (waiting for 2 inputs)')
 
         if use_pref_counter:
             elapsed_time = time.monotonic() - start_time
