@@ -86,7 +86,27 @@ def _inspect_onnx_static(model_path: str) -> dict:
     output_format = "unknown"
     num_classes = 0
 
-    if num_outputs >= 2:
+    # NanoDet-multi: 6 outputs — 3 cls + 3 reg heads per stride
+    if num_outputs == 6:
+        out_shapes = [_shape_from_type_proto(out.type) for out in graph.output]
+        if all(len(s) == 3 for s in out_shapes):
+            # Require all last dimensions to be concrete integers; dynamic dims
+            # prevent reliable format detection and must be treated as unknown.
+            if all(isinstance(s[2], int) for s in out_shapes):
+                last_dims = [s[2] for s in out_shapes]
+                unique_last = set(last_dims)
+                if len(unique_last) == 2:
+                    d1, d2 = sorted(unique_last)  # d1 < d2
+                    # d1 is the smaller dim: matches reg_channels = 4*(reg_max+1)
+                    # d2 is the larger dim: num_classes
+                    for reg_max in (7, 15):
+                        reg_ch = 4 * (reg_max + 1)
+                        if d1 == reg_ch and d2 > 0:
+                            output_format = "nanodet_multi"
+                            num_classes = d2
+                            break
+
+    if output_format == "unknown" and num_outputs >= 2:
         has_boxes_output = False
         for out in graph.output:
             out_shape = _shape_from_type_proto(out.type)
@@ -241,11 +261,40 @@ def inspect_onnx_model(model_path: str) -> dict:
     # YOLO11 / YOLOv8 Ultralytics:  output shape [1, num_classes+4, num_anchors]
     # YOLOX:                         output shape [1, num_anchors, num_classes+5]
     # SSD:                           multiple outputs (boxes, scores, class_ids, ...)
+    # NanoDet-multi:                 6 outputs — 3 cls heads + 3 reg heads per stride
     output_format = "unknown"
     num_classes = 0
 
+    # NanoDet-multi detection: 6 outputs where half have the same last dim (cls)
+    # and half have last dim == 4*(reg_max+1) (reg), grouped by equal anchor counts.
+    if num_outputs == 6:
+        out_shapes = [list(out.shape) for out in all_outputs]
+        # All must be rank-3 (1, n_anchors, channels)
+        if all(len(s) == 3 for s in out_shapes):
+            # Require all last dimensions to be concrete integers; dynamic dims
+            # prevent reliable format detection and must be treated as unknown.
+            if all(isinstance(s[2], int) for s in out_shapes):
+                last_dims = [s[2] for s in out_shapes]
+                unique_last = set(last_dims)
+                # Expect exactly 2 distinct last dims: cls channels and reg channels
+                if len(unique_last) == 2:
+                    d1, d2 = sorted(unique_last)  # d1 < d2
+                    # d1 is the smaller dim: matches reg_channels = 4*(reg_max+1)
+                    # d2 is the larger dim: num_classes
+                    for reg_max in (7, 15):
+                        reg_ch = 4 * (reg_max + 1)
+                        if d1 == reg_ch and d2 > 0:
+                            output_format = "nanodet_multi"
+                            num_classes = d2
+                            logger.info(
+                                f"[ONNX Inspector] Detected NanoDet-multi format: "
+                                f"num_classes={num_classes}, reg_max={reg_max}, "
+                                f"6 separate heads"
+                            )
+                            break
+
     # SSD detection: multiple outputs where one has last dim == 4 (boxes)
-    if num_outputs >= 2:
+    if output_format == "unknown" and num_outputs >= 2:
         has_boxes_output = False
         for out in all_outputs:
             out_shape = list(out.shape)
@@ -321,10 +370,11 @@ def inspect_onnx_model(model_path: str) -> dict:
                 f"{output_shape}; format detection skipped."
             )
     else:
-        logger.warning(
-            f"[ONNX Inspector] Unexpected output rank {len(output_shape)} "
-            f"(expected 3); format detection skipped."
-        )
+        if output_format == "unknown":
+            logger.warning(
+                f"[ONNX Inspector] Unexpected output rank {len(output_shape)} "
+                f"(expected 3); format detection skipped."
+            )
 
     if output_format != "unknown":
         logger.info(
