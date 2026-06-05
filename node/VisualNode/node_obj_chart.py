@@ -380,7 +380,7 @@ class Node(Chart):
         if not dpg.does_item_exist(class_slots_tag):
             return
 
-        normalized_items = [str(item) for item in items if str(item) != ""]
+        normalized_items = [normalized for normalized in (str(item) for item in items) if normalized]
         if not normalized_items:
             return
 

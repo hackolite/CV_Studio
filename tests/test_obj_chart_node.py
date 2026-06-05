@@ -48,6 +48,9 @@ def test_obj_chart_dict_dropdown_items():
 
     assert items == ["cpu_percent", "memory_percent", "3"]
 
+    assert get_dict_dropdown_items(None) == []
+    assert get_dict_dropdown_items(["cpu_percent"]) == []
+
 
 def test_obj_chart_time_bucket():
     """Test that time bucket calculation works correctly"""
