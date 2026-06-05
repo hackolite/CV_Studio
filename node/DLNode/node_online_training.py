@@ -77,6 +77,18 @@ _BUILTIN_STUDENT_MODELS = [
         'num_classes': 80,
         'class_names': {str(k): v for k, v in _COCO_CLASSES.items()},
     },
+    {
+        'name': 'NanoDet(416x416)',
+        'path': os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'object_detection', 'NanoDet', 'model', 'object_detection_nanodet_2022nov.onnx',
+        ),
+        'output_format': 'nanodet_multi',
+        'input_width': 416,
+        'input_height': 416,
+        'num_classes': 80,
+        'class_names': {str(k): v for k, v in _COCO_CLASSES.items()},
+    },
 ]
 
 

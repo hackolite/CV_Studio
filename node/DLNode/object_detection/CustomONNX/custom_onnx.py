@@ -159,6 +159,10 @@ class CustomONNX:
             bboxes, scores, class_ids = self._postprocess_ssd(
                 outputs, orig_w, orig_h
             )
+        elif self.output_format == "nanodet_multi":
+            bboxes, scores, class_ids = self._postprocess_nanodet_multi(
+                outputs, orig_w, orig_h
+            )
         else:
             raw_output = outputs[0]
             logger.debug(f"[CustomONNX] Raw output shape: {raw_output.shape}")
@@ -206,7 +210,7 @@ class CustomONNX:
             return self._preprocess_yolox(image)
         elif self.output_format == "ssd":
             return self._preprocess_ssd(image)
-        elif self.output_format == "nanodet":
+        elif self.output_format in ("nanodet", "nanodet_multi"):
             return self._preprocess_nanodet(image)
         return self._preprocess_yolo11(image)
 
@@ -929,6 +933,64 @@ class CustomONNX:
             np.array(scores_list)[indices],
             filtered_class_ids[indices],
         )
+
+    def _postprocess_nanodet_multi(self, outputs, orig_w, orig_h):
+        """Post-process NanoDet multi-head output (separate cls + reg tensors per stride).
+
+        This handles models like ``object_detection_nanodet_2022nov.onnx`` that export
+        6 separate output tensors instead of a single concatenated tensor:
+          - 3 classification heads: shape (1, n_anchors, num_classes)
+          - 3 regression heads:     shape (1, n_anchors, 4*(reg_max+1))
+
+        The method groups outputs by anchor count, concatenates cls and reg per stride,
+        then forwards the combined single tensor to ``_postprocess_nanodet``.
+        """
+        # Separate cls and reg outputs by their last dimension.
+        # cls: last_dim == num_classes, reg: last_dim == 4*(reg_max+1)
+        cls_by_anchors = {}
+        reg_by_anchors = {}
+        for out in outputs:
+            out_squeezed = np.squeeze(out, axis=0)  # (n_anchors, channels)
+            n_anchors, channels = out_squeezed.shape
+            if channels == self.num_classes:
+                cls_by_anchors[n_anchors] = out_squeezed
+            else:
+                reg_by_anchors[n_anchors] = out_squeezed
+
+        if not cls_by_anchors or not reg_by_anchors:
+            logger.warning(
+                "[CustomONNX] nanodet_multi: could not separate cls/reg outputs. "
+                f"num_classes={self.num_classes}. Returning empty detections."
+            )
+            return np.array([]), np.array([]), np.array([])
+
+        # Build combined tensor by pairing cls+reg per anchor count, sorted descending
+        anchor_counts = sorted(cls_by_anchors.keys(), reverse=True)
+        combined_parts = []
+        for n in anchor_counts:
+            if n not in reg_by_anchors:
+                logger.warning(
+                    f"[CustomONNX] nanodet_multi: no reg output for anchor count {n}. Skipping."
+                )
+                continue
+            cls = cls_by_anchors[n]   # (n, num_classes)
+            reg = reg_by_anchors[n]   # (n, 4*(reg_max+1))
+            combined_parts.append(np.concatenate([cls, reg], axis=1))  # (n, num_classes+reg)
+
+        if not combined_parts:
+            logger.warning(
+                "[CustomONNX] nanodet_multi: no valid cls+reg pairs found. "
+                "Returning empty detections."
+            )
+            return np.array([]), np.array([]), np.array([])
+
+        combined = np.concatenate(combined_parts, axis=0)  # (total_anchors, num_classes+reg)
+        combined = combined[np.newaxis, ...]               # (1, total_anchors, num_classes+reg)
+
+        logger.debug(
+            f"[CustomONNX] nanodet_multi: combined tensor shape={combined.shape}"
+        )
+        return self._postprocess_nanodet(combined, orig_w, orig_h)
 
     # ------------------------------------------------------------------
     # YOLOX grid decoding

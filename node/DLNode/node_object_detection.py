@@ -137,6 +137,15 @@ _BUILTIN_MODELS = [
         # heuristic mistake them for DFL regression values.  Force classes-first.
         'nanodet_reg_first': False,
     },
+    {
+        'name': 'NanoDet(416x416)',
+        'path': os.path.join(_OBJECT_DETECTION_BASE, 'NanoDet', 'model', 'object_detection_nanodet_2022nov.onnx'),
+        'output_format': 'nanodet_multi',
+        'input_width': 416,
+        'input_height': 416,
+        'num_classes': 80,
+        'class_names': _COCO_CLASSES,
+    },
 ]
 
 # ---------------------------------------------------------------------------
