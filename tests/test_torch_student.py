@@ -122,3 +122,92 @@ def test_forward_numpy_returns_array():
     raw = ts.forward_numpy(blob)
     assert isinstance(raw, np.ndarray)
     assert raw.shape == (1, 7, 5)  # (1, C+4, A)
+
+
+# ─────────────────────────── NanoDet (GFL/DFL) decode ────────────────────────
+def _make_nanodet_student(num_classes=3, input_size=64, reg_max=7, seed=0):
+    """Build a TorchStudent around a tiny NanoDet-shaped raw output tensor."""
+    import torch.nn as nn
+    from node.DLNode.online_training.ort_training_artifacts import nanodet_anchor_grid
+
+    centers, strides = nanodet_anchor_grid(input_size, input_size)
+    anchors = centers.shape[0]
+    channels = num_classes + 4 * (reg_max + 1)
+
+    class TinyNano(nn.Module):
+        def __init__(self):
+            super().__init__()
+            torch.manual_seed(seed)
+            self.raw = nn.Parameter(torch.randn(1, anchors, channels) * 0.5)
+
+        def forward(self, x):
+            return self.raw
+
+    ts = object.__new__(TorchStudent)
+    ts.model_path = "<tiny-nano>"
+    ts.input_width = input_size
+    ts.input_height = input_size
+    ts.output_format = "nanodet"
+    ts.num_classes = num_classes
+    ts.learning_rate = 0.5
+    ts.train_scope = "all"
+    ts.nanodet_reg_first = False
+    ts._nanodet_grid_cache = {}
+    ts.module = TinyNano()
+    ts._trainable_params = list(ts.module.parameters())
+    ts.optimizer = torch.optim.SGD(ts._trainable_params, lr=0.5, momentum=0.9)
+    ts._initial_state = {k: v.detach().clone()
+                         for k, v in ts.module.state_dict().items()}
+    ts.updates = 0
+    return ts, centers, strides, reg_max
+
+
+def test_nanodet_decode_matches_reference():
+    ts, centers, strides, reg_max = _make_nanodet_student(num_classes=3, input_size=64)
+    C = ts.num_classes
+    reg_bins = reg_max + 1
+    boxes, scores = ts._decode(ts.module.raw)
+    boxes = boxes.detach().numpy()
+    scores = scores.detach().numpy()
+
+    out = ts.module.raw.detach().numpy()[0]
+    A = out.shape[0]
+    cls = out[:, :C]
+    reg = out[:, C:].reshape(A, 4, reg_bins)
+    ref_scores = 1.0 / (1.0 + np.exp(-cls))
+    reg = reg - reg.max(axis=2, keepdims=True)
+    sm = np.exp(reg)
+    sm /= sm.sum(axis=2, keepdims=True)
+    dist = (sm * np.arange(reg_bins)).sum(axis=2)
+    cx, cy, st = centers[:, 0], centers[:, 1], strides[:, 0]
+    ref_boxes = np.stack([cx - dist[:, 0] * st, cy - dist[:, 1] * st,
+                          cx + dist[:, 2] * st, cy + dist[:, 3] * st], axis=1)
+
+    assert boxes.shape == (A, 4)
+    assert scores.shape == (A, C)
+    np.testing.assert_allclose(boxes, ref_boxes, atol=1e-3)
+    np.testing.assert_allclose(scores, ref_scores, atol=1e-5)
+
+
+def test_nanodet_backprop_reduces_loss():
+    ts, _c, _s, _r = _make_nanodet_student(num_classes=3, input_size=64)
+    blob = np.zeros((1, 3, 64, 64), dtype=np.float32)
+    teacher_boxes = [[20.0, 20.0, 44.0, 44.0]]
+    teacher_classes = [1]
+
+    param_before = ts.module.raw.detach().clone()
+    first = ts.train_step(blob, teacher_boxes, teacher_classes, 64, 64)
+    assert first is not None
+    assert not torch.allclose(param_before, ts.module.raw.detach())
+
+    losses = [first]
+    for _ in range(40):
+        losses.append(ts.train_step(blob, teacher_boxes, teacher_classes, 64, 64))
+    assert losses[-1] < 0.5 * losses[0]
+
+
+def test_nanodet_teacher_scale_is_letterbox_uniform():
+    ts, _c, _s, _r = _make_nanodet_student(input_size=64)
+    # 128x64 image → ratio = min(64/64, 64/128) = 0.5 on every coordinate.
+    scale = ts._teacher_input_scale(128, 64, torch.float32).numpy()
+    np.testing.assert_allclose(scale, [0.5, 0.5, 0.5, 0.5], atol=1e-6)
