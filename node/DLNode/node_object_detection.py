@@ -155,6 +155,9 @@ _BUILTIN_MODELS = [
     },
 ]
 
+# Set of built-in model names — used to block deletion of default models.
+_BUILTIN_MODEL_NAMES: set = {m['name'] for m in _BUILTIN_MODELS}
+
 # ---------------------------------------------------------------------------
 # Module-level helpers
 # ---------------------------------------------------------------------------
@@ -222,6 +225,12 @@ class FactoryNode:
                 dpg.configure_item(node.tag_node_rejected_classes_value_name, items=class_items)
                 # Clear the rejected classes selection to avoid invalid class IDs
                 dpg_set_value(node.tag_node_rejected_classes_value_name, "")
+            # Disable the delete button for built-in (non-deletable) models
+            try:
+                is_builtin = selected_model in _BUILTIN_MODEL_NAMES
+                dpg.configure_item(node.tag_delete_btn, enabled=not is_builtin)
+            except Exception:
+                pass
 
         node.tag_node_output_image_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
         node.tag_node_output_image = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
@@ -587,6 +596,10 @@ class FactoryNode:
                     callback=_on_delete_clicked,
                 )
                 dpg.bind_item_theme(delete_btn, delete_model_btn_theme)
+                # Disable for the initially-selected model if it is built-in
+                default_selected = list(node._model_class.keys())[0] if node._model_class else ""
+                if default_selected in _BUILTIN_MODEL_NAMES:
+                    dpg.configure_item(delete_btn, enabled=False)
 
 
 
@@ -1013,11 +1026,28 @@ class Node(Node):
     def _delete_custom_model(cls, name: str) -> bool:
         """Remove a model from the persistent registry and runtime dictionaries.
 
+        Built-in (default) models cannot be deleted.
         Returns True when the model was found and removed.
         """
         if not name:
             return False
+        if name in _BUILTIN_MODEL_NAMES:
+            logger.warning(f"[Delete] '{name}' is a built-in model and cannot be deleted.")
+            return False
         found = name in cls._model_class or name in cls._model_path_setting
+        # Delete the ONNX file from disk if it lives in the uploads directory
+        onnx_path = cls._model_path_setting.get(name)
+        if onnx_path:
+            try:
+                onnx_abs = os.path.abspath(onnx_path)
+                uploads_abs = os.path.abspath(_UPLOADS_DIR)
+                if (os.path.commonpath([onnx_abs, uploads_abs]) == uploads_abs
+                        and onnx_abs != uploads_abs
+                        and os.path.isfile(onnx_abs)):
+                    os.remove(onnx_abs)
+                    logger.info(f"[Delete] ONNX file deleted: {onnx_abs}")
+            except Exception as exc:
+                logger.warning(f"[Delete] Could not delete ONNX file for '{name}': {exc}")
         try:
             custom_models_registry.remove_entry(name)
             logger.info(f"[Delete] Registry entry removed for '{name}'.")
@@ -1035,6 +1065,9 @@ class Node(Node):
         """Delete the currently-selected model and refresh the node dropdowns."""
         if not name:
             logger.warning("[Delete] No model selected — nothing to delete.")
+            return
+        if name in _BUILTIN_MODEL_NAMES:
+            logger.warning(f"[Delete] '{name}' is a built-in model and cannot be deleted.")
             return
         removed = Node._delete_custom_model(name)
         if not removed:
@@ -1062,6 +1095,13 @@ class Node(Node):
             dpg_set_value(self.tag_node_rejected_classes_value_name, "")
         except Exception as exc:
             logger.warning(f"[Delete] Could not update classes dropdown: {exc}")
+
+        # Update delete button state for the new selection
+        try:
+            is_builtin = new_default in _BUILTIN_MODEL_NAMES
+            dpg.configure_item(self.tag_delete_btn, enabled=not is_builtin)
+        except Exception as exc:
+            logger.warning(f"[Delete] Could not update delete button state: {exc}")
 
     def _per_class_nms(self, bboxes, scores, class_ids):
         """Apply NMS per class to keep only the best detection per class.
