@@ -88,7 +88,7 @@ class FactoryNode:
                 dpg.add_combo(
                     tag=node.tag_operation_value_name,
                     label='Operation',
-                    items=['Addition (+)', 'Subtraction (-)', 'Multiplication (*)', 'Division (/)'],
+                    items=['Addition (+)', 'Subtraction (-)', 'Multiplication (*)', 'Division (/)', 'Fusion'],
                     default_value='Addition (+)',
                     width=200,
                 )
@@ -203,32 +203,44 @@ class OperatorNode(Node):
 
         result = None
         if isinstance(json_a, dict) and isinstance(json_b, dict):
-            # Apply operation key-by-key on matching keys
-            result = {}
-            
-            # Get all keys that exist in both dictionaries
-            common_keys = set(json_a.keys()) & set(json_b.keys())
-            
-            # Process only numeric values
-            for key in common_keys:
-                value_a = json_a[key]
-                value_b = json_b[key]
-                
-                # Only process numeric values (int or float)
-                if isinstance(value_a, (int, float)) and isinstance(value_b, (int, float)):
-                    result[key] = self._apply_operation(value_a, value_b, operation)
-            
-            # Update status
-            if result:
+            if operation == 'Fusion':
+                # Merge both JSONs with prefixes A_ and B_
+                result = {}
+                for key, value in json_a.items():
+                    result['A_' + key] = value
+                for key, value in json_b.items():
+                    result['B_' + key] = value
                 dpg_set_value(
                     status_tag,
-                    f'{operation}: {len(result)} keys processed',
+                    f'Fusion: {len(result)} keys',
                 )
             else:
-                dpg_set_value(
-                    status_tag,
-                    'No matching numeric keys',
-                )
+                # Apply operation key-by-key on matching keys
+                result = {}
+                
+                # Get all keys that exist in both dictionaries
+                common_keys = set(json_a.keys()) & set(json_b.keys())
+                
+                # Process only numeric values
+                for key in common_keys:
+                    value_a = json_a[key]
+                    value_b = json_b[key]
+                    
+                    # Only process numeric values (int or float)
+                    if isinstance(value_a, (int, float)) and isinstance(value_b, (int, float)):
+                        result[key] = self._apply_operation(value_a, value_b, operation)
+                
+                # Update status
+                if result:
+                    dpg_set_value(
+                        status_tag,
+                        f'{operation}: {len(result)} keys processed',
+                    )
+                else:
+                    dpg_set_value(
+                        status_tag,
+                        'No matching numeric keys',
+                    )
         else:
             # No valid inputs
             if json_a is None and json_b is None:
