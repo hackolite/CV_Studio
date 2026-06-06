@@ -431,6 +431,13 @@ class Node(Chart):
         
         Instead of always showing all COCO classes, show only those that
         have been seen in the input data plus 'All'.
+
+        Args:
+            class_ids: list of detected class IDs from input JSON
+            class_names: dict mapping string class IDs to human-readable names
+
+        Returns:
+            list of formatted strings like ["All", "0: person", "2: car"]
         """
         items = ["All"]
         seen_ids = set()
@@ -459,7 +466,15 @@ class Node(Chart):
         return items
 
     def _get_selected_classes_from_slots(self, tag_node_name, valid_keys=None):
-        """Read selected values from class slot combos, optionally filtering by valid_keys."""
+        """Read selected values from class slot combos.
+
+        Args:
+            tag_node_name: the node tag used to locate ClassSlots container
+            valid_keys: optional set of allowed values to filter selections
+
+        Returns:
+            list of selected class keys that match valid_keys (if provided)
+        """
         selected_classes = []
         class_slots_tag = f"{tag_node_name}:ClassSlots"
         if dpg.does_item_exist(class_slots_tag):
