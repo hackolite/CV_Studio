@@ -26,6 +26,22 @@ from node.DLNode.object_detection.onnx_session_utils import make_session
 os.environ["ORT_CUDA_USE_CUDNN"] = "0"
 
 logger = logging.getLogger(__name__)
+
+# Build the tuple of OnnxRuntime inference exceptions to catch gracefully.
+# ``NotImplemented`` (opset not supported by this ORT build) exists in all
+# modern ORT versions but is guarded with getattr for forward-compatibility.
+_ORT_STATE = onnxruntime.capi.onnxruntime_pybind11_state
+_ORT_INFERENCE_ERRORS = tuple(
+    exc
+    for exc in [
+        getattr(_ORT_STATE, "InvalidArgument", None),
+        getattr(_ORT_STATE, "Fail", None),
+        getattr(_ORT_STATE, "RuntimeException", None),
+        getattr(_ORT_STATE, "NotImplemented", None),
+        getattr(_ORT_STATE, "InvalidGraph", None),
+    ]
+    if exc is not None
+)
 class CustomONNX:
     """Generic ONNX object-detection wrapper.
 
@@ -136,24 +152,33 @@ class CustomONNX:
         )
         try:
             outputs = self.onnx_session.run(None, {self.input_name: blob})
-        except (
-            onnxruntime.capi.onnxruntime_pybind11_state.InvalidArgument,
-            onnxruntime.capi.onnxruntime_pybind11_state.Fail,
-            onnxruntime.capi.onnxruntime_pybind11_state.RuntimeException,
-        ) as exc:
+        except _ORT_INFERENCE_ERRORS as exc:
+            exc_str = str(exc)
+            _empty = (
+                np.empty((0, 4), dtype=np.float32),
+                np.empty((0,), dtype=np.float32),
+                np.empty((0,), dtype=np.int64),
+            )
             # Models with built-in NMS/post-processing (e.g. nanodet_qdq) may
             # raise when there are zero detections (Gather into an empty
             # tensor).  Return empty results rather than crashing the pipeline.
-            if "indices element out of data bounds" in str(exc):
+            if "indices element out of data bounds" in exc_str:
                 logger.debug(
                     "[CustomONNX] Model returned zero detections "
                     "(Gather into empty tensor) — returning empty results."
                 )
-                return (
-                    np.empty((0, 4), dtype=np.float32),
-                    np.empty((0,), dtype=np.float32),
-                    np.empty((0,), dtype=np.int64),
+                return _empty
+            # Unsupported ONNX opset operator (e.g. Reshape(19) on an older
+            # OnnxRuntime build).  Log a clear diagnostic and return empty
+            # results so the rest of the pipeline keeps running.
+            if "NOT_IMPLEMENTED" in exc_str or "NotImplemented" in type(exc).__name__:
+                logger.error(
+                    "[CustomONNX] OnnxRuntime does not support an operator "
+                    f"used by this model (opset mismatch). "
+                    f"Consider upgrading onnxruntime or exporting the model "
+                    f"with a lower opset. Details: {exc}"
                 )
+                return _empty
             raise
 
         if self.output_format == "ssd":
