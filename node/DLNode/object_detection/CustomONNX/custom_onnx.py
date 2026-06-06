@@ -26,6 +26,22 @@ from node.DLNode.object_detection.onnx_session_utils import make_session
 os.environ["ORT_CUDA_USE_CUDNN"] = "0"
 
 logger = logging.getLogger(__name__)
+
+# Build the tuple of OnnxRuntime inference exceptions to catch gracefully.
+# ``NotImplemented`` (opset not supported by this ORT build) exists in all
+# modern ORT versions but is guarded with getattr for forward-compatibility.
+_ORT_STATE = onnxruntime.capi.onnxruntime_pybind11_state
+_ORT_INFERENCE_ERRORS = tuple(
+    exc
+    for exc in [
+        getattr(_ORT_STATE, "InvalidArgument", None),
+        getattr(_ORT_STATE, "Fail", None),
+        getattr(_ORT_STATE, "RuntimeException", None),
+        getattr(_ORT_STATE, "NotImplemented", None),
+        getattr(_ORT_STATE, "InvalidGraph", None),
+    ]
+    if exc is not None
+)
 class CustomONNX:
     """Generic ONNX object-detection wrapper.
 
@@ -136,7 +152,7 @@ class CustomONNX:
         )
         try:
             outputs = self.onnx_session.run(None, {self.input_name: blob})
-        except Exception as exc:
+        except _ORT_INFERENCE_ERRORS as exc:
             exc_str = str(exc)
             _empty = (
                 np.empty((0, 4), dtype=np.float32),
