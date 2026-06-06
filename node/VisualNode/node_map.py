@@ -328,11 +328,12 @@ def get_labels_tile(z, x, y, use_cache=True, provider_name=None, hidpi=False):
     if the provider has no labels overlay configured.
     """
     provider = get_provider(provider_name or DEFAULT_PROVIDER)
-    labels_url = provider.get("labels_url_hidpi") if (hidpi and provider.get("labels_url_hidpi")) else provider.get("labels_url")
+    labels_url_hidpi = provider.get("labels_url_hidpi")
+    use_hidpi = bool(hidpi and labels_url_hidpi)
+    labels_url = labels_url_hidpi if use_hidpi else provider.get("labels_url")
     if not labels_url:
         return None
 
-    use_hidpi = bool(hidpi and provider.get("labels_url_hidpi"))
     tile_px = provider_tile_size(provider, hidpi=use_hidpi)
 
     cache_dir = _provider_cache_dir((provider_name or DEFAULT_PROVIDER) + "__labels", hidpi=use_hidpi)
