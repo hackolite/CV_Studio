@@ -53,6 +53,13 @@ except ImportError:
     print("Warning: contextily not installed. Map rendering will be limited.")
     CONTEXTILY_AVAILABLE = False
 
+# Optional Pillow extras for higher-quality post-processing
+try:
+    from PIL import ImageDraw, ImageFilter, ImageEnhance
+    PIL_DRAW_AVAILABLE = True
+except ImportError:  # Pillow is required, but be defensive
+    PIL_DRAW_AVAILABLE = False
+
 # Cache directory for map tiles and generated maps
 # contextily has its own caching mechanism, but we create this for compatibility
 CACHE_DIR = os.path.join(tempfile.gettempdir(), 'cv_studio_map_cache')
@@ -94,12 +101,114 @@ SIMPLIFIED_CONTINENTS = {
 # Enhanced OSM Tile Management (inspired by DearPyGui OSM implementation)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# OSM tile configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# Tile provider registry
+# ─────────────────────────────────────────────────────────────────────────────
+# Each entry describes a tile source:
+#   url         : URL template with {z}/{x}/{y} placeholders. May contain {s}
+#                 (subdomain), which is substituted from `subdomains`.
+#   url_hidpi   : Optional URL template used when the user enables HiDPI/@2x
+#                 rendering. Same placeholders; serves 512px tiles.
+#   tile_size   : Native tile size in pixels (almost always 256).
+#   max_zoom    : Maximum supported zoom level for this provider.
+#   attribution : Short attribution string overlaid on the rendered map.
+#   subdomains  : Optional list of subdomains used to substitute `{s}`.
+#   labels_url  : Optional URL template for a transparent labels-only layer
+#                 that can be composited on top of the basemap.
+#   labels_url_hidpi : Optional HiDPI variant of `labels_url`.
+#
+# Adding a new provider only requires appending an entry here — the rest of
+# the rendering pipeline reads everything through this registry.
+TILE_PROVIDERS = {
+    "OSM Standard": {
+        "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "url_hidpi": None,
+        "tile_size": 256,
+        "max_zoom": 19,
+        "attribution": "© OpenStreetMap contributors",
+        "subdomains": None,
+        "labels_url": None,
+        "labels_url_hidpi": None,
+    },
+    "CartoDB Positron": {
+        "url": "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+        "url_hidpi": "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png",
+        "tile_size": 256,
+        "max_zoom": 20,
+        "attribution": "© OpenStreetMap contributors, © CARTO",
+        "subdomains": ["a", "b", "c", "d"],
+        "labels_url": "https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png",
+        "labels_url_hidpi": "https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}@2x.png",
+    },
+    "CartoDB Dark Matter": {
+        "url": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+        "url_hidpi": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
+        "tile_size": 256,
+        "max_zoom": 20,
+        "attribution": "© OpenStreetMap contributors, © CARTO",
+        "subdomains": ["a", "b", "c", "d"],
+        "labels_url": "https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png",
+        "labels_url_hidpi": "https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}@2x.png",
+    },
+    "Esri World Imagery": {
+        "url": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        "url_hidpi": None,
+        "tile_size": 256,
+        "max_zoom": 19,
+        "attribution": "Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics",
+        "subdomains": None,
+        # Esri reference overlay (place names, boundaries)
+        "labels_url": "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+        "labels_url_hidpi": None,
+    },
+    "OpenTopoMap": {
+        "url": "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+        "url_hidpi": None,
+        "tile_size": 256,
+        "max_zoom": 17,
+        "attribution": "© OpenTopoMap (CC-BY-SA), © OpenStreetMap contributors",
+        "subdomains": ["a", "b", "c"],
+        "labels_url": None,
+        "labels_url_hidpi": None,
+    },
+}
+
+DEFAULT_PROVIDER = "OSM Standard"
+
+# OSM tile configuration (kept for backward compatibility with existing tests)
 TILE_SIZE = 256
-OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-OSM_HEADERS = {"User-Agent": "CV_Studio/1.0"}
+OSM_TILE_URL = TILE_PROVIDERS[DEFAULT_PROVIDER]["url"]
+OSM_HEADERS = {"User-Agent": "CV_Studio/1.0 (+https://github.com/hackolite/CV_Studio)"}
 OSM_CACHE_DIR = os.path.join(tempfile.gettempdir(), '.osm_cache')
 os.makedirs(OSM_CACHE_DIR, exist_ok=True)
+
+
+def get_provider(name):
+    """Return the provider entry for `name`, falling back to OSM if missing."""
+    return TILE_PROVIDERS.get(name) or TILE_PROVIDERS[DEFAULT_PROVIDER]
+
+
+def provider_tile_size(provider, hidpi=False):
+    """Effective on-canvas tile size: 2× the native size when HiDPI is on
+    *and* the provider exposes an HiDPI URL template."""
+    base = int(provider.get("tile_size", 256))
+    if hidpi and provider.get("url_hidpi"):
+        return base * 2
+    return base
+
+
+def _provider_cache_dir(provider_name, hidpi=False):
+    """Return (and create) a cache directory namespaced by provider + density.
+
+    Switching providers without a namespace would serve mismatched PNGs from
+    cache (e.g. OSM tiles painted under a Positron request), which is why we
+    isolate the directories per source.
+    """
+    safe = "".join(c if c.isalnum() else "_" for c in provider_name)
+    suffix = "@2x" if hidpi else ""
+    path = os.path.join(OSM_CACHE_DIR, safe + suffix)
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def lat_lon_to_tile_float(lat, lon, zoom):
@@ -146,169 +255,237 @@ def lat_lon_to_pixel_on_map(lat, lon, origin_fx, origin_fy, zoom):
     return px, py
 
 
-def get_osm_tile(z, x, y, use_cache=True):
+def get_osm_tile(z, x, y, use_cache=True, provider_name=None, hidpi=False):
     """
-    Download an OSM tile from the server or retrieve from cache.
-    
-    This function implements a tile download logic that avoids downloading
-    tiles every time by using a local cache.
-    
+    Download a map tile from the configured provider or retrieve from cache.
+
     Args:
-        z: Zoom level
-        x: Tile X coordinate
-        y: Tile Y coordinate
-        use_cache: Whether to use cached tiles (default: True)
-    
+        z, x, y: Standard XYZ tile coordinates.
+        use_cache: Whether to use the on-disk cache (default: True).
+        provider_name: Name of the provider in `TILE_PROVIDERS`. Defaults to
+            OSM standard for backwards compatibility with callers that still
+            pass only (z, x, y).
+        hidpi: If True and the provider exposes an `url_hidpi` template, fetch
+            the @2x variant (returned image will be 2× the native tile size).
+
     Returns:
-        PIL Image object in RGBA format, or None if download fails
+        PIL Image (RGBA), or a gray fallback tile on failure.
     """
-    # Check cache first
-    cache_path = os.path.join(OSM_CACHE_DIR, f"{z}_{x}_{y}.png")
-    
+    provider_name = provider_name or DEFAULT_PROVIDER
+    provider = get_provider(provider_name)
+    use_hidpi = bool(hidpi and provider.get("url_hidpi"))
+    tile_px = provider_tile_size(provider, hidpi=use_hidpi)
+
+    # Namespaced cache so different providers / densities never collide
+    cache_dir = _provider_cache_dir(provider_name, hidpi=use_hidpi)
+    cache_path = os.path.join(cache_dir, f"{z}_{x}_{y}.png")
+
     if use_cache and os.path.exists(cache_path):
         try:
             img = Image.open(cache_path).convert("RGBA")
-            print(f"Map node: Tile {z}/{x}/{y} loaded from cache (no download needed)")
             return img
         except Exception as e:
             print(f"Map node: Cache read error for tile {z}/{x}/{y}: {e}")
-            # Remove corrupted cache file
             try:
                 os.remove(cache_path)
-            except:
+            except OSError:
                 pass
-    
-    # Download tile
+
+    # Build the URL (optionally substituting {s} with a subdomain)
+    url_tpl = provider["url_hidpi"] if use_hidpi else provider["url"]
+    subdomains = provider.get("subdomains")
+    if subdomains and "{s}" in url_tpl:
+        # Deterministic subdomain selection — spreads load and is stable for
+        # a given tile so repeated requests can be cached upstream too.
+        sub = subdomains[(x + y) % len(subdomains)]
+        url = url_tpl.replace("{s}", sub).format(z=z, x=x, y=y)
+    else:
+        url = url_tpl.format(z=z, x=x, y=y)
+
     try:
-        url = OSM_TILE_URL.format(z=z, x=x, y=y)
-        print(f"Map node: Downloading tile {z}/{x}/{y} from OSM server...")
+        print(f"Map node: Downloading tile {z}/{x}/{y} from {provider_name}...")
         response = requests.get(url, headers=OSM_HEADERS, timeout=8)
         response.raise_for_status()
-        
+
         img = Image.open(BytesIO(response.content)).convert("RGBA")
-        
-        # Save to cache
+
         if use_cache:
             try:
                 img.save(cache_path)
-                print(f"Map node: Tile {z}/{x}/{y} saved to cache for future use")
             except Exception as e:
                 print(f"Map node: Cache write error for tile {z}/{x}/{y}: {e}")
-        
+
         return img
     except Exception as e:
         print(f"Map node: Download error for tile {z}/{x}/{y}: {e}")
-        # Return gray fallback tile
-        return Image.new("RGBA", (TILE_SIZE, TILE_SIZE), (180, 180, 180, 255))
+        # Gray fallback at the right pixel size so the canvas math stays valid
+        return Image.new("RGBA", (tile_px, tile_px), (180, 180, 180, 255))
 
 
-def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3, progress_callback=None):
+def get_labels_tile(z, x, y, use_cache=True, provider_name=None, hidpi=False):
     """
-    Assemble an OSM map centered exactly on the given coordinates.
-    
-    This function downloads the necessary tiles and assembles them with
-    sub-pixel accuracy to ensure the center point is positioned exactly
-    at the center of the resulting image.
-    
-    Implements tile download logic with caching to avoid downloading tiles every time.
-    
+    Download a transparent labels-only tile for the given provider, or None
+    if the provider has no labels overlay configured.
+    """
+    provider = get_provider(provider_name or DEFAULT_PROVIDER)
+    labels_url_hidpi = provider.get("labels_url_hidpi")
+    use_hidpi = bool(hidpi and labels_url_hidpi)
+    labels_url = labels_url_hidpi if use_hidpi else provider.get("labels_url")
+    if not labels_url:
+        return None
+
+    tile_px = provider_tile_size(provider, hidpi=use_hidpi)
+
+    cache_dir = _provider_cache_dir((provider_name or DEFAULT_PROVIDER) + "__labels", hidpi=use_hidpi)
+    cache_path = os.path.join(cache_dir, f"{z}_{x}_{y}.png")
+
+    if use_cache and os.path.exists(cache_path):
+        try:
+            return Image.open(cache_path).convert("RGBA")
+        except Exception:
+            try:
+                os.remove(cache_path)
+            except OSError:
+                pass
+
+    subdomains = provider.get("subdomains")
+    if subdomains and "{s}" in labels_url:
+        sub = subdomains[(x + y) % len(subdomains)]
+        url = labels_url.replace("{s}", sub).format(z=z, x=x, y=y)
+    else:
+        url = labels_url.format(z=z, x=x, y=y)
+
+    try:
+        response = requests.get(url, headers=OSM_HEADERS, timeout=8)
+        response.raise_for_status()
+        img = Image.open(BytesIO(response.content)).convert("RGBA")
+        if use_cache:
+            try:
+                img.save(cache_path)
+            except Exception:
+                pass
+        return img
+    except Exception as e:
+        print(f"Map node: Labels tile {z}/{x}/{y} fetch failed: {e}")
+        # Transparent fallback — composition becomes a no-op
+        return Image.new("RGBA", (tile_px, tile_px), (0, 0, 0, 0))
+
+
+def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3,
+                     progress_callback=None, provider_name=None, hidpi=False,
+                     with_labels=False):
+    """
+    Assemble a map centered exactly on the given coordinates.
+
+    Downloads the necessary tiles from the requested provider and composes
+    them with sub-pixel accuracy so that the requested center lands on the
+    image center. Optionally composites a transparent labels-only layer on
+    top (Google-Hybrid style).
+
     Args:
-        center_lat: Latitude of center point
-        center_lon: Longitude of center point
-        zoom: OSM zoom level (1-19)
-        tiles_x: Number of tiles horizontally (default: 3)
-        tiles_y: Number of tiles vertically (default: 3)
-        progress_callback: Optional callback function(current, total, from_cache) for progress updates
-    
+        center_lat, center_lon: Geographic center of the map.
+        zoom: Tile zoom level.
+        tiles_x, tiles_y: Tile grid size (in tiles, before the +1 padding).
+        progress_callback: Optional fn(current, total, all_cached) for UI.
+        provider_name: Entry of `TILE_PROVIDERS` to use; defaults to OSM.
+        hidpi: Request @2x tiles when the provider supports it (4× pixels).
+        with_labels: When True, fetch and composite the provider's labels
+            overlay (no-op if the provider has none).
+
     Returns:
-        Tuple of (pil_image, origin_fx, origin_fy, cache_stats) where:
-        - pil_image: Assembled map as PIL Image
-        - origin_fx: Fractional tile X of top-left corner
-        - origin_fy: Fractional tile Y of top-left corner
-        - cache_stats: Dict with 'cached', 'downloaded', 'total' tile counts
+        Tuple of (pil_image, origin_fx, origin_fy, cache_stats).
+        Pixel size of the returned image is `tile_size_px * tiles_x` ×
+        `tile_size_px * tiles_y`, where `tile_size_px` depends on HiDPI.
     """
+    provider_name = provider_name or DEFAULT_PROVIDER
+    provider = get_provider(provider_name)
+    use_hidpi = bool(hidpi and provider.get("url_hidpi"))
+    tile_px = provider_tile_size(provider, hidpi=use_hidpi)
+
     # Calculate fractional tile position of center
     fx, fy = lat_lon_to_tile_float(center_lat, center_lon, zoom)
-    
-    # Calculate origin (top-left corner of grid)
+
+    # Top-left corner of the grid (in fractional tile units)
     origin_fx = fx - tiles_x / 2.0
     origin_fy = fy - tiles_y / 2.0
-    
-    # Integer tile coordinates for downloading
+
     tile_x0 = int(math.floor(origin_fx))
     tile_y0 = int(math.floor(origin_fy))
-    
-    # Offset within the first tile (sub-pixel positioning)
-    off_x = int((origin_fx - tile_x0) * TILE_SIZE)
-    off_y = int((origin_fy - tile_y0) * TILE_SIZE)
-    
-    # Create larger canvas to accommodate offset
-    map_w = TILE_SIZE * tiles_x
-    map_h = TILE_SIZE * tiles_y
-    canvas = Image.new("RGBA", (map_w + TILE_SIZE, map_h + TILE_SIZE))
-    
-    # Track cache statistics
+
+    # Sub-pixel offsets, scaled to the effective on-canvas tile size
+    off_x = int((origin_fx - tile_x0) * tile_px)
+    off_y = int((origin_fy - tile_y0) * tile_px)
+
+    map_w = tile_px * tiles_x
+    map_h = tile_px * tiles_y
+    canvas = Image.new("RGBA", (map_w + tile_px, map_h + tile_px))
+    labels_canvas = Image.new("RGBA", (map_w + tile_px, map_h + tile_px)) if with_labels else None
+
     tiles_from_cache = 0
     tiles_downloaded = 0
-    
-    # Download and paste tiles
     total_tiles = (tiles_y + 1) * (tiles_x + 1)
-    current_tile = 0
-    tiles_downloaded_so_far = 0  # Progress counter for downloads
-    
-    print(f"Map node: Assembling map with {total_tiles} tiles at zoom {zoom}...")
-    
-    # First, check how many tiles need downloading
+
+    print(f"Map node: Assembling {total_tiles} tiles at zoom {zoom} "
+          f"(provider={provider_name}, hidpi={use_hidpi})...")
+
+    # Count downloads needed (provider-aware cache directory)
+    base_cache_dir = _provider_cache_dir(provider_name, hidpi=use_hidpi)
     tiles_need_download = 0
     for row in range(tiles_y + 1):
         for col in range(tiles_x + 1):
             z, x, y = zoom, tile_x0 + col, tile_y0 + row
-            cache_path = os.path.join(OSM_CACHE_DIR, f"{z}_{x}_{y}.png")
+            cache_path = os.path.join(base_cache_dir, f"{z}_{x}_{y}.png")
             if not os.path.exists(cache_path):
                 tiles_need_download += 1
-    
-    # If all tiles are cached, notify callback to hide progress bar
+
     if tiles_need_download == 0 and progress_callback:
-        progress_callback(0, 0, True)  # Signal all cached
-    
+        progress_callback(0, 0, True)
+
+    tiles_downloaded_so_far = 0
     for row in range(tiles_y + 1):
         for col in range(tiles_x + 1):
             z, x, y = zoom, tile_x0 + col, tile_y0 + row
-            cache_path = os.path.join(OSM_CACHE_DIR, f"{z}_{x}_{y}.png")
-            
-            # Check if tile was already cached before calling get_osm_tile
+            cache_path = os.path.join(base_cache_dir, f"{z}_{x}_{y}.png")
             was_cached = os.path.exists(cache_path)
-            
-            tile = get_osm_tile(z, x, y)
-            if tile:
-                canvas.paste(tile, (col * TILE_SIZE, row * TILE_SIZE))
-                
-                # Update statistics
+
+            tile = get_osm_tile(z, x, y, provider_name=provider_name, hidpi=use_hidpi)
+            if tile is not None:
+                canvas.paste(tile, (col * tile_px, row * tile_px))
                 if was_cached:
                     tiles_from_cache += 1
                 else:
                     tiles_downloaded += 1
                     tiles_downloaded_so_far += 1
-                    # Only update progress for downloaded tiles to avoid blinking
                     if progress_callback:
                         progress_callback(tiles_downloaded_so_far, tiles_need_download, False)
-            
-            current_tile += 1
-    
-    # Log cache statistics
+
+            # Optional labels overlay (transparent PNG) – composited at the end
+            if labels_canvas is not None:
+                lab = get_labels_tile(z, x, y, provider_name=provider_name, hidpi=use_hidpi)
+                if lab is not None:
+                    # Normalize labels tile to the same pixel size as the base
+                    # tile to handle providers without HiDPI labels.
+                    if lab.size != (tile_px, tile_px):
+                        lab = lab.resize((tile_px, tile_px), Image.LANCZOS)
+                    labels_canvas.paste(lab, (col * tile_px, row * tile_px), lab)
+
     print(f"Map node: Tile cache summary - {tiles_from_cache} from cache, "
           f"{tiles_downloaded} downloaded, {total_tiles} total")
-    
-    # Crop to final size with sub-pixel offset
+
     final_img = canvas.crop((off_x, off_y, off_x + map_w, off_y + map_h))
-    
-    # Return cache statistics along with the image
+    if labels_canvas is not None:
+        labels_crop = labels_canvas.crop((off_x, off_y, off_x + map_w, off_y + map_h))
+        final_img = Image.alpha_composite(final_img, labels_crop)
+
     cache_stats = {
         'cached': tiles_from_cache,
         'downloaded': tiles_downloaded,
-        'total': total_tiles
+        'total': total_tiles,
+        'provider': provider_name,
+        'hidpi': use_hidpi,
+        'tile_px': tile_px,
     }
-    
+
     return final_img, origin_fx, origin_fy, cache_stats
 
 
@@ -353,6 +530,10 @@ class FactoryNode:
         node.tag_node_pan_y_value_name = node.tag_node_name + ':PanYValue'
         # Download progress bar
         node.tag_node_progress_name = node.tag_node_name + ':Progress'
+        # Visual / provider controls
+        node.tag_node_provider_value_name = node.tag_node_name + ':ProviderValue'
+        node.tag_node_hidpi_value_name = node.tag_node_name + ':HiDPIValue'
+        node.tag_node_labels_value_name = node.tag_node_name + ':LabelsValue'
 
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict['process_width']
@@ -408,8 +589,40 @@ class FactoryNode:
                     width=small_window_w,
                     default_value=10,
                     min_value=1,
-                    max_value=18,
+                    max_value=20,
                     clamped=True,
+                )
+
+            # Tile provider (style) selector
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_provider_value_name,
+                    label="",
+                    items=list(TILE_PROVIDERS.keys()),
+                    default_value=DEFAULT_PROVIDER,
+                    width=small_window_w,
+                )
+
+            # HiDPI / @2x tiles
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_checkbox(
+                    tag=node.tag_node_hidpi_value_name,
+                    label="HiDPI tiles (@2x)",
+                    default_value=False,
+                )
+
+            # Labels overlay (transparent labels layer composited on top)
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_checkbox(
+                    tag=node.tag_node_labels_value_name,
+                    label="Labels overlay",
+                    default_value=False,
                 )
 
             # Map size slider (for bounding box adjustment)
@@ -657,6 +870,9 @@ class Node(DpgNodeABC):
         tag_node_pan_x_value_name = tag_node_name + ':PanXValue'
         tag_node_pan_y_value_name = tag_node_name + ':PanYValue'
         tag_node_progress_name = tag_node_name + ':Progress'
+        tag_node_provider_value_name = tag_node_name + ':ProviderValue'
+        tag_node_hidpi_value_name = tag_node_name + ':HiDPIValue'
+        tag_node_labels_value_name = tag_node_name + ':LabelsValue'
 
         small_window_w = self._opencv_setting_dict['process_width']
         small_window_h = self._opencv_setting_dict['process_height']
@@ -736,6 +952,9 @@ class Node(DpgNodeABC):
                             use_cache = dpg_get_value(tag_node_cache_value_name)
                             pan_x = dpg_get_value(tag_node_pan_x_value_name)
                             pan_y = dpg_get_value(tag_node_pan_y_value_name)
+                            provider_name = dpg_get_value(tag_node_provider_value_name) or DEFAULT_PROVIDER
+                            hidpi = bool(dpg_get_value(tag_node_hidpi_value_name))
+                            labels_overlay = bool(dpg_get_value(tag_node_labels_value_name))
                             if use_cache is None:
                                 use_cache = True  # Default to enabled
                             if pan_x is None:
@@ -744,11 +963,12 @@ class Node(DpgNodeABC):
                                 pan_y = 0.0
                             
                             # Log current parameter values
-                            print(f"Map node: Parameters - zoom={zoom_level}, size={size_factor}, pan_x={pan_x}, pan_y={pan_y}, cache={use_cache}")
+                            print(f"Map node: Parameters - zoom={zoom_level}, size={size_factor}, pan_x={pan_x}, pan_y={pan_y}, cache={use_cache}, provider={provider_name}, hidpi={hidpi}, labels={labels_overlay}")
                             
                             # Create map visualization image (main display)
                             preview_image, cache_stats = self._create_preview_image(
-                                points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name
+                                points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name,
+                                provider_name=provider_name, hidpi=hidpi, labels_overlay=labels_overlay,
                             )
                             
                             # Update status with empty text (labels removed as requested)
@@ -782,6 +1002,9 @@ class Node(DpgNodeABC):
                         use_cache = dpg_get_value(tag_node_cache_value_name)
                         pan_x = dpg_get_value(tag_node_pan_x_value_name)
                         pan_y = dpg_get_value(tag_node_pan_y_value_name)
+                        provider_name = dpg_get_value(tag_node_provider_value_name) or DEFAULT_PROVIDER
+                        hidpi = bool(dpg_get_value(tag_node_hidpi_value_name))
+                        labels_overlay = bool(dpg_get_value(tag_node_labels_value_name))
                         if use_cache is None:
                             use_cache = True  # Default to enabled
                         if pan_x is None:
@@ -790,11 +1013,12 @@ class Node(DpgNodeABC):
                             pan_y = 0.0
                         
                         # Log current parameter values
-                        print(f"Map node: Parameters - zoom={zoom_level}, size={size_factor}, pan_x={pan_x}, pan_y={pan_y}, cache={use_cache}")
+                        print(f"Map node: Parameters - zoom={zoom_level}, size={size_factor}, pan_x={pan_x}, pan_y={pan_y}, cache={use_cache}, provider={provider_name}, hidpi={hidpi}, labels={labels_overlay}")
                         
                         # Create map visualization image (main display)
                         preview_image, cache_stats = self._create_preview_image(
-                            points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name
+                            points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name,
+                            provider_name=provider_name, hidpi=hidpi, labels_overlay=labels_overlay,
                         )
                         
                         # Update status with empty text (labels removed as requested)
@@ -921,7 +1145,8 @@ class Node(DpgNodeABC):
     #     # This method has been disabled to remove HTML rendering functionality
 
 
-    def _create_preview_image(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0, progress_tag=None):
+    def _create_preview_image(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0, progress_tag=None,
+                              provider_name=None, hidpi=False, labels_overlay=False):
         """
         Create a map visualization image using enhanced OSM tile rendering.
         
@@ -934,12 +1159,15 @@ class Node(DpgNodeABC):
             points: List of points with 'lat' and 'lon' keys
             width: Width of output image in pixels
             height: Height of output image in pixels
-            zoom_level: OSM tile zoom level (1-18)
+            zoom_level: OSM tile zoom level (1-20)
             size_factor: View size factor (0.5-5.0)
             pan_x: Horizontal pan offset (-1.0 to 1.0)
             pan_y: Vertical pan offset (-1.0 to 1.0)
             progress_tag: Optional DearPyGUI tag for progress bar updates
-        
+            provider_name: Tile provider entry (key of TILE_PROVIDERS)
+            hidpi: When True, request @2x tiles where supported (4x pixels)
+            labels_overlay: When True, composite the provider's labels layer
+
         Returns:
             Tuple of (numpy array in BGR format, cache_stats dict) or (numpy array, None) for fallbacks
         """
@@ -947,11 +1175,14 @@ class Node(DpgNodeABC):
             preview = np.zeros((height, width, 3), dtype=np.uint8)
             return preview, None
         
-        print(f"Map node: Creating preview with zoom={zoom_level}, size={size_factor}")
+        print(f"Map node: Creating preview with zoom={zoom_level}, size={size_factor}, provider={provider_name}, hidpi={hidpi}")
         
         # Try direct OSM tile rendering first (enhanced method)
         try:
-            return self._render_with_direct_osm_tiles(points, width, height, zoom_level, size_factor, pan_x, pan_y, progress_tag)
+            return self._render_with_direct_osm_tiles(
+                points, width, height, zoom_level, size_factor, pan_x, pan_y, progress_tag,
+                provider_name=provider_name, hidpi=hidpi, labels_overlay=labels_overlay,
+            )
         except Exception as e:
             print(f"Map node: Direct OSM rendering failed: {e}")
             traceback.print_exc()
@@ -970,132 +1201,198 @@ class Node(DpgNodeABC):
         return self._render_with_matplotlib(points, width, height), None
 
 
-    def _render_with_direct_osm_tiles(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0, progress_tag=None):
+    def _render_with_direct_osm_tiles(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0, progress_tag=None,
+                                      provider_name=None, hidpi=False, labels_overlay=False):
         """
-        Enhanced OSM rendering using direct tile download and assembly.
-        
-        This method provides sub-pixel accurate positioning of GPS points by:
-        1. Calculating the map center from all points
-        2. Assembling OSM tiles with fractional tile positioning
-        3. Converting GPS coordinates to exact pixel positions
-        4. Drawing markers with visual enhancements (halos, shadows)
-        
-        Args:
-            points: List of points with 'lat' and 'lon' keys
-            width: Width of output image in pixels
-            height: Height of output image in pixels
-            zoom_level: OSM tile zoom level (1-18)
-            size_factor: View size factor (0.5-5.0, not used in this method)
-            pan_x: Horizontal pan offset (-1.0 to 1.0)
-            pan_y: Vertical pan offset (-1.0 to 1.0)
-            progress_tag: Optional DearPyGUI tag for progress bar updates
-        
+        Enhanced map rendering: direct tile download + sub-pixel assembly,
+        provider-aware, optional HiDPI / labels overlay, anti-aliased markers
+        and trail, final Lanczos downscale for clean detail.
+
+        Strategy for higher visual fidelity:
+          * Tiles are fetched at the provider's native size (256 px) or @2x
+            (512 px) when HiDPI is enabled.
+          * Markers and the trail polyline are drawn with Pillow's
+            anti-aliased ImageDraw at the tile-native resolution and then
+            composited on the basemap (no jagged cv2 circles).
+          * The final crop to (width, height) goes through PIL.Image.LANCZOS
+            (high-quality resampling), instead of cv2.INTER_AREA.
+
         Returns:
             Tuple of (numpy array in BGR format, cache_stats dict)
         """
         if not points:
-            # Return empty blue background
             img = np.zeros((height, width, 3), dtype=np.uint8)
             img[:] = (224, 216, 173)  # Light blue-gray
             return img, None
-        
+
+        provider_name = provider_name or DEFAULT_PROVIDER
+        provider = get_provider(provider_name)
+
+        # Effective on-canvas tile size for the chosen provider / density
+        tile_px = provider_tile_size(provider, hidpi=hidpi)
+        # Clamp the requested zoom to whatever the provider actually supports
+        zoom_level = max(1, min(int(zoom_level), int(provider.get("max_zoom", 19))))
+
         try:
-            # Calculate center point from all GPS coordinates
+            # Center on the average GPS location
             lats = [p['lat'] for p in points]
             lons = [p['lon'] for p in points]
             center_lat = sum(lats) / len(lats)
             center_lon = sum(lons) / len(lons)
-            
-            # Apply pan offsets to center
-            # For pan, we shift the center by a fraction of the visible area
-            # Approximate: 0.01 degrees per 0.1 pan unit at zoom 12
+
+            # Pan offsets — same heuristic as before, kept for stability
             lat_range = max(lats) - min(lats) if len(set(lats)) > 1 else 0.01
             lon_range = max(lons) - min(lons) if len(set(lons)) > 1 else 0.01
-            
-            # Apply pan (negative because map moves opposite to pan direction)
             center_lat -= pan_y * lat_range * 0.5
             center_lon += pan_x * lon_range * 0.5
-            
-            # Calculate number of tiles needed
-            tiles_x = max(3, (width + TILE_SIZE - 1) // TILE_SIZE)
-            tiles_y = max(3, (height + TILE_SIZE - 1) // TILE_SIZE)
-            
-            print(f"Map node (direct OSM): Assembling {tiles_x}x{tiles_y} tiles at zoom {zoom_level}")
+
+            # Tile grid sized to cover at least the target viewport. At HiDPI
+            # the on-canvas tile is twice as big so we need fewer of them.
+            tiles_x = max(3, (width + tile_px - 1) // tile_px)
+            tiles_y = max(3, (height + tile_px - 1) // tile_px)
+
+            print(f"Map node (direct OSM): Assembling {tiles_x}x{tiles_y} tiles "
+                  f"at zoom {zoom_level} (provider={provider_name}, hidpi={hidpi}, tile_px={tile_px})")
             print(f"Map node (direct OSM): Center: ({center_lat:.6f}, {center_lon:.6f})")
-            
-            # Define progress callback function
+
             def update_progress(current, total, from_cache):
                 if progress_tag and dpg.does_item_exist(progress_tag):
-                    # If from_cache is True, it means all tiles are cached - hide progress bar
                     if from_cache:
                         dpg.hide_item(progress_tag)
-                    # Only show progress bar if there are tiles to download
                     elif total > 0:
                         progress = current / total
                         dpg.set_value(progress_tag, progress)
-                        overlay_text = f"Downloading: {current}/{total} tiles"
-                        dpg.configure_item(progress_tag, overlay=overlay_text)
-                        # Make progress bar visible
+                        dpg.configure_item(progress_tag, overlay=f"Downloading: {current}/{total} tiles")
                         dpg.show_item(progress_tag)
-            
-            # Assemble map with sub-pixel accuracy and progress tracking
+
             pil_map, origin_fx, origin_fy, cache_stats = assemble_osm_map(
-                center_lat, center_lon, zoom_level, tiles_x, tiles_y, update_progress
+                center_lat, center_lon, zoom_level, tiles_x, tiles_y,
+                update_progress,
+                provider_name=provider_name, hidpi=hidpi,
+                with_labels=labels_overlay,
             )
-            
-            # Convert PIL image to numpy array
-            map_array = np.array(pil_map)
-            
-            # Convert RGBA to BGR for OpenCV
-            if map_array.shape[2] == 4:
-                map_array = cv2.cvtColor(map_array, cv2.COLOR_RGBA2BGR)
-            else:
-                map_array = cv2.cvtColor(map_array, cv2.COLOR_RGB2BGR)
-            
-            # Draw GPS points with enhanced markers
-            for point in points:
-                # Calculate exact pixel position
-                px, py = lat_lon_to_pixel_on_map(
-                    point['lat'], point['lon'], 
-                    origin_fx, origin_fy, zoom_level
-                )
-                
-                px, py = int(px), int(py)
-                
-                # Skip points outside the visible area
-                if px < 0 or px >= map_array.shape[1] or py < 0 or py >= map_array.shape[0]:
-                    continue
-                
-                # Draw halo (outer glow) with semi-transparent blending
-                overlay = map_array.copy()
-                cv2.circle(overlay, (px, py), 14, (180, 120, 80), -1, cv2.LINE_AA)
-                cv2.addWeighted(overlay, 0.3, map_array, 0.7, 0, map_array)
-                
-                # Draw outer ring
-                cv2.circle(map_array, (px, py), 14, (0, 80, 255), 2, cv2.LINE_AA)
-                
-                # Draw main dot
-                cv2.circle(map_array, (px, py), 6, (0, 30, 220), -1, cv2.LINE_AA)
-                cv2.circle(map_array, (px, py), 6, (0, 50, 255), 2, cv2.LINE_AA)
-            
-            # Resize to target dimensions if needed
-            if map_array.shape[1] != width or map_array.shape[0] != height:
-                map_array = cv2.resize(map_array, (width, height), interpolation=cv2.INTER_AREA)
-            
-            # Reset progress bar after rendering completes and hide it
+
+            # Ensure RGBA so the marker overlay alpha-composites correctly
+            if pil_map.mode != "RGBA":
+                pil_map = pil_map.convert("RGBA")
+
+            # Anti-aliased markers + trail drawn on a transparent overlay.
+            # We do this at the tile-native resolution and only downscale at
+            # the very end, which acts as supersampling (SSAA).
+            map_w, map_h = pil_map.size
+
+            if PIL_DRAW_AVAILABLE:
+                overlay_img = Image.new("RGBA", (map_w, map_h), (0, 0, 0, 0))
+                draw = ImageDraw.Draw(overlay_img)
+
+                # Compute pixel positions in the assembled (large) image
+                px_positions = []
+                for point in points:
+                    px, py = lat_lon_to_pixel_on_map(
+                        point['lat'], point['lon'],
+                        origin_fx, origin_fy, zoom_level,
+                    )
+                    # `lat_lon_to_pixel_on_map` is in units of the native
+                    # tile size (256). When HiDPI doubles the on-canvas tile
+                    # size we need to scale positions accordingly.
+                    scale = tile_px / float(TILE_SIZE)
+                    px *= scale
+                    py *= scale
+                    px_positions.append((px, py))
+
+                # Trail (polyline) under the markers, with a wide white halo
+                # so it stays readable on any background (satellite, dark, …)
+                if len(px_positions) >= 2:
+                    halo_w = max(6, int(8 * (tile_px / float(TILE_SIZE))))
+                    line_w = max(2, int(3 * (tile_px / float(TILE_SIZE))))
+                    draw.line(px_positions, fill=(255, 255, 255, 200), width=halo_w, joint="curve")
+                    draw.line(px_positions, fill=(220, 30, 0, 235), width=line_w, joint="curve")
+
+                # Markers: drop shadow + halo + filled dot + white rim
+                r_outer = max(7, int(9 * (tile_px / float(TILE_SIZE))))
+                r_inner = max(3, int(4 * (tile_px / float(TILE_SIZE))))
+                for (fpx, fpy) in px_positions:
+                    if fpx < -r_outer or fpx >= map_w + r_outer or fpy < -r_outer or fpy >= map_h + r_outer:
+                        continue
+                    # Soft drop shadow (offset 1-2 px, semi-transparent black)
+                    draw.ellipse(
+                        (fpx - r_outer + 1, fpy - r_outer + 2,
+                         fpx + r_outer + 1, fpy + r_outer + 2),
+                        fill=(0, 0, 0, 70),
+                    )
+                    # Outer halo ring (semi-transparent red-orange)
+                    draw.ellipse(
+                        (fpx - r_outer, fpy - r_outer, fpx + r_outer, fpy + r_outer),
+                        fill=(255, 80, 0, 90),
+                    )
+                    # Inner solid dot + thin white rim for contrast
+                    draw.ellipse(
+                        (fpx - r_inner, fpy - r_inner, fpx + r_inner, fpy + r_inner),
+                        fill=(220, 30, 0, 255), outline=(255, 255, 255, 230), width=1,
+                    )
+
+                pil_map = Image.alpha_composite(pil_map, overlay_img)
+
+                # Attribution strip in the lower-right corner
+                attribution = provider.get("attribution") or ""
+                if attribution:
+                    self._draw_attribution(pil_map, attribution)
+
+            # High-quality resampling to the requested viewport size.
+            # Pillow's LANCZOS preserves detail much better than cv2.INTER_AREA
+            # when downscaling tile imagery.
+            if pil_map.size != (width, height):
+                pil_map = pil_map.resize((width, height), Image.LANCZOS)
+
+            # Convert to BGR for the rest of the DPG/OpenCV pipeline
+            rgb = pil_map.convert("RGB")
+            map_array = cv2.cvtColor(np.array(rgb), cv2.COLOR_RGB2BGR)
+
             if progress_tag and dpg.does_item_exist(progress_tag):
                 dpg.set_value(progress_tag, 0.0)
                 dpg.configure_item(progress_tag, overlay="")
                 dpg.hide_item(progress_tag)
-            
+
             print(f"Map node (direct OSM): Rendered {len(points)} points successfully")
             return map_array, cache_stats
-            
+
         except Exception as e:
             print(f"Map node (direct OSM): Error rendering with direct tiles: {e}")
             traceback.print_exc()
-            # Fall back to contextily method
             return self._render_with_contextily(points, width, height, zoom_level, size_factor, pan_x, pan_y), None
+
+
+    @staticmethod
+    def _draw_attribution(pil_map, attribution):
+        """Draw a small, semi-transparent attribution label in the lower-right
+        corner of the image. Required by tile usage policies and also acts as
+        a nice visual finishing touch."""
+        if not PIL_DRAW_AVAILABLE:
+            return
+        try:
+            from PIL import ImageFont
+            try:
+                font = ImageFont.load_default()
+            except Exception:
+                font = None
+            draw = ImageDraw.Draw(pil_map)
+            text = str(attribution)
+            # Measure text (Pillow ≥10 uses textbbox; older uses textsize)
+            try:
+                bbox = draw.textbbox((0, 0), text, font=font)
+                tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            except Exception:
+                tw, th = (len(text) * 6, 11)
+            pad = 3
+            w, h = pil_map.size
+            x0 = max(0, w - tw - 2 * pad - 4)
+            y0 = max(0, h - th - 2 * pad - 4)
+            box = Image.new("RGBA", (tw + 2 * pad, th + 2 * pad), (255, 255, 255, 170))
+            pil_map.paste(box, (x0, y0), box)
+            draw.text((x0 + pad, y0 + pad), text, fill=(40, 40, 40, 230), font=font)
+        except Exception as e:
+            # Non-fatal: just skip the attribution overlay
+            print(f"Map node: attribution overlay skipped: {e}")
 
 
     def _render_with_contextily(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0):
@@ -1409,13 +1706,19 @@ class Node(DpgNodeABC):
         tag_node_cache_value_name = tag_node_name + ':UseCacheValue'
         tag_node_pan_x_value_name = tag_node_name + ':PanXValue'
         tag_node_pan_y_value_name = tag_node_name + ':PanYValue'
-        
+        tag_node_provider_value_name = tag_node_name + ':ProviderValue'
+        tag_node_hidpi_value_name = tag_node_name + ':HiDPIValue'
+        tag_node_labels_value_name = tag_node_name + ':LabelsValue'
+
         return {
             'zoom': dpg_get_value(tag_node_zoom_value_name),
             'size': dpg_get_value(tag_node_size_value_name),
             'cache': dpg_get_value(tag_node_cache_value_name),
             'pan_x': dpg_get_value(tag_node_pan_x_value_name),
             'pan_y': dpg_get_value(tag_node_pan_y_value_name),
+            'provider': dpg_get_value(tag_node_provider_value_name),
+            'hidpi': dpg_get_value(tag_node_hidpi_value_name),
+            'labels_overlay': dpg_get_value(tag_node_labels_value_name),
         }
 
 
@@ -1427,7 +1730,10 @@ class Node(DpgNodeABC):
         tag_node_cache_value_name = tag_node_name + ':UseCacheValue'
         tag_node_pan_x_value_name = tag_node_name + ':PanXValue'
         tag_node_pan_y_value_name = tag_node_name + ':PanYValue'
-        
+        tag_node_provider_value_name = tag_node_name + ':ProviderValue'
+        tag_node_hidpi_value_name = tag_node_name + ':HiDPIValue'
+        tag_node_labels_value_name = tag_node_name + ':LabelsValue'
+
         if 'zoom' in setting_dict:
             dpg_set_value(tag_node_zoom_value_name, setting_dict['zoom'])
         if 'size' in setting_dict:
@@ -1438,6 +1744,12 @@ class Node(DpgNodeABC):
             dpg_set_value(tag_node_pan_x_value_name, setting_dict['pan_x'])
         if 'pan_y' in setting_dict:
             dpg_set_value(tag_node_pan_y_value_name, setting_dict['pan_y'])
+        if 'provider' in setting_dict and setting_dict['provider'] in TILE_PROVIDERS:
+            dpg_set_value(tag_node_provider_value_name, setting_dict['provider'])
+        if 'hidpi' in setting_dict:
+            dpg_set_value(tag_node_hidpi_value_name, bool(setting_dict['hidpi']))
+        if 'labels_overlay' in setting_dict:
+            dpg_set_value(tag_node_labels_value_name, bool(setting_dict['labels_overlay']))
 
 
     def convert_cv_to_dpg(self, image, width, height):

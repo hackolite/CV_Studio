@@ -26,15 +26,27 @@ The Map node provides interactive map visualization using OpenStreetMap tiles. I
 - **Processing Time**: Time taken to process and generate the map
 
 ## Controls
-- **Zoom Slider** (1-18): Set the zoom level for the map (currently informational, auto-zoom is used)
+- **Zoom Slider** (1-20): Set the zoom level for the map (clamped per provider's max_zoom)
   - Lower values: See more of the world (zoomed out)
   - Higher values: See less area in detail (zoomed in)
+- **Tile Provider (Style)**: Choose the basemap style:
+  - `OSM Standard` — classic OpenStreetMap (default)
+  - `CartoDB Positron` — clean light style, great for dataviz
+  - `CartoDB Dark Matter` — clean dark style
+  - `Esri World Imagery` — satellite imagery (very high visual detail)
+  - `OpenTopoMap` — topographic relief with contour lines
+- **HiDPI tiles (@2x)**: When the provider supports it (e.g. CartoDB), fetch
+  512 px tiles for ~4× the detail at the same coverage. No effect on
+  providers that have no @2x variant.
+- **Labels overlay**: Composite the provider's transparent labels-only layer
+  on top of the basemap (e.g. street names over Esri satellite, à la Google
+  Hybrid). Silently ignored on providers without a labels layer.
 - **View Size Slider** (0.5-5.0): Adjust the bounding box size
   - Values < 1.0: Tighter view around points
   - Values > 1.0: Wider view with more context
-- **Cache Maps Checkbox**: Enable/disable map caching (contextily handles caching internally)
-  - When enabled: Tiles are cached for better performance
-  - When disabled: Fresh tiles may be downloaded
+- **Cache Maps Checkbox**: Enable/disable on-disk tile caching. The cache is
+  namespaced per provider and density, so switching styles never serves the
+  wrong PNGs.
 
 ## Supported JSON Formats
 
