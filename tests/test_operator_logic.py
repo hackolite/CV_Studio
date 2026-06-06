@@ -34,6 +34,14 @@ def process_json_data(json_a, json_b, operation):
     if not isinstance(json_a, dict) or not isinstance(json_b, dict):
         return None
     
+    if operation == 'Fusion':
+        result = {}
+        for key, value in json_a.items():
+            result['A_' + key] = value
+        for key, value in json_b.items():
+            result['B_' + key] = value
+        return result
+    
     result = {}
     
     # Get all keys that exist in both dictionaries
@@ -196,6 +204,79 @@ def test_filters_non_numeric():
     print("✓ Non-numeric filtering test passed")
 
 
+def test_fusion_basic():
+    """Test fusion operation merges both JSONs with A_/B_ prefixes"""
+    json_a = {
+        'mean_iou': 0.75,
+        'loss': 2.5,
+    }
+    
+    json_b = {
+        'mean_iou': 0.85,
+        'loss': 1.5,
+    }
+    
+    result = process_json_data(json_a, json_b, 'Fusion')
+    
+    assert result is not None, "Result should not be None"
+    assert 'A_mean_iou' in result, "Result should contain 'A_mean_iou'"
+    assert 'A_loss' in result, "Result should contain 'A_loss'"
+    assert 'B_mean_iou' in result, "Result should contain 'B_mean_iou'"
+    assert 'B_loss' in result, "Result should contain 'B_loss'"
+    assert result['A_mean_iou'] == 0.75
+    assert result['A_loss'] == 2.5
+    assert result['B_mean_iou'] == 0.85
+    assert result['B_loss'] == 1.5
+    assert len(result) == 4
+    
+    print("✓ Fusion basic test passed")
+
+
+def test_fusion_different_keys():
+    """Test fusion with different keys in A and B"""
+    json_a = {
+        'metric_a': 1.0,
+    }
+    
+    json_b = {
+        'metric_b': 2.0,
+    }
+    
+    result = process_json_data(json_a, json_b, 'Fusion')
+    
+    assert result is not None
+    assert 'A_metric_a' in result
+    assert 'B_metric_b' in result
+    assert result['A_metric_a'] == 1.0
+    assert result['B_metric_b'] == 2.0
+    assert len(result) == 2
+    
+    print("✓ Fusion different keys test passed")
+
+
+def test_fusion_preserves_all_types():
+    """Test fusion preserves non-numeric values too"""
+    json_a = {
+        'score': 0.9,
+        'label': 'cat',
+    }
+    
+    json_b = {
+        'score': 0.7,
+        'label': 'dog',
+    }
+    
+    result = process_json_data(json_a, json_b, 'Fusion')
+    
+    assert result is not None
+    assert result['A_score'] == 0.9
+    assert result['A_label'] == 'cat'
+    assert result['B_score'] == 0.7
+    assert result['B_label'] == 'dog'
+    
+    print("✓ Fusion preserves all types test passed")
+
+
 if __name__ == '__main__':
     print("\n" + "="*60)
     print("Running Operator Node Logic Tests")
@@ -211,6 +292,9 @@ if __name__ == '__main__':
     test_subtraction_operation()
     test_no_matching_keys()
     test_filters_non_numeric()
+    test_fusion_basic()
+    test_fusion_different_keys()
+    test_fusion_preserves_all_types()
     
     print("\n" + "="*60)
     print("All tests passed! ✓")
