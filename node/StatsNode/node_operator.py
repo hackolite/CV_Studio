@@ -174,6 +174,25 @@ class OperatorNode(Node):
         except (ValueError, TypeError):
             return 0.0
 
+    def get_setting_dict(self, node_id):
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        operation_tag = tag_node_name + ':OperationValue'
+        pos = dpg.get_item_pos(tag_node_name)
+
+        setting_dict = {}
+        setting_dict['ver'] = self._ver
+        setting_dict['pos'] = pos
+        setting_dict[operation_tag] = dpg_get_value(operation_tag)
+
+        return setting_dict
+
+    def set_setting_dict(self, node_id, setting_dict):
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        operation_tag = tag_node_name + ':OperationValue'
+
+        if operation_tag in setting_dict and setting_dict[operation_tag] is not None:
+            dpg_set_value(operation_tag, setting_dict[operation_tag])
+
     def update(
         self,
         node_id,
