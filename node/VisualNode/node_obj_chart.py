@@ -62,6 +62,8 @@ class FactoryNode:
         node.tag_node_input02_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input02Value'
         node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
         node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
+        node.tag_node_output_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJson'
+        node.tag_node_output_json_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJsonValue'
         node.tag_node_output02_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02'
         node.tag_node_output02_value_name = node.tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02Value'
 
@@ -72,6 +74,10 @@ class FactoryNode:
         # Chart type dropdown
         node.tag_node_chart_type_name = node.tag_node_name + ':ChartType'
         node.tag_node_chart_type_value_name = node.tag_node_name + ':ChartTypeValue'
+        
+        # Operator dropdown
+        node.tag_node_operator_name = node.tag_node_name + ':Operator'
+        node.tag_node_operator_value_name = node.tag_node_name + ':OperatorValue'
         
         # Class selection slots
         node.tag_node_class_slots_name = node.tag_node_name + ':ClassSlots'
@@ -150,6 +156,16 @@ class FactoryNode:
             ):
                 dpg.add_image(node.tag_node_output01_value_name)
 
+            # JSON output
+            with dpg.node_attribute(
+                    tag=node.tag_node_output_json_name,
+                    attribute_type=dpg.mvNode_Attr_Output,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_output_json_value_name,
+                    default_value='Output JSON',
+                )
+
             # Time aggregation dropdown
             with dpg.node_attribute(
                     attribute_type=dpg.mvNode_Attr_Static,
@@ -171,6 +187,19 @@ class FactoryNode:
                     label="Chart Type",
                     items=["bar", "line", "area"],
                     default_value="bar",
+                    width=small_window_w - 100,
+                )
+
+            # Operator dropdown
+            with dpg.node_attribute(
+                    tag=node.tag_node_operator_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_operator_value_name,
+                    label="Operator",
+                    items=["sum", "avg", "count", "max", "min"],
+                    default_value="sum",
                     width=small_window_w - 100,
                 )
 
@@ -397,6 +426,118 @@ class Node(Chart):
             except (KeyError, TypeError, AttributeError, ValueError):
                 pass
 
+    def _build_dynamic_class_items(self, class_ids, class_names):
+        """Build dynamic combobox items from input JSON detected classes.
+        
+        Instead of always showing all COCO classes, show only those that
+        have been seen in the input data plus 'All'.
+
+        Args:
+            class_ids: list of detected class IDs from input JSON
+            class_names: dict mapping string class IDs to human-readable names
+
+        Returns:
+            list of formatted strings like ["All", "0: person", "2: car"]
+        """
+        items = ["All"]
+        seen_ids = set()
+
+        # Collect unique class ids from the current frame
+        for cid in class_ids:
+            cid_int = int(cid)
+            if cid_int not in seen_ids:
+                seen_ids.add(cid_int)
+
+        # Also include class ids that already have accumulated data
+        for key in self.time_counts.keys():
+            if isinstance(key, int) and key not in seen_ids:
+                seen_ids.add(key)
+
+        # Build items with names
+        for cid in sorted(seen_ids):
+            cid_str = str(cid)
+            if class_names and cid_str in class_names:
+                items.append(f"{cid}: {class_names[cid_str]}")
+            elif cid in coco_class_names:
+                items.append(f"{cid}: {coco_class_names[cid]}")
+            else:
+                items.append(f"{cid}: class_{cid}")
+
+        return items
+
+    def _get_selected_classes_from_slots(self, tag_node_name, valid_keys=None):
+        """Read selected values from class slot combos.
+
+        Args:
+            tag_node_name: the node tag used to locate ClassSlots container
+            valid_keys: optional set of allowed values to filter selections
+
+        Returns:
+            list of selected class keys that match valid_keys (if provided)
+        """
+        selected_classes = []
+        class_slots_tag = f"{tag_node_name}:ClassSlots"
+        if dpg.does_item_exist(class_slots_tag):
+            children = dpg.get_item_children(class_slots_tag, slot=1)
+            if children:
+                for child in children:
+                    try:
+                        selected_value = dpg_get_value(child)
+                        if selected_value and selected_value != "":
+                            if valid_keys is None or selected_value in valid_keys:
+                                selected_classes.append(selected_value)
+                    except (ValueError, TypeError):
+                        pass
+        return selected_classes
+
+    def _compute_operator_output(self, selected_classes, operator, class_names_dict):
+        """Compute aggregated JSON output based on operator and selected classes.
+        
+        Applies the operator (sum, avg, count, max, min) over the time buckets
+        for each selected class and returns a JSON dict with computed values.
+        
+        Args:
+            selected_classes: list of class keys to compute over
+            operator: one of "sum", "avg", "count", "max", "min"
+            class_names_dict: mapping class_id -> class_name for labeling
+            
+        Returns:
+            dict with keys per selected class and their computed value
+        """
+        result = {}
+        for class_id in selected_classes:
+            buckets = self.time_counts.get(class_id, {})
+            values = list(buckets.values())
+
+            if not values:
+                computed = 0
+            elif operator == "sum":
+                computed = sum(values)
+            elif operator == "avg":
+                computed = sum(values) / len(values)
+            elif operator == "count":
+                computed = len(values)
+            elif operator == "max":
+                computed = max(values)
+            elif operator == "min":
+                computed = min(values)
+            else:
+                computed = sum(values)
+
+            # Build a readable key
+            key = str(class_id)
+            if class_names_dict and key in class_names_dict:
+                key = class_names_dict[key]
+            elif class_id == "All":
+                key = "All"
+
+            result[key] = computed
+
+        # Add metadata
+        result["_operator"] = operator
+        result["_classes"] = [str(c) for c in selected_classes]
+        return result
+
     def render_chart(self, time_unit, selected_classes, class_names_dict, chart_type="bar"):
         """Render the chart as an image using matplotlib
         
@@ -568,6 +709,7 @@ class Node(Chart):
         tag_node_name = str(node_id) + ':' + self.node_tag
         time_agg_tag = tag_node_name + ':TimeAggregationValue'
         chart_type_tag = tag_node_name + ':ChartTypeValue'
+        operator_tag = tag_node_name + ':OperatorValue'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
@@ -576,9 +718,10 @@ class Node(Chart):
         
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
-        # Get time aggregation unit and chart type
+        # Get time aggregation unit, chart type and operator
         time_unit = dpg_get_value(time_agg_tag)
         chart_type = dpg_get_value(chart_type_tag)
+        operator = dpg_get_value(operator_tag) or "sum"
         
         # Cleanup old data (24h round-robin)
         self.cleanup_old_data()
@@ -604,6 +747,7 @@ class Node(Chart):
         should_render = (current_time - self.last_render_time) >= self.render_interval
         
         chart_image = None
+        json_output = None
         
         if node_result and isinstance(node_result, dict):
             # Check if this is microphone dB intensity data
@@ -625,6 +769,11 @@ class Node(Chart):
                     self.last_render_time = current_time
                 else:
                     chart_image = self.cached_chart_image
+
+                # Compute JSON output with operator
+                json_output = self._compute_operator_output(
+                    ["dB"], operator, {"dB": "Decibel Intensity"}
+                )
             elif 'distillation_losses' in node_result and isinstance(
                 node_result.get('distillation_losses'), dict
             ):
@@ -644,19 +793,9 @@ class Node(Chart):
                 self.update_class_slot_items(tag_node_name, get_dict_dropdown_items(loss_data))
 
                 # Determine which series to display from class slots or default to all keys
-                selected_classes = []
-                class_slots_tag = f"{tag_node_name}:ClassSlots"
-                if dpg.does_item_exist(class_slots_tag):
-                    children = dpg.get_item_children(class_slots_tag, slot=1)
-                    if children:
-                        for child in children:
-                            try:
-                                selected_value = dpg_get_value(child)
-                                if selected_value and selected_value != "":
-                                    if selected_value in loss_data:
-                                        selected_classes.append(selected_value)
-                            except (ValueError, TypeError):
-                                pass
+                selected_classes = self._get_selected_classes_from_slots(
+                    tag_node_name, valid_keys=set(loss_data.keys())
+                )
 
                 if not selected_classes:
                     # Default: show avg_iou, score, class_accuracy
@@ -676,6 +815,11 @@ class Node(Chart):
                     self.last_render_time = current_time
                 else:
                     chart_image = self.cached_chart_image
+
+                # Compute JSON output with operator
+                json_output = self._compute_operator_output(
+                    selected_classes, operator, class_names_dict
+                )
             elif 'class_ids' not in node_result and all(
                 isinstance(v, (int, float)) for v in node_result.values()
             ) and node_result:
@@ -689,19 +833,9 @@ class Node(Chart):
                 self.update_class_slot_items(tag_node_name, get_dict_dropdown_items(node_result))
 
                 # Determine which series to display from class slots or default to all keys
-                selected_classes = []
-                class_slots_tag = f"{tag_node_name}:ClassSlots"
-                if dpg.does_item_exist(class_slots_tag):
-                    children = dpg.get_item_children(class_slots_tag, slot=1)
-                    if children:
-                        for child in children:
-                            try:
-                                selected_value = dpg_get_value(child)
-                                if selected_value and selected_value != "":
-                                    if selected_value in node_result:
-                                        selected_classes.append(selected_value)
-                            except (ValueError, TypeError):
-                                pass
+                selected_classes = self._get_selected_classes_from_slots(
+                    tag_node_name, valid_keys=set(node_result.keys())
+                )
 
                 if not selected_classes:
                     # Default: show percent-type metrics for readability
@@ -717,11 +851,19 @@ class Node(Chart):
                     self.last_render_time = current_time
                 else:
                     chart_image = self.cached_chart_image
+
+                # Compute JSON output with operator
+                json_output = self._compute_operator_output(
+                    selected_classes, operator, class_names_dict
+                )
             else:
                 # Extract detection data (original behavior)
                 class_ids = node_result.get('class_ids', [])
                 class_names = node_result.get('class_names', {})
-                self.update_class_slot_items(tag_node_name, get_class_dropdown_items())
+
+                # Dynamically build combobox items from input JSON classes
+                dynamic_items = self._build_dynamic_class_items(class_ids, class_names)
+                self.update_class_slot_items(tag_node_name, dynamic_items)
             
                 if class_ids:
                     # Get current time bucket
@@ -769,6 +911,12 @@ class Node(Chart):
                 else:
                     chart_image = self.cached_chart_image
 
+                # Compute JSON output with operator
+                json_output = self._compute_operator_output(
+                    selected_classes, operator,
+                    {str(k): v for k, v in class_names.items()} if class_names else {}
+                )
+
         else:
             # No detection data yet, render empty chart only if render interval has passed
             if should_render or self.cached_chart_image is None:
@@ -795,7 +943,7 @@ class Node(Chart):
             )
             dpg_set_value(output_value01_tag, texture)
 
-        return {"image": chart_image, "json": None, "audio": None}
+        return {"image": chart_image, "json": json_output, "audio": None}
 
 
     def close(self, node_id):
@@ -810,9 +958,11 @@ class Node(Chart):
         tag_node_name = str(node_id) + ':' + self.node_tag
         time_agg_tag = tag_node_name + ':TimeAggregationValue'
         chart_type_tag = tag_node_name + ':ChartTypeValue'
+        operator_tag = tag_node_name + ':OperatorValue'
 
         time_unit = dpg_get_value(time_agg_tag)
         chart_type = dpg_get_value(chart_type_tag)
+        operator = dpg_get_value(operator_tag)
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -821,6 +971,7 @@ class Node(Chart):
         setting_dict['pos'] = pos
         setting_dict[time_agg_tag] = time_unit
         setting_dict[chart_type_tag] = chart_type
+        setting_dict[operator_tag] = operator
         
         # Save class slot selections
         class_slots_tag = f"{tag_node_name}:ClassSlots"
@@ -841,11 +992,14 @@ class Node(Chart):
         tag_node_name = str(node_id) + ':' + self.node_tag
         time_agg_tag = tag_node_name + ':TimeAggregationValue'
         chart_type_tag = tag_node_name + ':ChartTypeValue'
+        operator_tag = tag_node_name + ':OperatorValue'
 
         time_unit = setting_dict.get(time_agg_tag, "minute")
         chart_type = setting_dict.get(chart_type_tag, "bar")
+        operator = setting_dict.get(operator_tag, "sum")
         dpg_set_value(time_agg_tag, time_unit)
         dpg_set_value(chart_type_tag, chart_type)
+        dpg_set_value(operator_tag, operator)
         
         # Restore class slot selections
         class_slots_tag = f"{tag_node_name}:ClassSlots"
