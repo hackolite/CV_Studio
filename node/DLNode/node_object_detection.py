@@ -1119,6 +1119,7 @@ class Node(Node):
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict,):
             data = {}
+            frame = None
             try:
                 
                 self.tag_node_name = str(node_id) + ':' + self.node_tag
@@ -1358,6 +1359,7 @@ class Node(Node):
                 return data
             except Exception as e:
                     logger.error(f"Error in object detection: {e}", exc_info=True)
+                    return {"image": frame, "json": {}, "audio": None}
 
 
     def close(self, node_id):
