@@ -245,7 +245,7 @@ class OperatorNode(Node):
             elapsed_time = int(elapsed_time * 1000)
             dpg_set_value(output_time_tag, str(elapsed_time).zfill(4) + 'ms')
 
-        return result
+        return {"image": None, "json": result, "audio": None}
 
 
 # Alias for compatibility
