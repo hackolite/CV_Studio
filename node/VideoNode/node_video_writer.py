@@ -22,6 +22,7 @@ from node.node_abc import DpgNodeABC
 #from node_editor.util import convert_cv_to_dpg
 from node.basenode import Node
 from node.VideoNode.sync import FramePacket, SyncVideoWriter
+from node.VideoNode.av_encoder import PyAVEncoder, _AV_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,12 @@ if not FFMPEG_AVAILABLE:
 def slow_motion_interpolation(prev_frame, next_frame, alpha):
     """ Generates smooth intermediate frame between 2 images """
     return cv2.addWeighted(prev_frame, 1 - alpha, next_frame, alpha, 0)
+
+
+# VideoWriter write-mode constants
+WRITE_MODE_STANDARD = "Standard"
+WRITE_MODE_ON_DISK   = "On-disk"
+WRITE_MODES = [WRITE_MODE_STANDARD, WRITE_MODE_ON_DISK]
 
 
 
@@ -165,6 +172,19 @@ class FactoryNode:
                     width=small_window_w,
                 )
 
+            # Write-mode selector: Standard (video+audio in-memory merge)
+            # or On-disk (direct H.264 write, no audio, constant RAM usage).
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_name + ':WriteMode',
+                    items=WRITE_MODES,
+                    label="Mode",
+                    default_value=WRITE_MODE_STANDARD,
+                    width=small_window_w,
+                )
+
             with dpg.node_attribute(
                     tag=node.tag_node_button_name,
                     attribute_type=dpg.mvNode_Attr_Static,
@@ -212,6 +232,7 @@ class VideoWriterNode(Node):
     _merge_progress_dict = {}  # Store merge progress (0.0 to 1.0)
     _sync_writers_dict = {}  # SyncVideoWriter instances keyed by tag_node_name
     _frame_counter_dict = {}  # Per-node frame counter for FramePacket construction
+    _ondisk_writers_dict = {}  # PyAVEncoder instances for on-disk mode (keyed by tag_node_name)
     _start_label = 'Start'
     _stop_label = 'Stop'
     
@@ -283,7 +304,27 @@ class VideoWriterNode(Node):
         if frame is not None:
             rec_frame = copy.deepcopy(frame)
 
-            if tag_node_name in self._video_writer_dict:
+            # --- On-disk mode: write directly via PyAVEncoder (or cv2 fallback) ---
+            if tag_node_name in self._ondisk_writers_dict:
+                writer_frame = cv2.resize(rec_frame,
+                                          (writer_width, writer_height),
+                                          interpolation=cv2.INTER_CUBIC)
+                od_writer = self._ondisk_writers_dict[tag_node_name]
+                frame_idx = self._frame_counter_dict.get(tag_node_name, 0)
+                self._frame_counter_dict[tag_node_name] = frame_idx + 1
+                meta = self._recording_metadata_dict.get(tag_node_name, {})
+                fps_val = meta.get("fps", 30.0)
+                pts_ms = (frame_idx / max(fps_val, 1)) * 1000.0
+                if isinstance(od_writer, cv2.VideoWriter):
+                    od_writer.write(writer_frame)
+                else:
+                    try:
+                        od_writer.write_video_frame(writer_frame, pts_ms)
+                    except Exception as e:
+                        logger.error("PyAVEncoder write_video_frame error: %s", e)
+
+            # --- Standard mode: cv2.VideoWriter + audio buffering ---
+            elif tag_node_name in self._video_writer_dict:
 
                 writer_frame = cv2.resize(rec_frame,
                                           (writer_width, writer_height),
@@ -818,7 +859,20 @@ class VideoWriterNode(Node):
             # Clean up merge progress
             if tag_node_name in self._merge_progress_dict:
                 self._merge_progress_dict.pop(tag_node_name, None)
-            
+
+            # Release on-disk writer (PyAVEncoder or cv2)
+            if tag_node_name in self._ondisk_writers_dict:
+                try:
+                    od = self._ondisk_writers_dict[tag_node_name]
+                    if isinstance(od, cv2.VideoWriter):
+                        od.release()
+                    else:
+                        od.close()
+                except Exception as e:
+                    logger.warning("Error closing on-disk writer in close: %s", e)
+                finally:
+                    self._ondisk_writers_dict.pop(tag_node_name, None)
+
             # Release video writer
             if tag_node_name in self._video_writer_dict:
                 try:
@@ -849,11 +903,19 @@ class VideoWriterNode(Node):
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
+        setting_dict[tag_node_name + ':WriteMode'] = (
+            dpg_get_value(tag_node_name + ':WriteMode') or WRITE_MODE_STANDARD
+        )
 
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
-        pass
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        write_mode = setting_dict.get(tag_node_name + ':WriteMode', WRITE_MODE_STANDARD)
+        try:
+            dpg_set_value(tag_node_name + ':WriteMode', write_mode)
+        except Exception:
+            pass
 
     def _async_merge_thread(self, tag_node_name, temp_path, audio_samples, sample_rate, final_path):
         """
@@ -945,80 +1007,171 @@ class VideoWriterNode(Node):
 
             os.makedirs(video_writer_directory, exist_ok=True)
 
-            # Get selected format
+            # Get selected format and write mode
             format_tag = tag_node_name + ':Format'
             video_format = dpg_get_value(format_tag)
+            write_mode = dpg_get_value(tag_node_name + ':WriteMode') or WRITE_MODE_STANDARD
 
-            if tag_node_name not in self._video_writer_dict:
-                # Determine file extension and codec based on format
-                format_config = {
-                    'AVI': {'ext': '.avi', 'codec': 'MJPG'},
-                    'MKV': {'ext': '.mkv', 'codec': 'FFV1'},
-                    'MP4': {'ext': '.mp4', 'codec': 'mp4v'}
-                }
-                
-                config = format_config.get(video_format, format_config['MP4'])
-                
-                # Create file paths (temp and final)
-                file_path = os.path.join(video_writer_directory, f'{startup_time_text}{config["ext"]}')
-                temp_file_path = os.path.join(video_writer_directory, f'{startup_time_text}_temp{config["ext"]}')
-                
-                # Create video writer with temporary path
-                self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
-                    temp_file_path,
-                    cv2.VideoWriter_fourcc(*config['codec']),
-                    writer_fps,
-                    (writer_width, writer_height),
-                )
-                
-                # Initialize metadata tracking for MKV
-                if video_format == 'MKV':
-                    self._mkv_metadata_dict[tag_node_name] = {
-                        'audio_handles': {},
-                        'json_handles': {},
-                        'file_path': file_path,
+            already_recording = (
+                tag_node_name in self._video_writer_dict
+                or tag_node_name in self._ondisk_writers_dict
+            )
+            if not already_recording:
+                # Determine file extension based on format
+                _ext_map = {'AVI': '.avi', 'MKV': '.mkv', 'MP4': '.mp4'}
+                ext = _ext_map.get(video_format, '.mp4')
+                file_path = os.path.join(video_writer_directory,
+                                         f'{startup_time_text}{ext}')
+
+                if write_mode == WRITE_MODE_ON_DISK:
+                    # -------------------------------------------------------
+                    # On-disk mode: stream frames straight to the final file
+                    # via PyAVEncoder (libx264) when available, or via a cv2
+                    # writer otherwise.
+                    # No audio is collected; RAM usage stays constant.
+                    # -------------------------------------------------------
+                    if _AV_AVAILABLE:
+                        try:
+                            od_writer = PyAVEncoder(
+                                output_path=file_path,
+                                fps=float(writer_fps),
+                                frame_size=(writer_width, writer_height),
+                                codec="libx264",
+                                include_audio=False,
+                            )
+                            self._ondisk_writers_dict[tag_node_name] = od_writer
+                            logger.info(
+                                "VideoWriter[%s] ON-DISK recording started "
+                                "(PyAVEncoder/libx264) → %s",
+                                tag_node_name, file_path,
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                "PyAVEncoder init failed (%s); falling back to cv2.", e
+                            )
+                            od_writer = None
+                    else:
+                        od_writer = None
+
+                    if od_writer is None:
+                        # cv2 fallback
+                        if video_format == 'AVI':
+                            cv2_codec = 'XVID'
+                        elif video_format == 'MKV':
+                            cv2_codec = 'FFV1'
+                        else:
+                            cv2_codec = 'mp4v'
+                        cv2_od = cv2.VideoWriter(
+                            file_path,
+                            cv2.VideoWriter_fourcc(*cv2_codec),
+                            writer_fps,
+                            (writer_width, writer_height),
+                        )
+                        self._ondisk_writers_dict[tag_node_name] = cv2_od
+                        logger.info(
+                            "VideoWriter[%s] ON-DISK recording started "
+                            "(cv2/%s) → %s",
+                            tag_node_name, cv2_codec, file_path,
+                        )
+
+                    self._frame_counter_dict[tag_node_name] = 0
+                    self._recording_metadata_dict[tag_node_name] = {
+                        'final_path': file_path,
+                        'temp_path': None,
+                        'format': video_format,
+                        'fps': float(writer_fps),
+                        'mode': WRITE_MODE_ON_DISK,
                     }
-                    
-                    # Create metadata track files (will be stored alongside video)
-                    metadata_dir = os.path.join(video_writer_directory, f'{startup_time_text}_metadata')
-                    os.makedirs(metadata_dir, exist_ok=True)
-                    
-                    # Note: Audio and JSON tracks will be created dynamically when data arrives
-                    # This allows us to support variable number of slots from concat node
-                
-                # Initialize audio sample collection
-                self._audio_samples_dict[tag_node_name] = []
-                self._last_chunk_index_dict[tag_node_name] = -1
-                
-                # Initialise per-node frame counter and SyncVideoWriter
-                self._frame_counter_dict[tag_node_name] = 0
-                self._sync_writers_dict[tag_node_name] = SyncVideoWriter(
-                    fps=float(writer_fps),
-                    max_buffer_size=max(4, int(writer_fps * 0.2)),  # ~200 ms buffer
-                )
-                
-                # Store recording metadata for final merge
-                self._recording_metadata_dict[tag_node_name] = {
-                    'final_path': file_path,
-                    'temp_path': temp_file_path,
-                    'format': video_format,
-                    'sample_rate': 22050,  # Default sample rate, can be adjusted based on input
-                    'fps': float(writer_fps),
-                }
-                logger.info(
-                    "VideoWriter[%s] recording started format=%s fps=%s size=%sx%s temp=%s final=%s",
-                    tag_node_name,
-                    video_format,
-                    writer_fps,
-                    writer_width,
-                    writer_height,
-                    temp_file_path,
-                    file_path,
-                )
+
+                else:
+                    # -------------------------------------------------------
+                    # Standard mode: cv2.VideoWriter → temp file; audio
+                    # buffered in RAM; async merge at the end.
+                    # -------------------------------------------------------
+                    if video_format == 'AVI':
+                        cv2_codec = 'MJPG'
+                    elif video_format == 'MKV':
+                        cv2_codec = 'FFV1'
+                    else:
+                        cv2_codec = 'mp4v'
+
+                    temp_file_path = os.path.join(
+                        video_writer_directory, f'{startup_time_text}_temp{ext}'
+                    )
+                    self._video_writer_dict[tag_node_name] = cv2.VideoWriter(
+                        temp_file_path,
+                        cv2.VideoWriter_fourcc(*cv2_codec),
+                        writer_fps,
+                        (writer_width, writer_height),
+                    )
+
+                    # Initialize metadata tracking for MKV
+                    if video_format == 'MKV':
+                        self._mkv_metadata_dict[tag_node_name] = {
+                            'audio_handles': {},
+                            'json_handles': {},
+                            'file_path': file_path,
+                        }
+                        metadata_dir = os.path.join(
+                            video_writer_directory, f'{startup_time_text}_metadata'
+                        )
+                        os.makedirs(metadata_dir, exist_ok=True)
+
+                    # Initialize audio sample collection
+                    self._audio_samples_dict[tag_node_name] = []
+                    self._last_chunk_index_dict[tag_node_name] = -1
+
+                    # Initialise per-node frame counter and SyncVideoWriter
+                    self._frame_counter_dict[tag_node_name] = 0
+                    self._sync_writers_dict[tag_node_name] = SyncVideoWriter(
+                        fps=float(writer_fps),
+                        max_buffer_size=max(4, int(writer_fps * 0.2)),
+                    )
+
+                    self._recording_metadata_dict[tag_node_name] = {
+                        'final_path': file_path,
+                        'temp_path': temp_file_path,
+                        'format': video_format,
+                        'sample_rate': 22050,
+                        'fps': float(writer_fps),
+                        'mode': WRITE_MODE_STANDARD,
+                    }
+                    logger.info(
+                        "VideoWriter[%s] STANDARD recording started "
+                        "format=%s codec=%s quality=%s fps=%s size=%sx%s "
+                        "temp=%s final=%s",
+                        tag_node_name, video_format, cv2_codec, quality,
+                        writer_fps, writer_width, writer_height,
+                        temp_file_path, file_path,
+                    )
 
             dpg.set_item_label(tag_node_button_value_name, self._stop_label)
         elif label == self._stop_label:
             try:
+                # --- On-disk mode stop ---
+                if tag_node_name in self._ondisk_writers_dict:
+                    od_writer = self._ondisk_writers_dict.pop(tag_node_name)
+                    try:
+                        if isinstance(od_writer, cv2.VideoWriter):
+                            od_writer.release()
+                        else:
+                            od_writer.close()
+                    except Exception as e:
+                        logger.exception("Error closing on-disk writer: %s", e)
+                    self._frame_counter_dict.pop(tag_node_name, None)
+                    meta = self._recording_metadata_dict.pop(tag_node_name, {})
+                    logger.info(
+                        "VideoWriter[%s] ON-DISK recording stopped → %s",
+                        tag_node_name, meta.get('final_path', '?'),
+                    )
+                    try:
+                        if dpg.does_item_exist(tag_node_button_value_name):
+                            dpg.set_item_label(tag_node_button_value_name, self._start_label)
+                    except Exception:
+                        pass
+                    return  # nothing more to do for on-disk mode
+
+                # --- Standard mode stop ---
                 # Flush remaining frames from the sync writer before releasing cv2 writer
                 if tag_node_name in self._sync_writers_dict:
                     sync_writer = self._sync_writers_dict.pop(tag_node_name)

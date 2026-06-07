@@ -94,6 +94,9 @@ class PyAVEncoder:
         Number of audio channels (default: 2 stereo).
     audio_codec:
         FFmpeg audio codec name (default: ``'aac'``).
+    include_audio:
+        When False (default for on-disk / video-only mode) no audio stream is
+        created and the container will be a pure video file.
     """
 
     def __init__(
@@ -107,6 +110,7 @@ class PyAVEncoder:
         audio_sample_rate: int = 44100,
         audio_channels: int = 2,
         audio_codec: str = "aac",
+        include_audio: bool = True,
     ) -> None:
         if not _AV_AVAILABLE:
             raise RuntimeError(
@@ -117,6 +121,7 @@ class PyAVEncoder:
         self._fps = fps
         self._frame_size = frame_size  # (width, height)
         self._output_path = output_path
+        self._include_audio = include_audio
 
         # Timebase: 1 / (fps * 1000) gives ms-level precision
         # We use a rational timebase of 1/1000 (ms) for simplicity.
@@ -132,24 +137,28 @@ class PyAVEncoder:
         self._video_stream.codec_context.time_base = self._timebase
         self._video_stream.options = {"crf": str(crf)}
 
-        # Audio stream (optional; only written if audio packets are pushed)
-        self._audio_stream = self._container.add_stream(audio_codec)
-        self._audio_stream.codec_context.sample_rate = audio_sample_rate
-        self._audio_stream.codec_context.channels = audio_channels
-        self._audio_stream.codec_context.time_base = _av.Rational(
-            1, audio_sample_rate
-        )
+        # Audio stream (optional)
+        if include_audio:
+            self._audio_stream = self._container.add_stream(audio_codec)
+            self._audio_stream.codec_context.sample_rate = audio_sample_rate
+            self._audio_stream.codec_context.channels = audio_channels
+            self._audio_stream.codec_context.time_base = _av.Rational(
+                1, audio_sample_rate
+            )
+        else:
+            self._audio_stream = None
 
         self._closed = False
         self._last_pts_ms: Optional[float] = None
 
         logger.info(
-            "PyAVEncoder opened: %s (%dx%d @ %s fps, codec=%s)",
+            "PyAVEncoder opened: %s (%dx%d @ %s fps, codec=%s, audio=%s)",
             output_path,
             frame_size[0],
             frame_size[1],
             fps,
             codec,
+            include_audio,
         )
 
     # ------------------------------------------------------------------
@@ -210,6 +219,10 @@ class PyAVEncoder:
         """
         if self._closed:
             raise SyncError("PyAVEncoder is already closed.")
+        if self._audio_stream is None:
+            raise SyncError(
+                "PyAVEncoder was opened without an audio stream (include_audio=False)."
+            )
 
         if audio_data.ndim == 1:
             audio_data = audio_data[np.newaxis, :]  # (1, samples)
@@ -240,9 +253,10 @@ class PyAVEncoder:
         for packet in self._video_stream.encode(None):
             self._container.mux(packet)
 
-        # Flush audio
-        for packet in self._audio_stream.encode(None):
-            self._container.mux(packet)
+        # Flush audio (only if an audio stream was created)
+        if self._audio_stream is not None:
+            for packet in self._audio_stream.encode(None):
+                self._container.mux(packet)
 
         self._container.close()
         self._closed = True
