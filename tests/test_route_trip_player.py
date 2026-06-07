@@ -59,13 +59,20 @@ def test_route_trip_player_loads_route_and_emits_moving_point():
     )
     assert abs(player.total_km - expected_km) < 1e-6
 
-    # Right after start, the first coordinate must be ~the start point
-    # and be flagged as moving so the Map node records it in the trace.
-    pts = player.get_coordinates()
-    assert len(pts) == 1
-    assert pts[0]["is_moving"] is True
-    assert abs(pts[0]["latitude"] - _FAKE_ROUTE[0][0]) < 1e-3
-    assert abs(pts[0]["longitude"] - _FAKE_ROUTE[0][1]) < 1e-2
+    # Right after start, the current position must be ~the start point
+    # and be flagged as moving (is_moving == 1.0) so the Map node records
+    # it in the trace.
+    pt = player.get_coordinates()
+    assert isinstance(pt, dict), "Road Route output must be a flat dict"
+    assert bool(pt["is_moving"]), "is_moving should be truthy (1.0)"
+    assert abs(pt["latitude"] - _FAKE_ROUTE[0][0]) < 1e-3
+    assert abs(pt["longitude"] - _FAKE_ROUTE[0][1]) < 1e-2
+    # OBD2 fields must be present and numeric
+    for key in ("rpm", "speed_kmh", "coolant_temp_c", "instant_consumption_l100",
+                "throttle_pos", "engine_load", "maf_g_s", "fuel_level_pct",
+                "battery_voltage", "dtc_count"):
+        assert key in pt, f"Missing OBD2 key: {key}"
+        assert isinstance(pt[key], (int, float)), f"{key} must be numeric"
 
 
 def test_route_trip_player_progresses_with_elapsed_time():
@@ -76,12 +83,12 @@ def test_route_trip_player_progresses_with_elapsed_time():
     assert player.start()
     # Rewind start_time to fake that 1 minute (= 1 km at 60 km/h) has passed.
     player.start_time = time.time() - 60.0
-    pts = player.get_coordinates()
-    assert len(pts) == 1
+    pt = player.get_coordinates()
+    assert isinstance(pt, dict)
     # First waypoints are about ~5 km apart, so at 1 km we should still be
     # on the first segment but longitude has shifted east.
-    assert pts[0]["longitude"] > _FAKE_ROUTE[0][1]
-    assert pts[0]["is_moving"] is True
+    assert pt["longitude"] > _FAKE_ROUTE[0][1]
+    assert bool(pt["is_moving"])
 
 
 def test_route_trip_player_ends_trip_and_marks_non_moving():
@@ -92,12 +99,12 @@ def test_route_trip_player_ends_trip_and_marks_non_moving():
     assert player.start()
     # Fast-forward well past the total duration of the route.
     player.start_time = time.time() - 3600.0
-    pts = player.get_coordinates()
-    assert len(pts) == 1
-    assert pts[0]["is_moving"] is False
+    pt = player.get_coordinates()
+    assert isinstance(pt, dict)
+    assert not bool(pt["is_moving"]), "is_moving should be falsy (0.0) at end"
     assert player.finished is True
-    assert abs(pts[0]["latitude"] - _FAKE_ROUTE[-1][0]) < 1e-6
-    assert abs(pts[0]["longitude"] - _FAKE_ROUTE[-1][1]) < 1e-6
+    assert abs(pt["latitude"] - _FAKE_ROUTE[-1][0]) < 1e-6
+    assert abs(pt["longitude"] - _FAKE_ROUTE[-1][1]) < 1e-6
 
 
 def test_route_trip_player_set_speed_preserves_travelled_distance():
@@ -107,9 +114,9 @@ def test_route_trip_player_set_speed_preserves_travelled_distance():
     )
     assert player.start()
     player.start_time = time.time() - 60.0  # 1 km travelled at 60 km/h
-    pos_before = player.get_coordinates()[0]
+    pos_before = player.get_coordinates()
     player.set_speed(120.0)
-    pos_after = player.get_coordinates()[0]
+    pos_after = player.get_coordinates()
     # Doubling the speed must not teleport the moving point.
     assert abs(pos_before["latitude"] - pos_after["latitude"]) < 1e-4
     assert abs(pos_before["longitude"] - pos_after["longitude"]) < 1e-4
@@ -162,9 +169,21 @@ def test_node_update_road_route_idle_until_started(monkeypatch):
     monkeypatch.setattr(nce, "fetch_driving_route", _fake_router)
     node.is_started = True
     result = node.update(42, [], {}, {}, {})
-    assert isinstance(result["json"], list)
-    assert len(result["json"]) == 1
-    assert result["json"][0]["is_moving"] is True
+    # Road Route now emits a flat numeric dict (Chart-compatible).
+    assert isinstance(result["json"], dict), "Road Route must return a flat dict"
+    assert bool(result["json"]["is_moving"]), "is_moving must be truthy at start"
+    assert "latitude" in result["json"]
+    assert "longitude" in result["json"]
+    # OBD2 keys must all be numeric
+    for key in ("rpm", "speed_kmh", "coolant_temp_c", "instant_consumption_l100",
+                "throttle_pos", "engine_load", "maf_g_s", "fuel_level_pct",
+                "battery_voltage", "dtc_count"):
+        assert key in result["json"], f"Missing OBD2 key: {key}"
+        assert isinstance(result["json"][key], (int, float)), f"{key} not numeric"
+    # Chart node guard: all values must be int or float
+    assert all(
+        isinstance(v, (int, float)) for v in result["json"].values()
+    ), "Not all values are numeric — Chart node would reject this dict"
     assert node.route_player is not None
 
 
