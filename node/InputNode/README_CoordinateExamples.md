@@ -95,6 +95,34 @@ Real-time tracking of planes approaching Roissy-Charles de Gaulle Airport (CDG) 
 - Cached data between updates
 - Network error handling
 
+#### Road Route
+
+Drives a single moving point along an OpenStreetMap driving route between
+two free-text addresses, at a user-chosen tempo. The Map node accumulates
+a persistent trace as the trip progresses, so the road taken is drawn
+behind the live point.
+
+**Parameters** (set in the node UI):
+- **From**: departure address (geocoded via Nominatim)
+- **To**: arrival address (geocoded via Nominatim)
+- **km/h**: playback speed; controls the tempo at which coordinates are
+  emitted along the route. Changing it mid-trip is honoured without
+  losing the distance already travelled.
+
+**Behaviour**:
+- Press **Start** to geocode the addresses, fetch the driving route
+  from OSRM (`router.project-osrm.org`) and begin emitting the moving
+  point at the current position along the route.
+- One coordinate (with `is_moving=True`) is emitted on every update,
+  so the Map node leaves a trace just like in the GPS simulation.
+- When the end of the route is reached, the final point is emitted
+  with `is_moving=False` so the Map node detects end-of-trip and
+  auto-fits to the recorded trace.
+- Editing **From** / **To** and pressing Start again recomputes a fresh
+  route. Editing only **km/h** keeps the trip going at the new tempo.
+- Requires an active internet connection; if geocoding or routing fails,
+  the node status displays the error and no coordinates are emitted.
+
 ## Usage Examples
 
 ### Basic Visualization
@@ -253,10 +281,15 @@ GPS simulation provides realistic but not exact coordinates for:
 ## Map rendering: highlighting moving points
 
 Coordinates produced by the dynamic sources (GPS Movement Simulation, Roissy
-Airport Planes, and the upcoming Road Route mode) carry an `is_moving=True`
+Airport Planes, and the Road Route mode) carry an `is_moving=True`
 flag in the output JSON. The Map node uses this flag to render those points
 **~4× larger** and **semi-transparent**, so the live position stands out
 without hiding the trail or the basemap.
+
+The persistent trace recorded from these moving points is drawn with the
+**same width** as the moving point's outer diameter and the **same
+translucency**, so the trail visually reads as a continuous tail of the
+live point rather than a separate overlay.
 
 Two optional keys allow per-point tuning:
 

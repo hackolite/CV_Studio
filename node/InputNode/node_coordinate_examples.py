@@ -31,6 +31,17 @@ GPS_SIMULATION_NAME = "GPS Movement Simulation"
 # Roissy Airport Planes name constant
 ROISSY_PLANES_NAME = "Roissy Airport Planes"
 
+# Road Route name constant (drives a moving point along a road route
+# computed between a start address and an end address at a given speed).
+ROAD_ROUTE_NAME = "Road Route"
+
+# Public OSM-based endpoints used by the Road Route mode. Both are
+# free/no-key services; please keep request volume modest and identify
+# this app via the User-Agent header (Nominatim usage policy).
+_NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+_OSRM_ROUTE_URL = "https://router.project-osrm.org/route/v1/driving"
+_HTTP_USER_AGENT = "CV_Studio/CoordinateExamples (https://github.com/hackolite/CV_Studio)"
+
 
 # Predefined coordinate examples compatible with Map node format
 # All examples now have points within 1 km for better detail visibility
@@ -452,11 +463,244 @@ class RoissyPlanesTracker:
         return self.cached_planes
 
 
+def _haversine_km(lat1, lon1, lat2, lon2):
+    """Great-circle distance between two lat/lon points, in kilometres."""
+    r = 6371.0088  # mean Earth radius
+    rlat1 = math.radians(lat1)
+    rlat2 = math.radians(lat2)
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2.0) ** 2
+         + math.cos(rlat1) * math.cos(rlat2) * math.sin(dlon / 2.0) ** 2)
+    c = 2.0 * math.asin(min(1.0, math.sqrt(a)))
+    return r * c
+
+
+def geocode_address(address, timeout=10):
+    """Resolve a free-text address to ``(lat, lon)`` via Nominatim.
+
+    Returns ``None`` if the address cannot be geocoded or the service is
+    unreachable. A short User-Agent identifying the project is sent as
+    required by the Nominatim usage policy.
+    """
+    if not address or not address.strip():
+        return None
+    try:
+        resp = requests.get(
+            _NOMINATIM_URL,
+            params={"q": address.strip(), "format": "json", "limit": 1},
+            headers={"User-Agent": _HTTP_USER_AGENT},
+            timeout=timeout,
+        )
+        if resp.status_code != 200:
+            print(f"geocode_address: HTTP {resp.status_code} for '{address}'")
+            return None
+        data = resp.json()
+        if not data:
+            print(f"geocode_address: no result for '{address}'")
+            return None
+        return float(data[0]["lat"]), float(data[0]["lon"])
+    except requests.exceptions.RequestException as e:
+        print(f"geocode_address: request error for '{address}': {e}")
+        return None
+    except (ValueError, KeyError, IndexError) as e:
+        print(f"geocode_address: parse error for '{address}': {e}")
+        return None
+
+
+def fetch_driving_route(start_lat_lon, end_lat_lon, timeout=15):
+    """Fetch a driving route polyline from OSRM.
+
+    ``start_lat_lon`` / ``end_lat_lon`` are ``(lat, lon)`` tuples.
+    Returns a list of ``(lat, lon)`` waypoints along the road, or ``None``
+    on failure / empty response.
+    """
+    try:
+        slat, slon = start_lat_lon
+        elat, elon = end_lat_lon
+        url = f"{_OSRM_ROUTE_URL}/{slon},{slat};{elon},{elat}"
+        resp = requests.get(
+            url,
+            params={"overview": "full", "geometries": "geojson"},
+            headers={"User-Agent": _HTTP_USER_AGENT},
+            timeout=timeout,
+        )
+        if resp.status_code != 200:
+            print(f"fetch_driving_route: HTTP {resp.status_code}")
+            return None
+        data = resp.json()
+        if data.get("code") != "Ok" or not data.get("routes"):
+            print(f"fetch_driving_route: bad response code={data.get('code')}")
+            return None
+        coords = data["routes"][0]["geometry"]["coordinates"]
+        # GeoJSON returns [lon, lat] pairs; convert to (lat, lon).
+        return [(float(lat), float(lon)) for lon, lat in coords]
+    except requests.exceptions.RequestException as e:
+        print(f"fetch_driving_route: request error: {e}")
+        return None
+    except (ValueError, KeyError, IndexError, TypeError) as e:
+        print(f"fetch_driving_route: parse error: {e}")
+        return None
+
+
+class RouteTripPlayer:
+    """Replays a driving route between two addresses at a chosen speed.
+
+    The route is fetched once from OSRM (driving profile) and is then
+    sampled along its length based on elapsed wall-clock time and the
+    configured speed. Each call to :meth:`get_coordinates` returns the
+    current position (one moving point) so the Map node can accumulate
+    a persistent trace as the trip progresses.
+
+    The player is "lazy": no network call is made until :meth:`start`
+    succeeds. ``is_ready`` becomes True once a usable route is loaded.
+    Geocoding/route-fetching errors are stored in :attr:`error` and the
+    player stays idle (emitting no coordinates) so the Map remains
+    empty until the user fixes the inputs and presses Start again.
+    """
+
+    def __init__(self, start_address, end_address, speed_kmh,
+                 geocoder=None, router=None):
+        self.start_address = start_address or ""
+        self.end_address = end_address or ""
+        try:
+            self.speed_kmh = max(0.1, float(speed_kmh))
+        except (TypeError, ValueError):
+            self.speed_kmh = 50.0
+        # Stored as None when the defaults are wanted; resolved at start()
+        # time so monkeypatching ``geocode_address`` / ``fetch_driving_route``
+        # at the module level (e.g. in tests) takes effect.
+        self._geocoder = geocoder
+        self._router = router
+        self.route = []  # list of (lat, lon)
+        self.cum_km = []  # cumulative km along the route for each waypoint
+        self.total_km = 0.0
+        self.start_time = None
+        self.is_ready = False
+        self.finished = False
+        self.error = None
+
+    def start(self):
+        """Geocode the addresses and fetch the route. Returns True on success."""
+        self.error = None
+        geocoder = self._geocoder or geocode_address
+        router = self._router or fetch_driving_route
+        start = geocoder(self.start_address)
+        if start is None:
+            self.error = f"Cannot geocode start address: '{self.start_address}'"
+            print(f"RouteTripPlayer: {self.error}")
+            return False
+        end = geocoder(self.end_address)
+        if end is None:
+            self.error = f"Cannot geocode end address: '{self.end_address}'"
+            print(f"RouteTripPlayer: {self.error}")
+            return False
+        route = router(start, end)
+        if not route or len(route) < 2:
+            self.error = "Cannot compute driving route between the two addresses"
+            print(f"RouteTripPlayer: {self.error}")
+            return False
+        # Pre-compute cumulative distances along the polyline.
+        cum = [0.0]
+        for i in range(1, len(route)):
+            d = _haversine_km(route[i - 1][0], route[i - 1][1],
+                              route[i][0], route[i][1])
+            cum.append(cum[-1] + d)
+        self.route = route
+        self.cum_km = cum
+        self.total_km = cum[-1]
+        self.start_time = time.time()
+        self.finished = False
+        self.is_ready = True
+        print(
+            f"RouteTripPlayer: route loaded, "
+            f"{len(route)} waypoints, total={self.total_km:.3f} km, "
+            f"speed={self.speed_kmh:.1f} km/h, "
+            f"ETA={3600.0 * self.total_km / self.speed_kmh:.1f}s"
+        )
+        return True
+
+    def _position_at(self, distance_km):
+        """Linearly interpolate the route polyline at ``distance_km``."""
+        if not self.route:
+            return None
+        if distance_km <= 0:
+            return self.route[0]
+        if distance_km >= self.total_km:
+            return self.route[-1]
+        # Binary-search for the segment containing distance_km.
+        lo, hi = 0, len(self.cum_km) - 1
+        while lo + 1 < hi:
+            mid = (lo + hi) // 2
+            if self.cum_km[mid] <= distance_km:
+                lo = mid
+            else:
+                hi = mid
+        seg_start = self.cum_km[lo]
+        seg_end = self.cum_km[hi]
+        seg_len = max(1e-9, seg_end - seg_start)
+        t = (distance_km - seg_start) / seg_len
+        lat1, lon1 = self.route[lo]
+        lat2, lon2 = self.route[hi]
+        return (lat1 + (lat2 - lat1) * t, lon1 + (lon2 - lon1) * t)
+
+    def set_speed(self, speed_kmh):
+        """Adjust playback speed without losing already-travelled distance."""
+        try:
+            new_speed = max(0.1, float(speed_kmh))
+        except (TypeError, ValueError):
+            return
+        if abs(new_speed - self.speed_kmh) < 1e-6:
+            return
+        # Preserve the distance already travelled when we change tempo,
+        # by rebasing start_time so the current position stays put.
+        if self.is_ready and self.start_time is not None:
+            elapsed = time.time() - self.start_time
+            travelled_km = (self.speed_kmh / 3600.0) * elapsed
+            self.speed_kmh = new_speed
+            self.start_time = time.time() - (travelled_km / (new_speed / 3600.0))
+        else:
+            self.speed_kmh = new_speed
+
+    def get_coordinates(self):
+        """Return the current moving point (1-element list) along the route.
+
+        Emits an empty list when the player is not ready (geocoding failed
+        or :meth:`start` was never called). Once the end of the route is
+        reached, the final point is emitted with ``is_moving=False`` so
+        the Map node detects the end of the trip and auto-fits the trace.
+        """
+        if not self.is_ready or self.start_time is None:
+            return []
+        elapsed = max(0.0, time.time() - self.start_time)
+        distance_km = (self.speed_kmh / 3600.0) * elapsed
+        reached_end = distance_km >= self.total_km
+        pos = self._position_at(distance_km)
+        if pos is None:
+            return []
+        lat, lon = pos
+        # ``is_moving=False`` on the final frame signals "trip ended" to
+        # the Map node so it can auto-fit on the accumulated trace.
+        moving = not reached_end
+        if reached_end:
+            self.finished = True
+        return [{
+            "latitude": lat,
+            "longitude": lon,
+            "name": "Route",
+            "info": (
+                f"{distance_km:.2f}/{self.total_km:.2f} km "
+                f"@ {self.speed_kmh:.1f} km/h"
+            ),
+            "is_moving": moving,
+        }]
+
+
 def get_example_names():
     """Get list of available example names for the dropdown."""
-    # Static examples first, then add GPS simulation and Roissy planes
+    # Static examples first, then add GPS simulation, Roissy planes and Road Route
     static_names = list(COORDINATE_EXAMPLES.keys())
-    return static_names + [GPS_SIMULATION_NAME, ROISSY_PLANES_NAME]
+    return static_names + [GPS_SIMULATION_NAME, ROISSY_PLANES_NAME, ROAD_ROUTE_NAME]
 
 
 class FactoryNode:
@@ -487,6 +731,14 @@ class FactoryNode:
         # Start/Stop button tag (used to begin the GPS trip)
         node.tag_node_start_name = node.tag_node_name + ':Start'
         node.tag_node_start_button_name = node.tag_node_name + ':StartButton'
+
+        # Road Route input tags (address de départ, adresse d'arrivée, vitesse)
+        node.tag_node_route_start_name = node.tag_node_name + ':RouteStart'
+        node.tag_node_route_start_value_name = node.tag_node_name + ':RouteStartValue'
+        node.tag_node_route_end_name = node.tag_node_name + ':RouteEnd'
+        node.tag_node_route_end_value_name = node.tag_node_name + ':RouteEndValue'
+        node.tag_node_route_speed_name = node.tag_node_name + ':RouteSpeed'
+        node.tag_node_route_speed_value_name = node.tag_node_name + ':RouteSpeedValue'
 
         # Status text tag
         node.tag_node_status_name = node.tag_node_name + ':Status'
@@ -530,6 +782,45 @@ class FactoryNode:
                     user_data=(node, node_id),
                 )
             
+            # Road Route inputs: departure address, arrival address and
+            # tempo speed (km/h). They are always visible but only used
+            # when "Road Route" is selected in the dropdown above.
+            with dpg.node_attribute(
+                tag=node.tag_node_route_start_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_input_text(
+                    tag=node.tag_node_route_start_value_name,
+                    label="From",
+                    default_value="Paris, France",
+                    width=small_window_w - 50,
+                    hint="Departure address",
+                )
+            with dpg.node_attribute(
+                tag=node.tag_node_route_end_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_input_text(
+                    tag=node.tag_node_route_end_value_name,
+                    label="To",
+                    default_value="Versailles, France",
+                    width=small_window_w - 50,
+                    hint="Arrival address",
+                )
+            with dpg.node_attribute(
+                tag=node.tag_node_route_speed_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_input_float(
+                    tag=node.tag_node_route_speed_value_name,
+                    label="km/h",
+                    default_value=50.0,
+                    min_value=0.1,
+                    min_clamped=True,
+                    width=small_window_w - 50,
+                    step=5.0,
+                )
+
             # Status text showing number of points
             with dpg.node_attribute(
                 tag=node.tag_node_status_name,
@@ -580,6 +871,7 @@ class Node(BaseNode):
     def __init__(self):
         self.gps_simulator = None  # Will be initialized when GPS simulation is selected
         self.roissy_tracker = None  # Will be initialized when Roissy planes is selected
+        self.route_player = None  # Will be initialized when Road Route is selected
         self.last_update_time = None  # Track last GPS update time
         self.update_interval = 1.0  # Update GPS positions every 1 second
         self.last_coordinates = []  # Cache last generated coordinates
@@ -602,6 +894,7 @@ class Node(BaseNode):
             # starts fresh from T0 at the current time.
             node.is_started = True
             node.gps_simulator = None
+            node.route_player = None
             node.last_update_time = None
             node.last_coordinates = []
             try:
@@ -611,10 +904,13 @@ class Node(BaseNode):
             selected_example = dpg_get_value(dropdown_tag)
             if selected_example == GPS_SIMULATION_NAME:
                 dpg_set_value(status_tag, 'Trip started (updates every 1s)')
+            elif selected_example == ROAD_ROUTE_NAME:
+                dpg_set_value(status_tag, 'Loading route...')
         else:
             # Stop the trip and reset state.
             node.is_started = False
             node.gps_simulator = None
+            node.route_player = None
             node.last_update_time = None
             node.last_coordinates = []
             try:
@@ -622,7 +918,7 @@ class Node(BaseNode):
             except Exception:
                 pass
             selected_example = dpg_get_value(dropdown_tag)
-            if selected_example == GPS_SIMULATION_NAME:
+            if selected_example in (GPS_SIMULATION_NAME, ROAD_ROUTE_NAME):
                 dpg_set_value(status_tag, 'Trip stopped (press Start to begin)')
     
     @staticmethod
@@ -648,7 +944,21 @@ class Node(BaseNode):
         # Reset Roissy tracker when switching away from Roissy planes
         if selected_example != ROISSY_PLANES_NAME and hasattr(node, 'roissy_tracker'):
             node.roissy_tracker = None
-        
+
+        # Reset Road Route player when switching away from Road Route.
+        # Also reset the Start button so the user can launch a fresh trip
+        # next time the mode is selected.
+        if selected_example != ROAD_ROUTE_NAME and hasattr(node, 'route_player'):
+            if node.route_player is not None or getattr(node, 'is_started', False):
+                node.route_player = None
+                node.is_started = False
+                node.last_coordinates = []
+                try:
+                    button_tag = str(node_id) + ':' + node.node_tag + ':StartButton'
+                    dpg.configure_item(button_tag, label="Start")
+                except Exception:
+                    pass
+
         # Get the coordinates for the selected example
         if selected_example == GPS_SIMULATION_NAME:
             # For GPS simulation, show dynamic message
@@ -659,6 +969,11 @@ class Node(BaseNode):
         elif selected_example == ROISSY_PLANES_NAME:
             # For Roissy planes, show dynamic message
             status_text = 'Tracking planes near Roissy Airport (updates every 20s)'
+        elif selected_example == ROAD_ROUTE_NAME:
+            if getattr(node, 'is_started', False):
+                status_text = 'Trip in progress'
+            else:
+                status_text = 'Set From/To/km/h and press Start'
         else:
             coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
             num_points = len(coordinates)
@@ -735,7 +1050,66 @@ class Node(BaseNode):
             
             # Get current approaching planes (tracker manages its own refresh interval)
             json_output = self.roissy_tracker.get_coordinates()
-        
+
+        # Handle Road Route mode: drive a single moving point along an
+        # OSRM-computed driving route between the From/To addresses, at
+        # the configured km/h tempo. Coordinates are emitted only after
+        # the user has pressed Start (and the route is loaded).
+        elif selected_example == ROAD_ROUTE_NAME:
+            if not self.is_started:
+                json_output = []
+            else:
+                start_addr_tag = tag_node_name + ':RouteStartValue'
+                end_addr_tag = tag_node_name + ':RouteEndValue'
+                speed_tag = tag_node_name + ':RouteSpeedValue'
+                status_tag = tag_node_name + ':StatusValue'
+
+                start_addr = dpg_get_value(start_addr_tag) or ""
+                end_addr = dpg_get_value(end_addr_tag) or ""
+                speed_kmh = dpg_get_value(speed_tag)
+                if speed_kmh is None:
+                    speed_kmh = 50.0
+
+                # Lazily create / refresh the player when the inputs
+                # change so the user can edit From/To and press Start
+                # again to recompute the route.
+                needs_new = (
+                    self.route_player is None
+                    or self.route_player.start_address != start_addr
+                    or self.route_player.end_address != end_addr
+                )
+                if needs_new:
+                    self.route_player = RouteTripPlayer(
+                        start_addr, end_addr, speed_kmh,
+                    )
+                    if not self.route_player.start():
+                        # Show the error in the node status but keep the
+                        # player around so we don't hammer the API every
+                        # frame; the user can edit and press Start again.
+                        try:
+                            dpg_set_value(
+                                status_tag,
+                                self.route_player.error or 'Route error',
+                            )
+                        except Exception:
+                            pass
+                        json_output = []
+                    else:
+                        try:
+                            dpg_set_value(
+                                status_tag,
+                                f'Trip in progress: '
+                                f'{self.route_player.total_km:.1f} km '
+                                f'@ {self.route_player.speed_kmh:.1f} km/h',
+                            )
+                        except Exception:
+                            pass
+                        json_output = self.route_player.get_coordinates()
+                else:
+                    # Live speed tweaks are honoured without resetting the trip.
+                    self.route_player.set_speed(speed_kmh)
+                    json_output = self.route_player.get_coordinates()
+
         else:
             # Get static coordinates for the selected example
             coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
@@ -769,18 +1143,28 @@ class Node(BaseNode):
         """Save the current dropdown selection."""
         tag_node_name = str(node_id) + ':' + self.node_tag
         dropdown_tag = tag_node_name + ':DropdownValue'
+        route_start_tag = tag_node_name + ':RouteStartValue'
+        route_end_tag = tag_node_name + ':RouteEndValue'
+        route_speed_tag = tag_node_name + ':RouteSpeedValue'
 
         selected_example = dpg_get_value(dropdown_tag)
         if selected_example is None:
             selected_example = "AISTRACKER"
-        
+
         pos = dpg.get_item_pos(tag_node_name)
-        
+
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
         setting_dict[dropdown_tag] = selected_example
-        
+        # Persist Road Route inputs so the trip can be resumed after reload.
+        try:
+            setting_dict[route_start_tag] = dpg_get_value(route_start_tag)
+            setting_dict[route_end_tag] = dpg_get_value(route_end_tag)
+            setting_dict[route_speed_tag] = dpg_get_value(route_speed_tag)
+        except Exception:
+            pass
+
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
@@ -788,13 +1172,26 @@ class Node(BaseNode):
         tag_node_name = str(node_id) + ':' + self.node_tag
         dropdown_tag = tag_node_name + ':DropdownValue'
         status_tag = tag_node_name + ':StatusValue'
+        route_start_tag = tag_node_name + ':RouteStartValue'
+        route_end_tag = tag_node_name + ':RouteEndValue'
+        route_speed_tag = tag_node_name + ':RouteSpeedValue'
 
         selected_example = setting_dict.get(dropdown_tag, "AISTRACKER")
         dpg_set_value(dropdown_tag, selected_example)
-        
+
+        # Restore Road Route inputs when present.
+        for tag in (route_start_tag, route_end_tag, route_speed_tag):
+            if tag in setting_dict:
+                try:
+                    dpg_set_value(tag, setting_dict[tag])
+                except Exception:
+                    pass
+
         # Update status text
         if selected_example == GPS_SIMULATION_NAME:
             status_text = 'Press Start to begin the trip'
+        elif selected_example == ROAD_ROUTE_NAME:
+            status_text = 'Set From/To/km/h and press Start'
         else:
             coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
             num_points = len(coordinates)

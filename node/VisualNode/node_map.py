@@ -1685,13 +1685,28 @@ class Node(DpgNodeABC):
                     py *= scale
                     px_positions.append((px, py))
 
+                # Markers: drop shadow + halo + filled dot + white rim.
+                # Computed up-front because the trace width below is matched
+                # to the moving-point's outer diameter.
+                r_outer = max(7, int(9 * (tile_px / float(TILE_SIZE))))
+                r_inner = max(3, int(4 * (tile_px / float(TILE_SIZE))))
+
                 # Persistent trace (if any): draw the historic polyline first
                 # so live markers stay on top. When a metric key is in use,
                 # each segment is coloured by the average metric of its two
                 # endpoints, mapped through the green→yellow→orange→red
                 # gradient.
-                halo_w = max(6, int(8 * (tile_px / float(TILE_SIZE))))
-                line_w = max(2, int(3 * (tile_px / float(TILE_SIZE))))
+                #
+                # The trace is rendered with the same width as the moving
+                # point's outer diameter and with the same translucency as
+                # the moving marker, so it visually reads as a continuous
+                # trail of the live point rather than a separate overlay.
+                moving_r_outer = max(1, int(round(r_outer * MOVING_POINT_SCALE)))
+                trace_w = max(2, moving_r_outer * 2)
+                trace_alpha = _scaled_alpha(255, MOVING_POINT_ALPHA)
+                # Non-trace live trail keeps its original (narrower) styling.
+                live_trail_halo_w = max(6, int(8 * (tile_px / float(TILE_SIZE))))
+                live_trail_line_w = max(2, int(3 * (tile_px / float(TILE_SIZE))))
 
                 trace_pts = list(trace_history or [])
                 if len(trace_pts) >= 2:
@@ -1703,10 +1718,6 @@ class Node(DpgNodeABC):
                         )
                         scale_h = tile_px / float(TILE_SIZE)
                         trace_px.append((tpx * scale_h, tpy * scale_h))
-
-                    # White halo runs under the whole polyline for legibility.
-                    draw.line(trace_px, fill=(255, 255, 255, 200),
-                              width=halo_w, joint="curve")
 
                     use_metric = (
                         metric_key and metric_key != METRIC_NONE
@@ -1722,26 +1733,24 @@ class Node(DpgNodeABC):
                             mb = hb.get('metric')
                             vals = [v for v in (ma, mb) if v is not None]
                             if not vals:
-                                color = (220, 30, 0, 235)
+                                color = (220, 30, 0, trace_alpha)
                             else:
                                 avg = sum(vals) / len(vals)
-                                color = _metric_gradient_color(avg, alpha=235)
-                            draw.line([a, b], fill=color, width=line_w,
+                                color = _metric_gradient_color(avg, alpha=trace_alpha)
+                            draw.line([a, b], fill=color, width=trace_w,
                                       joint="curve")
                     else:
-                        draw.line(trace_px, fill=(220, 30, 0, 235),
-                                  width=line_w, joint="curve")
+                        draw.line(trace_px, fill=(220, 30, 0, trace_alpha),
+                                  width=trace_w, joint="curve")
 
                 # Live-points trail (only when no persistent trace is
                 # available, to preserve the original behaviour for
                 # non-trace use cases).
                 if not trace_pts and len(px_positions) >= 2:
-                    draw.line(px_positions, fill=(255, 255, 255, 200), width=halo_w, joint="curve")
-                    draw.line(px_positions, fill=(220, 30, 0, 235), width=line_w, joint="curve")
-
-                # Markers: drop shadow + halo + filled dot + white rim
-                r_outer = max(7, int(9 * (tile_px / float(TILE_SIZE))))
-                r_inner = max(3, int(4 * (tile_px / float(TILE_SIZE))))
+                    draw.line(px_positions, fill=(255, 255, 255, 200),
+                              width=live_trail_halo_w, joint="curve")
+                    draw.line(px_positions, fill=(220, 30, 0, 235),
+                              width=live_trail_line_w, joint="curve")
                 for point, (fpx, fpy) in zip(points, px_positions):
                     # Per-point scaling / transparency for "moving" markers.
                     # A point flagged ``is_moving=True`` is rendered larger and
