@@ -129,6 +129,60 @@ def test_coordinate_examples_all_examples_have_coordinates():
     print("✓ All examples have valid coordinates test passed")
 
 
+def test_gps_simulation_requires_start_button(monkeypatch):
+    """The GPS Movement Simulation should stay idle until Start is pressed."""
+    from node.InputNode import node_coordinate_examples as nce
+
+    node = CoordinateExamplesNode()
+    node_id = 999
+
+    # Force the dropdown to report GPS Movement Simulation as selected
+    monkeypatch.setattr(nce, "dpg_get_value", lambda tag: nce.GPS_SIMULATION_NAME)
+
+    # Before pressing Start: no coordinates should be emitted and the
+    # simulator must not be initialised yet.
+    result = node.update(node_id, [], {}, {}, {})
+    assert result["json"] == []
+    assert node.gps_simulator is None
+
+    # Simulate pressing Start: trip begins, simulator initialised, points emitted.
+    node.is_started = True
+    result = node.update(node_id, [], {}, {}, {})
+    assert isinstance(result["json"], list)
+    assert len(result["json"]) > 0
+    assert node.gps_simulator is not None
+
+    # Simulate pressing Stop: trip halts again and no coordinates are returned.
+    node.is_started = False
+    node.gps_simulator = None
+    node.last_update_time = None
+    node.last_coordinates = []
+    result = node.update(node_id, [], {}, {}, {})
+    assert result["json"] == []
+    print("✓ GPS simulation Start/Stop gating test passed")
+
+
+def test_gps_simulation_secousses_metric_is_plausible(monkeypatch):
+    """The GPS simulator should expose a 'secousses' percentage in [0, 1]
+    that evolves slowly between successive frames."""
+    from node.InputNode import node_coordinate_examples as nce
+
+    sim = nce.GPSMovementSimulator(num_objects=3)
+    coords = sim.get_coordinates()
+    assert all('secousses' in c for c in coords)
+    for c in coords:
+        assert 0.0 <= c['secousses'] <= 1.0
+
+    prev = [c['secousses'] for c in coords]
+    sim.update_positions(time_elapsed=1.0)
+    after = [c['secousses'] for c in sim.get_coordinates()]
+    # Stay in range and progress slowly between frames (no big jumps).
+    for old, new in zip(prev, after):
+        assert 0.0 <= new <= 1.0
+        assert abs(new - old) <= 0.06
+    print("✓ secousses metric is in [0, 1] and progresses slowly")
+
+
 if __name__ == "__main__":
     print("Testing Coordinate Examples Node...")
     print()

@@ -70,6 +70,128 @@ MIN_RANGE_METERS = 1000      # Minimum range for single points (1 km)
 DEFAULT_RANGE_METERS = 10000  # Default range when min is needed (10 km)
 MAP_PADDING_FACTOR = 0.15     # Padding around bounding box (15%)
 
+# Moving-point marker styling (applied to points carrying ``is_moving=True``).
+# Producers (e.g. CoordinateExamples / RoutePlayer / GPSMovementSimulator) can
+# flag the "currently moving" coordinate with ``is_moving=True`` and optionally
+# override the scale/alpha per-point via ``marker_scale`` / ``marker_alpha``.
+MOVING_POINT_SCALE = 4.0     # Marker is rendered ~4x larger than a normal one
+MOVING_POINT_ALPHA = 0.5     # Marker is rendered semi-transparent
+
+
+def _moving_marker_style(point):
+    """Return (scale, alpha_factor) for a coordinate point.
+
+    Points carrying ``is_moving=True`` are rendered enlarged and translucent
+    so they stand out as the current position along an animated trajectory.
+    The scale defaults to :data:`MOVING_POINT_SCALE` and the alpha factor to
+    :data:`MOVING_POINT_ALPHA`, but each can be overridden per-point via the
+    optional ``marker_scale`` and ``marker_alpha`` keys.
+
+    Static markers (``is_moving`` absent or falsy) are returned unchanged
+    (``scale=1.0``, ``alpha_factor=1.0``).
+    """
+    try:
+        is_moving = bool(point.get("is_moving"))
+    except AttributeError:
+        return 1.0, 1.0
+    if not is_moving:
+        return 1.0, 1.0
+    try:
+        scale = float(point.get("marker_scale", MOVING_POINT_SCALE))
+    except (TypeError, ValueError):
+        scale = MOVING_POINT_SCALE
+    try:
+        alpha_factor = float(point.get("marker_alpha", MOVING_POINT_ALPHA))
+    except (TypeError, ValueError):
+        alpha_factor = MOVING_POINT_ALPHA
+    # Guard against pathological values.
+    if scale <= 0:
+        scale = 1.0
+    alpha_factor = max(0.0, min(1.0, alpha_factor))
+    return scale, alpha_factor
+
+
+def _scaled_alpha(base, factor):
+    """Multiply an 8-bit alpha channel by ``factor`` and clamp to [0, 255]."""
+    return max(0, min(255, int(round(base * factor))))
+
+
+# Keys that should never be offered as colour metrics in the Map node.
+# Anything else found on incoming points (numeric values in [0, 1]) is a
+# valid candidate for the green→yellow→orange→red gradient.
+METRIC_NONE = "(none)"
+_METRIC_EXCLUDED_KEYS = {
+    "lat", "lon", "latitude", "longitude",
+    "name", "ship_name", "info", "mmsi", "callsign",
+    "is_moving", "marker_scale", "marker_alpha",
+}
+
+
+def _metric_gradient_color(value, alpha=255):
+    """Return an RGBA tuple for a percentage ``value`` in [0, 1].
+
+    The gradient walks through green → yellow → orange → red so that
+    values close to 1 (e.g. high "secousses" / jolts) are visually loud.
+    Values outside [0, 1] are clamped. Non-numeric values return a neutral
+    grey so callers can fall back gracefully when no metric is available.
+    """
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return (170, 170, 170, alpha)
+    if math.isnan(v):
+        return (170, 170, 170, alpha)
+    v = max(0.0, min(1.0, v))
+
+    # Three linear segments between four anchor colours.
+    # 0.00 → green   (0,   180, 0)
+    # 0.50 → yellow  (240, 220, 0)
+    # 0.75 → orange  (255, 140, 0)
+    # 1.00 → red     (220, 30,  0)
+    stops = [
+        (0.00, (0, 180, 0)),
+        (0.50, (240, 220, 0)),
+        (0.75, (255, 140, 0)),
+        (1.00, (220, 30, 0)),
+    ]
+    for (t0, c0), (t1, c1) in zip(stops[:-1], stops[1:]):
+        if v <= t1:
+            span = max(1e-9, t1 - t0)
+            t = (v - t0) / span
+            r = int(round(c0[0] + (c1[0] - c0[0]) * t))
+            g = int(round(c0[1] + (c1[1] - c0[1]) * t))
+            b = int(round(c0[2] + (c1[2] - c0[2]) * t))
+            return (r, g, b, alpha)
+    r, g, b = stops[-1][1]
+    return (r, g, b, alpha)
+
+
+def _metric_candidate_keys(points):
+    """Return the list of keys eligible for the metric selector.
+
+    A key is eligible when it appears at least once on a point with a
+    numeric value in [0, 1] and is not a built-in/spatial key.
+    """
+    keys = []
+    seen = set()
+    for pt in points or ():
+        if not isinstance(pt, dict):
+            continue
+        for k, v in pt.items():
+            if k in _METRIC_EXCLUDED_KEYS or k.startswith("_"):
+                continue
+            if k in seen:
+                continue
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                continue
+            if math.isnan(fv) or fv < 0.0 or fv > 1.0:
+                continue
+            seen.add(k)
+            keys.append(k)
+    return keys
+
 # Simplified continental outlines for map context visualization
 # These are rough approximations to give geographic context in the map view
 # Format: {region_name: (longitude_coords, latitude_coords)}
@@ -534,6 +656,9 @@ class FactoryNode:
         node.tag_node_provider_value_name = node.tag_node_name + ':ProviderValue'
         node.tag_node_hidpi_value_name = node.tag_node_name + ':HiDPIValue'
         node.tag_node_labels_value_name = node.tag_node_name + ':LabelsValue'
+        # Metric (colour-by) selector + persistent trace toggle
+        node.tag_node_metric_value_name = node.tag_node_name + ':MetricValue'
+        node.tag_node_trace_value_name = node.tag_node_name + ':TraceValue'
 
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict['process_width']
@@ -623,6 +748,36 @@ class FactoryNode:
                     tag=node.tag_node_labels_value_name,
                     label="Labels overlay",
                     default_value=False,
+                )
+
+            # Metric (colour-by) selector. The items list is refreshed on
+            # every update() from the keys actually present in the input
+            # JSON. Picking a metric colours the markers (and persistent
+            # trace) on a green→yellow→orange→red gradient over [0, 1].
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_metric_value_name,
+                    label="Metric",
+                    items=[METRIC_NONE],
+                    default_value=METRIC_NONE,
+                    width=small_window_w - 60,
+                )
+
+            # Trace toggle: when on, every "moving" point received is
+            # appended to a persistent history that is drawn as a coloured
+            # polyline. When the trip ends (no more moving point in the
+            # incoming data) the map auto-fits to show the whole trace.
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_checkbox(
+                    tag=node.tag_node_trace_value_name,
+                    label="Trace",
+                    default_value=False,
+                    callback=lambda s, a, u: Node.on_trace_toggle(s, a, u),
+                    user_data=(node, node_id),
                 )
 
             # Map size slider (for bounding box adjustment)
@@ -727,6 +882,26 @@ class Node(DpgNodeABC):
         # Pan offset tracking (in meters, Web Mercator)
         self.pan_offset_x = 0.0
         self.pan_offset_y = 0.0
+        # Persistent trace history of moving points: list of dicts with
+        # ``lat``, ``lon`` and ``metric`` (float in [0, 1] or None).
+        self._trace_history = []
+        # Whether we already auto-fitted the view after a trip ended. Used
+        # to avoid permanently locking the view when the user pans/zooms
+        # post-trip.
+        self._trace_fitted = False
+        # Tracks whether the previous frame contained a moving point. The
+        # transition "had moving → has none" marks the end of a trip and
+        # triggers the auto-fit.
+        self._had_moving_previously = False
+
+
+    @staticmethod
+    def on_trace_toggle(sender, app_data, user_data):
+        """Reset trace history whenever the user toggles the Trace switch."""
+        node, _node_id = user_data
+        node._trace_history = []
+        node._trace_fitted = False
+        node._had_moving_previously = False
 
 
     @staticmethod
@@ -836,6 +1011,71 @@ class Node(DpgNodeABC):
         return (west, south, east, north)
 
 
+    @staticmethod
+    def _metric_value(point, metric_key):
+        """Return a float in [0, 1] or ``None`` for the metric key on a point."""
+        if not metric_key or metric_key == METRIC_NONE or not isinstance(point, dict):
+            return None
+        if metric_key not in point:
+            return None
+        try:
+            v = float(point[metric_key])
+        except (TypeError, ValueError):
+            return None
+        if math.isnan(v):
+            return None
+        return max(0.0, min(1.0, v))
+
+    def _record_trace(self, points, metric_key, trace_enabled):
+        """Append moving points to the trace history and report trip phase.
+
+        Returns a tuple ``(end_of_trip, history_snapshot)`` where
+        ``end_of_trip`` is True when the previous frame contained a moving
+        point and the current frame does not, signalling the end of the
+        recorded trip. ``history_snapshot`` is a (possibly empty) copy of
+        the persistent trace ready to be drawn / used for an auto-fit.
+        """
+        if not trace_enabled:
+            # Trace is off: drop the history so toggling it back on starts
+            # from a fresh trip.
+            self._trace_history = []
+            self._trace_fitted = False
+            self._had_moving_previously = False
+            return False, []
+
+        has_moving = False
+        for pt in points or ():
+            if not isinstance(pt, dict) or not pt.get('is_moving'):
+                continue
+            has_moving = True
+            try:
+                lat = float(pt['lat'])
+                lon = float(pt['lon'])
+            except (TypeError, ValueError, KeyError):
+                continue
+            entry = {
+                'lat': lat,
+                'lon': lon,
+                'metric': self._metric_value(pt, metric_key),
+            }
+            # Avoid recording exact duplicates back-to-back (the trip
+            # might emit the same coordinate while paused).
+            if self._trace_history:
+                last = self._trace_history[-1]
+                if last['lat'] == lat and last['lon'] == lon:
+                    last['metric'] = entry['metric']
+                    self._had_moving_previously = True
+                    return False, list(self._trace_history)
+            self._trace_history.append(entry)
+            # A new moving point arrived: the trip is in progress, so the
+            # next "no moving point" frame will count as a new end-of-trip.
+            self._trace_fitted = False
+
+        end_of_trip = self._had_moving_previously and not has_moving and len(self._trace_history) >= 2
+        self._had_moving_previously = has_moving
+        return end_of_trip, list(self._trace_history)
+
+
     @classmethod
     def create_for_testing(cls):
         """Factory method for creating node instances in tests"""
@@ -848,7 +1088,100 @@ class Node(DpgNodeABC):
         node.cache_radius = 2
         node.pan_offset_x = 0.0
         node.pan_offset_y = 0.0
+        node._trace_history = []
+        node._trace_fitted = False
+        node._had_moving_previously = False
         return node
+
+
+    def _render_map_with_trace(
+        self,
+        points,
+        small_window_w, small_window_h,
+        tag_node_zoom_value_name,
+        tag_node_size_value_name,
+        tag_node_cache_value_name,
+        tag_node_pan_x_value_name,
+        tag_node_pan_y_value_name,
+        tag_node_provider_value_name,
+        tag_node_hidpi_value_name,
+        tag_node_labels_value_name,
+        tag_node_metric_value_name,
+        tag_node_trace_value_name,
+        tag_node_progress_name,
+        tag_node_status_value_name,
+    ):
+        """Single rendering entry point used by both JSON input branches.
+
+        Reads the Metric / Trace controls, updates the trace history, decides
+        which points to render and whether the trip just ended, then calls
+        the underlying tile renderer with the metric/trace context.
+        """
+        zoom_level = dpg_get_value(tag_node_zoom_value_name)
+        size_factor = dpg_get_value(tag_node_size_value_name)
+        use_cache = dpg_get_value(tag_node_cache_value_name)
+        pan_x = dpg_get_value(tag_node_pan_x_value_name)
+        pan_y = dpg_get_value(tag_node_pan_y_value_name)
+        provider_name = dpg_get_value(tag_node_provider_value_name) or DEFAULT_PROVIDER
+        hidpi = bool(dpg_get_value(tag_node_hidpi_value_name))
+        labels_overlay = bool(dpg_get_value(tag_node_labels_value_name))
+        metric_key = dpg_get_value(tag_node_metric_value_name) or METRIC_NONE
+        trace_enabled = bool(dpg_get_value(tag_node_trace_value_name))
+        if use_cache is None:
+            use_cache = True
+        if pan_x is None:
+            pan_x = 0.0
+        if pan_y is None:
+            pan_y = 0.0
+
+        # Refresh the metric combo with the keys actually present on the
+        # current input (numeric values in [0, 1]).
+        try:
+            available = [METRIC_NONE] + _metric_candidate_keys(points)
+            dpg.configure_item(tag_node_metric_value_name, items=available)
+            if metric_key not in available:
+                metric_key = METRIC_NONE
+                dpg_set_value(tag_node_metric_value_name, METRIC_NONE)
+        except Exception:
+            pass
+
+        # Update trace history and detect end-of-trip transitions.
+        end_of_trip, trace_history = self._record_trace(
+            points, metric_key, trace_enabled,
+        )
+
+        # Decide which points drive the bbox / are drawn as markers.
+        render_points = points
+        if end_of_trip and trace_history and not self._trace_fitted:
+            # Trip just ended: auto-fit to the full recorded trace by
+            # using the trace as the points for the bbox computation.
+            print(
+                f"Map node: Trip ended, auto-fitting view to {len(trace_history)} "
+                f"trace point(s)"
+            )
+            render_points = [{
+                'lat': h['lat'],
+                'lon': h['lon'],
+                'name': '',
+                'info': '',
+            } for h in trace_history]
+            self._trace_fitted = True
+
+        if not render_points:
+            return None, None
+
+        print(
+            f"Map node: Parameters - zoom={zoom_level}, size={size_factor}, "
+            f"pan_x={pan_x}, pan_y={pan_y}, cache={use_cache}, "
+            f"provider={provider_name}, hidpi={hidpi}, labels={labels_overlay}, "
+            f"metric={metric_key}, trace={trace_enabled}"
+        )
+        return self._create_preview_image(
+            render_points, small_window_w, small_window_h,
+            zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name,
+            provider_name=provider_name, hidpi=hidpi, labels_overlay=labels_overlay,
+            metric_key=metric_key, trace_history=trace_history,
+        )
 
 
     def update(
@@ -873,6 +1206,8 @@ class Node(DpgNodeABC):
         tag_node_provider_value_name = tag_node_name + ':ProviderValue'
         tag_node_hidpi_value_name = tag_node_name + ':HiDPIValue'
         tag_node_labels_value_name = tag_node_name + ':LabelsValue'
+        tag_node_metric_value_name = tag_node_name + ':MetricValue'
+        tag_node_trace_value_name = tag_node_name + ':TraceValue'
 
         small_window_w = self._opencv_setting_dict['process_width']
         small_window_h = self._opencv_setting_dict['process_height']
@@ -945,38 +1280,54 @@ class Node(DpgNodeABC):
                         if points:
                             print(f"Map node: Extracted {len(points)} points with lat/lon")
                             self.point_data = points
-                            
-                            # Get zoom, size, cache, and pan parameters
-                            zoom_level = dpg_get_value(tag_node_zoom_value_name)
-                            size_factor = dpg_get_value(tag_node_size_value_name)
-                            use_cache = dpg_get_value(tag_node_cache_value_name)
-                            pan_x = dpg_get_value(tag_node_pan_x_value_name)
-                            pan_y = dpg_get_value(tag_node_pan_y_value_name)
-                            provider_name = dpg_get_value(tag_node_provider_value_name) or DEFAULT_PROVIDER
-                            hidpi = bool(dpg_get_value(tag_node_hidpi_value_name))
-                            labels_overlay = bool(dpg_get_value(tag_node_labels_value_name))
-                            if use_cache is None:
-                                use_cache = True  # Default to enabled
-                            if pan_x is None:
-                                pan_x = 0.0
-                            if pan_y is None:
-                                pan_y = 0.0
-                            
-                            # Log current parameter values
-                            print(f"Map node: Parameters - zoom={zoom_level}, size={size_factor}, pan_x={pan_x}, pan_y={pan_y}, cache={use_cache}, provider={provider_name}, hidpi={hidpi}, labels={labels_overlay}")
-                            
-                            # Create map visualization image (main display)
-                            preview_image, cache_stats = self._create_preview_image(
-                                points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name,
-                                provider_name=provider_name, hidpi=hidpi, labels_overlay=labels_overlay,
+
+                            result = self._render_map_with_trace(
+                                points, small_window_w, small_window_h,
+                                tag_node_zoom_value_name,
+                                tag_node_size_value_name,
+                                tag_node_cache_value_name,
+                                tag_node_pan_x_value_name,
+                                tag_node_pan_y_value_name,
+                                tag_node_provider_value_name,
+                                tag_node_hidpi_value_name,
+                                tag_node_labels_value_name,
+                                tag_node_metric_value_name,
+                                tag_node_trace_value_name,
+                                tag_node_progress_name,
+                                tag_node_status_value_name,
                             )
-                            
+                            if result is not None and result[0] is not None:
+                                preview_image, cache_stats = result
+
                             # Update status with empty text (labels removed as requested)
                             dpg_set_value(tag_node_status_value_name, "")
                         else:
-                            status_msg = "No lat/lon in data"
-                            print(f"Map node: {status_msg}")
-                            dpg_set_value(tag_node_status_value_name, status_msg)
+                            # No points in the current frame, but if trace is
+                            # on and history exists this can mark the end of
+                            # the trip → still call the renderer so the
+                            # auto-fit kicks in.
+                            result = self._render_map_with_trace(
+                                [], small_window_w, small_window_h,
+                                tag_node_zoom_value_name,
+                                tag_node_size_value_name,
+                                tag_node_cache_value_name,
+                                tag_node_pan_x_value_name,
+                                tag_node_pan_y_value_name,
+                                tag_node_provider_value_name,
+                                tag_node_hidpi_value_name,
+                                tag_node_labels_value_name,
+                                tag_node_metric_value_name,
+                                tag_node_trace_value_name,
+                                tag_node_progress_name,
+                                tag_node_status_value_name,
+                            )
+                            if result is not None and result[0] is not None:
+                                preview_image, cache_stats = result
+                                dpg_set_value(tag_node_status_value_name, "")
+                            else:
+                                status_msg = "No lat/lon in data"
+                                print(f"Map node: {status_msg}")
+                                dpg_set_value(tag_node_status_value_name, status_msg)
                 else:
                     print(f"Map node: Received JSON object (type: {type(input_value).__name__})")
                     data = input_value
@@ -991,42 +1342,55 @@ class Node(DpgNodeABC):
 
                     # Extract points with latitude and longitude
                     points = self._extract_lat_lon_from_json(data)
-                    
+
                     if points:
                         print(f"Map node: Extracted {len(points)} points with lat/lon")
                         self.point_data = points
-                        
-                        # Get zoom, size, cache, and pan parameters
-                        zoom_level = dpg_get_value(tag_node_zoom_value_name)
-                        size_factor = dpg_get_value(tag_node_size_value_name)
-                        use_cache = dpg_get_value(tag_node_cache_value_name)
-                        pan_x = dpg_get_value(tag_node_pan_x_value_name)
-                        pan_y = dpg_get_value(tag_node_pan_y_value_name)
-                        provider_name = dpg_get_value(tag_node_provider_value_name) or DEFAULT_PROVIDER
-                        hidpi = bool(dpg_get_value(tag_node_hidpi_value_name))
-                        labels_overlay = bool(dpg_get_value(tag_node_labels_value_name))
-                        if use_cache is None:
-                            use_cache = True  # Default to enabled
-                        if pan_x is None:
-                            pan_x = 0.0
-                        if pan_y is None:
-                            pan_y = 0.0
-                        
-                        # Log current parameter values
-                        print(f"Map node: Parameters - zoom={zoom_level}, size={size_factor}, pan_x={pan_x}, pan_y={pan_y}, cache={use_cache}, provider={provider_name}, hidpi={hidpi}, labels={labels_overlay}")
-                        
-                        # Create map visualization image (main display)
-                        preview_image, cache_stats = self._create_preview_image(
-                            points, small_window_w, small_window_h, zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name,
-                            provider_name=provider_name, hidpi=hidpi, labels_overlay=labels_overlay,
+
+                        result = self._render_map_with_trace(
+                            points, small_window_w, small_window_h,
+                            tag_node_zoom_value_name,
+                            tag_node_size_value_name,
+                            tag_node_cache_value_name,
+                            tag_node_pan_x_value_name,
+                            tag_node_pan_y_value_name,
+                            tag_node_provider_value_name,
+                            tag_node_hidpi_value_name,
+                            tag_node_labels_value_name,
+                            tag_node_metric_value_name,
+                            tag_node_trace_value_name,
+                            tag_node_progress_name,
+                            tag_node_status_value_name,
                         )
-                        
+                        if result is not None and result[0] is not None:
+                            preview_image, cache_stats = result
+
                         # Update status with empty text (labels removed as requested)
                         dpg_set_value(tag_node_status_value_name, "")
                     else:
-                        status_msg = "No lat/lon in data"
-                        print(f"Map node: {status_msg}")
-                        dpg_set_value(tag_node_status_value_name, status_msg)
+                        # Empty frame: may trigger end-of-trip auto-fit.
+                        result = self._render_map_with_trace(
+                            [], small_window_w, small_window_h,
+                            tag_node_zoom_value_name,
+                            tag_node_size_value_name,
+                            tag_node_cache_value_name,
+                            tag_node_pan_x_value_name,
+                            tag_node_pan_y_value_name,
+                            tag_node_provider_value_name,
+                            tag_node_hidpi_value_name,
+                            tag_node_labels_value_name,
+                            tag_node_metric_value_name,
+                            tag_node_trace_value_name,
+                            tag_node_progress_name,
+                            tag_node_status_value_name,
+                        )
+                        if result is not None and result[0] is not None:
+                            preview_image, cache_stats = result
+                            dpg_set_value(tag_node_status_value_name, "")
+                        else:
+                            status_msg = "No lat/lon in data"
+                            print(f"Map node: {status_msg}")
+                            dpg_set_value(tag_node_status_value_name, status_msg)
                     
             except json.JSONDecodeError as e:
                 error_msg = f"JSON parse error: {str(e)[:60]}"
@@ -1060,53 +1424,71 @@ class Node(DpgNodeABC):
 
 
     def _extract_lat_lon_from_json(self, data):
-        """Extract latitude and longitude from JSON data"""
+        """Extract latitude and longitude from JSON data.
+
+        Any extra keys present on each input record are preserved on the
+        returned point dictionaries (e.g. ``is_moving``, ``secousses`` or any
+        other numeric metric the user might want to colour-code on the map).
+        """
         points = []
-        
+
+        def _make_point(src, lat_key, lon_key):
+            """Build a point dict, copying any extra keys verbatim."""
+            try:
+                lat = float(src[lat_key])
+                lon = float(src[lon_key])
+            except (TypeError, ValueError, KeyError):
+                return None
+            pt = {
+                'lat': lat,
+                'lon': lon,
+                'name': src.get('name', src.get('ship_name', 'Point')),
+                'info': src.get('info', src.get('mmsi', '')),
+            }
+            # Preserve all remaining keys (metrics, flags, etc.) so the
+            # Map node can offer them as colour-mapped metrics.
+            for k, v in src.items():
+                if k in (lat_key, lon_key, 'name', 'ship_name'):
+                    continue
+                pt.setdefault(k, v)
+            return pt
+
         # Handle different JSON structures
         if isinstance(data, dict):
             # Check for AIS boat data structure
             if 'boats' in data:
                 for boat in data['boats']:
-                    if 'latitude' in boat and 'longitude' in boat:
-                        points.append({
-                            'lat': boat['latitude'],
-                            'lon': boat['longitude'],
-                            'name': boat.get('ship_name', 'Unknown'),
-                            'info': boat.get('mmsi', '')
-                        })
+                    if isinstance(boat, dict) and 'latitude' in boat and 'longitude' in boat:
+                        pt = _make_point(boat, 'latitude', 'longitude')
+                        if pt is not None:
+                            points.append(pt)
             # Check for direct lat/lon in dict
             elif 'latitude' in data and 'longitude' in data:
-                points.append({
-                    'lat': data['latitude'],
-                    'lon': data['longitude'],
-                    'name': data.get('name', 'Point'),
-                    'info': ''
-                })
+                pt = _make_point(data, 'latitude', 'longitude')
+                if pt is not None:
+                    points.append(pt)
+            elif 'lat' in data and 'lon' in data:
+                pt = _make_point(data, 'lat', 'lon')
+                if pt is not None:
+                    points.append(pt)
             # Check for nested data
             else:
                 for key, value in data.items():
                     if isinstance(value, (list, dict)):
                         points.extend(self._extract_lat_lon_from_json(value))
-        
+
         elif isinstance(data, list):
             for item in data:
                 if isinstance(item, dict):
                     if 'latitude' in item and 'longitude' in item:
-                        points.append({
-                            'lat': item['latitude'],
-                            'lon': item['longitude'],
-                            'name': item.get('name', 'Point'),
-                            'info': item.get('mmsi', '')
-                        })
+                        pt = _make_point(item, 'latitude', 'longitude')
+                        if pt is not None:
+                            points.append(pt)
                     elif 'lat' in item and 'lon' in item:
-                        points.append({
-                            'lat': item['lat'],
-                            'lon': item['lon'],
-                            'name': item.get('name', 'Point'),
-                            'info': ''
-                        })
-        
+                        pt = _make_point(item, 'lat', 'lon')
+                        if pt is not None:
+                            points.append(pt)
+
         return points
 
 
@@ -1146,7 +1528,8 @@ class Node(DpgNodeABC):
 
 
     def _create_preview_image(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0, progress_tag=None,
-                              provider_name=None, hidpi=False, labels_overlay=False):
+                              provider_name=None, hidpi=False, labels_overlay=False,
+                              metric_key=METRIC_NONE, trace_history=None):
         """
         Create a map visualization image using enhanced OSM tile rendering.
         
@@ -1182,6 +1565,7 @@ class Node(DpgNodeABC):
             return self._render_with_direct_osm_tiles(
                 points, width, height, zoom_level, size_factor, pan_x, pan_y, progress_tag,
                 provider_name=provider_name, hidpi=hidpi, labels_overlay=labels_overlay,
+                metric_key=metric_key, trace_history=trace_history,
             )
         except Exception as e:
             print(f"Map node: Direct OSM rendering failed: {e}")
@@ -1202,7 +1586,8 @@ class Node(DpgNodeABC):
 
 
     def _render_with_direct_osm_tiles(self, points, width, height, zoom_level=10, size_factor=1.0, pan_x=0.0, pan_y=0.0, progress_tag=None,
-                                      provider_name=None, hidpi=False, labels_overlay=False):
+                                      provider_name=None, hidpi=False, labels_overlay=False,
+                                      metric_key=METRIC_NONE, trace_history=None):
         """
         Enhanced map rendering: direct tile download + sub-pixel assembly,
         provider-aware, optional HiDPI / labels overlay, anti-aliased markers
@@ -1300,35 +1685,107 @@ class Node(DpgNodeABC):
                     py *= scale
                     px_positions.append((px, py))
 
-                # Trail (polyline) under the markers, with a wide white halo
-                # so it stays readable on any background (satellite, dark, …)
-                if len(px_positions) >= 2:
-                    halo_w = max(6, int(8 * (tile_px / float(TILE_SIZE))))
-                    line_w = max(2, int(3 * (tile_px / float(TILE_SIZE))))
+                # Persistent trace (if any): draw the historic polyline first
+                # so live markers stay on top. When a metric key is in use,
+                # each segment is coloured by the average metric of its two
+                # endpoints, mapped through the green→yellow→orange→red
+                # gradient.
+                halo_w = max(6, int(8 * (tile_px / float(TILE_SIZE))))
+                line_w = max(2, int(3 * (tile_px / float(TILE_SIZE))))
+
+                trace_pts = list(trace_history or [])
+                if len(trace_pts) >= 2:
+                    trace_px = []
+                    for h in trace_pts:
+                        tpx, tpy = lat_lon_to_pixel_on_map(
+                            h['lat'], h['lon'],
+                            origin_fx, origin_fy, zoom_level,
+                        )
+                        scale_h = tile_px / float(TILE_SIZE)
+                        trace_px.append((tpx * scale_h, tpy * scale_h))
+
+                    # White halo runs under the whole polyline for legibility.
+                    draw.line(trace_px, fill=(255, 255, 255, 200),
+                              width=halo_w, joint="curve")
+
+                    use_metric = (
+                        metric_key and metric_key != METRIC_NONE
+                        and any(h.get('metric') is not None for h in trace_pts)
+                    )
+                    if use_metric:
+                        # Per-segment gradient colouring.
+                        for (a, b), (ha, hb) in zip(
+                            zip(trace_px[:-1], trace_px[1:]),
+                            zip(trace_pts[:-1], trace_pts[1:]),
+                        ):
+                            ma = ha.get('metric')
+                            mb = hb.get('metric')
+                            vals = [v for v in (ma, mb) if v is not None]
+                            if not vals:
+                                color = (220, 30, 0, 235)
+                            else:
+                                avg = sum(vals) / len(vals)
+                                color = _metric_gradient_color(avg, alpha=235)
+                            draw.line([a, b], fill=color, width=line_w,
+                                      joint="curve")
+                    else:
+                        draw.line(trace_px, fill=(220, 30, 0, 235),
+                                  width=line_w, joint="curve")
+
+                # Live-points trail (only when no persistent trace is
+                # available, to preserve the original behaviour for
+                # non-trace use cases).
+                if not trace_pts and len(px_positions) >= 2:
                     draw.line(px_positions, fill=(255, 255, 255, 200), width=halo_w, joint="curve")
                     draw.line(px_positions, fill=(220, 30, 0, 235), width=line_w, joint="curve")
 
                 # Markers: drop shadow + halo + filled dot + white rim
                 r_outer = max(7, int(9 * (tile_px / float(TILE_SIZE))))
                 r_inner = max(3, int(4 * (tile_px / float(TILE_SIZE))))
-                for (fpx, fpy) in px_positions:
-                    if fpx < -r_outer or fpx >= map_w + r_outer or fpy < -r_outer or fpy >= map_h + r_outer:
+                for point, (fpx, fpy) in zip(points, px_positions):
+                    # Per-point scaling / transparency for "moving" markers.
+                    # A point flagged ``is_moving=True`` is rendered larger and
+                    # semi-transparent so it stands out as the current position
+                    # along a route without hiding the trail or the basemap.
+                    scale, alpha_factor = _moving_marker_style(point)
+                    r_outer_pt = max(1, int(round(r_outer * scale)))
+                    r_inner_pt = max(1, int(round(r_inner * scale)))
+                    if (fpx < -r_outer_pt or fpx >= map_w + r_outer_pt or
+                            fpy < -r_outer_pt or fpy >= map_h + r_outer_pt):
                         continue
+                    # When a metric is selected and the point carries a
+                    # value, colour the marker on the gradient instead of
+                    # the default red-orange.
+                    metric_v = self._metric_value(point, metric_key)
+                    if metric_v is not None:
+                        inner_fill = _metric_gradient_color(
+                            metric_v, alpha=_scaled_alpha(255, alpha_factor),
+                        )
+                        halo_fill = _metric_gradient_color(
+                            metric_v, alpha=_scaled_alpha(110, alpha_factor),
+                        )
+                    else:
+                        inner_fill = (220, 30, 0, _scaled_alpha(255, alpha_factor))
+                        halo_fill = (255, 80, 0, _scaled_alpha(90, alpha_factor))
                     # Soft drop shadow (offset 1-2 px, semi-transparent black)
                     draw.ellipse(
-                        (fpx - r_outer + 1, fpy - r_outer + 2,
-                         fpx + r_outer + 1, fpy + r_outer + 2),
-                        fill=(0, 0, 0, 70),
+                        (fpx - r_outer_pt + 1, fpy - r_outer_pt + 2,
+                         fpx + r_outer_pt + 1, fpy + r_outer_pt + 2),
+                        fill=(0, 0, 0, _scaled_alpha(70, alpha_factor)),
                     )
-                    # Outer halo ring (semi-transparent red-orange)
+                    # Outer halo ring (semi-transparent metric colour)
                     draw.ellipse(
-                        (fpx - r_outer, fpy - r_outer, fpx + r_outer, fpy + r_outer),
-                        fill=(255, 80, 0, 90),
+                        (fpx - r_outer_pt, fpy - r_outer_pt,
+                         fpx + r_outer_pt, fpy + r_outer_pt),
+                        fill=halo_fill,
                     )
                     # Inner solid dot + thin white rim for contrast
                     draw.ellipse(
-                        (fpx - r_inner, fpy - r_inner, fpx + r_inner, fpy + r_inner),
-                        fill=(220, 30, 0, 255), outline=(255, 255, 255, 230), width=1,
+                        (fpx - r_inner_pt, fpy - r_inner_pt,
+                         fpx + r_inner_pt, fpy + r_inner_pt),
+                        fill=inner_fill,
+                        outline=(255, 255, 255, _scaled_alpha(230, alpha_factor)),
+                        width=1,
                     )
 
                 pil_map = Image.alpha_composite(pil_map, overlay_img)
@@ -1423,13 +1880,21 @@ class Node(DpgNodeABC):
         mercator_points = []
         for point in points:
             x, y = self.lat_lon_to_web_mercator(point['lat'], point['lon'])
-            mercator_points.append({
+            mp = {
                 'x': x,
                 'y': y,
                 'name': point.get('name', 'Point'),
                 'lat': point['lat'],
                 'lon': point['lon']
-            })
+            }
+            # Preserve "moving" markers metadata for the rendering pass below.
+            if point.get('is_moving'):
+                mp['is_moving'] = True
+                if 'marker_scale' in point:
+                    mp['marker_scale'] = point['marker_scale']
+                if 'marker_alpha' in point:
+                    mp['marker_alpha'] = point['marker_alpha']
+            mercator_points.append(mp)
         
         print(f"Map node: Converted {len(mercator_points)} points to Web Mercator")
         
@@ -1493,10 +1958,11 @@ class Node(DpgNodeABC):
         
         # Plot points in Web Mercator coordinates
         for point in mercator_points:
-            ax.plot(point['x'], point['y'], 'o', 
-                   color='red', markersize=10, 
+            scale, alpha_factor = _moving_marker_style(point)
+            ax.plot(point['x'], point['y'], 'o',
+                   color='red', markersize=10 * scale,
                    markeredgecolor='darkred', markeredgewidth=2,
-                   markerfacecolor='yellow', zorder=5)
+                   markerfacecolor='yellow', alpha=alpha_factor, zorder=5)
         
         # Set axis limits
         ax.set_xlim(min_x, max_x)
@@ -1607,9 +2073,11 @@ class Node(DpgNodeABC):
         
         # Plot points
         for point in points:
-            ax.plot(point['lon'], point['lat'], 'ro', markersize=8, 
-                   markeredgecolor='darkred', markeredgewidth=1.5, 
-                   markerfacecolor='yellow', zorder=5)
+            scale, alpha_factor = _moving_marker_style(point)
+            ax.plot(point['lon'], point['lat'], 'o', color='red',
+                   markersize=8 * scale,
+                   markeredgecolor='darkred', markeredgewidth=1.5,
+                   markerfacecolor='yellow', alpha=alpha_factor, zorder=5)
         
         # Set axis limits
         ax.set_xlim(plot_min_lon, plot_max_lon)
@@ -1709,6 +2177,8 @@ class Node(DpgNodeABC):
         tag_node_provider_value_name = tag_node_name + ':ProviderValue'
         tag_node_hidpi_value_name = tag_node_name + ':HiDPIValue'
         tag_node_labels_value_name = tag_node_name + ':LabelsValue'
+        tag_node_metric_value_name = tag_node_name + ':MetricValue'
+        tag_node_trace_value_name = tag_node_name + ':TraceValue'
 
         return {
             'zoom': dpg_get_value(tag_node_zoom_value_name),
@@ -1719,6 +2189,8 @@ class Node(DpgNodeABC):
             'provider': dpg_get_value(tag_node_provider_value_name),
             'hidpi': dpg_get_value(tag_node_hidpi_value_name),
             'labels_overlay': dpg_get_value(tag_node_labels_value_name),
+            'metric': dpg_get_value(tag_node_metric_value_name),
+            'trace': dpg_get_value(tag_node_trace_value_name),
         }
 
 
@@ -1733,6 +2205,8 @@ class Node(DpgNodeABC):
         tag_node_provider_value_name = tag_node_name + ':ProviderValue'
         tag_node_hidpi_value_name = tag_node_name + ':HiDPIValue'
         tag_node_labels_value_name = tag_node_name + ':LabelsValue'
+        tag_node_metric_value_name = tag_node_name + ':MetricValue'
+        tag_node_trace_value_name = tag_node_name + ':TraceValue'
 
         if 'zoom' in setting_dict:
             dpg_set_value(tag_node_zoom_value_name, setting_dict['zoom'])
@@ -1750,6 +2224,13 @@ class Node(DpgNodeABC):
             dpg_set_value(tag_node_hidpi_value_name, bool(setting_dict['hidpi']))
         if 'labels_overlay' in setting_dict:
             dpg_set_value(tag_node_labels_value_name, bool(setting_dict['labels_overlay']))
+        if 'metric' in setting_dict and setting_dict['metric']:
+            try:
+                dpg_set_value(tag_node_metric_value_name, str(setting_dict['metric']))
+            except Exception:
+                pass
+        if 'trace' in setting_dict:
+            dpg_set_value(tag_node_trace_value_name, bool(setting_dict['trace']))
 
 
     def convert_cv_to_dpg(self, image, width, height):

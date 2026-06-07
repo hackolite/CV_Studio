@@ -222,6 +222,30 @@ MQTT/WebSocket → Map
 - Track moving objects in real-time
 - Dynamic texture updates for live tracking
 
+## Marker Styles
+
+### Static markers (default)
+Coordinates without any special flag are rendered with the standard red/yellow
+marker (drop shadow + orange halo + red dot with white rim).
+
+### Moving markers (`is_moving=True`)
+A coordinate flagged with `is_moving=True` is rendered **~4× larger** and
+**semi-transparent**. This makes the "currently moving" position along an
+animated trajectory (e.g. the GPS Movement Simulator, the upcoming Road Route
+mode, or any other source of live positions) stand out without hiding the
+trail or the basemap underneath.
+
+The default scale and alpha can be tuned per-point via the optional keys:
+
+| Key            | Default | Description                                  |
+|----------------|---------|----------------------------------------------|
+| `is_moving`    | `False` | Enable the enlarged translucent style        |
+| `marker_scale` | `4.0`   | Multiplier applied to the marker radius      |
+| `marker_alpha` | `0.5`   | Multiplier applied to all alpha components   |
+
+Global defaults are exposed as the `MOVING_POINT_SCALE` and
+`MOVING_POINT_ALPHA` module-level constants in `node_map.py`.
+
 ## Implementation Details
 
 ### Contextily Integration
