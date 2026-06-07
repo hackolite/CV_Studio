@@ -452,6 +452,10 @@ class FactoryNode:
         node.tag_node_dropdown_name = node.tag_node_name + ':Dropdown'
         node.tag_node_dropdown_value_name = node.tag_node_name + ':DropdownValue'
         
+        # Start/Stop button tag (used to begin the GPS trip)
+        node.tag_node_start_name = node.tag_node_name + ':Start'
+        node.tag_node_start_button_name = node.tag_node_name + ':StartButton'
+
         # Status text tag
         node.tag_node_status_name = node.tag_node_name + ':Status'
         node.tag_node_status_value_name = node.tag_node_name + ':StatusValue'
@@ -503,6 +507,19 @@ class FactoryNode:
                     tag=node.tag_node_status_value_name,
                     default_value='5 points (AISTRACKER)',
                 )
+
+            # Start/Stop button to begin the trip (used by GPS Movement Simulation)
+            with dpg.node_attribute(
+                tag=node.tag_node_start_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_button(
+                    label="Start",
+                    tag=node.tag_node_start_button_name,
+                    width=small_window_w,
+                    callback=lambda s, a, u: Node.on_start_toggle(s, a, u),
+                    user_data=(node, node_id),
+                )
             
             # JSON output
             with dpg.node_attribute(
@@ -534,6 +551,47 @@ class Node(BaseNode):
         self.last_update_time = None  # Track last GPS update time
         self.update_interval = 1.0  # Update GPS positions every 1 second
         self.last_coordinates = []  # Cache last generated coordinates
+        # Whether the user has pressed Start to begin the GPS trip.
+        # The GPS Movement Simulation stays idle (no coordinates emitted)
+        # until the trip has been explicitly started from the node UI.
+        self.is_started = False
+
+    @staticmethod
+    def on_start_toggle(sender, app_data, user_data):
+        """Callback for the Start/Stop button: begins or stops the GPS trip."""
+        node, node_id = user_data
+        tag_node_name = str(node_id) + ':' + node.node_tag
+        button_tag = tag_node_name + ':StartButton'
+        status_tag = tag_node_name + ':StatusValue'
+        dropdown_tag = tag_node_name + ':DropdownValue'
+
+        if not node.is_started:
+            # Begin the trip: reset any previous simulator so the trip
+            # starts fresh from T0 at the current time.
+            node.is_started = True
+            node.gps_simulator = None
+            node.last_update_time = None
+            node.last_coordinates = []
+            try:
+                dpg.configure_item(button_tag, label="Stop")
+            except Exception:
+                pass
+            selected_example = dpg_get_value(dropdown_tag)
+            if selected_example == GPS_SIMULATION_NAME:
+                dpg_set_value(status_tag, 'Trip started (updates every 1s)')
+        else:
+            # Stop the trip and reset state.
+            node.is_started = False
+            node.gps_simulator = None
+            node.last_update_time = None
+            node.last_coordinates = []
+            try:
+                dpg.configure_item(button_tag, label="Start")
+            except Exception:
+                pass
+            selected_example = dpg_get_value(dropdown_tag)
+            if selected_example == GPS_SIMULATION_NAME:
+                dpg_set_value(status_tag, 'Trip stopped (press Start to begin)')
     
     @staticmethod
     def on_selection_change(sender, app_data, user_data):
@@ -546,6 +604,14 @@ class Node(BaseNode):
             node.gps_simulator = None
             node.last_update_time = None
             node.last_coordinates = []
+            node.is_started = False
+            # Reset the Start button label back to "Start" so the user can
+            # start a fresh trip the next time GPS Movement Simulation is picked.
+            try:
+                button_tag = str(node_id) + ':' + node.node_tag + ':StartButton'
+                dpg.configure_item(button_tag, label="Start")
+            except Exception:
+                pass
         
         # Reset Roissy tracker when switching away from Roissy planes
         if selected_example != ROISSY_PLANES_NAME and hasattr(node, 'roissy_tracker'):
@@ -554,8 +620,10 @@ class Node(BaseNode):
         # Get the coordinates for the selected example
         if selected_example == GPS_SIMULATION_NAME:
             # For GPS simulation, show dynamic message
-            num_points = 1  # Default number
-            status_text = f'Simulating {num_points} moving object (updates every 1s)'
+            if getattr(node, 'is_started', False):
+                status_text = 'Trip started (updates every 1s)'
+            else:
+                status_text = 'Press Start to begin the trip'
         elif selected_example == ROISSY_PLANES_NAME:
             # For Roissy planes, show dynamic message
             status_text = 'Tracking planes near Roissy Airport (updates every 20s)'
@@ -592,34 +660,40 @@ class Node(BaseNode):
         
         # Handle GPS Movement Simulation
         if selected_example == GPS_SIMULATION_NAME:
-            # Initialize simulator if not already done
-            if self.gps_simulator is None:
-                # Default: Paris, France as center
-                self.gps_simulator = GPSMovementSimulator(
-                    num_objects=1,
-                    center_lat=48.8566,
-                    center_lon=2.3522
-                )
-                self.last_update_time = time.time()
-                # Get initial coordinates immediately so first call has data
-                self.last_coordinates = self.gps_simulator.get_coordinates()
-            
-            # Check if enough time has elapsed for an update (1 second interval)
-            current_time = time.time()
-            time_elapsed = current_time - self.last_update_time
-            
-            if time_elapsed >= self.update_interval:
-                # Update positions for current time
-                self.gps_simulator.update_positions()
-                
-                # Get current coordinates
-                self.last_coordinates = self.gps_simulator.get_coordinates()
-                
-                # Update the last update time
-                self.last_update_time = current_time
-            
-            # Return the last generated coordinates (updated every second)
-            json_output = self.last_coordinates
+            # The trip must be explicitly started via the Start button.
+            # While idle, emit no coordinates so the Map stays empty until
+            # the user kicks off the trajectory.
+            if not self.is_started:
+                json_output = []
+            else:
+                # Initialize simulator if not already done
+                if self.gps_simulator is None:
+                    # Default: Paris, France as center
+                    self.gps_simulator = GPSMovementSimulator(
+                        num_objects=1,
+                        center_lat=48.8566,
+                        center_lon=2.3522
+                    )
+                    self.last_update_time = time.time()
+                    # Get initial coordinates immediately so first call has data
+                    self.last_coordinates = self.gps_simulator.get_coordinates()
+
+                # Check if enough time has elapsed for an update (1 second interval)
+                current_time = time.time()
+                time_elapsed = current_time - self.last_update_time
+
+                if time_elapsed >= self.update_interval:
+                    # Update positions for current time
+                    self.gps_simulator.update_positions()
+
+                    # Get current coordinates
+                    self.last_coordinates = self.gps_simulator.get_coordinates()
+
+                    # Update the last update time
+                    self.last_update_time = current_time
+
+                # Return the last generated coordinates (updated every second)
+                json_output = self.last_coordinates
         
         # Handle Roissy Airport Planes
         elif selected_example == ROISSY_PLANES_NAME:
@@ -688,7 +762,7 @@ class Node(BaseNode):
         
         # Update status text
         if selected_example == GPS_SIMULATION_NAME:
-            status_text = 'Simulating 1 moving object (updates every 1s)'
+            status_text = 'Press Start to begin the trip'
         else:
             coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
             num_points = len(coordinates)
