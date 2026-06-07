@@ -1369,7 +1369,6 @@ class Node(DpgNodeABC):
                 trace_lats, trace_lons,
                 small_window_w, small_window_h,
             )
-            print(f"Map node: Auto-zoom to level {fit_zoom} for full-route view")
             try:
                 dpg_set_value(tag_node_zoom_value_name, fit_zoom)
             except Exception:
@@ -1381,12 +1380,6 @@ class Node(DpgNodeABC):
         if not render_points:
             return None, None
 
-        print(
-            f"Map node: Parameters - zoom={zoom_level}, size={size_factor}, "
-            f"pan_x={pan_x}, pan_y={pan_y}, cache={use_cache}, "
-            f"provider={provider_name}, hidpi={hidpi}, labels={labels_overlay}, "
-            f"metric={metric_key}, trace={trace_enabled}"
-        )
         return self._create_preview_image(
             render_points, small_window_w, small_window_h,
             zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name,
