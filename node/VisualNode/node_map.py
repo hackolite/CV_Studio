@@ -25,6 +25,7 @@ import tempfile
 import hashlib
 import math
 import traceback
+import concurrent.futures
 from datetime import datetime
 from io import BytesIO
 
@@ -293,6 +294,52 @@ TILE_PROVIDERS = {
         "labels_url": None,
         "labels_url_hidpi": None,
     },
+    # ── Satellite imagery providers ─────────────────────────────────────────
+    # IGN Géoportail (France) — free open-data endpoint, no API key required.
+    # Orthophotos for mainland France and overseas territories.
+    "IGN Satellite": {
+        "url": (
+            "https://data.geopf.fr/wmts"
+            "?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0"
+            "&LAYER=ORTHOIMAGERY.ORTHOPHOTOS"
+            "&TILEMATRIXSET=PM"
+            "&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}"
+            "&STYLE=normal&FORMAT=image/jpeg"
+        ),
+        "url_hidpi": None,
+        "tile_size": 256,
+        "max_zoom": 20,
+        "attribution": "© IGN – Géoportail",
+        "subdomains": None,
+        "labels_url": None,
+        "labels_url_hidpi": None,
+    },
+    # Bing Maps Virtual Earth aerial imagery (quadkey URL scheme).
+    # The ``quadkey`` flag tells ``get_osm_tile`` to convert XYZ → quadkey.
+    "Bing Satellite": {
+        "url": "https://ecn.t{s}.tiles.virtualearth.net/tiles/a{quadkey}.jpeg?g=1",
+        "url_hidpi": None,
+        "tile_size": 256,
+        "max_zoom": 19,
+        "attribution": "© Microsoft, Maxar",
+        "subdomains": ["0", "1", "2", "3"],
+        "labels_url": None,
+        "labels_url_hidpi": None,
+        # When True, get_osm_tile converts (z,x,y) → quadkey and substitutes
+        # {quadkey} in the URL template instead of using .format(z=…, x=…, y=…).
+        "quadkey": True,
+    },
+    # Yandex Satellite — publicly accessible tile CDN.
+    "Yandex Satellite": {
+        "url": "https://sat0{s}.maps.yandex.net/tiles?l=sat&z={z}&x={x}&y={y}&scale=1&lang=ru_RU",
+        "url_hidpi": None,
+        "tile_size": 256,
+        "max_zoom": 19,
+        "attribution": "© Yandex",
+        "subdomains": ["1", "2", "3", "4"],
+        "labels_url": None,
+        "labels_url_hidpi": None,
+    },
 }
 
 DEFAULT_PROVIDER = "OSM Standard"
@@ -331,6 +378,82 @@ def _provider_cache_dir(provider_name, hidpi=False):
     path = os.path.join(OSM_CACHE_DIR, safe + suffix)
     os.makedirs(path, exist_ok=True)
     return path
+
+
+def _xy_to_quadkey(tile_x, tile_y, zoom):
+    """Convert XYZ tile coordinates to a Bing Maps quadkey string.
+
+    Bing Maps uses a quadtree key (quadkey) instead of the standard
+    ``{z}/{x}/{y}`` scheme. Each level interleaves one bit from x and one bit
+    from y, encoded as a digit 0–3, reading from the most-significant bit.
+    """
+    quadkey = []
+    for i in range(zoom, 0, -1):
+        digit = 0
+        mask = 1 << (i - 1)
+        if tile_x & mask:
+            digit += 1
+        if tile_y & mask:
+            digit += 2
+        quadkey.append(str(digit))
+    return "".join(quadkey)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Background tile prefetch
+# ─────────────────────────────────────────────────────────────────────────────
+# At speeds ≥ 50 km/h the viewport shifts fast enough that uncached tiles on
+# the leading edge cause visible stutters. A small thread-pool pre-downloads
+# a ring of tiles around the visible area so they are already on disk before
+# the renderer needs them.  The pool is kept small (4 workers) so it does not
+# starve the tile server or the main thread.
+_PREFETCH_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=4, thread_name_prefix="tile_prefetch"
+)
+# Extra tile rows/columns to prefetch beyond each edge of the visible grid.
+_PREFETCH_MARGIN = 3
+
+
+def _prefetch_tiles_bg(center_lat, center_lon, zoom, tile_x0, tile_y0,
+                       tiles_x, tiles_y, provider_name, hidpi=False):
+    """Submit background downloads for tiles in a margin ring outside the
+    currently-rendered grid so they are already cached the next time the
+    viewport shifts (e.g. at 50 km/h the vehicle moves ~14 m/s).
+
+    Only tiles not already on disk are submitted; already-cached tiles are
+    skipped immediately. Fire-and-forget: the caller does not need to await
+    the returned futures.
+    """
+    provider = get_provider(provider_name)
+    use_hidpi = bool(hidpi and provider.get("url_hidpi"))
+    cache_dir = _provider_cache_dir(provider_name, hidpi=use_hidpi)
+
+    margin = _PREFETCH_MARGIN
+    # Extend the rendered grid by ±margin in both axes
+    x_start = tile_x0 - margin
+    y_start = tile_y0 - margin
+    x_end = tile_x0 + tiles_x + margin + 1   # +1: same over-count as assemble
+    y_end = tile_y0 + tiles_y + margin + 1
+
+    futures = []
+    for ty in range(y_start, y_end):
+        for tx in range(x_start, x_end):
+            # Skip tiles already covered by the current render pass
+            if (tile_x0 <= tx <= tile_x0 + tiles_x and
+                    tile_y0 <= ty <= tile_y0 + tiles_y):
+                continue
+            cache_path = os.path.join(cache_dir, f"{zoom}_{tx}_{ty}.png")
+            if os.path.exists(cache_path):
+                continue
+            try:
+                fut = _PREFETCH_EXECUTOR.submit(
+                    get_osm_tile, zoom, tx, ty, True, provider_name, use_hidpi
+                )
+                futures.append(fut)
+            except RuntimeError:
+                # Executor shut down (e.g. during process exit); ignore.
+                pass
+    return futures
 
 
 def lat_lon_to_tile_float(lat, lon, zoom):
@@ -420,7 +543,12 @@ def get_osm_tile(z, x, y, use_cache=True, provider_name=None, hidpi=False):
         # Deterministic subdomain selection — spreads load and is stable for
         # a given tile so repeated requests can be cached upstream too.
         sub = subdomains[(x + y) % len(subdomains)]
-        url = url_tpl.replace("{s}", sub).format(z=z, x=x, y=y)
+        url_tpl = url_tpl.replace("{s}", sub)
+
+    if provider.get("quadkey"):
+        # Bing and similar providers use a quadkey instead of z/x/y.
+        qk = _xy_to_quadkey(x, y, z)
+        url = url_tpl.replace("{quadkey}", qk)
     else:
         url = url_tpl.format(z=z, x=x, y=y)
 
@@ -473,9 +601,9 @@ def get_labels_tile(z, x, y, use_cache=True, provider_name=None, hidpi=False):
     subdomains = provider.get("subdomains")
     if subdomains and "{s}" in labels_url:
         sub = subdomains[(x + y) % len(subdomains)]
-        url = labels_url.replace("{s}", sub).format(z=z, x=x, y=y)
-    else:
-        url = labels_url.format(z=z, x=x, y=y)
+        labels_url = labels_url.replace("{s}", sub)
+    # Labels overlays never use quadkey; always use z/x/y substitution.
+    url = labels_url.format(z=z, x=x, y=y)
 
     try:
         response = requests.get(url, headers=OSM_HEADERS, timeout=8)
@@ -607,6 +735,15 @@ def assemble_osm_map(center_lat, center_lon, zoom, tiles_x=3, tiles_y=3,
         'hidpi': use_hidpi,
         'tile_px': tile_px,
     }
+
+    # Background-prefetch a ring of tiles beyond the rendered grid so that
+    # movement at high speeds (≥ 50 km/h) does not cause stutters when
+    # the viewport shifts to a neighbouring tile row/column.
+    _prefetch_tiles_bg(
+        center_lat, center_lon, zoom,
+        tile_x0, tile_y0, tiles_x, tiles_y,
+        provider_name, hidpi=use_hidpi,
+    )
 
     return final_img, origin_fx, origin_fy, cache_stats
 
