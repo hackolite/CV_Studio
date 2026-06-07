@@ -184,7 +184,8 @@ def test_road_route_end_of_trip_is_moving_zero():
         )
 
     player = RouteTripPlayer(
-        "Paris, France", "Versailles, France", speed_kmh=600.0,
+        "Paris, France", "Versailles, France",
+        speed_kmh=600.0,  # intentionally high to guarantee trip ends within 1 h
         geocoder=_fake_geocoder, router=lambda *_: list(_FAKE_ROUTE),
     )
     assert player.start()

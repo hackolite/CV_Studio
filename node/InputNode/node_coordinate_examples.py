@@ -697,8 +697,8 @@ class RouteTripPlayer:
         self._rpm_drift = random.uniform(-20.0, 20.0)
 
         # Température moteur (°C): warms up to ~88–92 °C operating temp
-        self._coolant_temp = 55.0          # cold start
-        self._coolant_target = 90.0          # standard engine operating temperature
+        self._coolant_temp = 55.0         # cold start
+        self._coolant_target = 90.0       # standard engine operating temperature
 
         # Consommation instantanée (L/100 km)
         self._consumption = random.uniform(7.0, 9.0)
