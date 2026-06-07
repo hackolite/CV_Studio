@@ -140,21 +140,22 @@ def test_metric_candidate_keys_excludes_max_suffix():
 def test_route_trip_player_obd2_ratios():
     """RouteTripPlayer.get_coordinates() must include _max and _ratio fields
     for every relevant OBD2 key, with ratios clamped to [0, 1]."""
-    import sys, os
+    import sys
+    import os
+    import time
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
     from node.InputNode.node_coordinate_examples import RouteTripPlayer
 
     route = [(48.0, 2.0), (48.1, 2.1)]
-    player = RouteTripPlayer.__new__(RouteTripPlayer)
-    # Minimal manual initialisation to avoid network calls.
-    import random, time
-    player.speed_kmh = 60.0
+    # Use the normal constructor (no network calls in __init__).
+    player = RouteTripPlayer("dummy_start", "dummy_end", 60.0)
+    # Inject a pre-built route so start() is never called.
     player.route = route
     player.cum_km = [0.0, 15.7]
     player.total_km = 15.7
     player.start_time = time.time() - 1.0
     player.is_ready = True
-    player.finished = False
+    # Override OBD2 state with deterministic values for assertions.
     player._secousses = 0.15
     player._secousses_drift = 0.01
     player._coolant_temp = 90.0
