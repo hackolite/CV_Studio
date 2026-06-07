@@ -39,6 +39,7 @@ ROAD_ROUTE_NAME = "Road Route"
 # free/no-key services; please keep request volume modest and identify
 # this app via the User-Agent header (Nominatim usage policy).
 _NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+_PHOTON_URL = "https://photon.komoot.io/api"
 _OSRM_ROUTE_URL = "https://router.project-osrm.org/route/v1/driving"
 _HTTP_USER_AGENT = "CV_Studio/CoordinateExamples (https://github.com/hackolite/CV_Studio)"
 
@@ -476,36 +477,138 @@ def _haversine_km(lat1, lon1, lat2, lon2):
     return r * c
 
 
-def geocode_address(address, timeout=10):
-    """Resolve a free-text address to ``(lat, lon)`` via Nominatim.
-
-    Returns ``None`` if the address cannot be geocoded or the service is
-    unreachable. A short User-Agent identifying the project is sent as
-    required by the Nominatim usage policy.
-    """
-    if not address or not address.strip():
+def _parse_latlon_literal(address):
+    """If ``address`` is a bare ``"lat, lon"`` literal, return the tuple."""
+    if not address:
+        return None
+    parts = [p.strip() for p in address.replace(";", ",").split(",")]
+    if len(parts) != 2:
         return None
     try:
-        resp = requests.get(
-            _NOMINATIM_URL,
-            params={"q": address.strip(), "format": "json", "limit": 1},
-            headers={"User-Agent": _HTTP_USER_AGENT},
-            timeout=timeout,
+        lat = float(parts[0])
+        lon = float(parts[1])
+    except ValueError:
+        return None
+    if -90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0:
+        return (lat, lon)
+    return None
+
+
+def _query_nominatim(address, timeout):
+    """Query Nominatim and return ``[(lat, lon), ...]`` ranked by relevance."""
+    resp = requests.get(
+        _NOMINATIM_URL,
+        params={
+            "q": address,
+            "format": "json",
+            "limit": 5,
+            "addressdetails": 0,
+        },
+        headers={
+            "User-Agent": _HTTP_USER_AGENT,
+            "Accept-Language": "fr,en;q=0.8",
+        },
+        timeout=timeout,
+    )
+    if resp.status_code != 200:
+        raise requests.exceptions.HTTPError(
+            f"Nominatim HTTP {resp.status_code}", response=resp,
         )
-        if resp.status_code != 200:
-            print(f"geocode_address: HTTP {resp.status_code} for '{address}'")
-            return None
-        data = resp.json()
-        if not data:
-            print(f"geocode_address: no result for '{address}'")
-            return None
-        return float(data[0]["lat"]), float(data[0]["lon"])
-    except requests.exceptions.RequestException as e:
-        print(f"geocode_address: request error for '{address}': {e}")
+    data = resp.json() or []
+    results = []
+    for item in data:
+        try:
+            results.append((float(item["lat"]), float(item["lon"])))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return results
+
+
+def _query_photon(address, timeout):
+    """Query Photon (Komoot) as a fallback geocoder. Returns ``[(lat, lon), ...]``."""
+    resp = requests.get(
+        _PHOTON_URL,
+        params={"q": address, "limit": 5, "lang": "fr"},
+        headers={"User-Agent": _HTTP_USER_AGENT},
+        timeout=timeout,
+    )
+    if resp.status_code != 200:
+        raise requests.exceptions.HTTPError(
+            f"Photon HTTP {resp.status_code}", response=resp,
+        )
+    data = resp.json() or {}
+    results = []
+    for feature in data.get("features", []) or []:
+        try:
+            lon, lat = feature["geometry"]["coordinates"][:2]
+            results.append((float(lat), float(lon)))
+        except (KeyError, TypeError, ValueError, IndexError):
+            continue
+    return results
+
+
+def geocode_address(address, timeout=10, retries=2):
+    """Resolve a free-text address to ``(lat, lon)``.
+
+    Robust against transient network failures and short-lived service
+    outages:
+
+    1. Accepts a bare ``"lat, lon"`` literal so the user can bypass
+       geocoding entirely when the API is flaky.
+    2. Tries Nominatim first (OSM official) with up to ``retries+1``
+       attempts and a small back-off between tries.
+    3. Falls back to Photon (Komoot, also OSM-based) so an outage or rate
+       limit on a single provider does not break the Road Route mode.
+
+    Returns ``None`` only when every provider failed to return a usable
+    result. Errors are logged so the UI can keep a visible trace.
+    """
+    if not address or not str(address).strip():
         return None
-    except (ValueError, KeyError, IndexError) as e:
-        print(f"geocode_address: parse error for '{address}': {e}")
-        return None
+    address = str(address).strip()
+
+    # 1) Direct "lat, lon" input bypasses any HTTP call.
+    literal = _parse_latlon_literal(address)
+    if literal is not None:
+        return literal
+
+    providers = (
+        ("nominatim", _query_nominatim),
+        ("photon", _query_photon),
+    )
+
+    last_error = None
+    for provider_name, provider in providers:
+        for attempt in range(max(1, retries + 1)):
+            try:
+                results = provider(address, timeout)
+            except requests.exceptions.RequestException as e:
+                last_error = e
+                print(
+                    f"geocode_address: {provider_name} request error "
+                    f"(attempt {attempt + 1}) for '{address}': {e}"
+                )
+            except (ValueError, KeyError, IndexError, TypeError) as e:
+                last_error = e
+                print(
+                    f"geocode_address: {provider_name} parse error "
+                    f"(attempt {attempt + 1}) for '{address}': {e}"
+                )
+            else:
+                if results:
+                    return results[0]
+                print(
+                    f"geocode_address: {provider_name} no result "
+                    f"(attempt {attempt + 1}) for '{address}'"
+                )
+                # No need to retry the same provider on an empty result.
+                break
+            # Linear back-off before retrying the same provider.
+            time.sleep(min(1.0 + attempt * 0.5, 3.0))
+
+    if last_error is not None:
+        print(f"geocode_address: all providers failed for '{address}': {last_error}")
+    return None
 
 
 def fetch_driving_route(start_lat_lon, end_lat_lon, timeout=15):
@@ -783,11 +886,17 @@ class FactoryNode:
                 )
             
             # Road Route inputs: departure address, arrival address and
-            # tempo speed (km/h). They are always visible but only used
-            # when "Road Route" is selected in the dropdown above.
+            # tempo speed (km/h). They are reserved for the "Road Route"
+            # option and are hidden for all other dropdown choices so they
+            # cannot accidentally affect the other modes.
+            _route_visible = (
+                dpg.get_value(node.tag_node_dropdown_value_name)
+                == ROAD_ROUTE_NAME
+            )
             with dpg.node_attribute(
                 tag=node.tag_node_route_start_name,
                 attribute_type=dpg.mvNode_Attr_Static,
+                show=_route_visible,
             ):
                 dpg.add_input_text(
                     tag=node.tag_node_route_start_value_name,
@@ -799,6 +908,7 @@ class FactoryNode:
             with dpg.node_attribute(
                 tag=node.tag_node_route_end_name,
                 attribute_type=dpg.mvNode_Attr_Static,
+                show=_route_visible,
             ):
                 dpg.add_input_text(
                     tag=node.tag_node_route_end_value_name,
@@ -810,6 +920,7 @@ class FactoryNode:
             with dpg.node_attribute(
                 tag=node.tag_node_route_speed_name,
                 attribute_type=dpg.mvNode_Attr_Static,
+                show=_route_visible,
             ):
                 dpg.add_input_float(
                     tag=node.tag_node_route_speed_value_name,
@@ -879,6 +990,21 @@ class Node(BaseNode):
         # The GPS Movement Simulation stays idle (no coordinates emitted)
         # until the trip has been explicitly started from the node UI.
         self.is_started = False
+
+    @staticmethod
+    def _set_route_inputs_visible(node_id, visible):
+        """Show/hide the Road Route input fields (From/To/km/h).
+
+        The Road Route inputs are reserved for the Road Route option. They
+        are hidden for every other dropdown choice so neither the UI nor
+        any persistence path accidentally feeds them to a non-route mode.
+        """
+        tag_node_name = str(node_id) + ':' + Node.node_tag
+        for suffix in (':RouteStart', ':RouteEnd', ':RouteSpeed'):
+            try:
+                dpg.configure_item(tag_node_name + suffix, show=bool(visible))
+            except Exception:
+                pass
 
     @staticmethod
     def on_start_toggle(sender, app_data, user_data):
@@ -958,6 +1084,13 @@ class Node(BaseNode):
                     dpg.configure_item(button_tag, label="Start")
                 except Exception:
                     pass
+
+        # Toggle visibility of the Road Route input fields: they are
+        # reserved for the Road Route option and must stay hidden (and
+        # ignored) for every other dropdown choice.
+        Node._set_route_inputs_visible(
+            node_id, selected_example == ROAD_ROUTE_NAME
+        )
 
         # Get the coordinates for the selected example
         if selected_example == GPS_SIMULATION_NAME:
@@ -1157,13 +1290,16 @@ class Node(BaseNode):
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
         setting_dict[dropdown_tag] = selected_example
-        # Persist Road Route inputs so the trip can be resumed after reload.
-        try:
-            setting_dict[route_start_tag] = dpg_get_value(route_start_tag)
-            setting_dict[route_end_tag] = dpg_get_value(route_end_tag)
-            setting_dict[route_speed_tag] = dpg_get_value(route_speed_tag)
-        except Exception:
-            pass
+        # Persist Road Route inputs (only when that mode is active) so the
+        # trip can be resumed after reload. For every other mode the route
+        # fields are out of scope and must not leak into the settings file.
+        if selected_example == ROAD_ROUTE_NAME:
+            try:
+                setting_dict[route_start_tag] = dpg_get_value(route_start_tag)
+                setting_dict[route_end_tag] = dpg_get_value(route_end_tag)
+                setting_dict[route_speed_tag] = dpg_get_value(route_speed_tag)
+            except Exception:
+                pass
 
         return setting_dict
 
@@ -1186,6 +1322,12 @@ class Node(BaseNode):
                     dpg_set_value(tag, setting_dict[tag])
                 except Exception:
                     pass
+
+        # Apply field visibility according to the restored mode: the
+        # Road Route inputs must only appear when Road Route is active.
+        Node._set_route_inputs_visible(
+            node_id, selected_example == ROAD_ROUTE_NAME
+        )
 
         # Update status text
         if selected_example == GPS_SIMULATION_NAME:
