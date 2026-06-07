@@ -35,6 +35,66 @@ ROISSY_PLANES_NAME = "Roissy Airport Planes"
 # computed between a start address and an end address at a given speed).
 ROAD_ROUTE_NAME = "Road Route"
 
+# OBD driving profile constants for Road Route mode.
+OBD_LEVEL_NORMAL = "Normal"
+OBD_LEVEL_SPORT = "Sportif"
+OBD_LEVEL_ECO = "Économique"
+OBD_LEVEL_DEGRADED = "Dégradé"
+OBD_LEVELS = [OBD_LEVEL_NORMAL, OBD_LEVEL_SPORT, OBD_LEVEL_ECO, OBD_LEVEL_DEGRADED]
+
+# Per-profile OBD simulation parameters.  Each entry controls initial value
+# ranges, random-walk drift bounds, and event probabilities for _advance_obd2.
+_OBD_PROFILES = {
+    OBD_LEVEL_NORMAL: dict(
+        rpm_base=800.0, rpm_speed_factor=18.0, rpm_drift_max=150.0,
+        rpm_init_range=(1400.0, 1800.0),
+        throttle_init_range=(15.0, 25.0), throttle_drift_max=2.0,
+        engine_load_init_range=(30.0, 45.0), engine_load_drift_max=2.0,
+        consumption_init_range=(7.0, 9.0), consumption_drift_max=0.5,
+        fuel_drain=0.002,
+        battery_init_range=(13.7, 14.2), battery_drift_max=0.05,
+        battery_min=12.0, battery_max=14.8,
+        coolant_target=90.0, coolant_init=55.0,
+        dtc_on_prob=0.001, dtc_off_prob=0.05,
+    ),
+    OBD_LEVEL_SPORT: dict(
+        rpm_base=1200.0, rpm_speed_factor=22.0, rpm_drift_max=300.0,
+        rpm_init_range=(2500.0, 3500.0),
+        throttle_init_range=(35.0, 55.0), throttle_drift_max=4.0,
+        engine_load_init_range=(55.0, 75.0), engine_load_drift_max=4.0,
+        consumption_init_range=(12.0, 16.0), consumption_drift_max=0.8,
+        fuel_drain=0.005,
+        battery_init_range=(13.8, 14.2), battery_drift_max=0.04,
+        battery_min=13.5, battery_max=14.5,
+        coolant_target=93.0, coolant_init=60.0,
+        dtc_on_prob=0.0005, dtc_off_prob=0.03,
+    ),
+    OBD_LEVEL_ECO: dict(
+        rpm_base=600.0, rpm_speed_factor=14.0, rpm_drift_max=80.0,
+        rpm_init_range=(1100.0, 1500.0),
+        throttle_init_range=(8.0, 15.0), throttle_drift_max=1.0,
+        engine_load_init_range=(15.0, 25.0), engine_load_drift_max=1.0,
+        consumption_init_range=(4.0, 6.0), consumption_drift_max=0.3,
+        fuel_drain=0.001,
+        battery_init_range=(13.9, 14.3), battery_drift_max=0.03,
+        battery_min=13.5, battery_max=14.5,
+        coolant_target=87.0, coolant_init=50.0,
+        dtc_on_prob=0.0002, dtc_off_prob=0.08,
+    ),
+    OBD_LEVEL_DEGRADED: dict(
+        rpm_base=700.0, rpm_speed_factor=18.0, rpm_drift_max=400.0,
+        rpm_init_range=(900.0, 1600.0),
+        throttle_init_range=(10.0, 30.0), throttle_drift_max=6.0,
+        engine_load_init_range=(40.0, 70.0), engine_load_drift_max=6.0,
+        consumption_init_range=(10.0, 18.0), consumption_drift_max=1.5,
+        fuel_drain=0.004,
+        battery_init_range=(11.8, 12.5), battery_drift_max=0.15,
+        battery_min=11.0, battery_max=13.5,
+        coolant_target=105.0, coolant_init=75.0,
+        dtc_on_prob=0.01, dtc_off_prob=0.02,
+    ),
+}
+
 # Public OSM-based endpoints used by the Road Route mode. Both are
 # free/no-key services; please keep request volume modest and identify
 # this app via the User-Agent header (Nominatim usage policy).
@@ -663,7 +723,7 @@ class RouteTripPlayer:
     """
 
     def __init__(self, start_address, end_address, speed_kmh,
-                 geocoder=None, router=None):
+                 geocoder=None, router=None, obd_level=None):
         self.start_address = start_address or ""
         self.end_address = end_address or ""
         try:
@@ -688,28 +748,38 @@ class RouteTripPlayer:
         self._secousses = random.uniform(0.05, 0.25)
         self._secousses_drift = random.uniform(-0.01, 0.01)
 
+        # OBD driving profile — controls simulation intensities.
+        self.obd_level = (
+            obd_level if obd_level in _OBD_PROFILES else OBD_LEVEL_NORMAL
+        )
+
         # --- OBD2 simulation state (bounded random walks) ---
         # All values are floats so the flat dict output passes the Chart node's
         # ``all(isinstance(v, (int, float)) for v in values)`` guard.
+        self._init_obd2_state()
 
-        # Régime moteur (RPM): typical urban 1500–2500, highway 2000–3000
-        self._rpm = random.uniform(1400.0, 1800.0)
+    def _init_obd2_state(self):
+        """Initialise (or re-initialise) all OBD2 random-walk state from the current profile."""
+        p = _OBD_PROFILES.get(self.obd_level, _OBD_PROFILES[OBD_LEVEL_NORMAL])
+
+        # Régime moteur (RPM)
+        self._rpm = random.uniform(*p["rpm_init_range"])
         self._rpm_drift = random.uniform(-20.0, 20.0)
 
-        # Température moteur (°C): warms up to ~88–92 °C operating temp
-        self._coolant_temp = 55.0         # cold start
-        self._coolant_target = 90.0       # standard engine operating temperature
+        # Température moteur (°C)
+        self._coolant_temp = p["coolant_init"]
+        self._coolant_target = p["coolant_target"]
 
         # Consommation instantanée (L/100 km)
-        self._consumption = random.uniform(7.0, 9.0)
+        self._consumption = random.uniform(*p["consumption_init_range"])
         self._consumption_drift = random.uniform(-0.1, 0.1)
 
         # Position pédale d'accélérateur (%)
-        self._throttle = random.uniform(15.0, 25.0)
+        self._throttle = random.uniform(*p["throttle_init_range"])
         self._throttle_drift = random.uniform(-0.5, 0.5)
 
         # Charge moteur (%)
-        self._engine_load = random.uniform(30.0, 45.0)
+        self._engine_load = random.uniform(*p["engine_load_init_range"])
         self._engine_load_drift = random.uniform(-0.4, 0.4)
 
         # Débit d'air MAF (g/s)
@@ -719,12 +789,29 @@ class RouteTripPlayer:
         # Niveau carburant (%) — starts high and decreases slowly
         self._fuel_level = random.uniform(70.0, 90.0)
 
-        # Tension batterie (V): 13.8–14.2 V while engine running
-        self._battery_voltage = random.uniform(13.7, 14.2)
+        # Tension batterie (V)
+        self._battery_voltage = random.uniform(*p["battery_init_range"])
         self._battery_drift = random.uniform(-0.02, 0.02)
 
         # Codes défauts actifs (DTC count): usually 0, rarely 1
         self._dtc_count = 0.0
+
+    def set_obd_level(self, level):
+        """Switch the OBD driving profile without resetting the route trip.
+
+        The coolant target and battery range are updated immediately; other
+        OBD metrics drift toward the new profile's natural centre over the
+        following simulation steps, producing a smooth transition.
+        """
+        if level not in _OBD_PROFILES or level == self.obd_level:
+            return
+        self.obd_level = level
+        p = _OBD_PROFILES[level]
+        # Update targets that have an immediate effect on the simulation.
+        self._coolant_target = p["coolant_target"]
+        # Snap battery into the new profile range if it is out of bounds.
+        if not (p["battery_min"] <= self._battery_voltage <= p["battery_max"]):
+            self._battery_voltage = random.uniform(*p["battery_init_range"])
 
     def start(self):
         """Geocode the addresses and fetch the route. Returns True on success."""
@@ -813,9 +900,12 @@ class RouteTripPlayer:
 
         All values are kept as Python ``float`` so that the returned dict
         satisfies the Chart node's ``all(isinstance(v, (int, float)) …)``
-        guard without any special casing.
+        guard without any special casing.  Drift bounds and natural centres
+        are taken from the current OBD driving profile (``self.obd_level``).
         """
-        # Secousses (road bumpiness)
+        p = _OBD_PROFILES.get(self.obd_level, _OBD_PROFILES[OBD_LEVEL_NORMAL])
+
+        # Secousses (road bumpiness) — profile-independent
         self._secousses_drift = max(
             -0.04,
             min(0.04, self._secousses_drift + random.uniform(-0.01, 0.01)),
@@ -844,12 +934,13 @@ class RouteTripPlayer:
                 ),
             )
 
-        # RPM — bounded walk around a centre that depends on speed
-        rpm_center = 800.0 + self.speed_kmh * 18.0   # rough proportionality
-        rpm_center = max(800.0, min(4200.0, rpm_center))
+        # RPM — bounded walk around a centre that depends on speed and profile
+        rpm_center = p["rpm_base"] + self.speed_kmh * p["rpm_speed_factor"]
+        rpm_center = max(p["rpm_base"], min(4200.0, rpm_center))
+        rpm_dm = p["rpm_drift_max"]
         self._rpm_drift = max(
-            -150.0,
-            min(150.0, self._rpm_drift + random.uniform(-30.0, 30.0)),
+            -rpm_dm,
+            min(rpm_dm, self._rpm_drift + random.uniform(-30.0, 30.0)),
         )
         self._rpm = max(
             750.0,
@@ -857,23 +948,25 @@ class RouteTripPlayer:
         )
 
         # Pédale d'accélérateur (%)
+        t_dm = p["throttle_drift_max"]
         self._throttle_drift = max(
-            -2.0,
-            min(2.0, self._throttle_drift + random.uniform(-0.4, 0.4)),
+            -t_dm,
+            min(t_dm, self._throttle_drift + random.uniform(-0.4, 0.4)),
         )
         self._throttle = max(
             5.0,
-            min(85.0, self._throttle + self._throttle_drift),
+            min(95.0, self._throttle + self._throttle_drift),
         )
 
         # Charge moteur (%)
+        l_dm = p["engine_load_drift_max"]
         self._engine_load_drift = max(
-            -2.0,
-            min(2.0, self._engine_load_drift + random.uniform(-0.3, 0.3)),
+            -l_dm,
+            min(l_dm, self._engine_load_drift + random.uniform(-0.3, 0.3)),
         )
         self._engine_load = max(
             10.0,
-            min(90.0, self._engine_load + self._engine_load_drift),
+            min(95.0, self._engine_load + self._engine_load_drift),
         )
 
         # Débit d'air MAF (g/s) — follows RPM loosely
@@ -888,34 +981,36 @@ class RouteTripPlayer:
         )
 
         # Consommation instantanée (L/100 km) — roughly proportional to load
+        c_dm = p["consumption_drift_max"]
         cons_center = 2.0 + self._engine_load / 6.0
         self._consumption_drift = max(
-            -0.5,
-            min(0.5, self._consumption_drift + random.uniform(-0.1, 0.1)),
+            -c_dm,
+            min(c_dm, self._consumption_drift + random.uniform(-0.1, 0.1)),
         )
         self._consumption = max(
             0.5,
-            min(20.0, cons_center + self._consumption_drift),
+            min(25.0, cons_center + self._consumption_drift),
         )
 
-        # Niveau carburant (%) — drains very slowly
+        # Niveau carburant (%) — drains at profile-specific rate
         if moving:
-            self._fuel_level = max(0.0, self._fuel_level - 0.002)
+            self._fuel_level = max(0.0, self._fuel_level - p["fuel_drain"])
 
         # Tension batterie (V)
+        b_dm = p["battery_drift_max"]
         self._battery_drift = max(
-            -0.05,
-            min(0.05, self._battery_drift + random.uniform(-0.01, 0.01)),
+            -b_dm,
+            min(b_dm, self._battery_drift + random.uniform(-0.01, 0.01)),
         )
         self._battery_voltage = max(
-            12.0,
-            min(14.8, self._battery_voltage + self._battery_drift),
+            p["battery_min"],
+            min(p["battery_max"], self._battery_voltage + self._battery_drift),
         )
 
-        # Codes défauts (DTC) — stays 0, very rarely flips to 1 then back
-        if self._dtc_count == 0.0 and random.random() < 0.001:
+        # Codes défauts (DTC) — probability depends on profile
+        if self._dtc_count == 0.0 and random.random() < p["dtc_on_prob"]:
             self._dtc_count = 1.0
-        elif self._dtc_count > 0.0 and random.random() < 0.05:
+        elif self._dtc_count > 0.0 and random.random() < p["dtc_off_prob"]:
             self._dtc_count = 0.0
 
     def get_coordinates(self):
@@ -1067,6 +1162,8 @@ class FactoryNode:
         node.tag_node_route_end_value_name = node.tag_node_name + ':RouteEndValue'
         node.tag_node_route_speed_name = node.tag_node_name + ':RouteSpeed'
         node.tag_node_route_speed_value_name = node.tag_node_name + ':RouteSpeedValue'
+        node.tag_node_obd_level_name = node.tag_node_name + ':OBDLevel'
+        node.tag_node_obd_level_value_name = node.tag_node_name + ':OBDLevelValue'
 
         # Status text tag
         node.tag_node_status_name = node.tag_node_name + ':Status'
@@ -1156,6 +1253,18 @@ class FactoryNode:
                     width=small_window_w - 50,
                     step=5.0,
                 )
+            with dpg.node_attribute(
+                tag=node.tag_node_obd_level_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+                show=_route_visible,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_obd_level_value_name,
+                    items=OBD_LEVELS,
+                    label="OBD",
+                    default_value=OBD_LEVEL_NORMAL,
+                    width=small_window_w - 50,
+                )
 
             # Status text showing number of points
             with dpg.node_attribute(
@@ -1225,7 +1334,7 @@ class Node(BaseNode):
         any persistence path accidentally feeds them to a non-route mode.
         """
         tag_node_name = str(node_id) + ':' + Node.node_tag
-        for suffix in (':RouteStart', ':RouteEnd', ':RouteSpeed'):
+        for suffix in (':RouteStart', ':RouteEnd', ':RouteSpeed', ':OBDLevel'):
             try:
                 dpg.configure_item(tag_node_name + suffix, show=bool(visible))
             except Exception:
@@ -1420,6 +1529,7 @@ class Node(BaseNode):
                 start_addr_tag = tag_node_name + ':RouteStartValue'
                 end_addr_tag = tag_node_name + ':RouteEndValue'
                 speed_tag = tag_node_name + ':RouteSpeedValue'
+                obd_level_tag = tag_node_name + ':OBDLevelValue'
                 status_tag = tag_node_name + ':StatusValue'
 
                 start_addr = dpg_get_value(start_addr_tag) or ""
@@ -1427,6 +1537,7 @@ class Node(BaseNode):
                 speed_kmh = dpg_get_value(speed_tag)
                 if speed_kmh is None:
                     speed_kmh = 50.0
+                obd_level = dpg_get_value(obd_level_tag) or OBD_LEVEL_NORMAL
 
                 # Lazily create / refresh the player when the inputs
                 # change so the user can edit From/To and press Start
@@ -1439,6 +1550,7 @@ class Node(BaseNode):
                 if needs_new:
                     self.route_player = RouteTripPlayer(
                         start_addr, end_addr, speed_kmh,
+                        obd_level=obd_level,
                     )
                     if not self.route_player.start():
                         # Show the error in the node status but keep the
@@ -1464,8 +1576,10 @@ class Node(BaseNode):
                             pass
                         json_output = self.route_player.get_coordinates()
                 else:
-                    # Live speed tweaks are honoured without resetting the trip.
+                    # Live speed and OBD level changes are applied without
+                    # resetting the trip.
                     self.route_player.set_speed(speed_kmh)
+                    self.route_player.set_obd_level(obd_level)
                     json_output = self.route_player.get_coordinates()
 
         else:
@@ -1494,6 +1608,7 @@ class Node(BaseNode):
         route_start_tag = tag_node_name + ':RouteStartValue'
         route_end_tag = tag_node_name + ':RouteEndValue'
         route_speed_tag = tag_node_name + ':RouteSpeedValue'
+        obd_level_tag = tag_node_name + ':OBDLevelValue'
 
         selected_example = dpg_get_value(dropdown_tag)
         if selected_example is None:
@@ -1513,6 +1628,7 @@ class Node(BaseNode):
                 setting_dict[route_start_tag] = dpg_get_value(route_start_tag)
                 setting_dict[route_end_tag] = dpg_get_value(route_end_tag)
                 setting_dict[route_speed_tag] = dpg_get_value(route_speed_tag)
+                setting_dict[obd_level_tag] = dpg_get_value(obd_level_tag)
             except Exception:
                 pass
 
@@ -1526,12 +1642,13 @@ class Node(BaseNode):
         route_start_tag = tag_node_name + ':RouteStartValue'
         route_end_tag = tag_node_name + ':RouteEndValue'
         route_speed_tag = tag_node_name + ':RouteSpeedValue'
+        obd_level_tag = tag_node_name + ':OBDLevelValue'
 
         selected_example = setting_dict.get(dropdown_tag, "AISTRACKER")
         dpg_set_value(dropdown_tag, selected_example)
 
         # Restore Road Route inputs when present.
-        for tag in (route_start_tag, route_end_tag, route_speed_tag):
+        for tag in (route_start_tag, route_end_tag, route_speed_tag, obd_level_tag):
             if tag in setting_dict:
                 try:
                     dpg_set_value(tag, setting_dict[tag])
