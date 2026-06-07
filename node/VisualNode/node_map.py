@@ -504,6 +504,59 @@ def lat_lon_to_pixel_on_map(lat, lon, origin_fx, origin_fy, zoom):
     return px, py
 
 
+def _fit_zoom_for_trace(lats, lons, width_px, height_px,
+                        tile_size=256, padding=0.25, min_zoom=3, max_zoom=17):
+    """Compute the OSM zoom level that fits all trace points in the viewport.
+
+    Uses the standard Web-Mercator tile formula: at zoom *z* the world is
+    ``tile_size × 2^z`` pixels wide, so ``tile_size × 2^z / 360`` pixels
+    cover one degree of longitude.  We solve for *z* such that the padded
+    bounding box exactly fills the smaller of *width_px* × *height_px*.
+
+    Args:
+        lats: Iterable of latitude values.
+        lons: Iterable of longitude values.
+        width_px: Viewport width in pixels.
+        height_px: Viewport height in pixels.
+        tile_size: Native tile size in pixels (default 256).
+        padding: Fractional padding added around the bounding box (default 25 %).
+        min_zoom: Lower bound for the returned zoom (default 3).
+        max_zoom: Upper bound for the returned zoom (default 17).
+
+    Returns:
+        Integer zoom level in [min_zoom, max_zoom].
+    """
+    lats = list(lats)
+    lons = list(lons)
+    if not lats or not lons:
+        return max(min_zoom, 10)
+
+    lat_span = max(lats) - min(lats)
+    lon_span = max(lons) - min(lons)
+
+    # Ensure a minimum span so a perfectly straight N–S or E–W route does not
+    # produce an infinite zoom level.
+    lat_span = max(lat_span, 0.001)
+    lon_span = max(lon_span, 0.001)
+
+    # Add symmetric padding.
+    lat_span *= (1.0 + padding)
+    lon_span *= (1.0 + padding)
+
+    # At zoom z: pixels_per_degree_lon = tile_size * 2^z / 360
+    # We want  tile_size * 2^z / 360 * lon_span  <=  width_px
+    # => z <= log2(width_px * 360 / (tile_size * lon_span))
+    z_lon = math.log2(width_px * 360.0 / (tile_size * lon_span))
+
+    # For latitude we use the same cylindrical approximation (treating degrees
+    # of latitude as equivalent to degrees of longitude for the purpose of
+    # bounding-box fitting, which is accurate for small extents in mid-latitudes).
+    z_lat = math.log2(height_px * 360.0 / (tile_size * lat_span))
+
+    zoom = int(min(z_lon, z_lat))
+    return max(min_zoom, min(max_zoom, zoom))
+
+
 def get_osm_tile(z, x, y, use_cache=True, provider_name=None, hidpi=False):
     """
     Download a map tile from the configured provider or retrieve from cache.
@@ -1306,17 +1359,27 @@ class Node(DpgNodeABC):
                 'name': '',
                 'info': '',
             } for h in trace_history]
+
+            # Auto-zoom: compute the OSM zoom level that fits the whole
+            # trace in the viewport so the map zooms out from the live-
+            # tracking view to show the full route start-to-end.
+            trace_lats = [h['lat'] for h in trace_history]
+            trace_lons = [h['lon'] for h in trace_history]
+            fit_zoom = _fit_zoom_for_trace(
+                trace_lats, trace_lons,
+                small_window_w, small_window_h,
+            )
+            try:
+                dpg_set_value(tag_node_zoom_value_name, fit_zoom)
+            except Exception:
+                pass
+            zoom_level = fit_zoom
+
             self._trace_fitted = True
 
         if not render_points:
             return None, None
 
-        print(
-            f"Map node: Parameters - zoom={zoom_level}, size={size_factor}, "
-            f"pan_x={pan_x}, pan_y={pan_y}, cache={use_cache}, "
-            f"provider={provider_name}, hidpi={hidpi}, labels={labels_overlay}, "
-            f"metric={metric_key}, trace={trace_enabled}"
-        )
         return self._create_preview_image(
             render_points, small_window_w, small_window_h,
             zoom_level, size_factor, pan_x, pan_y, tag_node_progress_name,
@@ -1838,12 +1901,17 @@ class Node(DpgNodeABC):
                 # endpoints, mapped through the green→yellow→orange→red
                 # gradient.
                 #
-                # The trace is rendered with the same width as the moving
-                # point's outer diameter and with the same translucency as
-                # the moving marker, so it visually reads as a continuous
-                # trail of the live point rather than a separate overlay.
+                # The trace width is scaled proportionally to the zoom level
+                # so the polyline stays visually thin when the map is zoomed
+                # out to show the full route (e.g. at end-of-trip auto-fit).
+                # At a typical street-level zoom (≈15) the full marker-sized
+                # width is used; at lower zoom levels it shrinks linearly down
+                # to a minimum of 2 px so the route remains visible without
+                # dominating the map.
                 moving_r_outer = max(1, int(round(r_outer * MOVING_POINT_SCALE)))
-                trace_w = max(2, moving_r_outer * 2)
+                _base_trace_w = max(2, moving_r_outer * 2)
+                _zoom_scale = max(0.15, zoom_level / 15.0)
+                trace_w = max(2, int(_base_trace_w * _zoom_scale))
                 trace_alpha = _scaled_alpha(255, MOVING_POINT_ALPHA)
                 # Non-trace live trail keeps its original (narrower) styling.
                 live_trail_halo_w = max(6, int(8 * (tile_px / float(TILE_SIZE))))

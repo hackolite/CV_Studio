@@ -688,6 +688,44 @@ class RouteTripPlayer:
         self._secousses = random.uniform(0.05, 0.25)
         self._secousses_drift = random.uniform(-0.01, 0.01)
 
+        # --- OBD2 simulation state (bounded random walks) ---
+        # All values are floats so the flat dict output passes the Chart node's
+        # ``all(isinstance(v, (int, float)) for v in values)`` guard.
+
+        # Régime moteur (RPM): typical urban 1500–2500, highway 2000–3000
+        self._rpm = random.uniform(1400.0, 1800.0)
+        self._rpm_drift = random.uniform(-20.0, 20.0)
+
+        # Température moteur (°C): warms up to ~88–92 °C operating temp
+        self._coolant_temp = 55.0         # cold start
+        self._coolant_target = 90.0       # standard engine operating temperature
+
+        # Consommation instantanée (L/100 km)
+        self._consumption = random.uniform(7.0, 9.0)
+        self._consumption_drift = random.uniform(-0.1, 0.1)
+
+        # Position pédale d'accélérateur (%)
+        self._throttle = random.uniform(15.0, 25.0)
+        self._throttle_drift = random.uniform(-0.5, 0.5)
+
+        # Charge moteur (%)
+        self._engine_load = random.uniform(30.0, 45.0)
+        self._engine_load_drift = random.uniform(-0.4, 0.4)
+
+        # Débit d'air MAF (g/s)
+        self._maf = random.uniform(8.0, 12.0)
+        self._maf_drift = random.uniform(-0.1, 0.1)
+
+        # Niveau carburant (%) — starts high and decreases slowly
+        self._fuel_level = random.uniform(70.0, 90.0)
+
+        # Tension batterie (V): 13.8–14.2 V while engine running
+        self._battery_voltage = random.uniform(13.7, 14.2)
+        self._battery_drift = random.uniform(-0.02, 0.02)
+
+        # Codes défauts actifs (DTC count): usually 0, rarely 1
+        self._dtc_count = 0.0
+
     def start(self):
         """Geocode the addresses and fetch the route. Returns True on success."""
         self.error = None
@@ -770,30 +808,14 @@ class RouteTripPlayer:
         else:
             self.speed_kmh = new_speed
 
-    def get_coordinates(self):
-        """Return the current moving point (1-element list) along the route.
+    def _advance_obd2(self, moving):
+        """Advance all OBD2 bounded random walks by one step.
 
-        Emits an empty list when the player is not ready (geocoding failed
-        or :meth:`start` was never called). Once the end of the route is
-        reached, the final point is emitted with ``is_moving=False`` so
-        the Map node detects the end of the trip and auto-fits the trace.
+        All values are kept as Python ``float`` so that the returned dict
+        satisfies the Chart node's ``all(isinstance(v, (int, float)) …)``
+        guard without any special casing.
         """
-        if not self.is_ready or self.start_time is None:
-            return []
-        elapsed = max(0.0, time.time() - self.start_time)
-        distance_km = (self.speed_kmh / 3600.0) * elapsed
-        reached_end = distance_km >= self.total_km
-        pos = self._position_at(distance_km)
-        if pos is None:
-            return []
-        lat, lon = pos
-        # ``is_moving=False`` on the final frame signals "trip ended" to
-        # the Map node so it can auto-fit on the accumulated trace.
-        moving = not reached_end
-        if reached_end:
-            self.finished = True
-
-        # Advance the secousses random walk (bounded drift in [0, 1])
+        # Secousses (road bumpiness)
         self._secousses_drift = max(
             -0.04,
             min(0.04, self._secousses_drift + random.uniform(-0.01, 0.01)),
@@ -807,19 +829,152 @@ class RouteTripPlayer:
             self._secousses_drift = -self._secousses_drift
         self._secousses = new_sec
 
-        return [{
-            "latitude": lat,
-            "longitude": lon,
-            "name": "Route",
-            "info": (
-                f"{distance_km:.2f}/{self.total_km:.2f} km "
-                f"@ {self.speed_kmh:.1f} km/h"
-            ),
-            "is_moving": moving,
-            # Road-bumpiness metric in [0, 1]; consumers (e.g. the Map node)
-            # can colour the route trace on a green→yellow→orange→red gradient.
+        # Température moteur — ramp toward operating temp, then small jitter
+        if self._coolant_temp < self._coolant_target:
+            self._coolant_temp = min(
+                self._coolant_target,
+                self._coolant_temp + random.uniform(0.3, 0.8),
+            )
+        else:
+            self._coolant_temp = max(
+                self._coolant_target - 5.0,
+                min(
+                    self._coolant_target + 2.0,
+                    self._coolant_temp + random.uniform(-0.3, 0.3),
+                ),
+            )
+
+        # RPM — bounded walk around a centre that depends on speed
+        rpm_center = 800.0 + self.speed_kmh * 18.0   # rough proportionality
+        rpm_center = max(800.0, min(4200.0, rpm_center))
+        self._rpm_drift = max(
+            -150.0,
+            min(150.0, self._rpm_drift + random.uniform(-30.0, 30.0)),
+        )
+        self._rpm = max(
+            750.0,
+            min(4500.0, rpm_center + self._rpm_drift),
+        )
+
+        # Pédale d'accélérateur (%)
+        self._throttle_drift = max(
+            -2.0,
+            min(2.0, self._throttle_drift + random.uniform(-0.4, 0.4)),
+        )
+        self._throttle = max(
+            5.0,
+            min(85.0, self._throttle + self._throttle_drift),
+        )
+
+        # Charge moteur (%)
+        self._engine_load_drift = max(
+            -2.0,
+            min(2.0, self._engine_load_drift + random.uniform(-0.3, 0.3)),
+        )
+        self._engine_load = max(
+            10.0,
+            min(90.0, self._engine_load + self._engine_load_drift),
+        )
+
+        # Débit d'air MAF (g/s) — follows RPM loosely
+        maf_center = 3.0 + self._rpm / 300.0
+        self._maf_drift = max(
+            -0.5,
+            min(0.5, self._maf_drift + random.uniform(-0.1, 0.1)),
+        )
+        self._maf = max(
+            2.0,
+            min(30.0, maf_center + self._maf_drift),
+        )
+
+        # Consommation instantanée (L/100 km) — roughly proportional to load
+        cons_center = 2.0 + self._engine_load / 6.0
+        self._consumption_drift = max(
+            -0.5,
+            min(0.5, self._consumption_drift + random.uniform(-0.1, 0.1)),
+        )
+        self._consumption = max(
+            0.5,
+            min(20.0, cons_center + self._consumption_drift),
+        )
+
+        # Niveau carburant (%) — drains very slowly
+        if moving:
+            self._fuel_level = max(0.0, self._fuel_level - 0.002)
+
+        # Tension batterie (V)
+        self._battery_drift = max(
+            -0.05,
+            min(0.05, self._battery_drift + random.uniform(-0.01, 0.01)),
+        )
+        self._battery_voltage = max(
+            12.0,
+            min(14.8, self._battery_voltage + self._battery_drift),
+        )
+
+        # Codes défauts (DTC) — stays 0, very rarely flips to 1 then back
+        if self._dtc_count == 0.0 and random.random() < 0.001:
+            self._dtc_count = 1.0
+        elif self._dtc_count > 0.0 and random.random() < 0.05:
+            self._dtc_count = 0.0
+
+    def get_coordinates(self):
+        """Return the current position as a flat numeric dict (Chart + Map compatible).
+
+        The dict is a **flat mapping of floats** so the Chart node's
+        ``all(isinstance(v, (int, float)) …)`` guard is satisfied and each
+        OBD2 key becomes a plottable time-series.  The Map node reads
+        ``latitude`` / ``longitude`` directly from the dict and treats all
+        other numeric keys as optional colour-metric candidates.
+
+        Returns an **empty list** (``[]``) when the player is not ready
+        (geocoding failed or :meth:`start` was never called), keeping
+        backward-compatibility with the idle / error paths.
+
+        Once the end of the route is reached, ``is_moving`` is set to
+        ``0.0`` so the Map node detects the end of the trip and triggers
+        the auto-fit zoom.
+        """
+        if not self.is_ready or self.start_time is None:
+            return []
+        elapsed = max(0.0, time.time() - self.start_time)
+        distance_km = (self.speed_kmh / 3600.0) * elapsed
+        reached_end = distance_km >= self.total_km
+        pos = self._position_at(distance_km)
+        if pos is None:
+            return []
+        lat, lon = pos
+        # ``is_moving=0.0`` on the final frame signals "trip ended" to
+        # the Map node so it can auto-fit on the accumulated trace.
+        moving_flag = 0.0 if reached_end else 1.0
+        if reached_end:
+            self.finished = True
+
+        # Advance all OBD2 metrics one step.
+        self._advance_obd2(moving=not reached_end)
+
+        # Return a flat numeric dict.  All values MUST be int or float so
+        # the Chart node processes the dict as a generic numeric time-series.
+        return {
+            # --- GPS position (used by the Map node) ---
+            "latitude": round(lat, 7),
+            "longitude": round(lon, 7),
+            # 1.0 = en déplacement, 0.0 = arrêté / fin de trajet
+            "is_moving": moving_flag,
+            # --- OBD2 véhicule simulé ---
+            "rpm": round(self._rpm, 1),
+            "speed_kmh": round(self.speed_kmh + random.uniform(-2.0, 2.0), 1),
+            "coolant_temp_c": round(self._coolant_temp, 1),
+            "instant_consumption_l100": round(self._consumption, 2),
+            "throttle_pos": round(self._throttle, 1),
+            "engine_load": round(self._engine_load, 1),
+            "maf_g_s": round(self._maf, 2),
+            "fuel_level_pct": round(self._fuel_level, 2),
+            "battery_voltage": round(self._battery_voltage, 3),
+            "dtc_count": self._dtc_count,
+            # Road-bumpiness metric in [0, 1] for colour-coded trace
             "secousses": round(self._secousses, 4),
-        }]
+        }
 
 
 def get_example_names():
@@ -1279,17 +1434,7 @@ class Node(BaseNode):
             else:
                 # Return empty list when None selected
                 json_output = []
-        
-        # Log generated JSON for debugging
-        print(f"CoordinateExamples node: Sending {len(json_output) if isinstance(json_output, list) else 0} coordinates")
-        if json_output and isinstance(json_output, list) and len(json_output) > 0:
-            try:
-                import json as json_module
-                json_str = json_module.dumps(json_output[0], indent=2)
-                print(f"CoordinateExamples node: First coordinate:\n{json_str}")
-            except Exception as e:
-                print(f"CoordinateExamples node: Could not serialize first coordinate: {e}")
-        
+
         return {"image": None, "json": json_output, "audio": None}
 
     def close(self, node_id):
