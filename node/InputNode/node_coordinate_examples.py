@@ -918,9 +918,7 @@ class Node(BaseNode):
             except Exception:
                 pass
             selected_example = dpg_get_value(dropdown_tag)
-            if selected_example == GPS_SIMULATION_NAME:
-                dpg_set_value(status_tag, 'Trip stopped (press Start to begin)')
-            elif selected_example == ROAD_ROUTE_NAME:
+            if selected_example in (GPS_SIMULATION_NAME, ROAD_ROUTE_NAME):
                 dpg_set_value(status_tag, 'Trip stopped (press Start to begin)')
     
     @staticmethod
