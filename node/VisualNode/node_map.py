@@ -429,16 +429,20 @@ def _prefetch_tiles_bg(center_lat, center_lon, zoom, tile_x0, tile_y0,
     cache_dir = _provider_cache_dir(provider_name, hidpi=use_hidpi)
 
     margin = _PREFETCH_MARGIN
-    # Extend the rendered grid by ±margin in both axes
+    # Extend the rendered grid by ±margin in both axes.
+    # x_end / y_end are exclusive upper bounds for range() so we add margin+1
+    # to include the last tile of the margin (tile_x0 + tiles_x + margin).
     x_start = tile_x0 - margin
     y_start = tile_y0 - margin
-    x_end = tile_x0 + tiles_x + margin + 1   # +1: same over-count as assemble
+    x_end = tile_x0 + tiles_x + margin + 1
     y_end = tile_y0 + tiles_y + margin + 1
 
     futures = []
     for ty in range(y_start, y_end):
         for tx in range(x_start, x_end):
-            # Skip tiles already covered by the current render pass
+            # Skip tiles already covered by the current render pass.
+            # assemble_osm_map renders range(tiles_x+1) × range(tiles_y+1),
+            # i.e. x in [tile_x0 … tile_x0+tiles_x] and y in [tile_y0 … tile_y0+tiles_y].
             if (tile_x0 <= tx <= tile_x0 + tiles_x and
                     tile_y0 <= ty <= tile_y0 + tiles_y):
                 continue
