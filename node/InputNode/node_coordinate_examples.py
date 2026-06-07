@@ -682,6 +682,11 @@ class RouteTripPlayer:
         self.is_ready = False
         self.finished = False
         self.error = None
+        # Simulated road-bumpiness metric in [0, 1] — same bounded random-walk
+        # as GPSMovementSimulator so the Map node can colour the route trace on
+        # a green→yellow→orange→red gradient.
+        self._secousses = random.uniform(0.05, 0.25)
+        self._secousses_drift = random.uniform(-0.01, 0.01)
 
     def start(self):
         """Geocode the addresses and fetch the route. Returns True on success."""
@@ -787,6 +792,21 @@ class RouteTripPlayer:
         moving = not reached_end
         if reached_end:
             self.finished = True
+
+        # Advance the secousses random walk (bounded drift in [0, 1])
+        self._secousses_drift = max(
+            -0.04,
+            min(0.04, self._secousses_drift + random.uniform(-0.01, 0.01)),
+        )
+        new_sec = self._secousses + self._secousses_drift
+        if new_sec < 0.0:
+            new_sec = -new_sec
+            self._secousses_drift = -self._secousses_drift
+        elif new_sec > 1.0:
+            new_sec = 2.0 - new_sec
+            self._secousses_drift = -self._secousses_drift
+        self._secousses = new_sec
+
         return [{
             "latitude": lat,
             "longitude": lon,
@@ -796,6 +816,9 @@ class RouteTripPlayer:
                 f"@ {self.speed_kmh:.1f} km/h"
             ),
             "is_moving": moving,
+            # Road-bumpiness metric in [0, 1]; consumers (e.g. the Map node)
+            # can colour the route trace on a green→yellow→orange→red gradient.
+            "secousses": round(self._secousses, 4),
         }]
 
 
