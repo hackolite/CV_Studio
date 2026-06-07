@@ -250,8 +250,6 @@ GPS simulation provides realistic but not exact coordinates for:
 - Demonstration scenarios
 - Development workflows
 
-## Future Enhancements
-
 ## Map rendering: highlighting moving points
 
 Coordinates produced by the dynamic sources (GPS Movement Simulation, Roissy
@@ -267,6 +265,8 @@ Two optional keys allow per-point tuning:
 
 Static datasets (AISTRACKER, World Cities, European Ports, Mediterranean Sea)
 do not set this flag and are rendered with the regular marker style.
+
+## Future Enhancements
 
 Potential features for future versions:
 - Configurable number of simulated objects
