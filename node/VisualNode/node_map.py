@@ -120,6 +120,11 @@ def _scaled_alpha(base, factor):
 # Keys that should never be offered as colour metrics in the Map node.
 # Anything else found on incoming points (numeric values in [0, 1]) is a
 # valid candidate for the green→yellow→orange→red gradient.
+# Convention: OBD2-style JSON may include ``<key>_max`` (recommended alert
+# threshold) and ``<key>_ratio`` (observed/max, clamped to [0, 1]).  The
+# ``_max`` keys are excluded from the metric selector here (their values
+# are also typically > 1, which already filters them, but the explicit
+# suffix check ensures they never appear even in edge cases).
 METRIC_NONE = "(none)"
 _METRIC_EXCLUDED_KEYS = {
     "lat", "lon", "latitude", "longitude",
@@ -171,7 +176,13 @@ def _metric_candidate_keys(points):
     """Return the list of keys eligible for the metric selector.
 
     A key is eligible when it appears at least once on a point with a
-    numeric value in [0, 1] and is not a built-in/spatial key.
+    numeric value in [0, 1], is not a built-in/spatial key, and does not
+    end with ``_max`` (reference threshold values, not ratios).
+
+    OBD2-style JSON emits ``<key>_ratio`` fields (observed/max, in [0, 1])
+    alongside ``<key>_max`` reference thresholds.  The ratio keys are
+    naturally discovered here and offered in the combobox; the ``_max``
+    keys are suppressed.
     """
     keys = []
     seen = set()
@@ -179,7 +190,7 @@ def _metric_candidate_keys(points):
         if not isinstance(pt, dict):
             continue
         for k, v in pt.items():
-            if k in _METRIC_EXCLUDED_KEYS or k.startswith("_"):
+            if k in _METRIC_EXCLUDED_KEYS or k.startswith("_") or k.endswith("_max"):
                 continue
             if k in seen:
                 continue

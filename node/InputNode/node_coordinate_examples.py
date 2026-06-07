@@ -955,22 +955,69 @@ class RouteTripPlayer:
 
         # Return a flat numeric dict.  All values MUST be int or float so
         # the Chart node processes the dict as a generic numeric time-series.
+        #
+        # For each relevant OBD2 key we also emit:
+        #   <key>_max  – recommended alert threshold (constant float)
+        #   <key>_ratio – observed / max, clamped to [0, 1]
+        # Ratios are "stress indicators": 0 = safe, 1 = at/beyond the limit.
+        # The Map node's _metric_candidate_keys picks up all keys in [0, 1]
+        # that are not excluded, so ratio keys become colour-coded trace
+        # candidates automatically (like ``secousses``).  The ``_max``
+        # values are > 1 and are therefore silently filtered out by the Map
+        # node — they exist only as reference data for the Chart node.
+
+        rpm_val = round(self._rpm, 1)
+        speed_val = round(self.speed_kmh + random.uniform(-2.0, 2.0), 1)
+        coolant_val = round(self._coolant_temp, 1)
+        cons_val = round(self._consumption, 2)
+        throttle_val = round(self._throttle, 1)
+        load_val = round(self._engine_load, 1)
+        maf_val = round(self._maf, 2)
+        fuel_val = round(self._fuel_level, 2)
+        voltage_val = round(self._battery_voltage, 3)
+
+        # Recommended max values (alert thresholds, not absolute limits).
+        RPM_MAX = 5500.0          # rev/min — conservative redline warning
+        SPEED_MAX = 130.0         # km/h    — French motorway limit
+        COOLANT_MAX = 108.0       # °C      — warning zone entry
+        CONS_MAX = 15.0           # L/100   — considered very high
+        THROTTLE_MAX = 100.0      # %
+        LOAD_MAX = 100.0          # %
+        MAF_MAX = 25.0            # g/s     — reasonable ceiling for a mid-size engine
+        FUEL_LOW_MAX = 100.0      # % reference for the *low-fuel* stress ratio
+
         return {
             # --- GPS position (used by the Map node) ---
             "latitude": round(lat, 7),
             "longitude": round(lon, 7),
             # 1.0 = en déplacement, 0.0 = arrêté / fin de trajet
             "is_moving": moving_flag,
-            # --- OBD2 véhicule simulé ---
-            "rpm": round(self._rpm, 1),
-            "speed_kmh": round(self.speed_kmh + random.uniform(-2.0, 2.0), 1),
-            "coolant_temp_c": round(self._coolant_temp, 1),
-            "instant_consumption_l100": round(self._consumption, 2),
-            "throttle_pos": round(self._throttle, 1),
-            "engine_load": round(self._engine_load, 1),
-            "maf_g_s": round(self._maf, 2),
-            "fuel_level_pct": round(self._fuel_level, 2),
-            "battery_voltage": round(self._battery_voltage, 3),
+            # --- OBD2 véhicule simulé (valeurs brutes) ---
+            "rpm": rpm_val,
+            "rpm_max": RPM_MAX,
+            "rpm_ratio": round(min(1.0, rpm_val / RPM_MAX), 4),
+            "speed_kmh": speed_val,
+            "speed_kmh_max": SPEED_MAX,
+            "speed_kmh_ratio": round(min(1.0, max(0.0, speed_val) / SPEED_MAX), 4),
+            "coolant_temp_c": coolant_val,
+            "coolant_temp_c_max": COOLANT_MAX,
+            "coolant_temp_c_ratio": round(min(1.0, max(0.0, coolant_val) / COOLANT_MAX), 4),
+            "instant_consumption_l100": cons_val,
+            "instant_consumption_l100_max": CONS_MAX,
+            "instant_consumption_l100_ratio": round(min(1.0, max(0.0, cons_val) / CONS_MAX), 4),
+            "throttle_pos": throttle_val,
+            "throttle_pos_max": THROTTLE_MAX,
+            "throttle_pos_ratio": round(min(1.0, max(0.0, throttle_val) / THROTTLE_MAX), 4),
+            "engine_load": load_val,
+            "engine_load_max": LOAD_MAX,
+            "engine_load_ratio": round(min(1.0, max(0.0, load_val) / LOAD_MAX), 4),
+            "maf_g_s": maf_val,
+            "maf_g_s_max": MAF_MAX,
+            "maf_g_s_ratio": round(min(1.0, max(0.0, maf_val) / MAF_MAX), 4),
+            "fuel_level_pct": fuel_val,
+            # fuel_low_ratio: 0 = tank full (safe), 1 = empty (critical)
+            "fuel_low_ratio": round(min(1.0, max(0.0, 1.0 - fuel_val / FUEL_LOW_MAX)), 4),
+            "battery_voltage": voltage_val,
             "dtc_count": self._dtc_count,
             # Road-bumpiness metric in [0, 1] for colour-coded trace
             "secousses": round(self._secousses, 4),
