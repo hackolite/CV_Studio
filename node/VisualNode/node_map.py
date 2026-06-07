@@ -70,6 +70,51 @@ MIN_RANGE_METERS = 1000      # Minimum range for single points (1 km)
 DEFAULT_RANGE_METERS = 10000  # Default range when min is needed (10 km)
 MAP_PADDING_FACTOR = 0.15     # Padding around bounding box (15%)
 
+# Moving-point marker styling (applied to points carrying ``is_moving=True``).
+# Producers (e.g. CoordinateExamples / RoutePlayer / GPSMovementSimulator) can
+# flag the "currently moving" coordinate with ``is_moving=True`` and optionally
+# override the scale/alpha per-point via ``marker_scale`` / ``marker_alpha``.
+MOVING_POINT_SCALE = 4.0     # Marker is rendered ~4x larger than a normal one
+MOVING_POINT_ALPHA = 0.5     # Marker is rendered semi-transparent
+
+
+def _moving_marker_style(point):
+    """Return (scale, alpha_factor) for a coordinate point.
+
+    Points carrying ``is_moving=True`` are rendered enlarged and translucent
+    so they stand out as the current position along an animated trajectory.
+    The scale defaults to :data:`MOVING_POINT_SCALE` and the alpha factor to
+    :data:`MOVING_POINT_ALPHA`, but each can be overridden per-point via the
+    optional ``marker_scale`` and ``marker_alpha`` keys.
+
+    Static markers (``is_moving`` absent or falsy) are returned unchanged
+    (``scale=1.0``, ``alpha_factor=1.0``).
+    """
+    try:
+        is_moving = bool(point.get("is_moving"))
+    except AttributeError:
+        return 1.0, 1.0
+    if not is_moving:
+        return 1.0, 1.0
+    try:
+        scale = float(point.get("marker_scale", MOVING_POINT_SCALE))
+    except (TypeError, ValueError):
+        scale = MOVING_POINT_SCALE
+    try:
+        alpha_factor = float(point.get("marker_alpha", MOVING_POINT_ALPHA))
+    except (TypeError, ValueError):
+        alpha_factor = MOVING_POINT_ALPHA
+    # Guard against pathological values.
+    if scale <= 0:
+        scale = 1.0
+    alpha_factor = max(0.0, min(1.0, alpha_factor))
+    return scale, alpha_factor
+
+
+def _scaled_alpha(base, factor):
+    """Multiply an 8-bit alpha channel by ``factor`` and clamp to [0, 255]."""
+    return max(0, min(255, int(round(base * factor))))
+
 # Simplified continental outlines for map context visualization
 # These are rough approximations to give geographic context in the map view
 # Format: {region_name: (longitude_coords, latitude_coords)}
@@ -1311,24 +1356,36 @@ class Node(DpgNodeABC):
                 # Markers: drop shadow + halo + filled dot + white rim
                 r_outer = max(7, int(9 * (tile_px / float(TILE_SIZE))))
                 r_inner = max(3, int(4 * (tile_px / float(TILE_SIZE))))
-                for (fpx, fpy) in px_positions:
-                    if fpx < -r_outer or fpx >= map_w + r_outer or fpy < -r_outer or fpy >= map_h + r_outer:
+                for point, (fpx, fpy) in zip(points, px_positions):
+                    # Per-point scaling / transparency for "moving" markers.
+                    # A point flagged ``is_moving=True`` is rendered larger and
+                    # semi-transparent so it stands out as the current position
+                    # along a route without hiding the trail or the basemap.
+                    scale, alpha_factor = _moving_marker_style(point)
+                    r_outer_pt = max(1, int(round(r_outer * scale)))
+                    r_inner_pt = max(1, int(round(r_inner * scale)))
+                    if (fpx < -r_outer_pt or fpx >= map_w + r_outer_pt or
+                            fpy < -r_outer_pt or fpy >= map_h + r_outer_pt):
                         continue
                     # Soft drop shadow (offset 1-2 px, semi-transparent black)
                     draw.ellipse(
-                        (fpx - r_outer + 1, fpy - r_outer + 2,
-                         fpx + r_outer + 1, fpy + r_outer + 2),
-                        fill=(0, 0, 0, 70),
+                        (fpx - r_outer_pt + 1, fpy - r_outer_pt + 2,
+                         fpx + r_outer_pt + 1, fpy + r_outer_pt + 2),
+                        fill=(0, 0, 0, _scaled_alpha(70, alpha_factor)),
                     )
                     # Outer halo ring (semi-transparent red-orange)
                     draw.ellipse(
-                        (fpx - r_outer, fpy - r_outer, fpx + r_outer, fpy + r_outer),
-                        fill=(255, 80, 0, 90),
+                        (fpx - r_outer_pt, fpy - r_outer_pt,
+                         fpx + r_outer_pt, fpy + r_outer_pt),
+                        fill=(255, 80, 0, _scaled_alpha(90, alpha_factor)),
                     )
                     # Inner solid dot + thin white rim for contrast
                     draw.ellipse(
-                        (fpx - r_inner, fpy - r_inner, fpx + r_inner, fpy + r_inner),
-                        fill=(220, 30, 0, 255), outline=(255, 255, 255, 230), width=1,
+                        (fpx - r_inner_pt, fpy - r_inner_pt,
+                         fpx + r_inner_pt, fpy + r_inner_pt),
+                        fill=(220, 30, 0, _scaled_alpha(255, alpha_factor)),
+                        outline=(255, 255, 255, _scaled_alpha(230, alpha_factor)),
+                        width=1,
                     )
 
                 pil_map = Image.alpha_composite(pil_map, overlay_img)
@@ -1423,13 +1480,21 @@ class Node(DpgNodeABC):
         mercator_points = []
         for point in points:
             x, y = self.lat_lon_to_web_mercator(point['lat'], point['lon'])
-            mercator_points.append({
+            mp = {
                 'x': x,
                 'y': y,
                 'name': point.get('name', 'Point'),
                 'lat': point['lat'],
                 'lon': point['lon']
-            })
+            }
+            # Preserve "moving" markers metadata for the rendering pass below.
+            if point.get('is_moving'):
+                mp['is_moving'] = True
+                if 'marker_scale' in point:
+                    mp['marker_scale'] = point['marker_scale']
+                if 'marker_alpha' in point:
+                    mp['marker_alpha'] = point['marker_alpha']
+            mercator_points.append(mp)
         
         print(f"Map node: Converted {len(mercator_points)} points to Web Mercator")
         
@@ -1493,10 +1558,11 @@ class Node(DpgNodeABC):
         
         # Plot points in Web Mercator coordinates
         for point in mercator_points:
-            ax.plot(point['x'], point['y'], 'o', 
-                   color='red', markersize=10, 
+            scale, alpha_factor = _moving_marker_style(point)
+            ax.plot(point['x'], point['y'], 'o',
+                   color='red', markersize=10 * scale,
                    markeredgecolor='darkred', markeredgewidth=2,
-                   markerfacecolor='yellow', zorder=5)
+                   markerfacecolor='yellow', alpha=alpha_factor, zorder=5)
         
         # Set axis limits
         ax.set_xlim(min_x, max_x)
@@ -1607,9 +1673,11 @@ class Node(DpgNodeABC):
         
         # Plot points
         for point in points:
-            ax.plot(point['lon'], point['lat'], 'ro', markersize=8, 
-                   markeredgecolor='darkred', markeredgewidth=1.5, 
-                   markerfacecolor='yellow', zorder=5)
+            scale, alpha_factor = _moving_marker_style(point)
+            ax.plot(point['lon'], point['lat'], 'o', color='red',
+                   markersize=8 * scale,
+                   markeredgecolor='darkred', markeredgewidth=1.5,
+                   markerfacecolor='yellow', alpha=alpha_factor, zorder=5)
         
         # Set axis limits
         ax.set_xlim(plot_min_lon, plot_max_lon)

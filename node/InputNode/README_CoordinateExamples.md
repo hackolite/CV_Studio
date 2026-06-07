@@ -252,6 +252,22 @@ GPS simulation provides realistic but not exact coordinates for:
 
 ## Future Enhancements
 
+## Map rendering: highlighting moving points
+
+Coordinates produced by the dynamic sources (GPS Movement Simulation, Roissy
+Airport Planes, and the upcoming Road Route mode) carry an `is_moving=True`
+flag in the output JSON. The Map node uses this flag to render those points
+**~4× larger** and **semi-transparent**, so the live position stands out
+without hiding the trail or the basemap.
+
+Two optional keys allow per-point tuning:
+
+- `marker_scale` (default `4.0`): multiplier applied to the marker radius.
+- `marker_alpha` (default `0.5`): multiplier applied to the marker alpha.
+
+Static datasets (AISTRACKER, World Cities, European Ports, Mediterranean Sea)
+do not set this flag and are rendered with the regular marker style.
+
 Potential features for future versions:
 - Configurable number of simulated objects
 - Custom center point selection

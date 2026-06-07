@@ -259,7 +259,11 @@ class GPSMovementSimulator:
                 'latitude': obj['lat'],
                 'longitude': obj['lon'],
                 'name': obj['name'],
-                'info': f"{obj['pattern']} - {obj['speed_kmh']:.1f} km/h"
+                'info': f"{obj['pattern']} - {obj['speed_kmh']:.1f} km/h",
+                # Flag for the Map node: this point is currently moving and
+                # should be rendered larger and semi-transparent so it stands
+                # out from static markers.
+                'is_moving': True,
             })
         return coordinates
     
@@ -402,7 +406,10 @@ class RoissyPlanesTracker:
                     'latitude': p['lat'],
                     'longitude': p['lon'],
                     'name': f"✈️ {p['callsign']}",
-                    'info': f"Alt: {p['alt']}m, Speed: {p['speed']}km/h, Descent: {p['vertical']}m/s"
+                    'info': f"Alt: {p['alt']}m, Speed: {p['speed']}km/h, Descent: {p['vertical']}m/s",
+                    # Approaching planes are in motion: render them as enlarged
+                    # semi-transparent markers on the Map node.
+                    'is_moving': True,
                 })
             
             self.cached_planes = coordinates
