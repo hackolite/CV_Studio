@@ -162,6 +162,27 @@ def test_gps_simulation_requires_start_button(monkeypatch):
     print("✓ GPS simulation Start/Stop gating test passed")
 
 
+def test_gps_simulation_secousses_metric_is_plausible(monkeypatch):
+    """The GPS simulator should expose a 'secousses' percentage in [0, 1]
+    that evolves slowly between successive frames."""
+    from node.InputNode import node_coordinate_examples as nce
+
+    sim = nce.GPSMovementSimulator(num_objects=3)
+    coords = sim.get_coordinates()
+    assert all('secousses' in c for c in coords)
+    for c in coords:
+        assert 0.0 <= c['secousses'] <= 1.0
+
+    prev = [c['secousses'] for c in coords]
+    sim.update_positions(time_elapsed=1.0)
+    after = [c['secousses'] for c in sim.get_coordinates()]
+    # Stay in range and progress slowly between frames (no big jumps).
+    for old, new in zip(prev, after):
+        assert 0.0 <= new <= 1.0
+        assert abs(new - old) <= 0.06
+    print("✓ secousses metric is in [0, 1] and progresses slowly")
+
+
 if __name__ == "__main__":
     print("Testing Coordinate Examples Node...")
     print()

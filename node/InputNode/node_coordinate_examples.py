@@ -125,6 +125,14 @@ class GPSMovementSimulator:
                 'speed_kmh': 4,  # km/h (walking speed)
                 'direction': random.uniform(0, 2 * math.pi),  # radians
                 'pattern': random.choice(['linear', 'circular', 'random_walk']),
+                # ``secousses`` is a dummy 0..1 metric (e.g. road bumpiness)
+                # that drifts slowly over time. It starts in a quiet zone and
+                # is updated via a bounded random walk in ``update_positions``
+                # so visualisations can map it onto a green→yellow→orange→red
+                # gradient.
+                'secousses': random.uniform(0.05, 0.25),
+                # Internal velocity used to keep the random walk smooth.
+                '_secousses_drift': random.uniform(-0.01, 0.01),
             }
             self.objects.append(obj)
             
@@ -156,7 +164,7 @@ class GPSMovementSimulator:
             # Calculate distance traveled from T0 at 4 km/h
             # Distance = speed * time
             distance_km = (obj['speed_kmh'] / 3600.0) * time_elapsed
-            
+
             # Update position based on pattern
             if obj['pattern'] == 'linear':
                 self._update_linear(obj, time_elapsed, distance_km)
@@ -164,6 +172,25 @@ class GPSMovementSimulator:
                 self._update_circular(obj, time_elapsed)
             else:  # random_walk
                 self._update_random_walk(obj, time_elapsed)
+
+            # Drift the ``secousses`` metric using a small, bounded random
+            # walk so it varies plausibly (slow progression in [0, 1])
+            # without sudden jumps. The drift itself is also smoothed so the
+            # series oscillates softly between calm and shaky periods.
+            obj['_secousses_drift'] = max(
+                -0.04,
+                min(0.04, obj['_secousses_drift'] + random.uniform(-0.01, 0.01)),
+            )
+            new_secousses = obj['secousses'] + obj['_secousses_drift']
+            # Bounce off the [0, 1] walls so the value stays in range
+            # without sticking at the boundaries.
+            if new_secousses < 0.0:
+                new_secousses = -new_secousses
+                obj['_secousses_drift'] = -obj['_secousses_drift']
+            elif new_secousses > 1.0:
+                new_secousses = 2.0 - new_secousses
+                obj['_secousses_drift'] = -obj['_secousses_drift']
+            obj['secousses'] = new_secousses
             
             # Log position update at specific intervals (approximately every 10 seconds)
             # Use modulo with tolerance since time_elapsed is a float
@@ -264,6 +291,11 @@ class GPSMovementSimulator:
                 # should be rendered larger and semi-transparent so it stands
                 # out from static markers.
                 'is_moving': True,
+                # Dummy 0..1 metric: bumpiness/jolts experienced by the
+                # vehicle along the trip. Consumers (e.g. the Map node) can
+                # pick it via a "metric" selector to colour the marker and
+                # trail with a green→yellow→orange→red gradient.
+                'secousses': round(obj['secousses'], 4),
             })
         return coordinates
     
