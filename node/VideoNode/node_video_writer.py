@@ -96,23 +96,6 @@ WRITE_MODE_STANDARD = "Standard"
 WRITE_MODE_ON_DISK   = "On-disk"
 WRITE_MODES = [WRITE_MODE_STANDARD, WRITE_MODE_ON_DISK]
 
-# Quality presets (labels → CRF for libx264 / libx265).
-# Lower CRF = better quality / larger file.
-QUALITY_NORMALE   = "Normale"
-QUALITY_HAUTE     = "Haute"
-QUALITY_MAXIMALE  = "Maximale"
-QUALITY_LEVELS    = [QUALITY_NORMALE, QUALITY_HAUTE, QUALITY_MAXIMALE]
-
-_QUALITY_CRF = {
-    QUALITY_NORMALE:  26,
-    QUALITY_HAUTE:    20,
-    QUALITY_MAXIMALE: 14,
-}
-
-# cv2 codec fallback order for MP4 in "Haute"/"Maximale" quality modes.
-# The first one that produces an opened writer is used; mp4v is last resort.
-_MP4_HQ_CODECS = ["avc1", "H264", "X264", "mp4v"]
-
 
 
 class FactoryNode:
@@ -199,19 +182,6 @@ class FactoryNode:
                     items=WRITE_MODES,
                     label="Mode",
                     default_value=WRITE_MODE_STANDARD,
-                    width=small_window_w,
-                )
-
-            # Quality selector (CRF-based for on-disk H.264;
-            # codec-selection hint for Standard mode).
-            with dpg.node_attribute(
-                    attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_combo(
-                    tag=node.tag_node_name + ':Quality',
-                    items=QUALITY_LEVELS,
-                    label="Qualité",
-                    default_value=QUALITY_HAUTE,
                     width=small_window_w,
                 )
 
@@ -936,22 +906,14 @@ class VideoWriterNode(Node):
         setting_dict[tag_node_name + ':WriteMode'] = (
             dpg_get_value(tag_node_name + ':WriteMode') or WRITE_MODE_STANDARD
         )
-        setting_dict[tag_node_name + ':Quality'] = (
-            dpg_get_value(tag_node_name + ':Quality') or QUALITY_HAUTE
-        )
 
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = str(node_id) + ':' + self.node_tag
         write_mode = setting_dict.get(tag_node_name + ':WriteMode', WRITE_MODE_STANDARD)
-        quality = setting_dict.get(tag_node_name + ':Quality', QUALITY_HAUTE)
         try:
             dpg_set_value(tag_node_name + ':WriteMode', write_mode)
-        except Exception:
-            pass
-        try:
-            dpg_set_value(tag_node_name + ':Quality', quality)
         except Exception:
             pass
 
@@ -1045,11 +1007,10 @@ class VideoWriterNode(Node):
 
             os.makedirs(video_writer_directory, exist_ok=True)
 
-            # Get selected format, write mode and quality
+            # Get selected format and write mode
             format_tag = tag_node_name + ':Format'
             video_format = dpg_get_value(format_tag)
             write_mode = dpg_get_value(tag_node_name + ':WriteMode') or WRITE_MODE_STANDARD
-            quality = dpg_get_value(tag_node_name + ':Quality') or QUALITY_HAUTE
 
             already_recording = (
                 tag_node_name in self._video_writer_dict
@@ -1066,11 +1027,9 @@ class VideoWriterNode(Node):
                     # -------------------------------------------------------
                     # On-disk mode: stream frames straight to the final file
                     # via PyAVEncoder (libx264) when available, or via a cv2
-                    # writer with the best available H.264 codec otherwise.
+                    # writer otherwise.
                     # No audio is collected; RAM usage stays constant.
                     # -------------------------------------------------------
-                    crf = _QUALITY_CRF.get(quality, _QUALITY_CRF[QUALITY_HAUTE])
-
                     if _AV_AVAILABLE:
                         try:
                             od_writer = PyAVEncoder(
@@ -1078,14 +1037,13 @@ class VideoWriterNode(Node):
                                 fps=float(writer_fps),
                                 frame_size=(writer_width, writer_height),
                                 codec="libx264",
-                                crf=crf,
                                 include_audio=False,
                             )
                             self._ondisk_writers_dict[tag_node_name] = od_writer
                             logger.info(
                                 "VideoWriter[%s] ON-DISK recording started "
-                                "(PyAVEncoder/libx264 CRF=%d) → %s",
-                                tag_node_name, crf, file_path,
+                                "(PyAVEncoder/libx264) → %s",
+                                tag_node_name, file_path,
                             )
                         except Exception as e:
                             logger.warning(
@@ -1096,27 +1054,13 @@ class VideoWriterNode(Node):
                         od_writer = None
 
                     if od_writer is None:
-                        # cv2 fallback: try H.264-capable codecs for MP4,
-                        # XVID for AVI, FFV1 for MKV.
+                        # cv2 fallback
                         if video_format == 'AVI':
                             cv2_codec = 'XVID'
                         elif video_format == 'MKV':
                             cv2_codec = 'FFV1'
                         else:
                             cv2_codec = 'mp4v'
-                            if quality in (QUALITY_HAUTE, QUALITY_MAXIMALE):
-                                for codec_try in _MP4_HQ_CODECS:
-                                    test_w = cv2.VideoWriter(
-                                        file_path,
-                                        cv2.VideoWriter_fourcc(*codec_try),
-                                        writer_fps,
-                                        (writer_width, writer_height),
-                                    )
-                                    if test_w.isOpened():
-                                        test_w.release()
-                                        cv2_codec = codec_try
-                                        break
-                                    test_w.release()
                         cv2_od = cv2.VideoWriter(
                             file_path,
                             cv2.VideoWriter_fourcc(*cv2_codec),
@@ -1143,7 +1087,6 @@ class VideoWriterNode(Node):
                     # -------------------------------------------------------
                     # Standard mode: cv2.VideoWriter → temp file; audio
                     # buffered in RAM; async merge at the end.
-                    # For MP4 at Haute/Maximale quality, try H.264 codecs.
                     # -------------------------------------------------------
                     if video_format == 'AVI':
                         cv2_codec = 'MJPG'
@@ -1151,27 +1094,6 @@ class VideoWriterNode(Node):
                         cv2_codec = 'FFV1'
                     else:
                         cv2_codec = 'mp4v'
-                        if quality in (QUALITY_HAUTE, QUALITY_MAXIMALE):
-                            for codec_try in _MP4_HQ_CODECS:
-                                temp_test = os.path.join(
-                                    video_writer_directory,
-                                    f'{startup_time_text}_codectest.mp4',
-                                )
-                                test_w = cv2.VideoWriter(
-                                    temp_test,
-                                    cv2.VideoWriter_fourcc(*codec_try),
-                                    writer_fps,
-                                    (writer_width, writer_height),
-                                )
-                                opened = test_w.isOpened()
-                                test_w.release()
-                                try:
-                                    os.remove(temp_test)
-                                except OSError:
-                                    pass
-                                if opened:
-                                    cv2_codec = codec_try
-                                    break
 
                     temp_file_path = os.path.join(
                         video_writer_directory, f'{startup_time_text}_temp{ext}'

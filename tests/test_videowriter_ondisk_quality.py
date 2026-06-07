@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Tests for VideoWriter on-disk mode and quality settings."""
+"""Tests for VideoWriter on-disk mode."""
 import os
 import sys
-import inspect
 import tempfile
 
 import numpy as np
@@ -33,19 +32,6 @@ def test_write_mode_constants_exist():
     assert len(WRITE_MODES) == 2
 
 
-def test_quality_constants_exist():
-    from node.VideoNode.node_video_writer import (
-        QUALITY_NORMALE, QUALITY_HAUTE, QUALITY_MAXIMALE,
-        QUALITY_LEVELS, _QUALITY_CRF,
-    )
-    for level in (QUALITY_NORMALE, QUALITY_HAUTE, QUALITY_MAXIMALE):
-        assert level in QUALITY_LEVELS
-        assert level in _QUALITY_CRF
-        assert isinstance(_QUALITY_CRF[level], int)
-    # CRF must be strictly decreasing: Maximale < Haute < Normale
-    assert _QUALITY_CRF[QUALITY_MAXIMALE] < _QUALITY_CRF[QUALITY_HAUTE] < _QUALITY_CRF[QUALITY_NORMALE]
-
-
 def test_ondisk_writers_dict_exists():
     from node.VideoNode.node_video_writer import VideoWriterNode
     assert hasattr(VideoWriterNode, '_ondisk_writers_dict')
@@ -73,7 +59,6 @@ def test_pyavencoder_video_only_writes_file():
             fps=25.0,
             frame_size=(160, 120),
             codec="libx264",
-            crf=28,
             include_audio=False,
         )
         for i in range(5):
@@ -122,7 +107,7 @@ def test_ondisk_recording_cv2_roundtrip(monkeypatch, tmp_path):
     import cv2
     from node.VideoNode import node_video_writer as nvw
     from node.VideoNode.node_video_writer import (
-        VideoWriterNode, WRITE_MODE_ON_DISK, QUALITY_HAUTE,
+        VideoWriterNode, WRITE_MODE_ON_DISK,
     )
 
     node = VideoWriterNode()
@@ -141,7 +126,6 @@ def test_ondisk_recording_cv2_roundtrip(monkeypatch, tmp_path):
     ui_state = {
         tag + ':Format': 'MP4',
         tag + ':WriteMode': WRITE_MODE_ON_DISK,
-        tag + ':Quality': QUALITY_HAUTE,
         tag + ':TEXT:ButtonValue': 'Start',
     }
     monkeypatch.setattr(nvw, 'dpg_get_value', lambda t: ui_state.get(t))
@@ -194,7 +178,7 @@ def test_ondisk_mode_skips_audio_collection(monkeypatch, tmp_path):
     import cv2
     from node.VideoNode import node_video_writer as nvw
     from node.VideoNode.node_video_writer import (
-        VideoWriterNode, WRITE_MODE_ON_DISK, QUALITY_NORMALE,
+        VideoWriterNode, WRITE_MODE_ON_DISK,
     )
 
     node = VideoWriterNode()
