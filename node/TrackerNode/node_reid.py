@@ -7,7 +7,6 @@ import time
 import cv2
 import numpy as np
 import dearpygui.dearpygui as dpg
-from sklearn.cluster import KMeans
 
 from node_editor.util import dpg_get_value, dpg_set_value
 
@@ -20,9 +19,6 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-
-# Number of frames collected before K-means is trained
-_TRAINING_FRAMES = 1000
 
 # Directory where ONNX ReID model files should be placed
 _REID_MODELS_DIR = os.path.join(
@@ -55,6 +51,10 @@ _FEAT_DIM_OSNET = 512   # OSNet embedding dimension
 # ImageNet normalisation constants used for OSNet pre-processing
 _IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 _IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+
+# Exponential moving-average factor for centroid updates after initialisation.
+# Higher = slower adaptation (more stable labels).  Lower = faster adaptation.
+_CENTROID_EMA_ALPHA = 0.92
 
 
 class FactoryNode:
@@ -122,6 +122,10 @@ class FactoryNode:
             node._slot_id[node.tag_node_name] = 2
             node._slot_names[node.tag_node_name] = {1: "A", 2: "B"}
 
+        # Seed the method so update() works even before the combo callback fires
+        if node.tag_node_name not in node._selected_method:
+            node._selected_method[node.tag_node_name] = _METHOD_OSNET_X0_25
+
         with dpg.node(
                 tag=node.tag_node_name,
                 parent=parent,
@@ -174,7 +178,7 @@ class FactoryNode:
             ):
                 dpg.add_text(
                     tag=node.tag_status_text,
-                    default_value=f'Training: 0/{_TRAINING_FRAMES}',
+                    default_value=f'Waiting: 0/{self._slot_id.get(node.tag_node_name, 2)} players',
                 )
 
             # Slot name fields (A / B by default)
@@ -253,7 +257,7 @@ class FactoryNode:
 
 
 class Node(Node):
-    _ver = '0.0.3'
+    _ver = '0.0.4'
 
     node_label = 'ReId'
     node_tag = 'ReId'
@@ -266,12 +270,10 @@ class Node(Node):
     _slot_names = {}
 
     # ReID data structures – keyed by tag_node_name
-    _frame_counter = {}
-    _feature_buffer = {}
-    _centroids = {}
-    _kmeans_trained = {}
-    _onnx_sessions = {}   # onnxruntime InferenceSession per node (or None)
-    _selected_method = {}  # selected method string per node (avoids dpg_get_value in hot path)
+    _centroids = {}              # np.array (n_slots, feat_dim) once initialised
+    _centroids_initialized = {}  # bool – True once the first N-player frame is seen
+    _onnx_sessions = {}          # onnxruntime InferenceSession per node (or None)
+    _selected_method = {}        # selected method string (avoids dpg_get_value in hot path)
 
     def __init__(self):
         pass
@@ -341,19 +343,13 @@ class Node(Node):
         logger.info(f"Slot {slot_number} renamed to: {app_data}")
 
     def _reset_kmeans(self, sender, data, user_data):
-        """Reset K-means training state so it starts over."""
+        """Reset centroid state so the node re-initialises on the next frame."""
         tag_node_name = user_data
 
-        if tag_node_name in self._frame_counter:
-            self._frame_counter[tag_node_name] = 0
-        if tag_node_name in self._feature_buffer:
-            self._feature_buffer[tag_node_name] = []
-        if tag_node_name in self._centroids:
-            del self._centroids[tag_node_name]
-        if tag_node_name in self._kmeans_trained:
-            self._kmeans_trained[tag_node_name] = False
+        self._centroids.pop(tag_node_name, None)
+        self._centroids_initialized[tag_node_name] = False
 
-        logger.info(f"KMeans reset for node {tag_node_name}")
+        logger.info(f"ReID centroids reset for node {tag_node_name}")
         # Status label will refresh on the next update() cycle
 
     # ------------------------------------------------------------------
@@ -462,47 +458,39 @@ class Node(Node):
         return self._extract_features(frame, bbox)
 
     # ------------------------------------------------------------------
-    # K-means training
+    # Centroid initialisation and assignment
     # ------------------------------------------------------------------
 
-    def _train_kmeans(self, node_id):
-        """Train K-means on the accumulated feature buffer."""
-        tag_node_name = str(node_id) + ':' + self.node_tag
+    def _init_centroids(self, tag_node_name, features, n_slots):
+        """Initialise cluster centres from the features of the first N-player frame.
 
-        features = self._feature_buffer.get(tag_node_name, [])
-        if len(features) < 10:
-            return False
+        *features* is a list of arrays (one per detection).  We take the first
+        *n_slots* entries so that each slot gets exactly one initial centre.
+        When more detections than slots are present we pick the *n_slots* most
+        spread-out features (greedy max-distance selection) to avoid seeding
+        two centres from the same player.
+        """
+        n = len(features)
+        if n == n_slots:
+            chosen = features[:n_slots]
+        elif n > n_slots:
+            # Greedy furthest-point sampling to maximise inter-centre diversity
+            chosen = [features[0]]
+            for _ in range(n_slots - 1):
+                dists = [
+                    min(np.linalg.norm(f - c) for c in chosen)
+                    for f in features
+                ]
+                chosen.append(features[int(np.argmax(dists))])
+        else:
+            chosen = features  # fewer detections than slots – use what we have
 
-        n_clusters_requested = self._slot_id.get(tag_node_name, 1)
-        n_clusters = min(n_clusters_requested, len(features))
-
-        if n_clusters < n_clusters_requested:
-            logger.warning(
-                f"Only {len(features)} samples but {n_clusters_requested} slots requested. "
-                f"Training K-means with {n_clusters} clusters."
-            )
-
-        if n_clusters < 1:
-            return False
-
-        try:
-            features_array = np.array(features)
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=20)
-            kmeans.fit(features_array)
-            self._centroids[tag_node_name] = kmeans.cluster_centers_
-            self._kmeans_trained[tag_node_name] = True
-            logger.info(
-                f"K-means trained for node {node_id}: {n_clusters} clusters, "
-                f"{len(features)} samples"
-            )
-            return True
-        except Exception as e:
-            logger.error(f"Error training K-means: {e}")
-            return False
-
-    # ------------------------------------------------------------------
-    # Centroid assignment
-    # ------------------------------------------------------------------
+        self._centroids[tag_node_name] = np.array(chosen, dtype=np.float32)
+        self._centroids_initialized[tag_node_name] = True
+        logger.info(
+            f"ReID: centroids initialised for {tag_node_name} "
+            f"({len(chosen)} centres from {n} detections)"
+        )
 
     def _assign_to_centroid(self, feature, tag_node_name):
         """Return the 1-indexed slot number of the nearest centroid."""
@@ -522,6 +510,11 @@ class Node(Node):
             nearest_idx = tied_indices[0]
 
         return int(nearest_idx) + 1  # 1-indexed
+
+    def _update_centroid(self, tag_node_name, slot_idx_0, feature):
+        """Update centroid *slot_idx_0* (0-indexed) with an EMA step."""
+        c = self._centroids[tag_node_name]
+        c[slot_idx_0] = _CENTROID_EMA_ALPHA * c[slot_idx_0] + (1.0 - _CENTROID_EMA_ALPHA) * feature
 
     # ------------------------------------------------------------------
     # Main update
@@ -557,11 +550,9 @@ class Node(Node):
         frame = node_image_dict.get(src_image_node, None)
         json_data = node_result_dict.get(src_json_node, {})
 
-        # Per-node state initialisation
-        if tag_node_name not in self._frame_counter:
-            self._frame_counter[tag_node_name] = 0
-            self._feature_buffer[tag_node_name] = []
-            self._kmeans_trained[tag_node_name] = False
+        # Per-node state boot
+        if tag_node_name not in self._centroids_initialized:
+            self._centroids_initialized[tag_node_name] = False
 
         if frame is not None and use_pref_counter:
             start_time = time.monotonic()
@@ -570,62 +561,49 @@ class Node(Node):
         output_frame = None
 
         if frame is not None and json_data:
-            self._frame_counter[tag_node_name] += 1
-            frame_count = self._frame_counter[tag_node_name]
-
             bboxes = json_data.get('bboxes', [])
             scores = json_data.get('scores', [])
 
-            # Read the selected feature-extraction method
-            method_tag = tag_node_name + ':MethodValue'
-            try:
-                method = dpg_get_value(method_tag) or _METHOD_OSNET_X0_25
-            except Exception:
-                method = _METHOD_OSNET_X0_25
+            # Use the method stored by _on_method_change callback (set at UI time)
+            method = self._selected_method.get(tag_node_name, _METHOD_OSNET_X0_25)
 
-            # Get (or load) ONNX session for deep methods
+            # Get (or lazy-load) ONNX session for deep methods
             onnx_session = None
             if method != _METHOD_COLOR_HIST:
                 onnx_session = self._get_onnx_session(tag_node_name, method)
 
-            # Build slot name dict once per frame
+            # Use slot names stored by _on_slot_name_change (always up-to-date)
             slot_names = self._slot_names.get(tag_node_name, {1: 'A', 2: 'B'})
-            # Read live slot name values from UI (user may have typed new names)
             n_slots = self._slot_id.get(tag_node_name, 2)
-            for s in range(1, n_slots + 1):
-                slot_val_tag = tag_node_name + ':Slot' + str(s).zfill(2) + 'Value'
-                try:
-                    live_name = dpg_get_value(slot_val_tag)
-                    if live_name:
-                        slot_names[s] = live_name
-                except Exception:
-                    pass
 
-            # Phase 1 – collect features for first _TRAINING_FRAMES frames
-            if frame_count <= _TRAINING_FRAMES:
-                for bbox in bboxes:
-                    feat = self._get_feature(frame, bbox, method, onnx_session)
-                    self._feature_buffer[tag_node_name].append(feat)
+            # -----------------------------------------------------------
+            # Phase 1 – Initialisation
+            # Wait for a frame that contains at least n_slots players,
+            # then seed the cluster centres from those crops.
+            # -----------------------------------------------------------
+            if not self._centroids_initialized.get(tag_node_name, False):
+                n_det = len(bboxes)
+                dpg_set_value(status_tag, f'Waiting: {n_det}/{n_slots} players')
 
-                # Train after all warmup frames have been collected
-                if frame_count == _TRAINING_FRAMES:
-                    self._train_kmeans(node_id)
-                    try:
-                        dpg_set_value(status_tag, 'Trained ✓')
-                    except Exception:
-                        pass
-                else:
-                    try:
-                        dpg_set_value(status_tag, f'Training: {frame_count}/{_TRAINING_FRAMES}')
-                    except Exception:
-                        pass
+                if n_det >= n_slots:
+                    features = [
+                        self._get_feature(frame, bbox, method, onnx_session)
+                        for bbox in bboxes
+                    ]
+                    self._init_centroids(tag_node_name, features, n_slots)
+                    dpg_set_value(status_tag, 'Initialized ✓')
+                    logger.info(f"ReID: initialized for {tag_node_name}")
 
-                # Pass through original detections during warm-up
+                # Pass through original detections during this phase
                 result = json_data.copy()
                 output_frame = copy.deepcopy(frame)
 
-            # Phase 2 – assign ReID labels by proximity to centroids
-            elif self._kmeans_trained.get(tag_node_name, False):
+            # -----------------------------------------------------------
+            # Phase 2 – Assignment
+            # For every detection: extract feature, find nearest centre,
+            # assign ReID label, update centre with EMA.
+            # -----------------------------------------------------------
+            else:
                 reid_class_ids = []
                 reid_class_names = []
 
@@ -635,13 +613,15 @@ class Node(Node):
 
                     if slot_idx is not None:
                         slot_name = slot_names.get(slot_idx, f"player{slot_idx}")
-                        reid_class_ids.append(slot_idx - 1)   # 0-indexed
+                        reid_class_ids.append(slot_idx - 1)   # 0-indexed for output
                         reid_class_names.append(slot_name)
+                        # Update centroid with EMA so it adapts slowly to appearance changes
+                        self._update_centroid(tag_node_name, slot_idx - 1, feat)
                     else:
                         reid_class_ids.append(0)
                         reid_class_names.append(slot_names.get(1, 'A'))
 
-                # class_names as dict {slot_0_idx: name, ...} – matches OD node format
+                # class_names dict {0: 'A', 1: 'B'} – matches OD node format
                 class_names_dict = {
                     (s - 1): slot_names.get(s, f"player{s}")
                     for s in range(1, n_slots + 1)
@@ -655,14 +635,9 @@ class Node(Node):
                     'timestamp': json_data.get('timestamp', time.time()),
                 }
 
-                debug_frame = copy.deepcopy(frame)
                 output_frame = self._draw_reid_info(
-                    debug_frame, bboxes, reid_class_names, scores
+                    copy.deepcopy(frame), bboxes, reid_class_names, scores
                 )
-            else:
-                # K-means not yet trained – pass through
-                result = json_data.copy()
-                output_frame = copy.deepcopy(frame)
 
         elif frame is not None:
             output_frame = copy.deepcopy(frame)
@@ -718,17 +693,13 @@ class Node(Node):
     def close(self, node_id):
         """Clean up per-node state."""
         tag_node_name = str(node_id) + ':' + self.node_tag
-        for d in (self._frame_counter, self._feature_buffer,
-                  self._centroids, self._kmeans_trained, self._onnx_sessions):
+        for d in (self._centroids, self._centroids_initialized,
+                  self._onnx_sessions, self._selected_method):
             d.pop(tag_node_name, None)
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
-        method_tag = tag_node_name + ':MethodValue'
-        try:
-            method = dpg_get_value(method_tag) or _METHOD_OSNET_X0_25
-        except Exception:
-            method = _METHOD_OSNET_X0_25
+        method = self._selected_method.get(tag_node_name, _METHOD_OSNET_X0_25)
 
         pos = dpg.get_item_pos(tag_node_name)
         return {
@@ -761,6 +732,7 @@ class Node(Node):
                 dpg_set_value(slot_value_tag, self._slot_names[tag_node_name].get(slot_idx, f"player{slot_idx}"))
 
         method = setting_dict.get('method', _METHOD_OSNET_X0_25)
+        self._selected_method[tag_node_name] = method
         method_tag = tag_node_name + ':MethodValue'
         try:
             dpg_set_value(method_tag, method)
