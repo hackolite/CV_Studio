@@ -265,6 +265,10 @@ class Node(Node):
     def __init__(self):
         self._homography_matrix = None
         self._selected_template = self.TENNIS_COURT_TEMPLATE
+        # Per-player kinematics tracking
+        # {label: [(court_x, court_y, timestamp), ...]}
+        self._player_history = {}
+        self._last_call_time = None
 
     def _get_template_points(self):
         """Get template points as numpy array for homography calculation."""
@@ -424,6 +428,75 @@ class Node(Node):
         
         return averages
 
+    def _compute_player_kinematics(self, averages_by_label, current_time):
+        """Compute speed, acceleration and cumulative distance per player.
+
+        Args:
+            averages_by_label: dict ``{label: [court_x, court_y]}`` from the
+                current frame (real-world metres).
+            current_time: monotonic timestamp (seconds).
+
+        Returns:
+            dict ``{label: {speed_ms, acceleration_ms2, distance_m, position}}``
+        """
+        stats = {}
+        for label, (cx, cy) in averages_by_label.items():
+            history = self._player_history.setdefault(label, [])
+            history.append((float(cx), float(cy), current_time))
+
+            # Keep a rolling window of the last 60 positions
+            if len(history) > 60:
+                self._player_history[label] = history[-60:]
+                history = self._player_history[label]
+
+            if len(history) < 2:
+                stats[label] = {
+                    'speed_ms': 0.0,
+                    'acceleration_ms2': 0.0,
+                    'distance_m': 0.0,
+                    'position': [round(cx, 3), round(cy, 3)],
+                }
+                continue
+
+            # Instantaneous speed between the last two positions
+            x1, y1, t1 = history[-2]
+            x2, y2, t2 = history[-1]
+            dt = t2 - t1
+            if dt < 1e-6:
+                speed = 0.0
+            else:
+                dist_step = float(np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2))
+                speed = dist_step / dt  # m/s
+
+            # Instantaneous acceleration between the last three positions
+            if len(history) >= 3:
+                x0, y0, t0 = history[-3]
+                dt01 = t1 - t0
+                if dt01 < 1e-6:
+                    prev_speed = 0.0
+                else:
+                    d01 = float(np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2))
+                    prev_speed = d01 / dt01
+                accel = (speed - prev_speed) / max(dt, 1e-6)
+            else:
+                accel = 0.0
+
+            # Total distance over the entire history window
+            total_dist = float(sum(
+                np.sqrt((history[i + 1][0] - history[i][0]) ** 2 +
+                        (history[i + 1][1] - history[i][1]) ** 2)
+                for i in range(len(history) - 1)
+            ))
+
+            stats[label] = {
+                'speed_ms': round(speed, 3),
+                'acceleration_ms2': round(accel, 3),
+                'distance_m': round(total_dist, 3),
+                'position': [round(cx, 3), round(cy, 3)],
+            }
+
+        return stats
+
     def update(
         self,
         node_id,
@@ -558,6 +631,14 @@ class Node(Node):
                         points_json_data['class_names']
                     )
                     output_data['averages_by_label'] = averages_by_label
+
+                # Compute per-player kinematics (speed / acceleration / distance)
+                if averages_by_label:
+                    current_time = time.monotonic()
+                    player_stats = self._compute_player_kinematics(
+                        averages_by_label, current_time
+                    )
+                    output_data['player_stats'] = player_stats
                 
                 # Display coordinate transformation in console
                 CONSOLE_WIDTH = 70  # Character width for console output
@@ -590,6 +671,18 @@ class Node(Node):
                         for label, avg_coords in averages_by_label.items():
                             print(f"  {label}:")
                             print(f"    Average court coordinates (meters): ({avg_coords[0]:.2f}, {avg_coords[1]:.2f})")
+
+                    # Display per-player kinematics
+                    player_stats = output_data.get('player_stats', {})
+                    if player_stats:
+                        print("\n" + "-"*CONSOLE_WIDTH)
+                        print("[Homography] Player Kinematics:")
+                        print("-"*CONSOLE_WIDTH)
+                        for label, s in player_stats.items():
+                            print(f"  {label}:")
+                            print(f"    Speed:        {s['speed_ms']:.3f} m/s")
+                            print(f"    Acceleration: {s['acceleration_ms2']:.3f} m/s²")
+                            print(f"    Distance:     {s['distance_m']:.3f} m")
                 
                 print("="*CONSOLE_WIDTH + "\n")
 
