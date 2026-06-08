@@ -115,42 +115,40 @@ class FactoryNode:
 
 
 class Node(Node):
-    _ver = '0.0.1'
+    _ver = '0.0.2'
 
     node_label = 'TennisCourt'
     node_tag = 'TennisCourt'
 
     _opencv_setting_dict = None
     
-    # Tennis court dimensions (in meters)
+    # Default court dimensions (in meters) - Tennis
     COURT_WIDTH_M = 10.97  # Doubles court width
     COURT_LENGTH_M = 23.77  # Full court length
     
-    # Visualization constants
-    # Display dimensions: 300x400 (divided by 2 from original 600x800)
-    # for tennis court (10.97m x 23.77m, 1:2.17 physical aspect ratio) with margins
-    VISUALIZATION_WIDTH = 300   # Display width in pixels (divided by 2)
-    VISUALIZATION_HEIGHT = 400  # Display height in pixels (divided by 2)
-    VISUALIZATION_MARGIN = 30   # Total margin in pixels (divided by 2)
+    # Court dimensions per sport (width, length)
+    COURT_DIMS = {
+        'Tennis':   (10.97, 23.77),
+        'Badminton': (6.10, 13.40),
+        'Paddle':   (10.00, 20.00),
+    }
     
-    # NMS (Non-Maximum Suppression) threshold for filtering duplicate detections
-    # Lower values = more aggressive filtering (fewer detections kept)
-    # Higher values = less aggressive filtering (more detections kept)
+    # Visualization constants
+    VISUALIZATION_WIDTH = 300
+    VISUALIZATION_HEIGHT = 400
+    VISUALIZATION_MARGIN = 30
+    
+    # NMS threshold for filtering duplicate detections
     NMS_IOU_THRESHOLD = 0.5
 
     def __init__(self):
-        """
-        Initialize the TennisCourt visualization node.
-        
-        Sets up state tracking for persistent visualization:
-        - _last_positions_by_label: Stores the most recent position for each label
-          to enable persistent display even when no new data is received
-        - _player_positions_history: Maintains history of all positions for each label
-          to enable averaging calculations over time
-        """
+        """Initialize the TennisCourt visualization node."""
         # Position tracking for persistent visualization
-        self._last_positions_by_label = {}  # Maps label to (x, y) tuple of last position
-        self._player_positions_history = {}  # Maps label to list of (x, y) positions for averaging
+        self._last_positions_by_label = {}
+        self._player_positions_history = {}
+        # Active court dimensions (updated each frame based on selected sport template)
+        self._active_court_width = self.COURT_WIDTH_M
+        self._active_court_length = self.COURT_LENGTH_M
 
     def _update_player_positions(self, transformed_points, labels):
         """
@@ -438,6 +436,114 @@ class Node(Node):
         
         return img
 
+    def _draw_generic_court_lines(self, img, template, scale, offset_x, offset_y, court_width_m, court_length_m):
+        """Draw court lines generically using template keypoints (used for Badminton & Paddle)."""
+        if template is None or 'keypoints' not in template:
+            return img
+        img = img.copy()
+        has_alpha = (img.shape[2] == 4) if len(img.shape) == 3 else False
+
+        if has_alpha:
+            line_color = (255, 255, 255, 255)
+            court_color = (0, 100, 180, 255)   # Blue-ish background (non-tennis sports)
+            net_color = (0, 0, 255, 255)
+            keypoint_color = (0, 255, 0, 255)
+        else:
+            line_color = (255, 255, 255)
+            court_color = (0, 100, 180)
+            net_color = (0, 0, 255)
+            keypoint_color = (0, 255, 0)
+        line_thickness = 2
+
+        def to_px(x, y):
+            return (int(x * scale + offset_x),
+                    int((court_length_m - y) * scale + offset_y))
+
+        # Court background
+        w_px = int(court_width_m * scale)
+        l_px = int(court_length_m * scale)
+        cv2.rectangle(img, (offset_x, offset_y), (offset_x + w_px, offset_y + l_px), court_color, -1)
+
+        kp_dict = {kp['name']: (kp['x'], kp['y']) for kp in template['keypoints']}
+        sport = template.get('sport', '')
+
+        if sport == 'Badminton':
+            # Outer boundary (doubles)
+            cv2.rectangle(img, to_px(0, 0), to_px(court_width_m, court_length_m), line_color, line_thickness)
+            # Singles sidelines
+            for name_l, name_r in [
+                ('near_baseline_left_single_corner', 'far_baseline_left_single_corner'),
+                ('near_baseline_right_single_corner', 'far_baseline_right_single_corner'),
+            ]:
+                if name_l in kp_dict and name_r in kp_dict:
+                    cv2.line(img, to_px(*kp_dict[name_l]), to_px(*kp_dict[name_r]), line_color, line_thickness)
+            # Near short service line
+            if 'near_short_service_line_left' in kp_dict and 'near_short_service_line_right' in kp_dict:
+                cv2.line(img, to_px(*kp_dict['near_short_service_line_left']),
+                         to_px(*kp_dict['near_short_service_line_right']), line_color, line_thickness)
+            # Far short service line (symmetric)
+            near_y = kp_dict.get('near_short_service_line_left', (None, None))[1]
+            if near_y is not None:
+                far_y = court_length_m - near_y
+                cv2.line(img, to_px(kp_dict['near_short_service_line_left'][0], far_y),
+                         to_px(kp_dict['near_short_service_line_right'][0], far_y), line_color, line_thickness)
+            # Long service lines (doubles)
+            for name in ('far_long_service_line_left', 'far_long_service_line_right'):
+                if name in kp_dict:
+                    x, y = kp_dict[name]
+                    near_lng_y = court_length_m - y  # symmetric near long service line
+                    cv2.line(img, to_px(0 if 'left' in name else court_width_m, near_lng_y),
+                             to_px(court_width_m if 'right' in name else 0, near_lng_y),
+                             line_color, line_thickness)
+            if 'far_long_service_line_left' in kp_dict and 'far_long_service_line_right' in kp_dict:
+                y_far = kp_dict['far_long_service_line_left'][1]
+                cv2.line(img, to_px(kp_dict['far_long_service_line_left'][0], y_far),
+                         to_px(kp_dict['far_long_service_line_right'][0], y_far), line_color, line_thickness)
+            # Center line (full length)
+            center_x = court_width_m / 2
+            cv2.line(img, to_px(center_x, 0), to_px(center_x, court_length_m), line_color, line_thickness)
+            # Net
+            if 'left_net_post' in kp_dict and 'right_net_post' in kp_dict:
+                cv2.line(img, to_px(*kp_dict['left_net_post']),
+                         to_px(*kp_dict['right_net_post']), net_color, line_thickness)
+
+        elif sport == 'Paddle':
+            # Outer boundary
+            cv2.rectangle(img, to_px(0, 0), to_px(court_width_m, court_length_m), line_color, line_thickness)
+            # Service lines
+            for name_l, name_r in [
+                ('near_service_line_left', 'near_service_line_right'),
+                ('far_service_line_left',  'far_service_line_right'),
+            ]:
+                if name_l in kp_dict and name_r in kp_dict:
+                    cv2.line(img, to_px(*kp_dict[name_l]), to_px(*kp_dict[name_r]), line_color, line_thickness)
+            # Center line (between service lines only)
+            if 'near_center_T' in kp_dict and 'far_center_T' in kp_dict:
+                cv2.line(img, to_px(*kp_dict['near_center_T']),
+                         to_px(*kp_dict['far_center_T']), line_color, line_thickness)
+            # Net
+            if 'left_net_post' in kp_dict and 'right_net_post' in kp_dict:
+                cv2.line(img, to_px(*kp_dict['left_net_post']),
+                         to_px(*kp_dict['right_net_post']), net_color, line_thickness)
+
+        # Keypoint dots
+        for kp in template['keypoints']:
+            cv2.circle(img, to_px(kp['x'], kp['y']), 5, keypoint_color, -1)
+
+        return img
+
+    def _draw_sport_court(self, image, template, scale, offset_x, offset_y):
+        """Dispatch to the appropriate sport court drawing method."""
+        if template is None:
+            return image
+        sport = template.get('sport', 'Tennis')
+        court_w = template.get('court_width', self.COURT_WIDTH_M)
+        court_l = template.get('court_length', self.COURT_LENGTH_M)
+        if sport == 'Tennis':
+            return self._draw_tennis_court(image, template, scale, offset_x, offset_y)
+        else:
+            return self._draw_generic_court_lines(image, template, scale, offset_x, offset_y, court_w, court_l)
+
     def _draw_transformed_points(self, image, transformed_points, input_points=None, scale=40, offset_x=50, offset_y=50):
         """
         Draw transformed points on the court visualization.
@@ -469,7 +575,7 @@ class Node(Node):
                 x_meters, y_meters = point[0], point[1]
                 px = int(x_meters * scale + offset_x)
                 # Flip Y axis to match court flip
-                py = int((self.COURT_LENGTH_M - y_meters) * scale + offset_y)
+                py = int((self._active_court_length - y_meters) * scale + offset_y)
                 
                 # Draw point as colored circle (similar to Tennis-Tracker style)
                 # Using 5px radius for clean, visible markers
@@ -562,7 +668,7 @@ class Node(Node):
                 x_meters, y_meters = point[0], point[1]
                 px = int(x_meters * scale + offset_x)
                 # Flip Y axis to match court flip
-                py = int((self.COURT_LENGTH_M - y_meters) * scale + offset_y)
+                py = int((self._active_court_length - y_meters) * scale + offset_y)
                 
                 # Draw position as larger yellow circle (increased from 5 to 8 pixels)
                 cv2.circle(img, (px, py), 8, player_color, -1)
@@ -671,34 +777,39 @@ class Node(Node):
         
         # Always draw (even if no new data) to maintain persistent visualization
         if template is not None:
+            # Update active court dimensions based on selected sport
+            sport = template.get('sport', 'Tennis')
+            court_w, court_l = self.COURT_DIMS.get(sport, (self.COURT_WIDTH_M, self.COURT_LENGTH_M))
+            # Also check template-embedded dimensions (in case of custom templates)
+            court_w = template.get('court_width', court_w)
+            court_l = template.get('court_length', court_l)
+            self._active_court_width = court_w
+            self._active_court_length = court_l
+
             # Create blank image with alpha channel (BGRA) for transparency
             output_image = np.zeros((small_window_h, small_window_w, 4), dtype=np.uint8)
             
             # Calculate scale to fit court in image
-            # Use class constants for court dimensions
-            scale_x = (small_window_w - self.VISUALIZATION_MARGIN) / self.COURT_WIDTH_M
-            scale_y = (small_window_h - self.VISUALIZATION_MARGIN) / self.COURT_LENGTH_M
-            base_scale = min(scale_x, scale_y)  # Use smaller scale to fit both dimensions
+            scale_x = (small_window_w - self.VISUALIZATION_MARGIN) / court_w
+            scale_y = (small_window_h - self.VISUALIZATION_MARGIN) / court_l
+            base_scale = min(scale_x, scale_y)
             
-            # REDUCE COURT CONTENT BY 1.5 as per requirement (content divided by 1.5)
+            # Reduce court size to leave comfortable margins
             scale = base_scale / 1.5
             
-            # Center the court (now smaller)
-            court_width_px = int(self.COURT_WIDTH_M * scale)
-            court_length_px = int(self.COURT_LENGTH_M * scale)
+            # Center the court
+            court_width_px = int(court_w * scale)
+            court_length_px = int(court_l * scale)
             offset_x = (small_window_w - court_width_px) // 2
             offset_y = (small_window_h - court_length_px) // 2
             
-            # Draw tennis court (with reduced scale: divided by 1.5)
-            output_image = self._draw_tennis_court(output_image, template, scale, offset_x, offset_y)
+            # Draw the court using the sport-appropriate method
+            output_image = self._draw_sport_court(output_image, template, scale, offset_x, offset_y)
             
             # Draw last known positions (persistent display)
             if self._last_positions_by_label:
-                # Convert last positions dict to lists for drawing
                 last_labels = list(self._last_positions_by_label.keys())
                 last_points = [list(self._last_positions_by_label[label]) for label in last_labels]
-                
-                # Draw using last known positions
                 output_image = self._draw_player_positions_with_labels(
                     output_image, last_points, last_labels, None, scale, offset_x, offset_y
                 )

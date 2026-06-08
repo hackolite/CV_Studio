@@ -15,6 +15,9 @@ class FactoryNode:
     node_label = 'Homography'
     node_tag = 'Homography'
 
+    # Sport options shown in the combobox
+    SPORT_OPTIONS = ['Tennis', 'Badminton', 'Paddle']
+
     def __init__(self):
         pass
 
@@ -34,6 +37,9 @@ class FactoryNode:
         # Input 2: Points to transform
         node.tag_node_input_points_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input02'
         node.tag_node_input_points_json_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input02Value'
+        # Static: sport template selector
+        node.tag_node_sport_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Sport'
+        node.tag_node_sport_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':SportValue'
         # Output: Transformed coordinates
         node.tag_node_output_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Output01'
         node.tag_node_output_json_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Output01Value'
@@ -67,6 +73,19 @@ class FactoryNode:
                     default_value='Points to Transform',
                 )
 
+            # Sport template combobox
+            with dpg.node_attribute(
+                tag=node.tag_node_sport_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_sport_value_name,
+                    label='Sport Template',
+                    items=self.SPORT_OPTIONS,
+                    default_value='Tennis',
+                    width=160,
+                )
+
             with dpg.node_attribute(
                 tag=node.tag_node_output_json_name,
                 attribute_type=dpg.mvNode_Attr_Output,
@@ -90,19 +109,24 @@ class FactoryNode:
 
 
 class Node(Node):
-    _ver = '0.0.1'
+    _ver = '0.0.2'
 
     node_label = 'Homography'
     node_tag = 'Homography'
 
     _opencv_setting_dict = None
 
-    # Tennis court template in meters (real-world coordinates)
-    # Origin at bottom-left corner of doubles court
-    # NOTE: Keypoints are ordered to match TennisKeyPoints model output (indices 0-13)
+    # -----------------------------------------------------------------------
+    # Tennis court template (real-world coordinates, meters)
+    # Origin at bottom-left corner of doubles court.
+    # Keypoints are ordered to match TennisKeyPoints model output (indices 0-13).
+    # -----------------------------------------------------------------------
     TENNIS_COURT_TEMPLATE = {
+        "sport": "Tennis",
         "units": "meters",
         "origin": "bottom_left_corner_outside_doubles",
+        "court_width": 10.97,
+        "court_length": 23.77,
         "keypoints": [
             # Index 0: Far baseline left singles corner (top-left singles)
             {"id": 0,  "name": "far_baseline_left_single_corner", "x": 1.37, "y": 23.77},
@@ -135,13 +159,117 @@ class Node(Node):
         ]
     }
 
+    # -----------------------------------------------------------------------
+    # Badminton court template (BWF official, doubles – 6.1 m × 13.4 m)
+    # 14 keypoints mapped to the same topological positions as the tennis
+    # template so the same TennisKeyPoints ONNX model can be used.
+    #
+    #  y=0   : near baseline (bottom of image)
+    #  y=13.4: far baseline  (top of image)
+    #  x=0   : left doubles sideline
+    #  x=6.1 : right doubles sideline
+    #  x=0.46 / x=5.64: singles sidelines (0.46 m alleys)
+    #  y=4.72 = net(6.7) − short_service(1.98) → near short service line
+    #  y=8.68 = net(6.7) + short_service(1.98) → far  short service line
+    #  y=0.76 / y=12.64: doubles long service lines
+    # -----------------------------------------------------------------------
+    BADMINTON_COURT_TEMPLATE = {
+        "sport": "Badminton",
+        "units": "meters",
+        "origin": "bottom_left_corner_doubles",
+        "court_width": 6.1,
+        "court_length": 13.4,
+        "keypoints": [
+            # Index 0 → far_baseline_left_single  (top-left singles)
+            {"id": 0,  "name": "far_baseline_left_single_corner",         "x": 0.46, "y": 13.40},
+            # Index 1 → far_baseline_right_single (top-right singles)
+            {"id": 1,  "name": "far_baseline_right_single_corner",        "x": 5.64, "y": 13.40},
+            # Index 2 → near_baseline_left_double
+            {"id": 2,  "name": "near_baseline_left_double_corner",        "x": 0.00, "y": 0.00},
+            # Index 3 → near_baseline_right_double
+            {"id": 3,  "name": "near_baseline_right_double_corner",       "x": 6.10, "y": 0.00},
+            # Index 4 → far long service line left (doubles)
+            {"id": 4,  "name": "far_long_service_line_left",              "x": 0.46, "y": 12.64},
+            # Index 5 → near_baseline_left_single
+            {"id": 5,  "name": "near_baseline_left_single_corner",        "x": 0.46, "y": 0.00},
+            # Index 6 → far long service line right (doubles)
+            {"id": 6,  "name": "far_long_service_line_right",             "x": 5.64, "y": 12.64},
+            # Index 7 → near_baseline_right_single
+            {"id": 7,  "name": "near_baseline_right_single_corner",       "x": 5.64, "y": 0.00},
+            # Index 8 → near short service line left
+            {"id": 8,  "name": "near_short_service_line_left",            "x": 0.46, "y": 4.72},
+            # Index 9 → near short service line right
+            {"id": 9,  "name": "near_short_service_line_right",           "x": 5.64, "y": 4.72},
+            # Index 10 → left net post (net mid-court)
+            {"id": 10, "name": "left_net_post",                           "x": 0.00, "y": 6.70},
+            # Index 11 → right net post
+            {"id": 11, "name": "right_net_post",                          "x": 6.10, "y": 6.70},
+            # Index 12 → far short service center T
+            {"id": 12, "name": "far_short_service_center_T",              "x": 3.05, "y": 8.68},
+            # Index 13 → near short service center T
+            {"id": 13, "name": "near_short_service_center_T",             "x": 3.05, "y": 4.72},
+        ]
+    }
+
+    # -----------------------------------------------------------------------
+    # Padel court template (FIP official – 20 m × 10 m)
+    # No singles/doubles distinction; service boxes split by center line.
+    #  y=0   : near baseline
+    #  y=20  : far  baseline
+    #  y=3   : near service line  (3 m from baseline)
+    #  y=17  : far  service line  (20−3)
+    #  y=10  : net
+    #  x=5   : center line
+    # -----------------------------------------------------------------------
+    PADDLE_COURT_TEMPLATE = {
+        "sport": "Paddle",
+        "units": "meters",
+        "origin": "bottom_left_corner",
+        "court_width": 10.0,
+        "court_length": 20.0,
+        "keypoints": [
+            # Index 0 → far_baseline_left
+            {"id": 0,  "name": "far_baseline_left_corner",                "x": 0.00, "y": 20.00},
+            # Index 1 → far_baseline_right
+            {"id": 1,  "name": "far_baseline_right_corner",               "x": 10.00, "y": 20.00},
+            # Index 2 → near_baseline_left
+            {"id": 2,  "name": "near_baseline_left_corner",               "x": 0.00, "y": 0.00},
+            # Index 3 → near_baseline_right
+            {"id": 3,  "name": "near_baseline_right_corner",              "x": 10.00, "y": 0.00},
+            # Index 4 → far service line left projection
+            {"id": 4,  "name": "far_service_line_left",                   "x": 0.00, "y": 17.00},
+            # Index 5 → near_baseline_left (no alley in padel → same as index 2)
+            {"id": 5,  "name": "near_baseline_left_inner",                "x": 0.00, "y": 0.00},
+            # Index 6 → far service line right projection
+            {"id": 6,  "name": "far_service_line_right",                  "x": 10.00, "y": 17.00},
+            # Index 7 → near_baseline_right (same as index 3)
+            {"id": 7,  "name": "near_baseline_right_inner",               "x": 10.00, "y": 0.00},
+            # Index 8 → near service line left
+            {"id": 8,  "name": "near_service_line_left",                  "x": 0.00, "y": 3.00},
+            # Index 9 → near service line right
+            {"id": 9,  "name": "near_service_line_right",                 "x": 10.00, "y": 3.00},
+            # Index 10 → left net post
+            {"id": 10, "name": "left_net_post",                           "x": 0.00, "y": 10.00},
+            # Index 11 → right net post
+            {"id": 11, "name": "right_net_post",                          "x": 10.00, "y": 10.00},
+            # Index 12 → far center T (center line × far service line)
+            {"id": 12, "name": "far_center_T",                            "x": 5.00, "y": 17.00},
+            # Index 13 → near center T (center line × near service line)
+            {"id": 13, "name": "near_center_T",                           "x": 5.00, "y": 3.00},
+        ]
+    }
+
+    # Lookup by sport name
+    SPORT_TEMPLATES = {}  # populated after class definition
+
     def __init__(self):
         self._homography_matrix = None
+        self._selected_template = self.TENNIS_COURT_TEMPLATE
 
     def _get_template_points(self):
         """Get template points as numpy array for homography calculation."""
         points = []
-        for kp in self.TENNIS_COURT_TEMPLATE["keypoints"]:
+        for kp in self._selected_template["keypoints"]:
             points.append([kp["x"], kp["y"]])
         return np.array(points, dtype=np.float32)
 
@@ -306,8 +434,17 @@ class Node(Node):
     ):
         tag_node_name = str(node_id) + ':' + self.node_tag
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
+        sport_value_tag = tag_node_name + ':' + self.TYPE_TEXT + ':SportValue'
 
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
+
+        # Read selected sport template from combobox (preserve existing if DPG not available)
+        selected_sport = dpg_get_value(sport_value_tag)
+        if selected_sport:
+            self._selected_template = self.SPORT_TEMPLATES.get(selected_sport, self.TENNIS_COURT_TEMPLATE)
+        else:
+            # DPG not initialised (e.g. in tests) – keep whatever is already selected
+            selected_sport = self._selected_template.get('sport', 'Tennis')
 
         # Find connections
         master_keypoints_src = ''
@@ -353,7 +490,8 @@ class Node(Node):
                     # Prepare output data
                     output_data = {
                         'homography_matrix': self._homography_matrix.tolist() if self._homography_matrix is not None else None,
-                        'template': self.TENNIS_COURT_TEMPLATE,
+                        'template': self._selected_template,
+                        'sport': selected_sport,
                         'detected_keypoints': detected_keypoints.tolist(),
                         'transformed_points': None,
                         'input_points': None
@@ -470,6 +608,7 @@ class Node(Node):
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
+        sport_value_tag = tag_node_name + ':' + self.TYPE_TEXT + ':SportValue'
         try:
             pos = dpg.get_item_pos(tag_node_name)
         except Exception:
@@ -478,8 +617,22 @@ class Node(Node):
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
+        setting_dict['sport'] = dpg_get_value(sport_value_tag) or 'Tennis'
 
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
-        pass
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        sport_value_tag = tag_node_name + ':' + self.TYPE_TEXT + ':SportValue'
+        try:
+            dpg_set_value(sport_value_tag, setting_dict.get('sport', 'Tennis'))
+        except Exception:
+            pass
+
+
+# Populate SPORT_TEMPLATES after the class is fully defined
+Node.SPORT_TEMPLATES = {
+    'Tennis': Node.TENNIS_COURT_TEMPLATE,
+    'Badminton': Node.BADMINTON_COURT_TEMPLATE,
+    'Paddle': Node.PADDLE_COURT_TEMPLATE,
+}
