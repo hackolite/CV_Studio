@@ -474,14 +474,17 @@ class Node(Node):
         if n == n_slots:
             chosen = features[:n_slots]
         elif n > n_slots:
-            # Greedy furthest-point sampling to maximise inter-centre diversity
-            chosen = [features[0]]
+            # Greedy furthest-point sampling – vectorised with numpy
+            feat_matrix = np.array(features, dtype=np.float32)  # (n, d)
+            first = 0
+            chosen_idx = [first]
+            min_dists = np.linalg.norm(feat_matrix - feat_matrix[first], axis=1)
             for _ in range(n_slots - 1):
-                dists = [
-                    min(np.linalg.norm(f - c) for c in chosen)
-                    for f in features
-                ]
-                chosen.append(features[int(np.argmax(dists))])
+                next_idx = int(np.argmax(min_dists))
+                chosen_idx.append(next_idx)
+                new_dists = np.linalg.norm(feat_matrix - feat_matrix[next_idx], axis=1)
+                np.minimum(min_dists, new_dists, out=min_dists)
+            chosen = [features[i] for i in chosen_idx]
         else:
             chosen = features  # fewer detections than slots – use what we have
 
@@ -618,8 +621,8 @@ class Node(Node):
                         # Update centroid with EMA so it adapts slowly to appearance changes
                         self._update_centroid(tag_node_name, slot_idx - 1, feat)
                     else:
-                        reid_class_ids.append(0)
-                        reid_class_names.append(slot_names.get(1, 'A'))
+                        # No centroid available yet — skip this detection
+                        continue
 
                 # class_names dict {0: 'A', 1: 'B'} – matches OD node format
                 class_names_dict = {

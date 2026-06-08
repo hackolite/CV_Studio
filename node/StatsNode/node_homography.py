@@ -10,6 +10,8 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node
 
+_HISTORY_WINDOW_SIZE = 60  # number of positions kept per player for kinematics
+
 
 class FactoryNode:
     node_label = 'Homography'
@@ -444,9 +446,9 @@ class Node(Node):
             history = self._player_history.setdefault(label, [])
             history.append((float(cx), float(cy), current_time))
 
-            # Keep a rolling window of the last 60 positions
-            if len(history) > 60:
-                self._player_history[label] = history[-60:]
+            # Keep a rolling window of the last _HISTORY_WINDOW_SIZE positions
+            if len(history) > _HISTORY_WINDOW_SIZE:
+                self._player_history[label] = history[-_HISTORY_WINDOW_SIZE:]
                 history = self._player_history[label]
 
             if len(history) < 2:
@@ -465,8 +467,7 @@ class Node(Node):
             if dt < 1e-6:
                 speed = 0.0
             else:
-                dist_step = float(np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2))
-                speed = dist_step / dt  # m/s
+                speed = float(np.hypot(x2 - x1, y2 - y1)) / dt  # m/s
 
             # Instantaneous acceleration between the last three positions
             if len(history) >= 3:
@@ -475,18 +476,15 @@ class Node(Node):
                 if dt01 < 1e-6:
                     prev_speed = 0.0
                 else:
-                    d01 = float(np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2))
-                    prev_speed = d01 / dt01
+                    prev_speed = float(np.hypot(x1 - x0, y1 - y0)) / dt01
                 accel = (speed - prev_speed) / max(dt, 1e-6)
             else:
                 accel = 0.0
 
-            # Total distance over the entire history window
-            total_dist = float(sum(
-                np.sqrt((history[i + 1][0] - history[i][0]) ** 2 +
-                        (history[i + 1][1] - history[i][1]) ** 2)
-                for i in range(len(history) - 1)
-            ))
+            # Total distance over the entire history window – vectorised
+            pts = np.array([(h[0], h[1]) for h in history], dtype=np.float32)
+            deltas = np.diff(pts, axis=0)
+            total_dist = float(np.sum(np.linalg.norm(deltas, axis=1)))
 
             stats[label] = {
                 'speed_ms': round(speed, 3),
