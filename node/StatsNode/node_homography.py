@@ -270,6 +270,8 @@ class Node(Node):
         # Per-player kinematics tracking
         # {label: [(court_x, court_y, timestamp), ...]}
         self._player_history = {}
+        # Per-player maximum speed observed (m/s)
+        self._player_max_speed = {}
         self._last_call_time = None
 
     def _get_template_points(self):
@@ -454,6 +456,7 @@ class Node(Node):
             if len(history) < 2:
                 stats[label] = {
                     'speed_ms': 0.0,
+                    'max_speed_ms': self._player_max_speed.get(label, 0.0),
                     'acceleration_ms2': 0.0,
                     'distance_m': 0.0,
                     'position': [round(cx, 3), round(cy, 3)],
@@ -468,6 +471,12 @@ class Node(Node):
                 speed = 0.0
             else:
                 speed = float(np.hypot(x2 - x1, y2 - y1)) / dt  # m/s
+
+            # Track max speed observed for this player
+            prev_max = self._player_max_speed.get(label, 0.0)
+            if speed > prev_max:
+                self._player_max_speed[label] = speed
+            max_speed = self._player_max_speed[label]
 
             # Instantaneous acceleration between the last three positions
             if len(history) >= 3:
@@ -488,6 +497,7 @@ class Node(Node):
 
             stats[label] = {
                 'speed_ms': round(speed, 3),
+                'max_speed_ms': round(max_speed, 3),
                 'acceleration_ms2': round(accel, 3),
                 'distance_m': round(total_dist, 3),
                 'position': [round(cx, 3), round(cy, 3)],
@@ -679,6 +689,7 @@ class Node(Node):
                         for label, s in player_stats.items():
                             print(f"  {label}:")
                             print(f"    Speed:        {s['speed_ms']:.3f} m/s")
+                            print(f"    Max Speed:    {s['max_speed_ms']:.3f} m/s")
                             print(f"    Acceleration: {s['acceleration_ms2']:.3f} m/s²")
                             print(f"    Distance:     {s['distance_m']:.3f} m")
                 
