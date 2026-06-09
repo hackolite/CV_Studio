@@ -83,7 +83,7 @@ def overlay_flair(bgr_image, mask, alpha=0.5):
     Args:
         bgr_image: (H, W, 3) uint8.
         mask:      (H, W) uint8 argmax class mask.
-        alpha:     blend weight for the colour overlay (0=original, 1=colour).
+        alpha:     blend weight for the color overlay (0=original, 1=color).
 
     Returns:
         blended: (H, W, 3) uint8.
@@ -174,7 +174,21 @@ class FlairAerialSegmentation:
             classes=NUM_CLASSES,
         )
         state_dict = torch.load(resolved_path, map_location="cpu")
-        model.load_state_dict(state_dict, strict=False)
+        load_result = model.load_state_dict(state_dict, strict=False)
+        if load_result.missing_keys:
+            from src.utils.logging import get_logger
+            _logger = get_logger(__name__)
+            _logger.warning(
+                "[FlairAerialSegmentation] Missing keys when loading weights: %s",
+                load_result.missing_keys,
+            )
+        if load_result.unexpected_keys:
+            from src.utils.logging import get_logger
+            _logger = get_logger(__name__)
+            _logger.warning(
+                "[FlairAerialSegmentation] Unexpected keys when loading weights: %s",
+                load_result.unexpected_keys,
+            )
         model.eval()
         model.to(self._device)
         self._torch_model = model
