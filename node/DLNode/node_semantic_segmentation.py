@@ -24,8 +24,10 @@ from node.DLNode.semantic_segmentation.yolov8_seg.yolov8_seg import YOLOv8Seg
 from node.DLNode.semantic_segmentation.CustomONNX.custom_onnx import CustomONNX as CustomONNXSeg
 from node.DLNode.semantic_segmentation.aerial_segmentation_flair.aerial_segmentation_flair import (
     FlairAerialSegmentation,
+    FlairAerialSegmentationONNX,
     colorize_flair_mask,
     overlay_flair,
+    overlay_flair2,
 )
 from node.DLNode.semantic_segmentation import custom_models_registry as _seg_registry
 from node.DLNode.object_detection import onnx_inspector
@@ -84,6 +86,8 @@ class Node(Node):
         YOLOv8Seg,
         'FLAIR Aerial (IGN)':
         FlairAerialSegmentation,
+        'FLAIR Aerial INT8 (ONNX)':
+        FlairAerialSegmentationONNX,
     }
     _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/semantic_segmentation/'
     _model_path_setting = {
@@ -98,6 +102,8 @@ class Node(Node):
         'YOLOv8-nano-seg': _model_base_path +
         'yolov8_seg/model/yolov8n-seg.onnx',
         'FLAIR Aerial (IGN)': None,
+        'FLAIR Aerial INT8 (ONNX)': _model_base_path +
+        'aerial_segmentation_flair/model/flair_aerial_seg_int8.onnx',
     }
     _model_instance = {}
 
@@ -595,6 +601,9 @@ class Node(Node):
             elif model_name == 'FLAIR Aerial (IGN)':
                 mask = FlairAerialSegmentation.get_argmax_mask(segmentation_map)
                 debug_frame = overlay_flair(frame, mask, alpha=0.5)
+            elif model_name == 'FLAIR Aerial INT8 (ONNX)':
+                mask = FlairAerialSegmentationONNX.get_argmax_mask(segmentation_map)
+                debug_frame = overlay_flair2(frame, mask, alpha=0.5)
             else:
                 debug_frame = self.draw_semantic_segmentation_info(
                     frame,
