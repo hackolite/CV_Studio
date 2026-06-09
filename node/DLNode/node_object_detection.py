@@ -1347,6 +1347,14 @@ class Node(Node):
                         result['timestamp'] = _result_ts
                         logger.debug(f"JSON output: 0 detections (all filtered out or no detections)")
 
+                else:
+                    # No frame available yet: still broadcast all supported class names
+                    # so downstream nodes (e.g. Chart) can populate their dropdowns.
+                    result['bboxes'] = []
+                    result['scores'] = []
+                    result['class_ids'] = []
+                    result['class_names'] = class_name_dict
+                    result['score_th'] = score_th
 
                 if frame is not None and use_pref_counter:
                     elapsed_time = time.monotonic() - start_time
