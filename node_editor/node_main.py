@@ -666,7 +666,7 @@ class DpgNodeEditor(object):
                             logger.warning(f"  Code Version: {factorynode._ver}")
 
                 # Create the node instance using the factory
-                pos = setting_dict[node_id_name]["setting"]["pos"]
+                pos = setting_dict[node_id_name]["setting"].get("pos", [0, 0])
                 node = factorynode.add_node(
                     self._node_editor_tag,
                     node_id,
