@@ -440,6 +440,7 @@ class FlairAerialSegmentationONNX:
         self._session = make_session(
             resolved,
             providers=list(providers),
+            disable_optimizations=True,
         )
         self._input_name = self._session.get_inputs()[0].name
         self._num_classes = self._session.get_outputs()[0].shape[1]
