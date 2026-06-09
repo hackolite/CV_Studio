@@ -536,9 +536,12 @@ class Node(Chart):
         for class_id in selected_classes:
             if class_id != "All":
                 class_id_str = str(class_id)
-                # First try detection JSON, then COCO names
-                if class_names_dict and class_id_str in class_names_dict:
-                    merged_class_names[class_id_str] = class_names_dict[class_id_str]
+                # First try detection JSON (check both str and int keys), then COCO names
+                name = None
+                if class_names_dict:
+                    name = class_names_dict.get(class_id_str) or class_names_dict.get(class_id)
+                if name is not None:
+                    merged_class_names[class_id_str] = name
                 elif class_id in coco_class_names:
                     merged_class_names[class_id_str] = coco_class_names[class_id]
         
