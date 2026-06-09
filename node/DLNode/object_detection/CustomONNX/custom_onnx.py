@@ -4,8 +4,10 @@
 Generic ONNX wrapper for CvStudio object detection.
 
 Supports two common YOLO output formats:
-  - yolo11  (Ultralytics YOLO v8/v11): output shape [1, num_classes+4, num_anchors]
-  - yolox   (YOLOX):                   output shape [1, num_anchors, num_classes+5]
+  - yolo11     (Ultralytics YOLO v8/v11): output shape [1, num_classes+4, num_anchors]
+  - yolo11_obb (Ultralytics YOLO v8/v11 OBB): output shape [1, num_classes+5, num_anchors]
+               (4 box + num_classes + 1 angle); bounding boxes converted to AABB for display
+  - yolox      (YOLOX):                   output shape [1, num_anchors, num_classes+5]
 
 The wrapper is initialised from the metadata returned by
 ``onnx_inspector.inspect_onnx_model()``.
@@ -200,6 +202,10 @@ class CustomONNX:
             elif self.output_format == "yolox":
                 bboxes, scores, class_ids = self._postprocess_yolox(
                     raw_output, orig_w, orig_h, ratio
+                )
+            elif self.output_format == "yolo11_obb":
+                bboxes, scores, class_ids = self._postprocess_yolo11_obb(
+                    raw_output, orig_w, orig_h
                 )
             else:
                 # Default: yolo11 / ultralytics
@@ -435,6 +441,107 @@ class CustomONNX:
 
         indices = np.array(indices).flatten()
         logger.debug(f"[CustomONNX] yolo11 post-process: {len(indices)} detections after NMS.")
+        return (
+            np.array(boxes_xyxy)[indices],
+            np.array(scores_list)[indices],
+            class_ids_all[indices],
+        )
+
+    def _postprocess_yolo11_obb(self, raw_output, orig_w, orig_h):
+        """Post-process Ultralytics YOLO11/YOLOv8 OBB (Oriented Bounding Box) output.
+
+        Expected raw_output shape: (1, num_classes+5, num_anchors)
+        Layout per anchor: [cx, cy, w, h, cls0, ..., clsN-1, angle]
+        The angle is the *last* row and is in radians.
+
+        The oriented bounding box is converted to a tight axis-aligned bounding
+        box (AABB) so that it is compatible with the existing rectangular drawing
+        and NMS pipeline:
+            aabb_half_w = |w/2 * cos(a)| + |h/2 * sin(a)|
+            aabb_half_h = |w/2 * sin(a)| + |h/2 * cos(a)|
+        """
+        output = np.squeeze(raw_output)
+        if output.ndim != 2:
+            logger.warning(
+                f"[CustomONNX] yolo11_obb post-process: unexpected output ndim={output.ndim} "
+                f"after squeeze (raw shape={raw_output.shape}). Returning empty detections."
+            )
+            return np.array([]), np.array([]), np.array([])
+
+        # Expected shape after squeeze: (num_classes+5, num_anchors)
+        # Transpose to (num_anchors, num_classes+5) for per-anchor processing.
+        expected_channels = self.num_classes + 5 if self.num_classes > 0 else None
+        needs_transpose = False
+        if expected_channels is not None:
+            if output.shape[0] != expected_channels and output.shape[1] == expected_channels:
+                needs_transpose = True
+        elif output.shape[0] < output.shape[1]:
+            # Heuristic: smaller axis-0 → likely (channels, anchors) orientation
+            needs_transpose = False  # will be transposed below as usual
+        if needs_transpose:
+            output = output.T
+
+        # Transpose to (num_anchors, num_classes+5)
+        output = output.T
+
+        if output.shape[1] < 6:
+            logger.warning(
+                f"[CustomONNX] yolo11_obb post-process: too few columns ({output.shape[1]}) "
+                f"— need at least 6 (4 box + 1 class + 1 angle). Returning empty."
+            )
+            return np.array([]), np.array([]), np.array([])
+
+        # Layout: cx, cy, w, h | cls0...clsN-1 | angle
+        boxes_xywh = output[:, :4]          # (num_anchors, 4)
+        class_scores = output[:, 4:-1]      # (num_anchors, num_classes)
+        angles = output[:, -1]              # (num_anchors,) — radians
+
+        scale_x = orig_w / self.input_width
+        scale_y = orig_h / self.input_height
+
+        max_scores = class_scores.max(axis=1)
+        class_ids_all = class_scores.argmax(axis=1)
+
+        mask = max_scores >= self.nms_score_th
+        if not mask.any():
+            logger.debug("[CustomONNX] yolo11_obb post-process: no detections above score threshold.")
+            return np.array([]), np.array([]), np.array([])
+
+        boxes_xywh = boxes_xywh[mask]
+        max_scores = max_scores[mask]
+        class_ids_all = class_ids_all[mask]
+        angles = angles[mask]
+
+        # Scale model-input coordinates to original image space
+        cx = boxes_xywh[:, 0] * scale_x
+        cy = boxes_xywh[:, 1] * scale_y
+        bw = boxes_xywh[:, 2] * scale_x
+        bh = boxes_xywh[:, 3] * scale_y
+
+        # Convert OBB to tight AABB enclosing the rotated rectangle
+        cos_a = np.abs(np.cos(angles))
+        sin_a = np.abs(np.sin(angles))
+        half_w_aabb = bw / 2 * cos_a + bh / 2 * sin_a
+        half_h_aabb = bw / 2 * sin_a + bh / 2 * cos_a
+
+        x1 = np.clip((cx - half_w_aabb).astype(int), 0, orig_w)
+        y1 = np.clip((cy - half_h_aabb).astype(int), 0, orig_h)
+        x2 = np.clip((cx + half_w_aabb).astype(int), 0, orig_w)
+        y2 = np.clip((cy + half_h_aabb).astype(int), 0, orig_h)
+
+        boxes_xyxy = np.stack([x1, y1, x2, y2], axis=1).tolist()
+        scores_list = max_scores.tolist()
+
+        indices = cv2.dnn.NMSBoxes(
+            boxes_xyxy, scores_list, self.nms_score_th, self.nms_th
+        )
+
+        if len(indices) == 0:
+            logger.debug("[CustomONNX] yolo11_obb post-process: all candidates removed by NMS.")
+            return np.array([]), np.array([]), np.array([])
+
+        indices = np.array(indices).flatten()
+        logger.debug(f"[CustomONNX] yolo11_obb post-process: {len(indices)} detections after NMS.")
         return (
             np.array(boxes_xyxy)[indices],
             np.array(scores_list)[indices],

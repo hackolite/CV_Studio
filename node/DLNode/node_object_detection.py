@@ -153,6 +153,21 @@ _BUILTIN_MODELS = [
         'num_classes': 3,
         'class_names': {0: 'player1', 1: 'player2', 2: 'ball'},
     },
+    {
+        'name': 'YOLO-DOTA-OBB(416x416)',
+        'path': os.path.join(_OBJECT_DETECTION_BASE, 'YOLO', 'model', 'yolo-dota.onnx'),
+        'output_format': 'yolo11_obb',
+        'input_width': 416,
+        'input_height': 416,
+        'num_classes': 16,
+        'class_names': {
+            0: 'plane', 1: 'ship', 2: 'storage tank', 3: 'baseball diamond',
+            4: 'tennis court', 5: 'basketball court', 6: 'ground track field',
+            7: 'harbor', 8: 'bridge', 9: 'large vehicle', 10: 'small vehicle',
+            11: 'helicopter', 12: 'roundabout', 13: 'soccer ball field',
+            14: 'swimming pool', 15: 'container crane',
+        },
+    },
 ]
 
 # Set of built-in model names — used to block deletion of default models.

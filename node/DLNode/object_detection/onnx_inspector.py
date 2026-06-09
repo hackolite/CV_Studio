@@ -136,8 +136,11 @@ def _inspect_onnx_static(model_path: str) -> dict:
 
     # ---- Embedded class names ----------------------------------------------
     class_names: dict = {}
+    _model_task: str = ""
     for prop in model_proto.metadata_props:
-        if prop.key == "names":
+        if prop.key == "task":
+            _model_task = prop.value.lower()
+        elif prop.key == "names":
             try:
                 parsed = ast.literal_eval(prop.value)
                 if isinstance(parsed, dict):
@@ -157,6 +160,14 @@ def _inspect_onnx_static(model_path: str) -> dict:
                     num_classes = len(class_names)
             except Exception:
                 pass
+
+    # ---- OBB override -------------------------------------------------------
+    if _model_task == "obb" and output_format in ("yolo11", "unknown"):
+        output_format = "yolo11_obb"
+        if class_names:
+            num_classes = len(class_names)
+        elif len(output_shape) == 3 and isinstance(output_shape[1], int):
+            num_classes = output_shape[1] - 5
 
     result = {
         "input_name": input_name,
@@ -192,7 +203,7 @@ def inspect_onnx_model(model_path: str) -> dict:
         input_shape      (list)  – shape of the first input tensor, e.g. [1, 3, 640, 640]
         output_name      (str)   – name of the first output tensor
         output_shape     (list)  – shape of the first output tensor
-        output_format    (str)   – 'yolo11' | 'yolox' | 'unknown'
+        output_format    (str)   – 'yolo11' | 'yolo11_obb' | 'yolox' | 'unknown'
         num_classes      (int)   – detected number of classes (0 if unknown)
         class_names      (dict)  – {int_id: str_name} extracted from ONNX metadata,
                                    empty dict if not available
@@ -384,9 +395,12 @@ def inspect_onnx_model(model_path: str) -> dict:
 
     # ---- Embedded class names (Ultralytics) --------------------------------
     class_names: dict = {}
+    _model_task: str = ""
     try:
         model_meta = session.get_modelmeta()
         custom_meta = model_meta.custom_metadata_map  # dict[str, str]
+        # Read the Ultralytics 'task' field (e.g. 'detect', 'obb', 'segment')
+        _model_task = str(custom_meta.get("task", "")).lower()
         if "names" in custom_meta:
             raw = custom_meta["names"]
             # Ultralytics stores as Python dict literal: {0: 'cat', 1: 'dog', ...}
@@ -428,6 +442,24 @@ def inspect_onnx_model(model_path: str) -> dict:
             )
     except Exception as exc:
         logger.warning(f"[ONNX Inspector] Could not read model metadata: {exc}")
+
+    # ---- OBB override -------------------------------------------------------
+    # Ultralytics OBB (Oriented Bounding Box) models have task='obb' in their
+    # metadata.  Their output shape is [1, nc+5, anchors] (4 box + nc classes +
+    # 1 angle) instead of the standard [1, nc+4, anchors] used by yolo11.
+    # The shape-based detector above would compute nc = dim1-4 (off by one);
+    # correct it here using the confirmed class count from embedded names when
+    # available, or by subtracting 5 instead of 4.
+    if _model_task == "obb" and output_format in ("yolo11", "unknown"):
+        output_format = "yolo11_obb"
+        if class_names:
+            num_classes = len(class_names)
+        elif len(output_shape) == 3 and isinstance(output_shape[1], int):
+            num_classes = output_shape[1] - 5
+        logger.info(
+            f"[ONNX Inspector] OBB task detected — overriding format to "
+            f"'yolo11_obb', num_classes={num_classes}"
+        )
 
     result = {
         "input_name": input_name,
