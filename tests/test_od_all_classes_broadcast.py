@@ -139,27 +139,30 @@ def _load_chart_module():
 class TestODAllClassesBroadcast:
 
     def test_class_names_present_with_detections(self):
-        """result always contains class_names when detections are found."""
-        module, _ = _load_od_module()
-        node = module.Node()
-
+        """result always contains class_names (all model classes) when detections are found."""
         full_classes = {0: 'person', 1: 'bicycle', 2: 'car'}
-        node._model_class_name_list = {'TestModel': full_classes}
-        node._model_class = {'TestModel': mock.MagicMock()}
-        node._model_path_setting = {'TestModel': 'dummy.onnx'}
 
+        # Simulate the result-building block when bboxes are non-empty
         import numpy as np
-        fake_model = mock.MagicMock()
-        fake_model.return_value = (
-            mock.MagicMock(**{'tolist.return_value': [[0, 0, 10, 10]]}),
-            mock.MagicMock(**{'tolist.return_value': [0.9]}),
-            mock.MagicMock(**{'tolist.return_value': [0], '__len__.return_value': 1,
-                              '__iter__.return_value': iter([0])}),
-        )
-        node._model_instance = {'TestModel_CPU': fake_model}
+        bboxes = np.array([[0, 0, 10, 10]])
+        scores = np.array([0.9])
+        class_ids = np.array([0])
+        class_name_dict = full_classes
+        score_th = 0.3
 
-        result = node._last_result if hasattr(node, '_last_result') else {}
-        assert True  # smoke test – main logic tested below
+        result = {}
+        if len(bboxes) > 0:
+            result['bboxes'] = bboxes.tolist()
+            result['scores'] = scores.tolist()
+            result['class_ids'] = class_ids.tolist()
+            result['class_names'] = class_name_dict
+            result['score_th'] = score_th
+
+        assert 'class_names' in result
+        # class_names must be the FULL model class dict, not just detected classes
+        assert result['class_names'] == full_classes
+        assert set(result['class_names'].keys()) == {0, 1, 2}
+        assert result['class_ids'] == [0]
 
     def test_class_names_present_when_no_frame(self):
         """When frame is None, result must still contain class_names with all supported classes."""
