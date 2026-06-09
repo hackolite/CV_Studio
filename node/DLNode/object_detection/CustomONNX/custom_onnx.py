@@ -468,21 +468,27 @@ class CustomONNX:
             )
             return np.array([]), np.array([]), np.array([])
 
-        # Expected shape after squeeze: (num_classes+5, num_anchors)
-        # Transpose to (num_anchors, num_classes+5) for per-anchor processing.
+        # Model emits (num_classes+5, num_anchors) after squeeze.
+        # Normalise to (num_anchors, num_classes+5) with exactly one transpose,
+        # guarding against models that emit the transposed shape.
         expected_channels = self.num_classes + 5 if self.num_classes > 0 else None
-        needs_transpose = False
         if expected_channels is not None:
-            if output.shape[0] != expected_channels and output.shape[1] == expected_channels:
-                needs_transpose = True
-        elif output.shape[0] < output.shape[1]:
-            # Heuristic: smaller axis-0 → likely (channels, anchors) orientation
-            needs_transpose = False  # will be transposed below as usual
-        if needs_transpose:
-            output = output.T
-
-        # Transpose to (num_anchors, num_classes+5)
-        output = output.T
+            if output.shape[1] == expected_channels:
+                # Already (num_anchors, num_classes+5) — no transpose needed.
+                pass
+            else:
+                # Assume (num_classes+5, num_anchors); transpose to anchors-first.
+                if output.shape[0] != expected_channels:
+                    logger.warning(
+                        f"[CustomONNX] yolo11_obb post-process: output shape {output.shape} "
+                        f"does not match expected channels={expected_channels}. "
+                        f"Transposing anyway."
+                    )
+                output = output.T
+        else:
+            # No expected channels: heuristic — larger dim is num_anchors.
+            if output.shape[0] < output.shape[1]:
+                output = output.T  # (channels, anchors) → (anchors, channels)
 
         if output.shape[1] < 6:
             logger.warning(
@@ -518,11 +524,11 @@ class CustomONNX:
         bw = boxes_xywh[:, 2] * scale_x
         bh = boxes_xywh[:, 3] * scale_y
 
-        # Convert OBB to tight AABB enclosing the rotated rectangle
-        cos_a = np.abs(np.cos(angles))
-        sin_a = np.abs(np.sin(angles))
-        half_w_aabb = bw / 2 * cos_a + bh / 2 * sin_a
-        half_h_aabb = bw / 2 * sin_a + bh / 2 * cos_a
+        # Convert OBB to tight AABB enclosing the rotated rectangle.
+        # Absolute values are applied to the full products to correctly handle
+        # negative cosine/sine values at any rotation angle.
+        half_w_aabb = np.abs(bw / 2 * np.cos(angles)) + np.abs(bh / 2 * np.sin(angles))
+        half_h_aabb = np.abs(bw / 2 * np.sin(angles)) + np.abs(bh / 2 * np.cos(angles))
 
         x1 = np.clip((cx - half_w_aabb).astype(int), 0, orig_w)
         y1 = np.clip((cy - half_h_aabb).astype(int), 0, orig_h)
