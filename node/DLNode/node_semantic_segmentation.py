@@ -22,6 +22,11 @@ from node.DLNode.semantic_segmentation.mediapipe_selfie_segmentation.mediapipe_s
 )
 from node.DLNode.semantic_segmentation.yolov8_seg.yolov8_seg import YOLOv8Seg
 from node.DLNode.semantic_segmentation.CustomONNX.custom_onnx import CustomONNX as CustomONNXSeg
+from node.DLNode.semantic_segmentation.aerial_segmentation_flair.aerial_segmentation_flair import (
+    FlairAerialSegmentation,
+    colorize_flair_mask,
+    overlay_flair,
+)
 from node.DLNode.semantic_segmentation import custom_models_registry as _seg_registry
 from node.DLNode.object_detection import onnx_inspector
 
@@ -77,6 +82,8 @@ class Node(Node):
         MediaPipeSelfieSegmentationLandScape,
         'YOLOv8-nano-seg':
         YOLOv8Seg,
+        'FLAIR Aerial (IGN)':
+        FlairAerialSegmentation,
     }
     _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/semantic_segmentation/'
     _model_path_setting = {
@@ -90,6 +97,7 @@ class Node(Node):
         'MediaPipe SelfieSegmentation(LandScape)': None,
         'YOLOv8-nano-seg': _model_base_path +
         'yolov8_seg/model/yolov8n-seg.onnx',
+        'FLAIR Aerial (IGN)': None,
     }
     _model_instance = {}
 
@@ -584,6 +592,9 @@ class Node(Node):
                     frame,
                     segmentation_map,
                 )
+            elif model_name == 'FLAIR Aerial (IGN)':
+                mask = FlairAerialSegmentation.get_argmax_mask(segmentation_map)
+                debug_frame = overlay_flair(frame, mask, alpha=0.5)
             else:
                 debug_frame = self.draw_semantic_segmentation_info(
                     frame,
