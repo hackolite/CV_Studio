@@ -7,7 +7,7 @@ U-Net (ResNet-34) with 5-channel input (R, G, B, NIR, MNH).
 Two backends are provided:
 - ``FlairAerialSegmentation``: PyTorch backend, 13-class FLAIR-1 model.
 - ``FlairAerialSegmentationONNX``: ONNX Runtime backend, 19-class FLAIR-2
-  INT8 quantised model (``flair_aerial_seg_static_int8.onnx``).
+  INT8 quantised model (``flair_aerial_seg_int8_N.onnx``).
 """
 import os
 import numpy as np
@@ -109,7 +109,7 @@ _PATCH_SIZE = 512
 _DEFAULT_ONNX_MODEL_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "model",
-    "flair_aerial_seg_static_int8.onnx",
+    "flair_aerial_seg_int8_N.onnx",
 )
 
 
@@ -427,7 +427,7 @@ class FlairAerialSegmentationONNX:
     ):
         """
         Args:
-            model_path: Path to ``flair_aerial_seg_static_int8.onnx``.
+            model_path: Path to ``flair_aerial_seg_int8_N.onnx``.
                         Defaults to the bundled copy in the ``model/`` folder.
             providers:  OnnxRuntime execution providers.
         """

@@ -103,7 +103,7 @@ class Node(Node):
         'yolov8_seg/model/yolov8n-seg.onnx',
         'FLAIR Aerial (IGN)': None,
         'FLAIR Aerial INT8 (ONNX)': _model_base_path +
-        'aerial_segmentation_flair/model/flair_aerial_seg_static_int8.onnx',
+        'aerial_segmentation_flair/model/flair_aerial_seg_int8_N.onnx',
     }
     _model_instance = {}
 
