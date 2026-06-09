@@ -411,14 +411,14 @@ class Node(Chart):
                 pass
 
     def _build_dynamic_class_items(self, class_ids, class_names):
-        """Build dynamic combobox items from input JSON detected classes.
-        
-        Instead of always showing all COCO classes, show only those that
-        have been seen in the input data plus 'All'.
+        """Build dynamic combobox items from model-supported classes.
+
+        Shows ALL classes supported by the connected model (from class_names),
+        plus any classes accumulated in time_counts, even if their count is zero.
 
         Args:
             class_ids: list of detected class IDs from input JSON
-            class_names: dict mapping string class IDs to human-readable names
+            class_names: dict mapping class IDs (int or str) to human-readable names
 
         Returns:
             list of formatted strings like ["All", "0: person", "2: car"]
@@ -426,22 +426,34 @@ class Node(Chart):
         items = ["All"]
         seen_ids = set()
 
-        # Collect unique class ids from the current frame
+        # Include ALL classes supported by the model, even if never detected
+        if class_names:
+            for key in class_names.keys():
+                try:
+                    seen_ids.add(int(key))
+                except (ValueError, TypeError):
+                    pass
+
+        # Also include class ids from the current frame
         for cid in class_ids:
-            cid_int = int(cid)
-            if cid_int not in seen_ids:
-                seen_ids.add(cid_int)
+            try:
+                seen_ids.add(int(cid))
+            except (ValueError, TypeError):
+                pass
 
         # Also include class ids that already have accumulated data
         for key in self.time_counts.keys():
-            if isinstance(key, int) and key not in seen_ids:
+            if isinstance(key, int):
                 seen_ids.add(key)
 
-        # Build items with names
+        # Build items with names; class_names may have int or str keys
         for cid in sorted(seen_ids):
             cid_str = str(cid)
-            if class_names and cid_str in class_names:
-                items.append(f"{cid}: {class_names[cid_str]}")
+            name = None
+            if class_names:
+                name = class_names.get(cid_str) or class_names.get(cid)
+            if name is not None:
+                items.append(f"{cid}: {name}")
             elif cid in coco_class_names:
                 items.append(f"{cid}: {coco_class_names[cid]}")
             else:
