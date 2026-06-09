@@ -12,6 +12,7 @@ Two backends are provided:
 import os
 import numpy as np
 import cv2 as cv
+from node.DLNode.object_detection.onnx_session_utils import make_session
 
 # ---------------------------------------------------------------------------
 # FLAIR-1 class definitions (13 classes — PyTorch backend)
@@ -430,15 +431,13 @@ class FlairAerialSegmentationONNX:
                         Defaults to the bundled copy in the ``model/`` folder.
             providers:  OnnxRuntime execution providers.
         """
-        import onnxruntime as ort
-
         resolved = model_path or _DEFAULT_ONNX_MODEL_PATH
         if not os.path.isfile(resolved):
             raise FileNotFoundError(
                 f"[FlairAerialSegmentationONNX] Model not found: {resolved}"
             )
 
-        self._session = ort.InferenceSession(
+        self._session = make_session(
             resolved,
             providers=list(providers),
         )
