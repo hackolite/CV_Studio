@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _MODEL_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "node", "DLNode", "semantic_segmentation",
-    "aerial_segmentation_flair", "model", "flair_aerial_seg_static_int8.onnx",
+    "aerial_segmentation_flair", "model", "flair_aerial_seg_int8_N.onnx",
 )
 
 _MODEL_AVAILABLE = os.path.isfile(_MODEL_PATH)
@@ -169,7 +169,7 @@ def test_flair_int8_model_path_setting():
         raise
     path = Node._model_path_setting.get('FLAIR Aerial INT8 (ONNX)')
     assert path is not None
-    assert path.endswith('flair_aerial_seg_static_int8.onnx')
+    assert path.endswith('flair_aerial_seg_int8_N.onnx')
 
 
 # ---------------------------------------------------------------------------
