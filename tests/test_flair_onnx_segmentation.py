@@ -93,6 +93,43 @@ def test_flair_onnx_interface():
     assert hasattr(FlairAerialSegmentationONNX, 'get_argmax_mask')
 
 
+def test_flair_onnx_uses_disable_optimizations(tmp_path, monkeypatch):
+    """FlairAerialSegmentationONNX calls make_session with disable_optimizations=True.
+
+    ConvInteger ops in the INT8 model are not resolved correctly when ORT graph
+    optimizations are enabled; disabling them is the fix for the NOT_IMPLEMENTED
+    error at session creation time.
+    """
+    import unittest.mock as mock
+    from node.DLNode.semantic_segmentation.aerial_segmentation_flair import (
+        aerial_segmentation_flair as _mod,
+    )
+
+    dummy_model = tmp_path / "dummy.onnx"
+    dummy_model.write_bytes(b"dummy")
+
+    fake_session = mock.MagicMock()
+    fake_session.get_inputs.return_value = [mock.MagicMock(name="input")]
+    fake_session.get_outputs.return_value = [
+        mock.MagicMock(shape=[1, 19, 64, 64])
+    ]
+
+    with mock.patch.object(_mod, "make_session", return_value=fake_session) as patched:
+        try:
+            _mod.FlairAerialSegmentationONNX(
+                model_path=str(dummy_model),
+                providers=["CPUExecutionProvider"],
+            )
+        except Exception:
+            pass  # session mock may not satisfy all attribute access; that's fine
+        patched.assert_called_once()
+        _, kwargs = patched.call_args
+        assert kwargs.get("disable_optimizations") is True, (
+            "make_session must be called with disable_optimizations=True to avoid "
+            "ConvInteger NOT_IMPLEMENTED errors for the INT8 FLAIR model"
+        )
+
+
 def test_flair_onnx_get_argmax_mask():
     """get_argmax_mask converts a probability map to a uint8 class-index mask."""
     from node.DLNode.semantic_segmentation.aerial_segmentation_flair.aerial_segmentation_flair import (
