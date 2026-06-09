@@ -35,6 +35,9 @@ ROISSY_PLANES_NAME = "Roissy Airport Planes"
 # computed between a start address and an end address at a given speed).
 ROAD_ROUTE_NAME = "Road Route"
 
+# GeoJSON Route name constant (replays positions from a local GeoJSON file).
+GEOJSON_ROUTE_NAME = "Route"
+
 # OBD driving profile constants for Road Route mode.
 OBD_LEVEL_NORMAL = "Normal"
 OBD_LEVEL_SPORT = "Sportif"
@@ -1119,11 +1122,322 @@ class RouteTripPlayer:
         }
 
 
+class GeoJSONRoutePlayer:
+    """Replays a route loaded from a local GeoJSON file.
+
+    Supports LineString and MultiLineString geometries.  When the GeoJSON
+    properties contain timestamps (``coordTimes``, ``timestamps``, or
+    ``times`` arrays matching the point count), positions can be emitted
+    according to the original recorded timing.  Otherwise the route is
+    interpolated at a configurable speed (km/h).
+
+    Call :meth:`load` once to parse the file, then :meth:`get_coordinates`
+    each frame to obtain the current position as a Map-node-compatible dict.
+    """
+
+    def __init__(self, geojson_path, speed_kmh=50.0, use_timestamps=False):
+        self.geojson_path = geojson_path or ""
+        try:
+            self.speed_kmh = max(0.1, float(speed_kmh))
+        except (TypeError, ValueError):
+            self.speed_kmh = 50.0
+        self.use_timestamps = bool(use_timestamps)
+
+        self.route = []          # list of (lat, lon)
+        self.cum_km = []         # cumulative distance per waypoint (km)
+        self.total_km = 0.0
+        self.timestamps = []     # relative seconds per waypoint (may be empty)
+        self.has_timestamps = False
+        self.total_duration = 0.0  # total seconds covered by timestamps
+
+        self.start_time = None
+        self.is_ready = False
+        self.finished = False
+        self.error = None
+        # Resolved at load() time: True only when both use_timestamps is set
+        # AND the GeoJSON actually contains timestamps.
+        self._use_timestamps = False
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def load(self):
+        """Parse the GeoJSON file and build the internal route.
+
+        Returns True on success, False on error (see :attr:`error`).
+        """
+        self.error = None
+        if not self.geojson_path:
+            self.error = "No GeoJSON file specified"
+            return False
+        try:
+            with open(self.geojson_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except OSError as e:
+            self.error = f"Cannot open file: {e}"
+            return False
+        except (ValueError, TypeError) as e:
+            self.error = f"Invalid JSON: {e}"
+            return False
+
+        coords, ts = self._extract_route(data)
+        if not coords or len(coords) < 2:
+            self.error = (
+                "GeoJSON has no usable route "
+                "(need \u2265 2 points in a LineString or MultiLineString)"
+            )
+            return False
+
+        # Pre-compute cumulative distances along the polyline.
+        cum = [0.0]
+        for i in range(1, len(coords)):
+            cum.append(cum[-1] + _haversine_km(
+                coords[i - 1][0], coords[i - 1][1],
+                coords[i][0], coords[i][1],
+            ))
+
+        self.route = coords
+        self.cum_km = cum
+        self.total_km = cum[-1]
+
+        if ts and len(ts) == len(coords):
+            self.timestamps = ts
+            self.has_timestamps = True
+            self.total_duration = ts[-1]
+            self._use_timestamps = self.use_timestamps
+        else:
+            self.timestamps = []
+            self.has_timestamps = False
+            self.total_duration = 0.0
+            self._use_timestamps = False
+
+        self.start_time = time.time()
+        self.is_ready = True
+        self.finished = False
+        ts_info = (
+            f", {self.total_duration:.1f}s timestamps"
+            if self.has_timestamps else ""
+        )
+        speed_info = (
+            ", using timestamps" if self._use_timestamps
+            else f", speed={self.speed_kmh:.1f} km/h"
+        )
+        print(
+            f"GeoJSONRoutePlayer: {len(coords)} pts, "
+            f"{self.total_km:.3f} km{ts_info}{speed_info}"
+        )
+        return True
+
+    def set_speed(self, speed_kmh):
+        """Adjust playback speed without losing already-travelled distance."""
+        try:
+            new_speed = max(0.1, float(speed_kmh))
+        except (TypeError, ValueError):
+            return
+        if abs(new_speed - self.speed_kmh) < 1e-6:
+            return
+        if self.is_ready and self.start_time is not None and not self._use_timestamps:
+            elapsed = time.time() - self.start_time
+            travelled_km = (self.speed_kmh / 3600.0) * elapsed
+            self.speed_kmh = new_speed
+            self.start_time = time.time() - (travelled_km / (new_speed / 3600.0))
+        else:
+            self.speed_kmh = new_speed
+
+    def get_coordinates(self):
+        """Return the current position as a Map-node-compatible dict.
+
+        Returns an empty list ``[]`` when the player is not ready.
+        Otherwise returns ``{"latitude": …, "longitude": …, "is_moving": 0/1.0}``.
+        ``is_moving`` becomes ``0.0`` when the end of the route is reached.
+        """
+        if not self.is_ready or self.start_time is None:
+            return []
+        elapsed = max(0.0, time.time() - self.start_time)
+
+        if self._use_timestamps and self.timestamps:
+            reached_end = elapsed >= self.total_duration
+            pos = self._position_at_time(elapsed)
+        else:
+            distance_km = (self.speed_kmh / 3600.0) * elapsed
+            reached_end = distance_km >= self.total_km
+            pos = self._position_at_distance(distance_km)
+
+        if pos is None:
+            return []
+        lat, lon = pos
+        moving_flag = 0.0 if reached_end else 1.0
+        if reached_end:
+            self.finished = True
+        return {
+            "latitude": round(lat, 7),
+            "longitude": round(lon, 7),
+            "is_moving": moving_flag,
+        }
+
+    # ------------------------------------------------------------------
+    # GeoJSON parsing helpers
+    # ------------------------------------------------------------------
+
+    def _extract_route(self, data):
+        """Return ``([(lat, lon), …], [relative_seconds, …] or None)``."""
+        if not isinstance(data, dict):
+            return [], None
+        dtype = data.get("type", "")
+
+        if dtype == "FeatureCollection":
+            for feat in (data.get("features") or []):
+                coords, ts = self._parse_feature(feat)
+                if coords and len(coords) >= 2:
+                    return coords, ts
+        elif dtype == "Feature":
+            coords, ts = self._parse_feature(data)
+            if coords and len(coords) >= 2:
+                return coords, ts
+        elif dtype in ("LineString", "MultiLineString"):
+            coords = self._coords_from_geometry(data)
+            if coords and len(coords) >= 2:
+                return coords, None
+        return [], None
+
+    def _parse_feature(self, feature):
+        if not isinstance(feature, dict):
+            return [], None
+        geom = feature.get("geometry") or {}
+        props = feature.get("properties") or {}
+        coords = self._coords_from_geometry(geom)
+        if not coords:
+            return [], None
+        ts = self._parse_timestamps(props, len(coords))
+        return coords, ts
+
+    def _coords_from_geometry(self, geom):
+        """Return ``[(lat, lon), …]`` from a GeoJSON geometry dict."""
+        if not isinstance(geom, dict):
+            return []
+        gtype = geom.get("type", "")
+        raw = geom.get("coordinates") or []
+        if gtype == "LineString":
+            result = []
+            for pt in raw:
+                try:
+                    result.append((float(pt[1]), float(pt[0])))
+                except (IndexError, TypeError, ValueError):
+                    continue
+            return result
+        if gtype == "MultiLineString":
+            result = []
+            for seg in raw:
+                for pt in (seg or []):
+                    try:
+                        result.append((float(pt[1]), float(pt[0])))
+                    except (IndexError, TypeError, ValueError):
+                        continue
+            return result
+        return []
+
+    def _parse_timestamps(self, props, n_coords):
+        """Return relative-seconds list from known properties keys, or ``None``."""
+        for key in ("coordTimes", "timestamps", "times", "time"):
+            raw = props.get(key)
+            if isinstance(raw, list) and len(raw) == n_coords:
+                result = self._normalize_timestamps(raw)
+                if result is not None:
+                    return result
+        return None
+
+    @staticmethod
+    def _normalize_timestamps(raw):
+        """Convert raw timestamp values to relative seconds starting from 0."""
+        # Try numeric (Unix epoch or already-relative seconds).
+        try:
+            vals = [float(v) for v in raw]
+            t0 = vals[0]
+            return [v - t0 for v in vals]
+        except (TypeError, ValueError):
+            pass
+        # Try ISO 8601 strings.
+        try:
+            from datetime import datetime
+
+            def _parse_iso(s):
+                s = str(s).rstrip("Z").replace("z", "")
+                # Strip timezone offset (+HH:MM) if present.
+                if "+" in s[10:]:
+                    s = s[:s.rindex("+", 10)]
+                for fmt in (
+                    "%Y-%m-%dT%H:%M:%S.%f",
+                    "%Y-%m-%dT%H:%M:%S",
+                    "%Y-%m-%d %H:%M:%S",
+                ):
+                    try:
+                        return datetime.strptime(s[:len(fmt) + 3], fmt)
+                    except ValueError:
+                        continue
+                raise ValueError(f"Cannot parse timestamp: {s!r}")
+
+            dts = [_parse_iso(v) for v in raw]
+            t0 = dts[0]
+            return [(dt - t0).total_seconds() for dt in dts]
+        except Exception:
+            pass
+        return None
+
+    # ------------------------------------------------------------------
+    # Playback interpolation
+    # ------------------------------------------------------------------
+
+    def _position_at_distance(self, distance_km):
+        """Interpolate route at ``distance_km`` from the start."""
+        if not self.route:
+            return None
+        if distance_km <= 0:
+            return self.route[0]
+        if distance_km >= self.total_km:
+            return self.route[-1]
+        lo, hi = 0, len(self.cum_km) - 1
+        while lo + 1 < hi:
+            mid = (lo + hi) // 2
+            if self.cum_km[mid] <= distance_km:
+                lo = mid
+            else:
+                hi = mid
+        seg_len = max(1e-9, self.cum_km[hi] - self.cum_km[lo])
+        t = (distance_km - self.cum_km[lo]) / seg_len
+        lat1, lon1 = self.route[lo]
+        lat2, lon2 = self.route[hi]
+        return (lat1 + (lat2 - lat1) * t, lon1 + (lon2 - lon1) * t)
+
+    def _position_at_time(self, elapsed):
+        """Interpolate route at ``elapsed`` seconds using recorded timestamps."""
+        if not self.timestamps:
+            return None
+        if elapsed <= 0:
+            return self.route[0]
+        if elapsed >= self.timestamps[-1]:
+            return self.route[-1]
+        lo, hi = 0, len(self.timestamps) - 1
+        while lo + 1 < hi:
+            mid = (lo + hi) // 2
+            if self.timestamps[mid] <= elapsed:
+                lo = mid
+            else:
+                hi = mid
+        seg_len = max(1e-9, self.timestamps[hi] - self.timestamps[lo])
+        t = (elapsed - self.timestamps[lo]) / seg_len
+        lat1, lon1 = self.route[lo]
+        lat2, lon2 = self.route[hi]
+        return (lat1 + (lat2 - lat1) * t, lon1 + (lon2 - lon1) * t)
+
+
 def get_example_names():
     """Get list of available example names for the dropdown."""
-    # Static examples first, then add GPS simulation, Roissy planes and Road Route
     static_names = list(COORDINATE_EXAMPLES.keys())
-    return static_names + [GPS_SIMULATION_NAME, ROISSY_PLANES_NAME, ROAD_ROUTE_NAME]
+    return static_names + [
+        GPS_SIMULATION_NAME, ROISSY_PLANES_NAME,
+        ROAD_ROUTE_NAME, GEOJSON_ROUTE_NAME,
+    ]
 
 
 class FactoryNode:
@@ -1165,6 +1479,15 @@ class FactoryNode:
         node.tag_node_obd_level_name = node.tag_node_name + ':OBDLevel'
         node.tag_node_obd_level_value_name = node.tag_node_name + ':OBDLevelValue'
 
+        # GeoJSON Route input tags (file path, speed, use-timestamps flag)
+        node.tag_node_geojson_load_name = node.tag_node_name + ':GeoJSONRouteLoad'
+        node.tag_node_geojson_filepath_name = node.tag_node_name + ':GeoJSONRouteFilePath'
+        node.tag_node_geojson_filepath_value_name = node.tag_node_name + ':GeoJSONRouteFilePathValue'
+        node.tag_node_geojson_speed_name = node.tag_node_name + ':GeoJSONRouteSpeed'
+        node.tag_node_geojson_speed_value_name = node.tag_node_name + ':GeoJSONRouteSpeedValue'
+        node.tag_node_geojson_use_ts_name = node.tag_node_name + ':GeoJSONRouteUseTS'
+        node.tag_node_geojson_use_ts_value_name = node.tag_node_name + ':GeoJSONRouteUseTSValue'
+
         # Status text tag
         node.tag_node_status_name = node.tag_node_name + ':Status'
         node.tag_node_status_value_name = node.tag_node_name + ':StatusValue'
@@ -1184,6 +1507,18 @@ class FactoryNode:
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 128, 255))
                 dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (255, 255, 64, 255))
                 dpg.add_theme_color(dpg.mvThemeCol_Text, (0, 0, 0, 255))
+
+        # File dialog for GeoJSON Route mode (created outside the node context)
+        with dpg.file_dialog(
+            directory_selector=False,
+            show=False,
+            modal=True,
+            height=300,
+            callback=node._callback_geojson_select,
+            id="geojson_route_select:" + str(node_id),
+        ):
+            dpg.add_file_extension("GeoJSON (*.geojson *.json){.geojson,.json}")
+            dpg.add_file_extension("", color=(150, 255, 150, 255))
 
         # Create node in the GUI
         with dpg.node(
@@ -1266,6 +1601,62 @@ class FactoryNode:
                     width=small_window_w - 50,
                 )
 
+            # GeoJSON Route inputs: load button, file path, speed and
+            # optional timestamp-based playback.  They are reserved for the
+            # "Route" option and are hidden for all other dropdown choices.
+            _geojson_visible = (
+                dpg.get_value(node.tag_node_dropdown_value_name)
+                == GEOJSON_ROUTE_NAME
+            )
+            with dpg.node_attribute(
+                tag=node.tag_node_geojson_load_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+                show=_geojson_visible,
+            ):
+                dpg.add_button(
+                    label="\U0001f4c2 Load GeoJSON",
+                    width=small_window_w,
+                    callback=lambda: dpg.show_item(
+                        "geojson_route_select:" + str(node_id),
+                    ),
+                )
+            with dpg.node_attribute(
+                tag=node.tag_node_geojson_filepath_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+                show=_geojson_visible,
+            ):
+                dpg.add_input_text(
+                    tag=node.tag_node_geojson_filepath_value_name,
+                    label="File",
+                    default_value="",
+                    width=small_window_w - 50,
+                    hint="Path to .geojson file",
+                )
+            with dpg.node_attribute(
+                tag=node.tag_node_geojson_speed_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+                show=_geojson_visible,
+            ):
+                dpg.add_input_float(
+                    tag=node.tag_node_geojson_speed_value_name,
+                    label="km/h",
+                    default_value=50.0,
+                    min_value=0.1,
+                    min_clamped=True,
+                    width=small_window_w - 50,
+                    step=5.0,
+                )
+            with dpg.node_attribute(
+                tag=node.tag_node_geojson_use_ts_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+                show=_geojson_visible,
+            ):
+                dpg.add_checkbox(
+                    tag=node.tag_node_geojson_use_ts_value_name,
+                    label="Use timestamps",
+                    default_value=False,
+                )
+
             # Status text showing number of points
             with dpg.node_attribute(
                 tag=node.tag_node_status_name,
@@ -1317,6 +1708,8 @@ class Node(BaseNode):
         self.gps_simulator = None  # Will be initialized when GPS simulation is selected
         self.roissy_tracker = None  # Will be initialized when Roissy planes is selected
         self.route_player = None  # Will be initialized when Road Route is selected
+        self.geojson_route_player = None  # Will be initialized when GeoJSON Route is selected
+        self.geojson_file_path = ""  # Path of the currently loaded GeoJSON file
         self.last_update_time = None  # Track last GPS update time
         self.update_interval = 1.0  # Update GPS positions every 1 second
         self.last_coordinates = []  # Cache last generated coordinates
@@ -1341,6 +1734,70 @@ class Node(BaseNode):
                 pass
 
     @staticmethod
+    def _set_geojson_route_inputs_visible(node_id, visible):
+        """Show/hide the GeoJSON Route input fields (load button / file path / speed / timestamps).
+
+        These inputs are reserved for the GeoJSON Route option and are hidden
+        for every other dropdown choice.
+        """
+        tag_node_name = str(node_id) + ':' + Node.node_tag
+        for suffix in (':GeoJSONRouteLoad', ':GeoJSONRouteFilePath',
+                       ':GeoJSONRouteSpeed', ':GeoJSONRouteUseTS'):
+            try:
+                dpg.configure_item(tag_node_name + suffix, show=bool(visible))
+            except Exception:
+                pass
+
+    def _callback_geojson_select(self, sender, data):
+        """Callback when a GeoJSON file is selected via the file dialog."""
+        if data.get("file_name") == ".":
+            return
+        file_path = data.get("file_path_name", "")
+        if not file_path:
+            return
+        # sender is "geojson_route_select:{node_id}"
+        node_id = sender.split(":")[-1]
+        tag_node_name = node_id + ":" + self.node_tag
+        status_tag = tag_node_name + ":StatusValue"
+        filepath_tag = tag_node_name + ":GeoJSONRouteFilePathValue"
+        use_ts_tag = tag_node_name + ":GeoJSONRouteUseTSValue"
+
+        self.geojson_file_path = file_path
+        self.geojson_route_player = None  # Reset player so next Start reloads it.
+
+        # Update the path display widget.
+        try:
+            dpg_set_value(filepath_tag, file_path)
+        except Exception:
+            pass
+
+        # Probe the file: parse it to check for timestamps and show a status.
+        try:
+            probe = GeoJSONRoutePlayer(file_path, speed_kmh=50.0)
+            if probe.load():
+                if probe.has_timestamps:
+                    dpg_set_value(
+                        status_tag,
+                        f"{len(probe.route)} pts, timestamps found \u2013 press Start",
+                    )
+                    try:
+                        dpg_set_value(use_ts_tag, True)
+                    except Exception:
+                        pass
+                else:
+                    dpg_set_value(
+                        status_tag,
+                        f"{len(probe.route)} pts loaded \u2013 set speed and press Start",
+                    )
+            else:
+                dpg_set_value(status_tag, probe.error or "GeoJSON parse error")
+        except Exception as exc:
+            try:
+                dpg_set_value(status_tag, f"Error probing GeoJSON: {exc}")
+            except Exception:
+                pass
+
+    @staticmethod
     def on_start_toggle(sender, app_data, user_data):
         """Callback for the Start/Stop button: begins or stops the GPS trip."""
         node, node_id = user_data
@@ -1355,6 +1812,7 @@ class Node(BaseNode):
             node.is_started = True
             node.gps_simulator = None
             node.route_player = None
+            node.geojson_route_player = None
             node.last_update_time = None
             node.last_coordinates = []
             try:
@@ -1366,11 +1824,14 @@ class Node(BaseNode):
                 dpg_set_value(status_tag, 'Trip started (updates every 1s)')
             elif selected_example == ROAD_ROUTE_NAME:
                 dpg_set_value(status_tag, 'Loading route...')
+            elif selected_example == GEOJSON_ROUTE_NAME:
+                dpg_set_value(status_tag, 'Loading GeoJSON route...')
         else:
             # Stop the trip and reset state.
             node.is_started = False
             node.gps_simulator = None
             node.route_player = None
+            node.geojson_route_player = None
             node.last_update_time = None
             node.last_coordinates = []
             try:
@@ -1378,7 +1839,7 @@ class Node(BaseNode):
             except Exception:
                 pass
             selected_example = dpg_get_value(dropdown_tag)
-            if selected_example in (GPS_SIMULATION_NAME, ROAD_ROUTE_NAME):
+            if selected_example in (GPS_SIMULATION_NAME, ROAD_ROUTE_NAME, GEOJSON_ROUTE_NAME):
                 dpg_set_value(status_tag, 'Trip stopped (press Start to begin)')
     
     @staticmethod
@@ -1419,11 +1880,27 @@ class Node(BaseNode):
                 except Exception:
                     pass
 
+        # Reset GeoJSON Route player when switching away from the Route mode.
+        if selected_example != GEOJSON_ROUTE_NAME and hasattr(node, 'geojson_route_player'):
+            if node.geojson_route_player is not None or getattr(node, 'is_started', False):
+                node.geojson_route_player = None
+                node.is_started = False
+                node.last_coordinates = []
+                try:
+                    button_tag = str(node_id) + ':' + node.node_tag + ':StartButton'
+                    dpg.configure_item(button_tag, label="Start")
+                except Exception:
+                    pass
+
         # Toggle visibility of the Road Route input fields: they are
         # reserved for the Road Route option and must stay hidden (and
         # ignored) for every other dropdown choice.
         Node._set_route_inputs_visible(
             node_id, selected_example == ROAD_ROUTE_NAME
+        )
+        # Toggle visibility of the GeoJSON Route input fields.
+        Node._set_geojson_route_inputs_visible(
+            node_id, selected_example == GEOJSON_ROUTE_NAME
         )
 
         # Get the coordinates for the selected example
@@ -1441,6 +1918,11 @@ class Node(BaseNode):
                 status_text = 'Trip in progress'
             else:
                 status_text = 'Set From/To/km/h and press Start'
+        elif selected_example == GEOJSON_ROUTE_NAME:
+            if getattr(node, 'is_started', False):
+                status_text = 'Route in progress'
+            else:
+                status_text = 'Load a GeoJSON file and press Start'
         else:
             coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
             num_points = len(coordinates)
@@ -1582,6 +2064,74 @@ class Node(BaseNode):
                     self.route_player.set_obd_level(obd_level)
                     json_output = self.route_player.get_coordinates()
 
+        # Handle GeoJSON Route mode: replay a local GeoJSON file at the
+        # configured speed (km/h) or according to embedded timestamps.
+        # Coordinates are emitted only after the user has pressed Start.
+        elif selected_example == GEOJSON_ROUTE_NAME:
+            if not self.is_started:
+                json_output = []
+            else:
+                file_path_tag = tag_node_name + ':GeoJSONRouteFilePathValue'
+                speed_tag = tag_node_name + ':GeoJSONRouteSpeedValue'
+                use_ts_tag = tag_node_name + ':GeoJSONRouteUseTSValue'
+                status_tag = tag_node_name + ':StatusValue'
+
+                file_path = dpg_get_value(file_path_tag) or ''
+                speed_kmh = dpg_get_value(speed_tag)
+                if speed_kmh is None:
+                    speed_kmh = 50.0
+                use_ts = bool(dpg_get_value(use_ts_tag))
+
+                needs_new = (
+                    self.geojson_route_player is None
+                    or self.geojson_route_player.geojson_path != file_path
+                )
+                if needs_new:
+                    if not file_path:
+                        try:
+                            dpg_set_value(
+                                status_tag,
+                                'Select a GeoJSON file and press Start',
+                            )
+                        except Exception:
+                            pass
+                        json_output = []
+                    else:
+                        self.geojson_route_player = GeoJSONRoutePlayer(
+                            file_path, speed_kmh=speed_kmh,
+                            use_timestamps=use_ts,
+                        )
+                        if not self.geojson_route_player.load():
+                            try:
+                                dpg_set_value(
+                                    status_tag,
+                                    self.geojson_route_player.error or 'GeoJSON error',
+                                )
+                            except Exception:
+                                pass
+                            json_output = []
+                        else:
+                            try:
+                                dur_info = ''
+                                if (self.geojson_route_player._use_timestamps
+                                        and self.geojson_route_player.total_duration):
+                                    dur_info = (
+                                        f', {self.geojson_route_player.total_duration:.0f}s'
+                                        f' (timestamps)'
+                                    )
+                                dpg_set_value(
+                                    status_tag,
+                                    f'Route: {self.geojson_route_player.total_km:.1f} km'
+                                    f'{dur_info}',
+                                )
+                            except Exception:
+                                pass
+                            json_output = self.geojson_route_player.get_coordinates()
+                else:
+                    # Live speed updates are applied without resetting the trip.
+                    self.geojson_route_player.set_speed(speed_kmh)
+                    json_output = self.geojson_route_player.get_coordinates()
+
         else:
             # Get static coordinates for the selected example
             coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
@@ -1609,6 +2159,9 @@ class Node(BaseNode):
         route_end_tag = tag_node_name + ':RouteEndValue'
         route_speed_tag = tag_node_name + ':RouteSpeedValue'
         obd_level_tag = tag_node_name + ':OBDLevelValue'
+        geojson_filepath_tag = tag_node_name + ':GeoJSONRouteFilePathValue'
+        geojson_speed_tag = tag_node_name + ':GeoJSONRouteSpeedValue'
+        geojson_use_ts_tag = tag_node_name + ':GeoJSONRouteUseTSValue'
 
         selected_example = dpg_get_value(dropdown_tag)
         if selected_example is None:
@@ -1631,6 +2184,14 @@ class Node(BaseNode):
                 setting_dict[obd_level_tag] = dpg_get_value(obd_level_tag)
             except Exception:
                 pass
+        # Persist GeoJSON Route inputs only when that mode is active.
+        if selected_example == GEOJSON_ROUTE_NAME:
+            try:
+                setting_dict[geojson_filepath_tag] = dpg_get_value(geojson_filepath_tag)
+                setting_dict[geojson_speed_tag] = dpg_get_value(geojson_speed_tag)
+                setting_dict[geojson_use_ts_tag] = dpg_get_value(geojson_use_ts_tag)
+            except Exception:
+                pass
 
         return setting_dict
 
@@ -1643,6 +2204,9 @@ class Node(BaseNode):
         route_end_tag = tag_node_name + ':RouteEndValue'
         route_speed_tag = tag_node_name + ':RouteSpeedValue'
         obd_level_tag = tag_node_name + ':OBDLevelValue'
+        geojson_filepath_tag = tag_node_name + ':GeoJSONRouteFilePathValue'
+        geojson_speed_tag = tag_node_name + ':GeoJSONRouteSpeedValue'
+        geojson_use_ts_tag = tag_node_name + ':GeoJSONRouteUseTSValue'
 
         selected_example = setting_dict.get(dropdown_tag, "AISTRACKER")
         dpg_set_value(dropdown_tag, selected_example)
@@ -1655,10 +2219,20 @@ class Node(BaseNode):
                 except Exception:
                     pass
 
-        # Apply field visibility according to the restored mode: the
-        # Road Route inputs must only appear when Road Route is active.
+        # Restore GeoJSON Route inputs when present.
+        for tag in (geojson_filepath_tag, geojson_speed_tag, geojson_use_ts_tag):
+            if tag in setting_dict:
+                try:
+                    dpg_set_value(tag, setting_dict[tag])
+                except Exception:
+                    pass
+
+        # Apply field visibility according to the restored mode.
         Node._set_route_inputs_visible(
             node_id, selected_example == ROAD_ROUTE_NAME
+        )
+        Node._set_geojson_route_inputs_visible(
+            node_id, selected_example == GEOJSON_ROUTE_NAME
         )
 
         # Update status text
@@ -1666,6 +2240,8 @@ class Node(BaseNode):
             status_text = 'Press Start to begin the trip'
         elif selected_example == ROAD_ROUTE_NAME:
             status_text = 'Set From/To/km/h and press Start'
+        elif selected_example == GEOJSON_ROUTE_NAME:
+            status_text = 'Load a GeoJSON file and press Start'
         else:
             coordinates = COORDINATE_EXAMPLES.get(selected_example, [])
             num_points = len(coordinates)

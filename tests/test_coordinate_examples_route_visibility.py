@@ -59,7 +59,7 @@ def test_set_route_inputs_visible_false(monkeypatch):
 
 
 def test_selection_change_to_other_mode_hides_route_fields(monkeypatch):
-    """Switching to GPS Movement Simulation must hide the Road Route inputs."""
+    """Switching to GPS Movement Simulation must hide both Road Route and GeoJSON Route inputs."""
     rec = _patch_dpg(monkeypatch)
     # Selection-change uses dpg_set_value to update the status text; stub it.
     monkeypatch.setattr(nce, "dpg_set_value", lambda *_a, **_kw: None)
@@ -73,13 +73,17 @@ def test_selection_change_to_other_mode_hides_route_fields(monkeypatch):
     shows = {
         tag: kwargs.get("show")
         for tag, kwargs in rec.calls
-        if ("Route" in tag or "OBD" in tag) and "show" in kwargs
+        if ("Route" in tag or "OBD" in tag or "GeoJSON" in tag) and "show" in kwargs
     }
     assert shows == {
         "12:CoordinateExamples:RouteStart": False,
         "12:CoordinateExamples:RouteEnd": False,
         "12:CoordinateExamples:RouteSpeed": False,
         "12:CoordinateExamples:OBDLevel": False,
+        "12:CoordinateExamples:GeoJSONRouteLoad": False,
+        "12:CoordinateExamples:GeoJSONRouteFilePath": False,
+        "12:CoordinateExamples:GeoJSONRouteSpeed": False,
+        "12:CoordinateExamples:GeoJSONRouteUseTS": False,
     }
 
 
@@ -96,13 +100,17 @@ def test_selection_change_to_road_route_shows_fields(monkeypatch):
     shows = {
         tag: kwargs.get("show")
         for tag, kwargs in rec.calls
-        if ("Route" in tag or "OBD" in tag) and "show" in kwargs
+        if ("Route" in tag or "OBD" in tag or "GeoJSON" in tag) and "show" in kwargs
     }
     assert shows == {
         "5:CoordinateExamples:RouteStart": True,
         "5:CoordinateExamples:RouteEnd": True,
         "5:CoordinateExamples:RouteSpeed": True,
         "5:CoordinateExamples:OBDLevel": True,
+        "5:CoordinateExamples:GeoJSONRouteLoad": False,
+        "5:CoordinateExamples:GeoJSONRouteFilePath": False,
+        "5:CoordinateExamples:GeoJSONRouteSpeed": False,
+        "5:CoordinateExamples:GeoJSONRouteUseTS": False,
     }
 
 
