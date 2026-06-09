@@ -1362,17 +1362,20 @@ class GeoJSONRoutePlayer:
             from datetime import datetime
 
             def _parse_iso(s):
-                s = str(s).rstrip("Z").replace("z", "")
-                # Strip timezone offset (+HH:MM) if present.
-                if "+" in s[10:]:
-                    s = s[:s.rindex("+", 10)]
+                s = str(s).replace("Z", "").replace("z", "")
+                # Strip timezone offset (+HH:MM or -HH:MM) after date part.
+                for sep in ("+", "-"):
+                    idx = s.find(sep, 10)
+                    if idx != -1:
+                        s = s[:idx]
+                        break
                 for fmt in (
                     "%Y-%m-%dT%H:%M:%S.%f",
                     "%Y-%m-%dT%H:%M:%S",
                     "%Y-%m-%d %H:%M:%S",
                 ):
                     try:
-                        return datetime.strptime(s[:len(fmt) + 3], fmt)
+                        return datetime.strptime(s, fmt)
                     except ValueError:
                         continue
                 raise ValueError(f"Cannot parse timestamp: {s!r}")
