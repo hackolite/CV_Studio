@@ -38,11 +38,23 @@ import matplotlib.patches as mpatches
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 
+# Baseline FPS used for per-inference CPU cost normalisation.
+# cpu_per_inf values in _MODEL_DB are expressed at this FPS level; the
+# estimator scales them linearly for other FPS targets.
+_BASELINE_FPS = 30.0
+
 # ---------------------------------------------------------------------------
 # Catalogue de modèles (ressources estimées par inférence)
-# vram_gb  : mémoire GPU pour héberger les poids
-# ram_gb   : empreinte RAM pour héberger les poids + activations CPU
-# cpu_per_inf : cœurs CPU logiques consommés pour 1 inférence à 30 fps
+#
+# Values are *approximate* order-of-magnitude estimates derived from:
+#   • Published model benchmark results (Ultralytics, OpenCV Zoo, etc.)
+#   • Typical observed memory footprints with ONNX/TensorRT backends
+#   • Batch-size = 1 (single image per inference call)
+#   • FP32 precision unless noted
+#
+# vram_gb     : GPU memory to load weights (excludes activation buffers)
+# ram_gb      : host RAM for weights + framework overhead (no GPU offload)
+# cpu_per_inf : logical CPU cores consumed by one inference call at _BASELINE_FPS
 # ---------------------------------------------------------------------------
 _MODEL_DB = {
     "YOLOv8n":   {"vram_gb": 0.20, "ram_gb": 0.30, "cpu_per_inf": 0.8},
@@ -64,10 +76,18 @@ _MODEL_DB = {
 
 _MODEL_NAMES = list(_MODEL_DB.keys())
 
-# Multiplicateurs de ressources selon le runtime
-# cpu  : surcoût CPU relatif (>1 = plus gourmand, <1 = déchargé sur GPU)
-# ram  : surcoût RAM (framework overhead)
-# vram : fraction VRAM réellement utilisée
+# Runtime multipliers applied on top of the base model costs.
+#
+# Rationale (relative to a CPU-only ONNXRuntime baseline at 1.0):
+#   DeepStream     – GPU-accelerated pipeline: CPU drops to ~0.4×, VRAM stays at
+#                    1.0× (TensorRT backend), RAM increases ~30% (GStreamer/nvbuf).
+#   OpenVINO       – CPU-optimised inference: CPU ~1.2× (optimised kernels),
+#                    VRAM ~0.05× (minimal GPU use), RAM ~1.2× (IE overhead).
+#   OpenCV-ONNXRuntime – pure-CPU path: CPU ~2.0× (no hardware opt),
+#                        VRAM ~0.05× (negligible), RAM ~1.0×.
+#
+# These are coarse estimates; real-world values depend on hardware, batch size,
+# model architecture, and runtime version.
 _RUNTIME_MULT = {
     "DeepStream":          {"cpu": 0.40, "ram": 1.30, "vram": 1.00},
     "OpenVINO":            {"cpu": 1.20, "ram": 1.20, "vram": 0.05},
@@ -103,7 +123,7 @@ def _compute_needs(runtime, n_streams, fps, selected_models):
     indiquant les ressources nécessaires.
     """
     mult = _RUNTIME_MULT[runtime]
-    fps_scale = max(fps, 1) / 30.0
+    fps_scale = max(fps, 1) / _BASELINE_FPS
 
     # Overheads fixes
     need_cpu = _FIXED_CPU_OVERHEAD
