@@ -24,6 +24,8 @@ La sortie est un graphique matplotlib rendu en texture DPG :
 """
 
 import threading
+from collections import Counter
+import math
 
 import numpy as np
 import dearpygui.dearpygui as dpg
@@ -239,7 +241,6 @@ def _ram_slot_to_gb(slot_str: str) -> float:
 
 def _ceil8(value: float) -> int:
     """Round value up to the nearest multiple of 8."""
-    import math
     return int(math.ceil(value / 8.0)) * 8
 
 
@@ -277,7 +278,7 @@ def _compute_needs(runtime, n_streams, fps, ai_node_tags,
             continue
         need_ram  += m["ram_gb"] * mult["ram"]
         need_vram += m["vram_gb"] * mult["vram"]
-        need_cpu  += m["cpu_per_inf"] * mult["cpu"] * max(n_streams, 1) * fps_scale
+        need_cpu  += m["cpu_per_inf"] * mult["cpu"] * n_streams * fps_scale
 
     return {
         "cpu":     round(need_cpu, 2),
@@ -567,12 +568,11 @@ def _do_scan(node):
         n_vp = scan["n_vision_proc"]
         n_ap = scan["n_audio_proc"]
 
-        # Update streams field with detected count (keep ≥ 0)
-        dpg_set_value(tag + ':Streams', max(0, n_streams))
+        # Update streams field with detected count
+        dpg_set_value(tag + ':Streams', n_streams)
 
         # Build AI nodes display
         if ai_tags:
-            from collections import Counter
             counts = Counter(ai_tags)
             lines = [f"  • {tag_} ×{cnt}" for tag_, cnt in counts.items()]
             summary = "\n".join(lines)
