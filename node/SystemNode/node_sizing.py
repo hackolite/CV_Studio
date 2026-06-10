@@ -149,23 +149,18 @@ _MODEL_DB = {
 
 _MODEL_NAMES = list(_MODEL_DB.keys())
 
-# GFLOPs par inférence à 640×640 (@ batch=1, valeurs indicatives)
-_MODEL_GFLOPS = {
-    "YOLOv8n":  8.7,
-    "YOLOv8s":  28.6,
-    "YOLOv8m":  78.9,
-    "YOLOv8l":  165.2,
-    "YOLOv8x":  257.8,
-    "YOLOv5n":  4.5,
-    "YOLOv5s":  16.5,
-    "YOLOv5m":  49.0,
-    "YOLOv5l":  109.1,
-    "YOLOv5x":  205.7,
-    "NanoDet":  0.72,   # NanoDet-Plus-m @ 416×416 (not 640 – lighter model)
-    "YAMNet":   1.0,    # audio, ~1 GFLOP
-    "Custom-S": 30.0,
-    "Custom-M": 80.0,
-    "Custom-L": 200.0,
+# GFLOPs estimés par inférence pour chaque type de nœud AI détecté dans l'éditeur
+# (valeurs indicatives à résolution standard)
+_NODE_AI_GFLOPS = {
+    "ObjectDetection":          80.0,
+    "Classification":            4.0,
+    "FaceDetection":             2.0,
+    "PoseEstimation":           80.0,
+    "SemanticSegmentation":    150.0,
+    "MonocularDepthEstimation": 100.0,
+    "LLIE":                     50.0,
+    "OnlineTraining":           80.0,
+    "AudioClassification":       1.0,
 }
 
 # Runtime multipliers applied on top of the base model costs.
@@ -203,17 +198,6 @@ _FIXED_CPU_OVERHEAD = 0.5   # cores
 # Chart dimensions (pixels)
 _CHART_W = 420
 _CHART_H = 280
-
-
-def _build_gflops_info() -> str:
-    """Build a compact multi-line string listing model GFLOPs."""
-    lines = []
-    for name, gf in _MODEL_GFLOPS.items():
-        if gf < 1.0:
-            lines.append(f"  {name}: {gf:.2f} GF")
-        else:
-            lines.append(f"  {name}: {gf:.0f} GF")
-    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -551,25 +535,11 @@ class FactoryNode:
                 )
 
                 dpg.add_spacer(height=6)
-                dpg.add_text('-- GFLOPs modèles (indicatif) --', color=(200, 200, 200))
+                dpg.add_text('-- GFLOPs total (estimé) --', color=(200, 200, 200))
                 dpg.add_text(
-                    _build_gflops_info(),
+                    tag=tag + ':GFLOPsTotal',
+                    default_value='(scan requis)',
                     color=(170, 210, 170),
-                    wrap=220,
-                )
-
-                dpg.add_spacer(height=6)
-                dpg.add_text('-- NVDEC & No-Copy --', color=(200, 200, 200))
-                dpg.add_text(
-                    "NVDEC : décodeur HW H.264/HEVC/AV1\n"
-                    "intégré au GPU (Ampere+ : 2 moteurs).\n"
-                    "Offloade le CPU du décodage vidéo.\n"
-                    "\n"
-                    "No-Copy (zero-copy) : avec DeepStream\n"
-                    "ou GStreamer + nvvideoconvert, les\n"
-                    "frames restent en VRAM (NvBufSurface)\n"
-                    "→ aucun transfert PCIe CPU↔GPU.",
-                    color=(210, 200, 170),
                     wrap=220,
                 )
 
@@ -629,8 +599,8 @@ def _do_scan_and_compute(node):
         )
 
         # Build AI nodes display
+        counts = Counter(ai_tags)
         if ai_tags:
-            counts = Counter(ai_tags)
             lines = [f"  • {t} ×{cnt}" for t, cnt in counts.items()]
             summary = "\n".join(lines)
         else:
@@ -645,6 +615,17 @@ def _do_scan_and_compute(node):
             summary += "\n" + "\n".join(extra)
 
         dpg_set_value(tag + ':AINodesList', summary)
+
+        # ---- Compute GFLOPs total ----
+        total_gflops = sum(
+            _NODE_AI_GFLOPS.get(t, 0.0) * cnt
+            for t, cnt in counts.items()
+        )
+        if total_gflops > 0:
+            gflops_str = f"{total_gflops:.1f} GFLOPs ({len(ai_tags)} nœud(s) AI)"
+        else:
+            gflops_str = "0 GFLOPs (aucun nœud AI)"
+        dpg_set_value(tag + ':GFLOPsTotal', gflops_str)
 
         # ---- Compute ----
         runtime = dpg_get_value(tag + ':Runtime') or _RUNTIMES[0]
