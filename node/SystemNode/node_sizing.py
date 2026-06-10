@@ -48,30 +48,31 @@ _BASELINE_FPS = 30.0
 # Catalogue GPU  (VRAM réelle, par créneaux constructeur)
 # ---------------------------------------------------------------------------
 _GPU_CATALOG = {
-    "RTX 5090":     {"vram_gb": 32},
-    "RTX 5080":     {"vram_gb": 16},
-    "RTX 5070 Ti":  {"vram_gb": 16},
-    "RTX 5070":     {"vram_gb": 12},
-    "RTX 5060 Ti":  {"vram_gb": 16},
-    "RTX 5060":     {"vram_gb": 8},
-    "RTX 4090":     {"vram_gb": 24},
-    "RTX 4080 Super": {"vram_gb": 16},
-    "RTX 4080":     {"vram_gb": 16},
-    "RTX 4070 Ti Super": {"vram_gb": 16},
-    "RTX 4070 Ti":  {"vram_gb": 12},
-    "RTX 4070 Super": {"vram_gb": 12},
-    "RTX 4070":     {"vram_gb": 12},
-    "RTX 4060 Ti":  {"vram_gb": 16},
-    "RTX 4060":     {"vram_gb": 8},
-    "RTX 3090 Ti":  {"vram_gb": 24},
-    "RTX 3090":     {"vram_gb": 24},
-    "RTX 3080 Ti":  {"vram_gb": 12},
-    "RTX 3080":     {"vram_gb": 10},
-    "RTX 3070 Ti":  {"vram_gb": 8},
-    "RTX 3070":     {"vram_gb": 8},
-    "RTX 3060 Ti":  {"vram_gb": 8},
-    "RTX 3060":     {"vram_gb": 12},
-    "CPU only":     {"vram_gb": 0},
+    # tflops: FP32 shader performance (TFLOPS) – indicatif pour l'inférence
+    "RTX 5090":          {"vram_gb": 32,  "tflops": 209.0},
+    "RTX 5080":          {"vram_gb": 16,  "tflops": 137.0},
+    "RTX 5070 Ti":       {"vram_gb": 16,  "tflops": 103.0},
+    "RTX 5070":          {"vram_gb": 12,  "tflops":  77.0},
+    "RTX 5060 Ti":       {"vram_gb": 16,  "tflops":  55.0},
+    "RTX 5060":          {"vram_gb":  8,  "tflops":  42.0},
+    "RTX 4090":          {"vram_gb": 24,  "tflops":  82.6},
+    "RTX 4080 Super":    {"vram_gb": 16,  "tflops":  52.2},
+    "RTX 4080":          {"vram_gb": 16,  "tflops":  48.7},
+    "RTX 4070 Ti Super": {"vram_gb": 16,  "tflops":  44.1},
+    "RTX 4070 Ti":       {"vram_gb": 12,  "tflops":  40.1},
+    "RTX 4070 Super":    {"vram_gb": 12,  "tflops":  35.5},
+    "RTX 4070":          {"vram_gb": 12,  "tflops":  29.1},
+    "RTX 4060 Ti":       {"vram_gb": 16,  "tflops":  22.1},
+    "RTX 4060":          {"vram_gb":  8,  "tflops":  15.1},
+    "RTX 3090 Ti":       {"vram_gb": 24,  "tflops":  40.0},
+    "RTX 3090":          {"vram_gb": 24,  "tflops":  35.6},
+    "RTX 3080 Ti":       {"vram_gb": 12,  "tflops":  34.1},
+    "RTX 3080":          {"vram_gb": 10,  "tflops":  29.8},
+    "RTX 3070 Ti":       {"vram_gb":  8,  "tflops":  21.7},
+    "RTX 3070":          {"vram_gb":  8,  "tflops":  20.3},
+    "RTX 3060 Ti":       {"vram_gb":  8,  "tflops":  16.2},
+    "RTX 3060":          {"vram_gb": 12,  "tflops":  12.7},
+    "CPU only":          {"vram_gb":  0,  "tflops":   0.0},
 }
 
 _GPU_NAMES = list(_GPU_CATALOG.keys())
@@ -148,6 +149,25 @@ _MODEL_DB = {
 
 _MODEL_NAMES = list(_MODEL_DB.keys())
 
+# GFLOPs par inférence à 640×640 (@ batch=1, valeurs indicatives)
+_MODEL_GFLOPS = {
+    "YOLOv8n":  8.7,
+    "YOLOv8s":  28.6,
+    "YOLOv8m":  78.9,
+    "YOLOv8l":  165.2,
+    "YOLOv8x":  257.8,
+    "YOLOv5n":  4.5,
+    "YOLOv5s":  16.5,
+    "YOLOv5m":  49.0,
+    "YOLOv5l":  109.1,
+    "YOLOv5x":  205.7,
+    "NanoDet":  0.72,   # NanoDet-Plus-m @ 416×416 (not 640 – lighter model)
+    "YAMNet":   1.0,    # audio, ~1 GFLOP
+    "Custom-S": 30.0,
+    "Custom-M": 80.0,
+    "Custom-L": 200.0,
+}
+
 # Runtime multipliers applied on top of the base model costs.
 _RUNTIME_MULT = {
     "DeepStream":          {"cpu": 0.40, "ram": 1.30, "vram": 1.00},
@@ -158,11 +178,14 @@ _RUNTIME_MULT = {
 _RUNTIMES = list(_RUNTIME_MULT.keys())
 
 _RESOLUTIONS = [
+    "AI  (300×300)",
+    "AI  (416×416)",
     "SD  (640×480)",
     "HD  (1280×720)",
     "FHD (1920×1080)",
     "4K  (3840×2160)",
 ]
+_RESOLUTION_DEFAULT = "HD  (1280×720)"
 
 # RAM slots disponibles (créneaux de 8 GB)
 _RAM_SLOTS = [f"{n} GB" for n in [8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512]]
@@ -180,6 +203,17 @@ _FIXED_CPU_OVERHEAD = 0.5   # cores
 # Chart dimensions (pixels)
 _CHART_W = 420
 _CHART_H = 280
+
+
+def _build_gflops_info() -> str:
+    """Build a compact multi-line string listing model GFLOPs."""
+    lines = []
+    for name, gf in _MODEL_GFLOPS.items():
+        if gf < 1.0:
+            lines.append(f"  {name}: {gf:.2f} GF")
+        else:
+            lines.append(f"  {name}: {gf:.0f} GF")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +440,7 @@ class FactoryNode:
                     tag=tag + ':Resolution',
                     label='Résolution',
                     items=_RESOLUTIONS,
-                    default_value=_RESOLUTIONS[1],
+                    default_value=_RESOLUTION_DEFAULT,  # HD
                     width=220,
                 )
 
@@ -421,14 +455,11 @@ class FactoryNode:
 
                 dpg.add_spacer(height=4)
 
-                # Input streams (can be overridden by editor scan)
-                dpg.add_input_int(
-                    tag=tag + ':Streams',
-                    label='Flux entrants',
-                    default_value=1,
-                    min_value=0,
-                    max_value=64,
-                    width=100,
+                # Input streams (read-only – updated by Scan)
+                dpg.add_text(
+                    tag=tag + ':StreamsDisplay',
+                    default_value='Flux entrants : – (scan requis)',
+                    color=(160, 220, 255),
                 )
 
                 # Target FPS
@@ -480,7 +511,10 @@ class FactoryNode:
                 # VRAM (read-only display, driven by GPU picker)
                 dpg.add_text(
                     tag=tag + ':VRAMLabel',
-                    default_value=f"VRAM : {_GPU_CATALOG[_GPU_NAMES[0]]['vram_gb']} GB",
+                    default_value=(
+                        f"VRAM : {_GPU_CATALOG[_GPU_NAMES[0]]['vram_gb']} GB"
+                        f"  |  FP32 : {_GPU_CATALOG[_GPU_NAMES[0]].get('tflops', 0):.1f} TFLOPS"
+                    ),
                     color=(160, 220, 255),
                 )
 
@@ -490,30 +524,19 @@ class FactoryNode:
                 # Read-only display of editor-scanned AI nodes
                 dpg.add_text(
                     tag=tag + ':AINodesList',
-                    default_value='(cliquer Scan Éditeur)',
+                    default_value='(cliquer Scan & Calculer)',
                     color=(180, 180, 180),
                     wrap=220,
                 )
 
                 dpg.add_spacer(height=4)
 
-                # Scan editor button
+                # Combined Scan + Compute button
                 dpg.add_button(
-                    tag=tag + ':BtnScan',
-                    label='  🔍  Scan Éditeur  ',
+                    tag=tag + ':BtnScanCompute',
+                    label='  🔍▶  Scan & Calculer  ',
                     width=220,
-                    callback=_callback_scan,
-                    user_data=node,
-                )
-
-                dpg.add_spacer(height=4)
-
-                # Compute button
-                dpg.add_button(
-                    tag=tag + ':BtnCompute',
-                    label='  ▶  Calculer  ',
-                    width=220,
-                    callback=_callback_compute,
+                    callback=_callback_scan_and_compute,
                     user_data=node,
                 )
 
@@ -522,8 +545,31 @@ class FactoryNode:
                 # Status / summary text
                 dpg.add_text(
                     tag=tag + ':Status',
-                    default_value='Scanner l\'éditeur puis cliquer Calculer.',
+                    default_value='Cliquer Scan & Calculer pour analyser.',
                     color=(180, 180, 180),
+                    wrap=220,
+                )
+
+                dpg.add_spacer(height=6)
+                dpg.add_text('-- GFLOPs modèles (indicatif) --', color=(200, 200, 200))
+                dpg.add_text(
+                    _build_gflops_info(),
+                    color=(170, 210, 170),
+                    wrap=220,
+                )
+
+                dpg.add_spacer(height=6)
+                dpg.add_text('-- NVDEC & No-Copy --', color=(200, 200, 200))
+                dpg.add_text(
+                    "NVDEC : décodeur HW H.264/HEVC/AV1\n"
+                    "intégré au GPU (Ampere+ : 2 moteurs).\n"
+                    "Offloade le CPU du décodage vidéo.\n"
+                    "\n"
+                    "No-Copy (zero-copy) : avec DeepStream\n"
+                    "ou GStreamer + nvvideoconvert, les\n"
+                    "frames restent en VRAM (NvBufSurface)\n"
+                    "→ aucun transfert PCIe CPU↔GPU.",
+                    color=(210, 200, 170),
                     wrap=220,
                 )
 
@@ -544,37 +590,48 @@ class FactoryNode:
 # ---------------------------------------------------------------------------
 
 def _callback_gpu_change(sender, app_data, user_data):
-    """Update the VRAM label when the GPU combo changes."""
+    """Update the VRAM/TFLOPS label when the GPU combo changes."""
     tag = user_data
     gpu_name = app_data or _GPU_NAMES[0]
-    vram = _GPU_CATALOG.get(gpu_name, {}).get("vram_gb", 0)
+    info = _GPU_CATALOG.get(gpu_name, {})
+    vram = info.get("vram_gb", 0)
+    tflops = info.get("tflops", 0.0)
+    label = (
+        f"VRAM : {vram} GB  |  FP32 : {tflops:.1f} TFLOPS"
+        if tflops > 0 else
+        f"VRAM : {vram} GB  (CPU only)"
+    )
     try:
-        dpg.set_value(tag + ':VRAMLabel', f"VRAM : {vram} GB")
+        dpg.set_value(tag + ':VRAMLabel', label)
     except Exception:
         pass
 
 
-def _callback_scan(sender, data, user_data):
+def _callback_scan_and_compute(sender, data, user_data):
     node = user_data
-    threading.Thread(target=_do_scan, args=(node,), daemon=True).start()
+    threading.Thread(target=_do_scan_and_compute, args=(node,), daemon=True).start()
 
 
-def _do_scan(node):
+def _do_scan_and_compute(node):
     tag = node.tag_node_name
     try:
+        # ---- Scan ----
         scan = _scan_editor_nodes()
         ai_tags = [t for _, t in scan["ai_nodes"]]
         n_streams = scan["n_streams"]
         n_vp = scan["n_vision_proc"]
         n_ap = scan["n_audio_proc"]
 
-        # Update streams field with detected count
-        dpg_set_value(tag + ':Streams', n_streams)
+        # Update streams read-only display
+        dpg_set_value(
+            tag + ':StreamsDisplay',
+            f'Flux entrants : {n_streams}',
+        )
 
         # Build AI nodes display
         if ai_tags:
             counts = Counter(ai_tags)
-            lines = [f"  • {tag_} ×{cnt}" for tag_, cnt in counts.items()]
+            lines = [f"  • {t} ×{cnt}" for t, cnt in counts.items()]
             summary = "\n".join(lines)
         else:
             summary = "(aucun modèle AI détecté)"
@@ -588,69 +645,39 @@ def _do_scan(node):
             summary += "\n" + "\n".join(extra)
 
         dpg_set_value(tag + ':AINodesList', summary)
-        dpg_set_value(tag + ':Status',
-                      f"Scan OK — {len(ai_tags)} modèle(s), "
-                      f"{n_streams} flux, "
-                      f"{n_vp} VisionProc, {n_ap} AudioProc")
-    except Exception as exc:
-        try:
-            dpg_set_value(tag + ':Status', f'Erreur scan: {exc}')
-        except Exception:
-            pass
 
-
-def _callback_compute(sender, data, user_data):
-    node = user_data
-    threading.Thread(target=_do_compute, args=(node,), daemon=True).start()
-
-
-def _do_compute(node):
-    tag = node.tag_node_name
-    try:
+        # ---- Compute ----
         runtime = dpg_get_value(tag + ':Runtime') or _RUNTIMES[0]
-        n_streams = max(0, int(dpg_get_value(tag + ':Streams') or 0))
         fps = max(1, int(dpg_get_value(tag + ':FPS') or 30))
         avail_cpu = max(1.0, float(dpg_get_value(tag + ':AvailCPU') or 8))
         avail_ram = _ram_slot_to_gb(dpg_get_value(tag + ':AvailRAM') or _RAM_DEFAULT)
 
-        # GPU selection → VRAM
         gpu_name = dpg_get_value(tag + ':GPU') or _GPU_NAMES[0]
         avail_vram = float(_GPU_CATALOG.get(gpu_name, {}).get("vram_gb", 0))
 
-        # Retrieve scanned AI node tags from the display text
-        # We re-scan the editor for accurate data
-        scan = _scan_editor_nodes()
-        ai_tags = [t for _, t in scan["ai_nodes"]]
-        n_vision_proc = scan["n_vision_proc"]
-        n_audio_proc = scan["n_audio_proc"]
-
         needs = _compute_needs(
             runtime, n_streams, fps, ai_tags,
-            n_vision_proc=n_vision_proc,
-            n_audio_proc=n_audio_proc,
+            n_vision_proc=n_vp,
+            n_audio_proc=n_ap,
         )
         need_cpu  = needs["cpu"]
         need_ram  = needs["ram_gb"]
         need_vram = needs["vram_gb"]
 
-        # Round recommended values up to nearest 8 GB slot
         rec_ram_slot  = _ceil8(need_ram)
         rec_vram_slot = _ceil8(need_vram)
 
-        # Render chart
         chart_img = _render_chart(
             avail_cpu, avail_ram, avail_vram,
             need_cpu, need_ram, need_vram,
         )
 
-        # Update texture
         tex_data = node.convert_cv_to_dpg(chart_img, _CHART_W, _CHART_H)
         try:
             dpg.set_value(node.tag_chart_texture, tex_data)
         except Exception:
             pass
 
-        # Build status summary
         warnings = []
         if need_cpu > avail_cpu:
             warnings.append(f"⚠ CPU : besoin {need_cpu:.1f} cores > {avail_cpu:.0f}")
@@ -661,9 +688,7 @@ def _do_compute(node):
             )
         if need_vram > avail_vram:
             if avail_vram == 0:
-                warnings.append(
-                    f"⚠ VRAM : besoin ≥{rec_vram_slot} GB mais CPU only"
-                )
+                warnings.append(f"⚠ VRAM : besoin ≥{rec_vram_slot} GB mais CPU only")
             else:
                 warnings.append(
                     f"⚠ VRAM : besoin ≥{rec_vram_slot} GB (calculé {need_vram:.1f} GB) "
@@ -725,9 +750,8 @@ class _Node(Node):
         return {
             "ver": self._ver,
             "pos": pos,
-            "resolution": dpg_get_value(tag + ':Resolution') or _RESOLUTIONS[1],
+            "resolution": dpg_get_value(tag + ':Resolution') or _RESOLUTION_DEFAULT,
             "runtime": dpg_get_value(tag + ':Runtime') or _RUNTIMES[0],
-            "streams": int(dpg_get_value(tag + ':Streams') or 0),
             "fps": int(dpg_get_value(tag + ':FPS') or 30),
             "avail_cpu": int(dpg_get_value(tag + ':AvailCPU') or 8),
             "avail_ram": dpg_get_value(tag + ':AvailRAM') or _RAM_DEFAULT,
@@ -740,11 +764,12 @@ class _Node(Node):
         dpg.set_item_pos(tag, pos)
 
         try:
-            dpg.set_value(tag + ':Resolution',
-                          setting_dict.get("resolution", _RESOLUTIONS[1]))
+            res_val = setting_dict.get("resolution", _RESOLUTION_DEFAULT)
+            if res_val not in _RESOLUTIONS:
+                res_val = _RESOLUTION_DEFAULT
+            dpg.set_value(tag + ':Resolution', res_val)
             dpg.set_value(tag + ':Runtime',
                           setting_dict.get("runtime", _RUNTIMES[0]))
-            dpg.set_value(tag + ':Streams', setting_dict.get("streams", 0))
             dpg.set_value(tag + ':FPS', setting_dict.get("fps", 30))
             dpg.set_value(tag + ':AvailCPU', setting_dict.get("avail_cpu", 8))
 
@@ -761,8 +786,15 @@ class _Node(Node):
             if gpu_val not in _GPU_CATALOG:
                 gpu_val = _GPU_NAMES[0]
             dpg.set_value(tag + ':GPU', gpu_val)
-            vram = _GPU_CATALOG[gpu_val]["vram_gb"]
-            dpg.set_value(tag + ':VRAMLabel', f"VRAM : {vram} GB")
+            info = _GPU_CATALOG[gpu_val]
+            vram = info["vram_gb"]
+            tflops = info.get("tflops", 0.0)
+            label = (
+                f"VRAM : {vram} GB  |  FP32 : {tflops:.1f} TFLOPS"
+                if tflops > 0 else
+                f"VRAM : {vram} GB  (CPU only)"
+            )
+            dpg.set_value(tag + ':VRAMLabel', label)
 
         except Exception:
             pass
