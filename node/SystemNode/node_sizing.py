@@ -161,7 +161,7 @@ _MODEL_GFLOPS = {
     "YOLOv5m":  49.0,
     "YOLOv5l":  109.1,
     "YOLOv5x":  205.7,
-    "NanoDet":  0.72,   # NanoDet-Plus-m @ 416×416
+    "NanoDet":  0.72,   # NanoDet-Plus-m @ 416×416 (not 640 – lighter model)
     "YAMNet":   1.0,    # audio, ~1 GFLOP
     "Custom-S": 30.0,
     "Custom-M": 80.0,
@@ -185,6 +185,7 @@ _RESOLUTIONS = [
     "FHD (1920×1080)",
     "4K  (3840×2160)",
 ]
+_RESOLUTION_DEFAULT = "HD  (1280×720)"
 
 # RAM slots disponibles (créneaux de 8 GB)
 _RAM_SLOTS = [f"{n} GB" for n in [8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512]]
@@ -439,7 +440,7 @@ class FactoryNode:
                     tag=tag + ':Resolution',
                     label='Résolution',
                     items=_RESOLUTIONS,
-                    default_value=_RESOLUTIONS[3],  # HD
+                    default_value=_RESOLUTION_DEFAULT,  # HD
                     width=220,
                 )
 
@@ -749,7 +750,7 @@ class _Node(Node):
         return {
             "ver": self._ver,
             "pos": pos,
-            "resolution": dpg_get_value(tag + ':Resolution') or _RESOLUTIONS[3],
+            "resolution": dpg_get_value(tag + ':Resolution') or _RESOLUTION_DEFAULT,
             "runtime": dpg_get_value(tag + ':Runtime') or _RUNTIMES[0],
             "fps": int(dpg_get_value(tag + ':FPS') or 30),
             "avail_cpu": int(dpg_get_value(tag + ':AvailCPU') or 8),
@@ -763,9 +764,9 @@ class _Node(Node):
         dpg.set_item_pos(tag, pos)
 
         try:
-            res_val = setting_dict.get("resolution", _RESOLUTIONS[3])
+            res_val = setting_dict.get("resolution", _RESOLUTION_DEFAULT)
             if res_val not in _RESOLUTIONS:
-                res_val = _RESOLUTIONS[3]
+                res_val = _RESOLUTION_DEFAULT
             dpg.set_value(tag + ':Resolution', res_val)
             dpg.set_value(tag + ':Runtime',
                           setting_dict.get("runtime", _RUNTIMES[0]))
