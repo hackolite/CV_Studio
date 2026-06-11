@@ -371,6 +371,7 @@ def main():
             "Visual": "VisualNode",
             "Video": "VideoNode",
             "System": "SystemNode",
+            "Map": "MapNode",
         }
     )
 

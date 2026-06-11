@@ -28,8 +28,8 @@ OVERLAY = ["DrawInformation", "PutText"]
 VIZ = ["Heatmap", "ObjChart", "Visual", "Map", "WordCloud"]
 TIMESERIES = ["PositionPrediction"]
 NLP_MODEL = ["TinyBertVigilance"]
-SYSTEM = ["SyncQueue", "Scan", "SystemResource", "Sizing"]
-
+SYSTEM = ["SyncQueue", "Scan", "SystemResource", "Sizing", "Settings"]
+MAP    = ["CopernicusMap"]
 
 
 STYLE = {
@@ -96,6 +96,10 @@ STYLE = {
     "System": {
         "names": SYSTEM,
         "style": [(192, 192, 192, 255)]  # silver gray pastel
+    },
+    "Map": {
+        "names": MAP,
+        "style": [(135, 206, 235, 255)]  # sky blue pastel
     }
 }
 
