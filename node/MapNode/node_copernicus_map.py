@@ -895,9 +895,9 @@ class _Node(Node):
                             pass
                 break
 
-        # ── Auto-fetch when no map data is available or the centre has shifted ──
+        # ── Auto-fetch when no map data is available or the center has shifted ──
         # Trigger when: no fetch is in progress, and either no frame has been
-        # rendered yet (first arrival) or the centre has shifted by at least half
+        # rendered yet (first arrival) or the center has shifted by at least half
         # a tile (~500 m at the equator).  Uses the default Paris coordinates
         # until an explicit JSON input overrides them.
         # Thread-safety note: _current_lat/_current_lon are only written here in
