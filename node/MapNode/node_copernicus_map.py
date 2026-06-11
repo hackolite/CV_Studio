@@ -159,7 +159,10 @@ class _TokenManager:
             },
             timeout=20,
         )
-        resp.raise_for_status()
+        if not resp.ok:
+            raise RuntimeError(
+                f"Copernicus auth failed ({resp.status_code}): {resp.text[:300]}"
+            )
         data         = resp.json()
         self._token  = data["access_token"]
         self._expiry = time.time() + float(data.get("expires_in", 3600))
@@ -400,6 +403,13 @@ class FactoryNode:
             ):
                 dpg.add_image(tag_out_img_val)
 
+            # ── Coordinate input (from CoordinateExample or similar) ───────
+            with dpg.node_attribute(
+                tag=tag + ":JSON:Input01",
+                attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_text("Coordinates (optional)", color=[180, 180, 180])
+
             # ── Source / area settings ─────────────────────────────────────
             with dpg.node_attribute(
                 tag=tag + ":SettingsStatic",
@@ -538,6 +548,8 @@ class _Node(Node):
     _ver = "0.0.1"
     node_label = "CopernicusMap"
     node_tag   = "CopernicusMap"
+
+    TYPE_JSON = "JSON"
 
     _opencv_setting_dict = None
 
@@ -798,6 +810,40 @@ class _Node(Node):
         node_result_dict,
         node_audio_dict,
     ):
+        tag_node = str(node_id) + ":" + self.node_tag
+
+        # ── Read coordinates from a connected JSON source (e.g. CoordinateExample)
+        for conn in connection_list:
+            conn_type = conn[0].split(":")[2] if len(conn[0].split(":")) > 2 else ""
+            if conn_type == self.TYPE_JSON:
+                src_key = ":".join(conn[0].split(":")[:2])
+                src_result = node_result_dict.get(src_key, {})
+                coords = None
+                if isinstance(src_result, dict):
+                    coords = src_result.get("json")
+                elif isinstance(src_result, list):
+                    coords = src_result
+                if isinstance(coords, list) and coords:
+                    lats = []
+                    lons = []
+                    for item in coords:
+                        if not isinstance(item, dict):
+                            continue
+                        lat_val = item.get("latitude") or item.get("lat")
+                        lon_val = item.get("longitude") or item.get("lon")
+                        if lat_val is not None and lon_val is not None:
+                            lats.append(float(lat_val))
+                            lons.append(float(lon_val))
+                    if lats and lons:
+                        centroid_lat = sum(lats) / len(lats)
+                        centroid_lon = sum(lons) / len(lons)
+                        try:
+                            dpg_set_value(tag_node + ":Lat", centroid_lat)
+                            dpg_set_value(tag_node + ":Lon", centroid_lon)
+                        except Exception:
+                            pass
+                break
+
         with self._frame_lock:
             frame = self._latest_frame
             meta  = dict(self._latest_meta)
@@ -884,7 +930,10 @@ def _fetch_tile_with_params(cdse_id: str, bbox: list, evalscript: str,
     }
 
     resp = _requests.post(_PROCESS_URL, json=payload, headers=headers, timeout=timeout)
-    resp.raise_for_status()
+    if not resp.ok:
+        raise RuntimeError(
+            f"CDSE Process API error ({resp.status_code}): {resp.text[:300]}"
+        )
 
     if _HAS_TIFFFILE:
         import io
