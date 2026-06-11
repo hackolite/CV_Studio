@@ -16,6 +16,12 @@ Space Ecosystem (CDSE) Process API, with:
     – once the first (non-default) position is defined the 8 km² beside it
       (a 3×3 neighbourhood) are prefetched in the background
   • Colormap rendering with per-formula default (NDVI → RdYlGn, etc.)
+  • "Visible spectrum only" checkbox: restricts band options to the visible
+    spectrum (B02/B03/B04) and grays out band slots set to other wavelengths
+  • "True color (naked eye)" checkbox: renders a natural-color RGB composite
+    (gain 2.5 × B04/B03/B02, the standard Sentinel-2 true-color
+    visualisation) so the map looks like the area seen with the naked eye —
+    formula and colormap are bypassed
   • Maximum zoom: the display is cropped / rendered at full resolution with no
     unnecessary down-sampling.
 
@@ -100,10 +106,27 @@ _S2_BANDS = [
 ]
 _S1_BANDS = ["VV", "VH"]
 
+# Sentinel-2 bands within the visible spectrum (~380-700 nm):
+#   B02 (blue ≈490 nm), B03 (green ≈560 nm), B04 (red ≈665 nm)
+_S2_VISIBLE_BANDS = ["B02", "B03", "B04"]
+# Sentinel-1 is radar (C-band microwave) — nothing in the visible spectrum
+_S1_VISIBLE_BANDS = []
+
+# True-color ("natural", naked-eye-like) rendering: RGB = (B04, B03, B02)
+# boosted by the conventional Sentinel-2 brightness gain so reflectances
+# (typically 0–0.4) fill the display range, like the standard
+# SentinelHub TRUE-COLOR visualisation.
+_TRUE_COLOR_RGB_BANDS = ["B04", "B03", "B02"]   # red, green, blue
+_TRUE_COLOR_GAIN  = 2.5
+_TRUE_COLOR_LABEL = "True color (B04/B03/B02)"
+
 _SOURCES = {
-    "Sentinel-2 L2A": {"cdse_id": "sentinel-2-l2a",  "bands": _S2_BANDS},
-    "Sentinel-2 L1C": {"cdse_id": "sentinel-2-l1c",  "bands": _S2_BANDS},
-    "Sentinel-1 GRD": {"cdse_id": "sentinel-1-grd",   "bands": _S1_BANDS},
+    "Sentinel-2 L2A": {"cdse_id": "sentinel-2-l2a",  "bands": _S2_BANDS,
+                       "visible_bands": _S2_VISIBLE_BANDS},
+    "Sentinel-2 L1C": {"cdse_id": "sentinel-2-l1c",  "bands": _S2_BANDS,
+                       "visible_bands": _S2_VISIBLE_BANDS},
+    "Sentinel-1 GRD": {"cdse_id": "sentinel-1-grd",   "bands": _S1_BANDS,
+                       "visible_bands": _S1_VISIBLE_BANDS},
 }
 _SOURCE_NAMES = list(_SOURCES.keys())
 
@@ -239,8 +262,11 @@ def _load_tile(key: str):
     if os.path.exists(p):
         try:
             arr = np.load(p, allow_pickle=False)
-            # Validate shape and dtype to reject corrupted cache files
-            if arr.ndim != 2 or arr.shape != (_TILE_PX, _TILE_PX):
+            # Validate shape and dtype to reject corrupted cache files.
+            # Tiles are either single-band (H, W) or true-color RGB (H, W, 3).
+            valid_2d = arr.ndim == 2 and arr.shape == (_TILE_PX, _TILE_PX)
+            valid_3d = arr.ndim == 3 and arr.shape == (_TILE_PX, _TILE_PX, 3)
+            if not (valid_2d or valid_3d):
                 return None
             if arr.dtype != np.float32:
                 arr = arr.astype(np.float32)
@@ -325,6 +351,35 @@ function setup() {{
 function evaluatePixel(sample) {{
   {assignments}
   return [{clamp}];
+}}
+"""
+
+
+
+
+def _build_true_color_evalscript(use_float32: bool = True) -> str:
+    """Return a SentinelHub evalscript producing a natural-color RGB image.
+
+    Outputs 3 bands ``[R, G, B] = gain * (B04, B03, B02)`` clamped to
+    ``[0, 1]`` so the rendering matches what the area looks like to the
+    naked eye (standard Sentinel-2 true-color visualisation, gain 2.5).
+    """
+    sample_type = "FLOAT32" if use_float32 else "AUTO"
+    band_list_js = ", ".join(f'"{b}"' for b in _TRUE_COLOR_RGB_BANDS)
+    channels = ",\n          ".join(
+        f"Math.max(0.0, Math.min(1.0, {_TRUE_COLOR_GAIN} * sample.{b}))"
+        for b in _TRUE_COLOR_RGB_BANDS
+    )
+    return f"""\
+//VERSION=3
+function setup() {{
+  return {{
+    input: [{{bands: [{band_list_js}]}}],
+    output: {{bands: 3, sampleType: "{sample_type}"}}
+  }};
+}}
+function evaluatePixel(sample) {{
+  return [{channels}];
 }}
 """
 
@@ -513,21 +568,45 @@ def _draw_gps_overlay(view: np.ndarray, marker_xy: tuple,
 # Display assembly helper (shared by the cache-hit path and _fetch_worker)
 # ---------------------------------------------------------------------------
 
+def _true_color_to_bgr(composite: np.ndarray) -> np.ndarray:
+    """Convert a 3-channel RGB float composite in ``[0, 1]`` to BGR uint8.
+
+    NaN areas (missing tiles) are rendered black.  No colormap is applied:
+    the channels already are the gained visible-spectrum reflectances, so
+    the result looks like the area seen with the naked eye.
+    """
+    rgb = np.clip(np.nan_to_num(composite, nan=0.0), 0.0, 1.0)
+    return (rgb[..., ::-1] * 255).astype(np.uint8)   # RGB → BGR
+
+
+def _composite_to_bgr(composite: np.ndarray, params: dict) -> np.ndarray:
+    """Render *composite* to a BGR uint8 image: true-color RGB composites
+    (3 channels) are converted directly, single-band composites go through
+    the colormap."""
+    if composite.ndim == 3:
+        return _true_color_to_bgr(composite)
+    cmap = _pick_cmap(params.get("cmap") or "", params.get("formula", ""))
+    return _apply_colormap(composite, cmap)
+
+
 def _assemble_display(composite: np.ndarray, params: dict,
                       display_w: int, display_h: int) -> np.ndarray:
-    """Apply colormap, legend overlay, and resize to produce a BGR display image.
+    """Apply colormap (or direct RGB for true color), legend overlay, and
+    resize to produce a BGR display image.
 
     Used by both the synchronous cache-hit path in ``update()`` and the
     background ``_fetch_worker`` so the two code paths produce identical output.
     """
-    cmap = _pick_cmap(params.get("cmap") or "", params.get("formula", ""))
-    bgr_img = _apply_colormap(composite, cmap)
-    finite  = composite[np.isfinite(composite)]
-    if finite.size > 0:
-        vmin, vmax = float(finite.min()), float(finite.max())
-        legend_txt = f"{params.get('formula', '')}  [{vmin:.3f}, {vmax:.3f}]"
+    bgr_img = _composite_to_bgr(composite, params)
+    if composite.ndim == 3:
+        legend_txt = _TRUE_COLOR_LABEL
     else:
-        legend_txt = params.get("formula", "")
+        finite = composite[np.isfinite(composite)]
+        if finite.size > 0:
+            vmin, vmax = float(finite.min()), float(finite.max())
+            legend_txt = f"{params.get('formula', '')}  [{vmin:.3f}, {vmax:.3f}]"
+        else:
+            legend_txt = params.get("formula", "")
     bgr_img = _draw_legend(bgr_img, legend_txt)
     return cv2.resize(bgr_img, (display_w, display_h),
                       interpolation=cv2.INTER_NEAREST)
@@ -658,6 +737,20 @@ class FactoryNode:
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_text("── Bands ──")
+                dpg.add_checkbox(
+                    tag=tag + ":VisibleOnly",
+                    label="Visible spectrum only",
+                    default_value=False,
+                    callback=node._on_visible_only_toggle,
+                    user_data=tag,
+                )
+                dpg.add_checkbox(
+                    tag=tag + ":TrueColor",
+                    label="True color (naked eye)",
+                    default_value=False,
+                    callback=node._on_true_color_toggle,
+                    user_data=tag,
+                )
                 dpg.add_button(
                     tag=tag + ":AddBandBtn",
                     label="+ Add band slot",
@@ -773,6 +866,75 @@ class _Node(Node):
 
     # ── Band-slot management ────────────────────────────────────────────────
 
+    def _visible_only(self, tag_node: str) -> bool:
+        """Return True when the 'Visible spectrum only' checkbox is checked."""
+        try:
+            return bool(dpg_get_value(tag_node + ":VisibleOnly"))
+        except Exception:
+            return False
+
+    def _true_color(self, tag_node: str) -> bool:
+        """Return True when the 'True color (naked eye)' checkbox is checked
+        and the current source provides the three visible RGB bands
+        (Sentinel-2 only — Sentinel-1 radar has no visible bands)."""
+        try:
+            checked = bool(dpg_get_value(tag_node + ":TrueColor"))
+        except Exception:
+            return False
+        if not checked:
+            return False
+        _, visible = self._source_band_lists(tag_node)
+        return all(b in visible for b in _TRUE_COLOR_RGB_BANDS)
+
+    def _on_true_color_toggle(self, sender, app_data, user_data):
+        """Checkbox callback: in true-color mode the formula and colormap are
+        not used (RGB is rendered directly), so gray them out."""
+        tag_node = user_data
+        enabled = not bool(app_data)
+        for item in (tag_node + ":Formula", tag_node + ":Colormap"):
+            try:
+                dpg.configure_item(item, enabled=enabled)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _source_band_lists(tag_node: str) -> tuple:
+        """Return ``(all_bands, visible_bands)`` for the current source."""
+        source_name = dpg_get_value(tag_node + ":Source") or _SOURCE_NAMES[0]
+        src = _SOURCES.get(source_name, _SOURCES[_SOURCE_NAMES[0]])
+        return src["bands"], src.get("visible_bands", [])
+
+    def _on_visible_only_toggle(self, sender, app_data, user_data):
+        """Checkbox callback: gray out band options outside the visible
+        spectrum (or restore the full band list when unchecked)."""
+        tag_node = user_data
+        self._refresh_band_slot_grayout(tag_node)
+
+    def _refresh_band_slot_grayout(self, tag_node: str):
+        """Apply the visible-only filter to every band-slot combo.
+
+        When the filter is on, each combo only proposes visible-spectrum
+        bands; a combo whose current selection is a non-visible wavelength is
+        disabled (grayed out).  When the filter is off, the full band list is
+        restored and every combo is re-enabled.
+        """
+        visible_only = self._visible_only(tag_node)
+        bands, visible = self._source_band_lists(tag_node)
+        for _, combo_tag in self._band_slots:
+            try:
+                value = dpg_get_value(combo_tag)
+                if visible_only:
+                    in_visible = value in visible
+                    dpg.configure_item(
+                        combo_tag,
+                        items=visible,
+                        enabled=in_visible and bool(visible),
+                    )
+                else:
+                    dpg.configure_item(combo_tag, items=bands, enabled=True)
+            except Exception:
+                pass
+
     def _add_band_slot_internal(self, tag_node: str, default_band: str = "B04"):
         """Add a band slot to the node UI (called at init time or from button)."""
         self._band_slot_ctr += 1
@@ -782,8 +944,9 @@ class _Node(Node):
         slot_del  = tag_node + f":BandDel{idx}"
 
         # Determine the source to get band list
-        source_name = dpg_get_value(tag_node + ":Source") or _SOURCE_NAMES[0]
-        bands = _SOURCES.get(source_name, _SOURCES[_SOURCE_NAMES[0]])["bands"]
+        bands, visible = self._source_band_lists(tag_node)
+        if self._visible_only(tag_node) and visible:
+            bands = visible
 
         # The node attribute is inserted above the formula section
         # We rely on DPG's parent ordering — attributes are appended in order
@@ -796,7 +959,8 @@ class _Node(Node):
                 dpg.add_combo(
                     tag=slot_combo,
                     items=bands,
-                    default_value=default_band if default_band in bands else bands[0],
+                    default_value=(default_band if default_band in bands
+                                   else (bands[0] if bands else "")),
                     width=100,
                     label=f"B{idx}",
                 )
@@ -813,9 +977,10 @@ class _Node(Node):
     def _add_band_slot(self, sender, app_data, user_data):
         """Button callback: add a new band slot."""
         tag_node = user_data
-        source_name = dpg_get_value(tag_node + ":Source") or _SOURCE_NAMES[0]
-        bands = _SOURCES.get(source_name, _SOURCES[_SOURCE_NAMES[0]])["bands"]
-        default = bands[0]
+        bands, visible = self._source_band_lists(tag_node)
+        if self._visible_only(tag_node) and visible:
+            bands = visible
+        default = bands[0] if bands else ""
         self._add_band_slot_internal(tag_node, default)
 
     def _remove_band_slot(self, sender, app_data, user_data):
@@ -831,12 +996,18 @@ class _Node(Node):
             pass
 
     def _get_slot_bands(self, tag_node: str) -> list:
-        """Return the list of bands currently selected in the slots."""
+        """Return the list of bands currently selected in the slots.
+
+        When the 'Visible spectrum only' option is checked, bands outside the
+        visible spectrum (grayed-out slots) are excluded.
+        """
+        visible_only = self._visible_only(tag_node)
+        _, visible = self._source_band_lists(tag_node)
         result = []
         for _, combo_tag in self._band_slots:
             try:
                 v = dpg_get_value(combo_tag)
-                if v:
+                if v and (not visible_only or v in visible):
                     result.append(v)
             except Exception:
                 pass
@@ -876,7 +1047,9 @@ class _Node(Node):
         n_lon_tiles = t_lon_max - t_lon_min + 1
 
         composite = np.full(
-            (n_lat_tiles * _TILE_PX, n_lon_tiles * _TILE_PX),
+            (n_lat_tiles * _TILE_PX, n_lon_tiles * _TILE_PX, 3)
+            if params.get("true_color")
+            else (n_lat_tiles * _TILE_PX, n_lon_tiles * _TILE_PX),
             np.nan, dtype=np.float32,
         )
 
@@ -1008,9 +1181,26 @@ class _Node(Node):
         src_info    = _SOURCES.get(source_name, _SOURCES[_SOURCE_NAMES[0]])
         cdse_id     = src_info["cdse_id"]
         avail_bands = src_info["bands"]
+        true_color  = self._true_color(tag_node)
         extra_bands = _extract_bands_from_formula(formula, avail_bands)
-        evalscript  = _build_evalscript(formula, extra_bands, slot_bands,
-                                        use_float32=_HAS_TIFFFILE)
+        if self._visible_only(tag_node):
+            visible = src_info.get("visible_bands", [])
+            avail_bands = visible
+            if not slot_bands:
+                slot_bands = list(visible)
+            # Drop the formula when it references non-visible wavelengths so
+            # the evalscript never pulls bands outside the visible spectrum.
+            if any(b not in visible for b in extra_bands):
+                formula = ""
+                extra_bands = []
+        if true_color:
+            # Natural-color RGB rendering: bypass formula / band slots and
+            # request the gained visible RGB composite directly.
+            formula    = _TRUE_COLOR_LABEL
+            evalscript = _build_true_color_evalscript(use_float32=_HAS_TIFFFILE)
+        else:
+            evalscript = _build_evalscript(formula, extra_bands, slot_bands,
+                                           use_float32=_HAS_TIFFFILE)
         es_hash     = hashlib.md5(evalscript.encode()).hexdigest()[:8]
 
         return {
@@ -1024,6 +1214,7 @@ class _Node(Node):
             "cloud":       cloud,
             "formula":     formula,
             "cmap":        cmap,
+            "true_color":  true_color,
             "evalscript":  evalscript,
             "es_hash":     es_hash,
         }
@@ -1058,9 +1249,11 @@ class _Node(Node):
             n_lat_tiles = t_lat_max - t_lat_min + 1
             n_lon_tiles = t_lon_max - t_lon_min + 1
 
-            # Prepare the composite array
+            # Prepare the composite array (3-channel RGB in true-color mode)
             composite = np.full(
-                (n_lat_tiles * _TILE_PX, n_lon_tiles * _TILE_PX),
+                (n_lat_tiles * _TILE_PX, n_lon_tiles * _TILE_PX, 3)
+                if params.get("true_color")
+                else (n_lat_tiles * _TILE_PX, n_lon_tiles * _TILE_PX),
                 np.nan, dtype=np.float32,
             )
 
@@ -1169,11 +1362,12 @@ class _Node(Node):
             return None
 
         # Colormap the full composite once per (composite, cmap) pair — the
-        # per-frame work is then only a crop + resize + overlay.
+        # per-frame work is then only a crop + resize + overlay.  True-color
+        # RGB composites are converted directly without any colormap.
         cmap = _pick_cmap(params.get("cmap") or "", params.get("formula", ""))
         sig  = (id(composite), cmap)
         if self._base_bgr is None or self._base_sig != sig:
-            self._base_bgr = _apply_colormap(composite, cmap)
+            self._base_bgr = _composite_to_bgr(composite, params)
             self._base_sig = sig
 
         lat, lon = self._current_lat, self._current_lon
@@ -1199,12 +1393,15 @@ class _Node(Node):
             trace.append(((tx - x0) * sx, (ty - y0) * sy))
         disp = _draw_gps_overlay(disp, marker, trace)
 
-        finite = composite[np.isfinite(composite)]
-        if finite.size > 0:
-            legend = (f"{params.get('formula', '')}  "
-                      f"[{float(finite.min()):.3f}, {float(finite.max()):.3f}]")
+        if composite.ndim == 3:
+            legend = _TRUE_COLOR_LABEL
         else:
-            legend = params.get("formula", "")
+            finite = composite[np.isfinite(composite)]
+            if finite.size > 0:
+                legend = (f"{params.get('formula', '')}  "
+                          f"[{float(finite.min()):.3f}, {float(finite.max()):.3f}]")
+            else:
+                legend = params.get("formula", "")
         return _draw_legend(disp, legend)
 
     # ── Node lifecycle ──────────────────────────────────────────────────────
@@ -1400,6 +1597,8 @@ def _paste_tile(composite: np.ndarray, tile: np.ndarray,
     ``t_lon_min`` is the tile-index of the westernmost column.
     """
     # Invert latitude axis: higher tile_lat (north) maps to lower row (top).
+    if tile.ndim != composite.ndim:
+        return  # single-band tile vs RGB composite (or vice versa) — skip
     row = (t_lat_max - tile_lat) * _TILE_PX
     col = (tile_lon  - t_lon_min) * _TILE_PX
     h, w = tile.shape[:2]
@@ -1470,14 +1669,19 @@ def _fetch_tile_with_params(cdse_id: str, bbox: list, evalscript: str,
         import io
         arr = _tifffile.imread(io.BytesIO(resp.content))
         arr = arr.squeeze().astype(np.float32)
+        # True-color responses are (H, W, 3) in evalscript order = RGB.
     else:
         img_arr = np.frombuffer(resp.content, dtype=np.uint8)
-        img = cv2.imdecode(img_arr, cv2.IMREAD_GRAYSCALE)
+        img = cv2.imdecode(img_arr, cv2.IMREAD_UNCHANGED)
         if img is None:
             print(f"[CopernicusMap] PNG decode failed. Response size={len(resp.content)} bytes")
             print(f"[CopernicusMap] First 200 bytes: {resp.content[:200]}")
             raise ValueError("Failed to decode PNG response from CDSE.")
-        arr = img.astype(np.float32) / 255.0
+        if img.ndim == 3:
+            # cv2 decodes color PNGs as BGR(A) — restore the evalscript RGB order
+            arr = img[:, :, 2::-1].astype(np.float32) / 255.0
+        else:
+            arr = img.astype(np.float32) / 255.0
 
     return arr
 

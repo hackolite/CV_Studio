@@ -608,3 +608,232 @@ def test_render_live_view_after_cache_hit(M):
     node._current_lat = params["lat"] + 3e-4
     v2 = node._render_live_view(params)
     assert (v1 != v2).any()
+
+
+# ── Visible-spectrum-only option ──────────────────────────────────────────────
+
+def test_visible_bands_constants(M):
+    assert M._S2_VISIBLE_BANDS == ["B02", "B03", "B04"]
+    assert M._SOURCES["Sentinel-2 L2A"]["visible_bands"] == M._S2_VISIBLE_BANDS
+    assert M._SOURCES["Sentinel-2 L1C"]["visible_bands"] == M._S2_VISIBLE_BANDS
+    # Sentinel-1 is radar: nothing in the visible spectrum
+    assert M._SOURCES["Sentinel-1 GRD"]["visible_bands"] == []
+
+
+def test_get_slot_bands_filters_non_visible(M):
+    node = _make_node(M)
+    node._band_slots = [("a1", "c1"), ("a2", "c2"), ("a3", "c3")]
+    vals = {
+        "n:VisibleOnly": True, "n:Source": "Sentinel-2 L2A",
+        "c1": "B04", "c2": "B08", "c3": "B02",
+    }
+    with mock.patch.object(M, "dpg_get_value", side_effect=vals.get):
+        assert node._get_slot_bands("n") == ["B04", "B02"]
+
+
+def test_get_slot_bands_unfiltered_when_unchecked(M):
+    node = _make_node(M)
+    node._band_slots = [("a1", "c1"), ("a2", "c2")]
+    vals = {
+        "n:VisibleOnly": False, "n:Source": "Sentinel-2 L2A",
+        "c1": "B04", "c2": "B08",
+    }
+    with mock.patch.object(M, "dpg_get_value", side_effect=vals.get):
+        assert node._get_slot_bands("n") == ["B04", "B08"]
+
+
+def test_grayout_disables_non_visible_slots(M):
+    node = _make_node(M)
+    node._band_slots = [("a1", "c1"), ("a2", "c2")]
+    vals = {
+        "n:VisibleOnly": True, "n:Source": "Sentinel-2 L2A",
+        "c1": "B08", "c2": "B03",
+    }
+    calls = {}
+    with mock.patch.object(M, "dpg_get_value", side_effect=vals.get), \
+         mock.patch.object(M.dpg, "configure_item",
+                           side_effect=lambda tag, **kw: calls.update({tag: kw})):
+        node._refresh_band_slot_grayout("n")
+    # Non-visible band (B08): grayed out, items restricted to visible bands
+    assert calls["c1"]["enabled"] is False
+    assert calls["c1"]["items"] == M._S2_VISIBLE_BANDS
+    # Visible band (B03): stays enabled with visible-only items
+    assert calls["c2"]["enabled"] is True
+    assert calls["c2"]["items"] == M._S2_VISIBLE_BANDS
+
+
+def test_grayout_restores_full_band_list_when_unchecked(M):
+    node = _make_node(M)
+    node._band_slots = [("a1", "c1")]
+    vals = {
+        "n:VisibleOnly": False, "n:Source": "Sentinel-2 L2A",
+        "c1": "B08",
+    }
+    calls = {}
+    with mock.patch.object(M, "dpg_get_value", side_effect=vals.get), \
+         mock.patch.object(M.dpg, "configure_item",
+                           side_effect=lambda tag, **kw: calls.update({tag: kw})):
+        node._refresh_band_slot_grayout("n")
+    assert calls["c1"]["enabled"] is True
+    assert calls["c1"]["items"] == M._S2_BANDS
+
+
+def test_collect_params_visible_only_filters_evalscript(M):
+    node = _make_node(M)
+    node._band_slots = [("a1", "c1"), ("a2", "c2")]
+    vals = {
+        "n:VisibleOnly": True, "n:Source": "Sentinel-2 L2A",
+        "n:Radius": 1, "n:DateFrom": "2026-05-01", "n:DateTo": "2026-05-31",
+        "n:CloudCover": 30, "n:Colormap": "RdYlGn",
+        "n:Formula": "(B08 - B04) / (B08 + B04)",
+        "c1": "B04", "c2": "B08",
+    }
+    with mock.patch.object(M, "dpg_get_value", side_effect=vals.get):
+        params = node._collect_params("n")
+    # The NDVI formula references B08 (NIR, non-visible): dropped entirely
+    assert "B08" not in params["evalscript"]
+    assert "B04" in params["evalscript"]
+
+
+def test_collect_params_visible_only_keeps_visible_formula(M):
+    node = _make_node(M)
+    node._band_slots = [("a1", "c1")]
+    vals = {
+        "n:VisibleOnly": True, "n:Source": "Sentinel-2 L2A",
+        "n:Radius": 1, "n:DateFrom": "2026-05-01", "n:DateTo": "2026-05-31",
+        "n:CloudCover": 30, "n:Colormap": "RdYlGn",
+        "n:Formula": "(B04 - B02) / (B04 + B02)",
+        "c1": "B03",
+    }
+    with mock.patch.object(M, "dpg_get_value", side_effect=vals.get):
+        params = node._collect_params("n")
+    assert "B04" in params["evalscript"]
+    assert "B02" in params["evalscript"]
+    assert "B08" not in params["evalscript"]
+
+
+# ── True color (naked eye) option ─────────────────────────────────────────────
+
+def _make_rgb_tile(M, rgb=(0.8, 0.4, 0.2)):
+    tile = np.zeros((M._TILE_PX, M._TILE_PX, 3), dtype=np.float32)
+    tile[..., 0], tile[..., 1], tile[..., 2] = rgb
+    return tile
+
+
+def _true_color_vals(extra=None):
+    vals = {
+        "n:TrueColor": True, "n:Source": "Sentinel-2 L2A",
+        "n:Radius": 1, "n:DateFrom": "2026-05-01", "n:DateTo": "2026-05-31",
+        "n:CloudCover": 30, "n:Colormap": "RdYlGn",
+        "n:Formula": "(B08 - B04) / (B08 + B04)",
+    }
+    vals.update(extra or {})
+    return vals
+
+
+def test_true_color_evalscript_rgb_output(M):
+    es = M._build_true_color_evalscript(use_float32=True)
+    # 3-band RGB output in red/green/blue order with the brightness gain
+    assert 'output: {bands: 3' in es
+    assert '"B04", "B03", "B02"' in es
+    assert f"{M._TRUE_COLOR_GAIN} * sample.B04" in es
+    assert f"{M._TRUE_COLOR_GAIN} * sample.B03" in es
+    assert f"{M._TRUE_COLOR_GAIN} * sample.B02" in es
+    # No non-visible band is ever requested
+    assert "B08" not in es
+
+
+def test_true_color_evalscript_png_sample_type(M):
+    assert 'sampleType: "AUTO"' in M._build_true_color_evalscript(use_float32=False)
+    assert 'sampleType: "FLOAT32"' in M._build_true_color_evalscript(use_float32=True)
+
+
+def test_collect_params_true_color_uses_rgb_evalscript(M):
+    node = _make_node(M)
+    node._band_slots = []
+    with mock.patch.object(M, "dpg_get_value", side_effect=_true_color_vals().get):
+        params = node._collect_params("n")
+    assert params["true_color"] is True
+    assert params["formula"] == M._TRUE_COLOR_LABEL
+    assert 'output: {bands: 3' in params["evalscript"]
+    assert "B08" not in params["evalscript"]
+
+
+def test_collect_params_true_color_ignored_for_sentinel1(M):
+    node = _make_node(M)
+    node._band_slots = []
+    vals = _true_color_vals({"n:Source": "Sentinel-1 GRD", "n:Formula": "VV"})
+    with mock.patch.object(M, "dpg_get_value", side_effect=vals.get):
+        params = node._collect_params("n")
+    # Radar has no visible bands: true color silently falls back to normal mode
+    assert params["true_color"] is False
+    assert 'output: {bands: 1' in params["evalscript"]
+
+
+def test_save_and_load_rgb_tile(M):
+    key = M._tile_key("s2l2a", 1, 2, "rgbtile", "2026-05-01", "2026-05-31", 30)
+    tile = _make_rgb_tile(M)
+    M._save_tile(key, tile)
+    loaded = M._load_tile(key)
+    assert loaded is not None
+    assert loaded.shape == (M._TILE_PX, M._TILE_PX, 3)
+    np.testing.assert_allclose(loaded, tile)
+
+
+def test_true_color_to_bgr_channel_order_and_nan(M):
+    comp = np.zeros((4, 4, 3), dtype=np.float32)
+    comp[..., 0] = 1.0          # pure red, full brightness
+    comp[0, 0]   = np.nan       # missing tile pixel → black
+    bgr = M._true_color_to_bgr(comp)
+    assert bgr.dtype == np.uint8
+    assert tuple(bgr[1, 1]) == (0, 0, 255)   # red lands in the BGR R channel
+    assert tuple(bgr[0, 0]) == (0, 0, 0)     # NaN rendered black
+
+
+def test_assemble_display_true_color_skips_colormap(M):
+    comp = np.zeros((128, 128, 3), dtype=np.float32)
+    comp[..., 1] = 1.0   # pure green
+    params = _make_params(M, true_color=True, formula=M._TRUE_COLOR_LABEL)
+    disp = M._assemble_display(comp, params, 64, 64)
+    assert disp.shape == (64, 64, 3)
+    # Green stays green (no RdYlGn colormap applied): G channel dominates
+    center = disp[20, 32]
+    assert center[1] > 200 and center[0] < 60 and center[2] < 60
+
+
+def test_try_serve_from_cache_true_color_full_hit(M):
+    node = _make_node(M)
+    params = _make_params(M, true_color=True, es_hash="truecol1",
+                          formula=M._TRUE_COLOR_LABEL)
+    tiles, _ = M._bbox_tiles(params["lat"], params["lon"], params["radius"])
+    for (tl, tlon) in tiles:
+        key = M._tile_key(params["cdse_id"], tl, tlon, params["es_hash"],
+                          params["date_from"], params["date_to"], params["cloud"])
+        M._save_tile(key, _make_rgb_tile(M))
+    result = node._try_serve_from_cache(params)
+    assert result is not None
+    display, meta = result
+    assert display.shape == (node._display_h, node._display_w, 3)
+    assert node._latest_composite.ndim == 3
+    assert node._latest_composite.shape[2] == 3
+
+
+def test_render_live_view_true_color(M):
+    node = _make_node(M)
+    node._gps_trace = []
+    node._coord_from_input = True
+    params = _make_params(M, true_color=True, es_hash="truecol2",
+                          formula=M._TRUE_COLOR_LABEL)
+    tiles, _ = M._bbox_tiles(params["lat"], params["lon"], params["radius"])
+    for (tl, tlon) in tiles:
+        key = M._tile_key(params["cdse_id"], tl, tlon, params["es_hash"],
+                          params["date_from"], params["date_to"], params["cloud"])
+        M._save_tile(key, _make_rgb_tile(M, rgb=(0.0, 0.0, 1.0)))  # pure blue
+    assert node._try_serve_from_cache(params) is not None
+    node._current_lat, node._current_lon = params["lat"], params["lon"]
+    view = node._render_live_view(params)
+    assert view is not None
+    assert view.shape == (node._display_h, node._display_w, 3)
+    # Blue stays blue in the BGR view (no colormap)
+    px = view[10, 10]
+    assert px[0] > 200 and px[1] < 60 and px[2] < 60
