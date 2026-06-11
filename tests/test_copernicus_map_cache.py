@@ -123,6 +123,7 @@ def _make_node(M):
     node._latest_meta         = {}
     node._frame_lock          = threading.Lock()
     node._fetching            = False
+    node._prefetching         = False
     node._current_lat         = 48.852
     node._current_lon         = 2.349
     node._last_fetch_lat      = None
@@ -339,8 +340,119 @@ def test_try_serve_from_cache_meta_tiles_new_is_zero(M):
     assert meta["tiles_new"] == 0
 
 
-# ── Coordinate extraction from JSON input ─────────────────────────────────────
+# ── _tile_key coherence on definition + zoom ──────────────────────────────────
 
+def test_tile_key_includes_definition_and_zoom(M):
+    """Changing the tile definition (_TILE_PX) or zoom (_TILE_DEG) must change
+    the cache key so tiles from a different resolution are never reused."""
+    base = M._tile_key("s2l2a", 100, 200, "abc", "2026-05-01", "2026-05-31", 30)
+
+    orig_px = M._TILE_PX
+    try:
+        M._TILE_PX = orig_px + 1
+        changed_px = M._tile_key("s2l2a", 100, 200, "abc",
+                                 "2026-05-01", "2026-05-31", 30)
+    finally:
+        M._TILE_PX = orig_px
+    assert base != changed_px
+
+    orig_deg = M._TILE_DEG
+    try:
+        M._TILE_DEG = orig_deg * 2
+        changed_deg = M._tile_key("s2l2a", 100, 200, "abc",
+                                  "2026-05-01", "2026-05-31", 30)
+    finally:
+        M._TILE_DEG = orig_deg
+    assert base != changed_deg
+
+
+# ── _ring_tiles ───────────────────────────────────────────────────────────────
+
+def test_ring_tiles_ring1_returns_nine_tiles(M):
+    """A ring of 1 yields a 3×3 grid (centre + 8 neighbours)."""
+    tiles = M._ring_tiles(48.852, 2.349, 1)
+    assert len(tiles) == 9
+    assert len(set(tiles)) == 9
+
+
+def test_ring_tiles_includes_center(M):
+    lat, lon = 48.852, 2.349
+    tiles = M._ring_tiles(lat, lon, 1)
+    c_lat = math.floor(lat / M._TILE_DEG)
+    c_lon = math.floor(lon / M._TILE_DEG)
+    assert (c_lat, c_lon) in tiles
+
+
+def test_ring_tiles_uses_prefetch_ring_constant(M):
+    """The node prefetches exactly the configured ring size."""
+    tiles = M._ring_tiles(48.852, 2.349, M._PREFETCH_RING)
+    side = 2 * M._PREFETCH_RING + 1
+    assert len(tiles) == side * side
+
+
+# ── _Node._neighbour_keys ─────────────────────────────────────────────────────
+
+def test_neighbour_keys_count_and_uniqueness(M):
+    node   = _make_node(M)
+    params = _make_params(M)
+    keys   = node._neighbour_keys(params)
+    side   = 2 * M._PREFETCH_RING + 1
+    assert len(keys) == side * side
+    # All cache keys must be unique
+    assert len({k for (_, _, k) in keys}) == len(keys)
+
+
+def test_neighbour_keys_match_tile_key(M):
+    node   = _make_node(M)
+    params = _make_params(M)
+    keys   = node._neighbour_keys(params)
+    for (tl, tlon, key) in keys:
+        expected = M._tile_key(
+            params["cdse_id"], tl, tlon,
+            params["es_hash"], params["date_from"],
+            params["date_to"], params["cloud"],
+        )
+        assert key == expected
+
+
+# ── _Node._prefetch_surrounding ───────────────────────────────────────────────
+
+def test_prefetch_surrounding_noop_when_all_cached(M):
+    """When every neighbour tile is already cached, no download is attempted."""
+    node   = _make_node(M)
+    params = _make_params(M, lat=10.0, lon=20.0)  # unique area for this test
+    for (tl, tlon, key) in node._neighbour_keys(params):
+        M._save_tile(key, _make_tile(M))
+
+    with mock.patch.object(M, "_fetch_tile_with_params") as fetch_mock:
+        node._prefetch_surrounding(params)
+    fetch_mock.assert_not_called()
+    assert node._prefetching is False
+
+
+def test_prefetch_surrounding_downloads_missing(M):
+    """Missing neighbour tiles are downloaded and saved to the cache."""
+    node   = _make_node(M)
+    params = _make_params(M, lat=-10.0, lon=-20.0)  # unique, empty area
+
+    with mock.patch.object(M, "_HAS_REQUESTS", True), \
+         mock.patch.object(M, "_fetch_tile_with_params",
+                           return_value=_make_tile(M, 0.42)) as fetch_mock:
+        node._prefetch_surrounding(params)
+        # Prefetch runs in a daemon thread — wait for it to drain.
+        for _ in range(100):
+            if not node._prefetching:
+                break
+            __import__("time").sleep(0.02)
+
+    side = 2 * M._PREFETCH_RING + 1
+    assert fetch_mock.call_count == side * side
+    # Every neighbour key is now present on disk
+    for (_, _, key) in node._neighbour_keys(params):
+        assert M._load_tile(key) is not None
+
+
+# ── Coordinate extraction from JSON input ─────────────────────────────────────
 def _extract_coords_from_src_result(src_result):
     """Replicate the CopernicusMap coordinate-extraction logic for unit testing."""
     coords = None
