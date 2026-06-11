@@ -235,9 +235,9 @@ def test_apply_colormap_shape(M):
 
 
 def test_apply_colormap_all_nan_returns_zeros(M):
-    px  = M._TILE_PX
-    arr = np.full((px, px), np.nan, dtype=np.float32)
-    out = M._apply_colormap(arr, "RdYlGn")
+    px           = M._TILE_PX
+    nan_array    = np.full((px, px), np.nan, dtype=np.float32)
+    out          = M._apply_colormap(nan_array, "RdYlGn")
     assert out.shape == (px, px, 3)
 
 

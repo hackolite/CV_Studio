@@ -731,12 +731,12 @@ class _Node(Node):
         # Derive composite dimensions from the actual tiles list to avoid
         # floating-point drift between ceil((lat_max-lat_min)/_TILE_DEG) and
         # the integer range produced by _bbox_tiles.
-        t_lat_min     = min(tl   for (tl,   _) in tiles)
-        t_lat_max_idx = max(tl   for (tl,   _) in tiles)
-        t_lon_min     = min(tlon for (_,  tlon) in tiles)
-        t_lon_max     = max(tlon for (_,  tlon) in tiles)
-        n_lat_tiles   = t_lat_max_idx - t_lat_min + 1
-        n_lon_tiles   = t_lon_max - t_lon_min + 1
+        t_lat_min  = min(tl   for (tl,   _) in tiles)
+        t_lat_max  = max(tl   for (tl,   _) in tiles)
+        t_lon_min  = min(tlon for (_,  tlon) in tiles)
+        t_lon_max  = max(tlon for (_,  tlon) in tiles)
+        n_lat_tiles = t_lat_max - t_lat_min + 1
+        n_lon_tiles = t_lon_max - t_lon_min + 1
 
         composite = np.full(
             (n_lat_tiles * _TILE_PX, n_lon_tiles * _TILE_PX),
@@ -753,7 +753,7 @@ class _Node(Node):
             tile_data = _load_tile(key)
             if tile_data is None:
                 return None  # cache miss — background download required
-            _paste_tile(composite, tile_data, tl, tlon, t_lat_max_idx, t_lon_min)
+            _paste_tile(composite, tile_data, tl, tlon, t_lat_max, t_lon_min)
 
         display = _assemble_display(composite, params, self._display_w, self._display_h)
         meta = {
@@ -843,12 +843,12 @@ class _Node(Node):
             # Derive composite dimensions from the actual tiles list to avoid
             # floating-point drift between ceil((lat_max-lat_min)/_TILE_DEG)
             # and the integer range produced by _bbox_tiles.
-            t_lat_min     = min(tl   for (tl,   _) in tiles)
-            t_lat_max_idx = max(tl   for (tl,   _) in tiles)
-            t_lon_min     = min(tlon for (_,  tlon) in tiles)
-            t_lon_max     = max(tlon for (_,  tlon) in tiles)
-            n_lat_tiles   = t_lat_max_idx - t_lat_min + 1
-            n_lon_tiles   = t_lon_max - t_lon_min + 1
+            t_lat_min  = min(tl   for (tl,   _) in tiles)
+            t_lat_max  = max(tl   for (tl,   _) in tiles)
+            t_lon_min  = min(tlon for (_,  tlon) in tiles)
+            t_lon_max  = max(tlon for (_,  tlon) in tiles)
+            n_lat_tiles = t_lat_max - t_lat_min + 1
+            n_lon_tiles = t_lon_max - t_lon_min + 1
 
             # Prepare the composite array
             composite = np.full(
@@ -866,7 +866,7 @@ class _Node(Node):
                 )
                 tile_data = _load_tile(key)
                 if tile_data is not None:
-                    _paste_tile(composite, tile_data, tl, tlon, t_lat_max_idx, t_lon_min)
+                    _paste_tile(composite, tile_data, tl, tlon, t_lat_max, t_lon_min)
                 else:
                     need_download.append((tl, tlon, key))
 
@@ -896,7 +896,7 @@ class _Node(Node):
                     max_workers=min(_FETCH_WORKERS, total)
                 ) as pool:
                     for tl, tlon, tile_data in pool.map(_download_tile, need_download):
-                        _paste_tile(composite, tile_data, tl, tlon, t_lat_max_idx, t_lon_min)
+                        _paste_tile(composite, tile_data, tl, tlon, t_lat_max, t_lon_min)
 
             # Apply colormap + legend + resize via shared helper
             display = _assemble_display(composite, params, self._display_w, self._display_h)
