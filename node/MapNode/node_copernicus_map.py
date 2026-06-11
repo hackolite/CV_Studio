@@ -445,21 +445,10 @@ class FactoryNode:
                     label="Source",
                 )
                 dpg.add_spacer(height=2)
-                dpg.add_input_float(
-                    tag=tag + ":Lat",
-                    label="Lat",
-                    default_value=48.8566,
-                    step=0.0,
-                    format="%.4f",
-                    width=160,
-                )
-                dpg.add_input_float(
-                    tag=tag + ":Lon",
-                    label="Lon",
-                    default_value=2.3522,
-                    step=0.0,
-                    format="%.4f",
-                    width=160,
+                dpg.add_text(
+                    tag=tag + ":CoordDisplay",
+                    default_value="Lat/Lon: connect Coordinates input",
+                    color=[180, 180, 180],
                 )
                 dpg.add_slider_int(
                     tag=tag + ":Radius",
@@ -598,6 +587,12 @@ class _Node(Node):
         self._latest_meta   = {}
         self._frame_lock    = threading.Lock()
         self._fetching      = False
+        # Coordinates driven by JSON input (CoordinateExample or similar)
+        self._current_lat       = 48.8566
+        self._current_lon       = 2.3522
+        self._last_fetch_lat    = None
+        self._last_fetch_lon    = None
+        self._coord_from_input  = False   # True once coords arrive from JSON input
 
     # ── Band-slot management ────────────────────────────────────────────────
 
@@ -690,8 +685,8 @@ class _Node(Node):
 
     def _collect_params(self, tag_node: str) -> dict:
         source_name = dpg_get_value(tag_node + ":Source") or _SOURCE_NAMES[0]
-        lat         = float(dpg_get_value(tag_node + ":Lat") or 48.8566)
-        lon         = float(dpg_get_value(tag_node + ":Lon") or 2.3522)
+        lat         = self._current_lat
+        lon         = self._current_lon
         radius      = int(dpg_get_value(tag_node + ":Radius") or 5)
         date_from   = str(dpg_get_value(tag_node + ":DateFrom") or "2024-01-01")
         date_to     = str(dpg_get_value(tag_node + ":DateTo")   or "2024-06-30")
@@ -747,6 +742,9 @@ class _Node(Node):
             n_lon_tiles = max(1, math.ceil((lon_max - lon_min) / _TILE_DEG))
             t_lat_min   = math.floor(lat_min / _TILE_DEG)
             t_lon_min   = math.floor(lon_min / _TILE_DEG)
+            # t_lat_max_idx: tile-index of the northernmost row (used to invert
+            # the latitude axis when pasting tiles — higher lat → lower row).
+            t_lat_max_idx = t_lat_min + n_lat_tiles - 1
 
             # Prepare the composite array
             full_h = n_lat_tiles * _TILE_PX
@@ -763,7 +761,7 @@ class _Node(Node):
                 )
                 tile_data = _load_tile(key)
                 if tile_data is not None:
-                    _paste_tile(composite, tile_data, tl, tlon, t_lat_min, t_lon_min)
+                    _paste_tile(composite, tile_data, tl, tlon, t_lat_max_idx, t_lon_min)
                 else:
                     need_download.append((tl, tlon, key))
 
@@ -782,7 +780,7 @@ class _Node(Node):
                     params["date_from"], params["date_to"], params["cloud"],
                 )
                 _save_tile(key, tile_data)
-                _paste_tile(composite, tile_data, tl, tlon, t_lat_min, t_lon_min)
+                _paste_tile(composite, tile_data, tl, tlon, t_lat_max_idx, t_lon_min)
 
             # Apply colormap → BGR uint8 image
             cmap = params["cmap"]
@@ -822,6 +820,11 @@ class _Node(Node):
                     "date_to":   params["date_to"],
                     "tiles_new": total,
                 }
+
+            # Record the coordinates used for this fetch so auto-fetch can
+            # detect when the view has moved to a genuinely new area.
+            self._last_fetch_lat = params["lat"]
+            self._last_fetch_lon = params["lon"]
 
             print(f"[CopernicusMap] Fetch done — {total} new tile(s) downloaded")
             dpg_set_value(tag_node + ":Status",
@@ -873,12 +876,40 @@ class _Node(Node):
                     if lats and lons:
                         centroid_lat = sum(lats) / len(lats)
                         centroid_lon = sum(lons) / len(lons)
+                        self._current_lat      = centroid_lat
+                        self._current_lon      = centroid_lon
+                        self._coord_from_input = True
                         try:
-                            dpg_set_value(tag_node + ":Lat", centroid_lat)
-                            dpg_set_value(tag_node + ":Lon", centroid_lon)
+                            dpg_set_value(
+                                tag_node + ":CoordDisplay",
+                                f"Lat: {centroid_lat:.4f}  Lon: {centroid_lon:.4f}",
+                            )
                         except Exception:
                             pass
                 break
+
+        # ── Auto-fetch when coordinates from input have moved to a new area ──
+        # Trigger only when: coordinates came from a connected input, no fetch
+        # is in progress, and the center has shifted by at least half a tile
+        # (~500 m at the equator) from the last successfully fetched position.
+        if self._coord_from_input and not self._fetching:
+            needs_fetch = (
+                self._last_fetch_lat is None
+                or self._last_fetch_lon is None
+                or abs(self._current_lat - self._last_fetch_lat) > _TILE_DEG * 0.5
+                or abs(self._current_lon - self._last_fetch_lon) > _TILE_DEG * 0.5
+            )
+            if needs_fetch:
+                params = self._collect_params(tag_node)
+                dpg_set_value(tag_node + ":Status", "Status: Fetching…")
+                self._fetching = True
+                t = threading.Thread(
+                    target=self._fetch_worker,
+                    args=(tag_node, params),
+                    daemon=True,
+                )
+                t.start()
+                self._fetch_thread = t
 
         with self._frame_lock:
             frame = self._latest_frame
@@ -909,10 +940,19 @@ class _Node(Node):
 
 def _paste_tile(composite: np.ndarray, tile: np.ndarray,
                 tile_lat: int, tile_lon: int,
-                t_lat_min: int, t_lon_min: int) -> None:
-    """Write *tile* into *composite* at the correct position."""
-    row = (tile_lat - t_lat_min) * _TILE_PX
-    col = (tile_lon - t_lon_min) * _TILE_PX
+                t_lat_max: int, t_lon_min: int) -> None:
+    """Write *tile* into *composite* at the correct position.
+
+    Latitude increases northward, but image rows increase downward, so the
+    northernmost tile (highest ``tile_lat``) is placed at row 0 and the
+    southernmost tile (lowest ``tile_lat``) at the bottom of the composite.
+    ``t_lat_max`` is the tile-index of the northernmost row of the grid
+    (i.e. ``t_lat_min + n_lat_tiles - 1``).
+    ``t_lon_min`` is the tile-index of the westernmost column.
+    """
+    # Invert latitude axis: higher tile_lat (north) maps to lower row (top).
+    row = (t_lat_max - tile_lat) * _TILE_PX
+    col = (tile_lon  - t_lon_min) * _TILE_PX
     h, w = tile.shape[:2]
     r_end = min(row + h, composite.shape[0])
     c_end = min(col + w, composite.shape[1])
