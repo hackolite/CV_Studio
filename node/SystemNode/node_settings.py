@@ -44,14 +44,15 @@ def load_copernicus_credentials() -> dict:
 
     Returns a dict with ``client_id`` and ``client_secret`` keys.
     Both default to empty strings when the file is absent or invalid.
+    Values are stripped of surrounding whitespace to avoid 400 errors.
     """
     if os.path.exists(_CREDENTIALS_FILE):
         try:
             with open(_CREDENTIALS_FILE, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
             return {
-                "client_id": str(data.get("client_id", "")),
-                "client_secret": str(data.get("client_secret", "")),
+                "client_id": str(data.get("client_id", "")).strip(),
+                "client_secret": str(data.get("client_secret", "")).strip(),
             }
         except Exception:
             pass
@@ -60,7 +61,7 @@ def load_copernicus_credentials() -> dict:
 
 def save_copernicus_credentials(client_id: str, client_secret: str) -> None:
     """Persist Copernicus CDSE credentials to ``~/.cv_studio/copernicus_credentials.json``."""
-    payload = {"client_id": client_id, "client_secret": client_secret}
+    payload = {"client_id": client_id.strip(), "client_secret": client_secret.strip()}
     with open(_CREDENTIALS_FILE, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, indent=2)
 
@@ -177,8 +178,8 @@ class _Node(Node):
 
     def _on_save(self, sender, app_data, user_data):
         tag_client_id, tag_secret, tag_status = user_data
-        client_id = dpg_get_value(tag_client_id) or ""
-        secret    = dpg_get_value(tag_secret)    or ""
+        client_id = (dpg_get_value(tag_client_id) or "").strip()
+        secret    = (dpg_get_value(tag_secret)    or "").strip()
         try:
             save_copernicus_credentials(client_id, secret)
             dpg_set_value(tag_status, "Status: Saved ✓")
@@ -187,8 +188,8 @@ class _Node(Node):
 
     def _on_test(self, sender, app_data, user_data):
         tag_client_id, tag_secret, tag_status = user_data
-        client_id = dpg_get_value(tag_client_id) or ""
-        secret    = dpg_get_value(tag_secret)    or ""
+        client_id = (dpg_get_value(tag_client_id) or "").strip()
+        secret    = (dpg_get_value(tag_secret)    or "").strip()
         dpg_set_value(tag_status, "Status: Testing…")
 
         def _run():
