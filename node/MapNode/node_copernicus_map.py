@@ -19,6 +19,7 @@ Credentials are read from ``~/.cv_studio/copernicus_credentials.json``
 (written by the companion *Settings* node in the System category).
 """
 
+import concurrent.futures
 import datetime
 import hashlib
 import json
@@ -72,6 +73,8 @@ _TILE_DEG   = 0.009
 _TILE_PX    = 128
 # Maximum tiles rendered in the display image (both axes)
 _MAX_TILES  = 20   # → maximum 20×20 km² display area
+# Maximum parallel tile downloads (mirrors the OSM tile prefetch pool size)
+_FETCH_WORKERS = 4
 
 # Default display resolution (pixels)
 _DISPLAY_W  = 512
@@ -379,6 +382,37 @@ def _apply_colormap(arr: np.ndarray, cmap_name: str,
 
 
 # ---------------------------------------------------------------------------
+# Display assembly helper (shared by the cache-hit path and _fetch_worker)
+# ---------------------------------------------------------------------------
+
+def _assemble_display(composite: np.ndarray, params: dict,
+                      display_w: int, display_h: int) -> np.ndarray:
+    """Apply colormap, legend overlay, and resize to produce a BGR display image.
+
+    Used by both the synchronous cache-hit path in ``update()`` and the
+    background ``_fetch_worker`` so the two code paths produce identical output.
+    """
+    cmap = params.get("cmap") or ""
+    if not cmap:
+        fl = params.get("formula", "").lower().replace(" ", "")
+        cmap = "RdYlGn"
+        for kw, cm in _FORMULA_CMAP_HINTS.items():
+            if kw in fl:
+                cmap = cm
+                break
+    bgr_img = _apply_colormap(composite, cmap)
+    finite  = composite[np.isfinite(composite)]
+    if finite.size > 0:
+        vmin, vmax = float(finite.min()), float(finite.max())
+        legend_txt = f"{params.get('formula', '')}  [{vmin:.3f}, {vmax:.3f}]"
+    else:
+        legend_txt = params.get("formula", "")
+    bgr_img = _draw_legend(bgr_img, legend_txt)
+    return cv2.resize(bgr_img, (display_w, display_h),
+                      interpolation=cv2.INTER_NEAREST)
+
+
+# ---------------------------------------------------------------------------
 # FactoryNode — registered by the node editor's dynamic discovery
 # ---------------------------------------------------------------------------
 
@@ -673,6 +707,67 @@ class _Node(Node):
 
     # ── Fetch logic ─────────────────────────────────────────────────────────
 
+    def _try_serve_from_cache(self, params: dict):
+        """Try to build the display image using only on-disk cached tiles.
+
+        Mirrors the pattern of ``node_map.py``'s ``get_osm_tile`` cache-first
+        lookup: check the disk cache for every tile the requested area
+        requires; if all are present, assemble the composite and return
+        ``(display_bgr, meta)`` immediately so ``update()`` can refresh the
+        texture without spinning up a background thread.
+
+        Returns ``None`` when any tile is absent — the caller must then fall
+        back to the background ``_fetch_worker`` to download the missing ones.
+        """
+        try:
+            tiles, (lat_min, lat_max, lon_min, lon_max) = _bbox_tiles(
+                params["lat"], params["lon"], params["radius"]
+            )
+        except Exception:
+            return None
+        if len(tiles) > _MAX_TILES * _MAX_TILES:
+            return None
+
+        # Derive composite dimensions from the actual tiles list to avoid
+        # floating-point drift between ceil((lat_max-lat_min)/_TILE_DEG) and
+        # the integer range produced by _bbox_tiles.
+        t_lat_min     = min(tl   for (tl,   _) in tiles)
+        t_lat_max_idx = max(tl   for (tl,   _) in tiles)
+        t_lon_min     = min(tlon for (_,  tlon) in tiles)
+        t_lon_max     = max(tlon for (_,  tlon) in tiles)
+        n_lat_tiles   = t_lat_max_idx - t_lat_min + 1
+        n_lon_tiles   = t_lon_max - t_lon_min + 1
+
+        composite = np.full(
+            (n_lat_tiles * _TILE_PX, n_lon_tiles * _TILE_PX),
+            np.nan, dtype=np.float32,
+        )
+
+        for (tl, tlon) in tiles:
+            key = _tile_key(
+                params["cdse_id"], tl, tlon,
+                params["es_hash"],
+                params["date_from"], params["date_to"],
+                params["cloud"],
+            )
+            tile_data = _load_tile(key)
+            if tile_data is None:
+                return None  # cache miss — background download required
+            _paste_tile(composite, tile_data, tl, tlon, t_lat_max_idx, t_lon_min)
+
+        display = _assemble_display(composite, params, self._display_w, self._display_h)
+        meta = {
+            "source":    params["source_name"],
+            "formula":   params["formula"],
+            "lat":       params["lat"],
+            "lon":       params["lon"],
+            "radius_km": params["radius"],
+            "date_from": params["date_from"],
+            "date_to":   params["date_to"],
+            "tiles_new": 0,
+        }
+        return display, meta
+
     def _on_fetch(self, sender, app_data, user_data):
         """Fetch button callback — launches a background download."""
         tag_node = user_data
@@ -745,18 +840,21 @@ class _Node(Node):
                 self._fetching = False
                 return
 
-            n_lat_tiles = max(1, math.ceil((lat_max - lat_min) / _TILE_DEG))
-            n_lon_tiles = max(1, math.ceil((lon_max - lon_min) / _TILE_DEG))
-            t_lat_min   = math.floor(lat_min / _TILE_DEG)
-            t_lon_min   = math.floor(lon_min / _TILE_DEG)
-            # t_lat_max_idx: tile-index of the northernmost row (used to invert
-            # the latitude axis when pasting tiles — higher lat → lower row).
-            t_lat_max_idx = t_lat_min + n_lat_tiles - 1
+            # Derive composite dimensions from the actual tiles list to avoid
+            # floating-point drift between ceil((lat_max-lat_min)/_TILE_DEG)
+            # and the integer range produced by _bbox_tiles.
+            t_lat_min     = min(tl   for (tl,   _) in tiles)
+            t_lat_max_idx = max(tl   for (tl,   _) in tiles)
+            t_lon_min     = min(tlon for (_,  tlon) in tiles)
+            t_lon_max     = max(tlon for (_,  tlon) in tiles)
+            n_lat_tiles   = t_lat_max_idx - t_lat_min + 1
+            n_lon_tiles   = t_lon_max - t_lon_min + 1
 
             # Prepare the composite array
-            full_h = n_lat_tiles * _TILE_PX
-            full_w = n_lon_tiles * _TILE_PX
-            composite = np.full((full_h, full_w), np.nan, dtype=np.float32)
+            composite = np.full(
+                (n_lat_tiles * _TILE_PX, n_lon_tiles * _TILE_PX),
+                np.nan, dtype=np.float32,
+            )
 
             need_download = []
             for (tl, tlon) in tiles:
@@ -775,45 +873,33 @@ class _Node(Node):
             total = len(need_download)
             print(f"[CopernicusMap] {len(tiles)} tile(s) total, {total} to download, "
                   f"{len(tiles) - total} from cache")
-            for i, (tl, tlon, key) in enumerate(need_download):
+
+            if total > 0:
                 dpg_set_value(
                     tag_node + ":Status",
-                    f"Status: Downloading tile {i+1}/{total}…",
+                    f"Status: Downloading {total} tile(s)…",
                 )
-                bbox = _tile_bbox(tl, tlon)
-                # Inject the correct date range and cloud cover into the payload
-                tile_data = _fetch_tile_with_params(
-                    params["cdse_id"], bbox, params["evalscript"],
-                    params["date_from"], params["date_to"], params["cloud"],
-                )
-                _save_tile(key, tile_data)
-                _paste_tile(composite, tile_data, tl, tlon, t_lat_max_idx, t_lon_min)
+                # Download missing tiles in parallel (mirrors the OSM tile
+                # prefetch approach in node_map.py: up to _FETCH_WORKERS
+                # concurrent requests to avoid waiting sequentially).
+                def _download_tile(item):
+                    tl, tlon, key = item
+                    bbox = _tile_bbox(tl, tlon)
+                    data = _fetch_tile_with_params(
+                        params["cdse_id"], bbox, params["evalscript"],
+                        params["date_from"], params["date_to"], params["cloud"],
+                    )
+                    _save_tile(key, data)
+                    return tl, tlon, data
 
-            # Apply colormap → BGR uint8 image
-            cmap = params["cmap"]
-            if not cmap:
-                # Auto-select based on formula heuristic
-                fl = params["formula"].lower().replace(" ", "")
-                cmap = "RdYlGn"
-                for kw, cm in _FORMULA_CMAP_HINTS.items():
-                    if kw in fl:
-                        cmap = cm
-                        break
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=min(_FETCH_WORKERS, total)
+                ) as pool:
+                    for tl, tlon, tile_data in pool.map(_download_tile, need_download):
+                        _paste_tile(composite, tile_data, tl, tlon, t_lat_max_idx, t_lon_min)
 
-            bgr_img = _apply_colormap(composite, cmap)
-
-            # Add formula legend overlay (value range)
-            finite = composite[np.isfinite(composite)]
-            if finite.size > 0:
-                vmin, vmax = float(finite.min()), float(finite.max())
-                legend_txt = f"{params['formula']}  [{vmin:.3f}, {vmax:.3f}]"
-            else:
-                legend_txt = params["formula"]
-            bgr_img = _draw_legend(bgr_img, legend_txt)
-
-            # Resize to display size
-            display = cv2.resize(bgr_img, (self._display_w, self._display_h),
-                                 interpolation=cv2.INTER_NEAREST)
+            # Apply colormap + legend + resize via shared helper
+            display = _assemble_display(composite, params, self._display_w, self._display_h)
 
             with self._frame_lock:
                 self._latest_frame = display
@@ -915,15 +1001,36 @@ class _Node(Node):
             )
             if needs_fetch:
                 params = self._collect_params(tag_node)
-                dpg_set_value(tag_node + ":Status", "Status: Fetching…")
-                self._fetching = True
-                t = threading.Thread(
-                    target=self._fetch_worker,
-                    args=(tag_node, params),
-                    daemon=True,
-                )
-                t.start()
-                self._fetch_thread = t
+                # Fast path: serve from the on-disk tile cache synchronously
+                # (mirrors node_map.py which re-renders from cached OSM tiles
+                # on every update without waiting for a background thread).
+                cached = self._try_serve_from_cache(params)
+                if cached is not None:
+                    display, meta = cached
+                    with self._frame_lock:
+                        self._latest_frame = display
+                        self._latest_meta  = meta
+                    self._last_fetch_lat = params["lat"]
+                    self._last_fetch_lon = params["lon"]
+                    print(
+                        f"[CopernicusMap] All tiles from cache — "
+                        f"lat={params['lat']:.4f}  lon={params['lon']:.4f}"
+                    )
+                    try:
+                        dpg_set_value(tag_node + ":Status", "Status: Ready ✓ (from cache)")
+                    except Exception:
+                        pass
+                else:
+                    # Some tiles are missing — start a background download
+                    dpg_set_value(tag_node + ":Status", "Status: Fetching…")
+                    self._fetching = True
+                    t = threading.Thread(
+                        target=self._fetch_worker,
+                        args=(tag_node, params),
+                        daemon=True,
+                    )
+                    t.start()
+                    self._fetch_thread = t
 
         with self._frame_lock:
             frame = self._latest_frame
