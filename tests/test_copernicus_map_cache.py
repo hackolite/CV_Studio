@@ -514,3 +514,97 @@ def test_coord_extraction_unknown_dict_falls_back_to_json_key():
     src_result = {"json": inner, "other": "stuff"}
     coords = _extract_coords_from_src_result(src_result)
     assert coords == inner
+
+
+# ── Continuous GPS-overlay rendering ─────────────────────────────────────────
+
+def test_composite_geo_bounds(M):
+    geo = M._composite_geo_bounds(0, 0, 0, 0)
+    assert geo == (0.0, M._TILE_DEG, 0.0, M._TILE_DEG)
+    geo = M._composite_geo_bounds(10, 12, -3, -1)
+    assert geo == (10 * M._TILE_DEG, 13 * M._TILE_DEG,
+                   -3 * M._TILE_DEG, 0.0)
+
+
+def test_latlon_to_composite_px_corners(M):
+    geo = (0.0, M._TILE_DEG, 0.0, M._TILE_DEG)
+    # North-west corner → pixel (0, 0)
+    assert M._latlon_to_composite_px(M._TILE_DEG, 0.0, geo) == (0.0, 0.0)
+    # South-east corner → pixel (_TILE_PX, _TILE_PX)
+    x, y = M._latlon_to_composite_px(0.0, M._TILE_DEG, geo)
+    assert abs(x - M._TILE_PX) < 1e-6 and abs(y - M._TILE_PX) < 1e-6
+
+
+def test_pick_cmap_explicit_and_heuristic(M):
+    assert M._pick_cmap("viridis", "anything") == "viridis"
+    assert M._pick_cmap("", "(B08 - B04) / (B08 + B04) ndvi") == "RdYlGn"
+    assert M._pick_cmap("", "no hint here") == "RdYlGn"
+
+
+def test_crop_view_inside_bounds(M):
+    base = np.arange(100 * 100 * 3, dtype=np.uint8).reshape(100, 100, 3)
+    view, x0, y0 = M._crop_view(base, 50, 50, 20, 20)
+    assert view.shape == (20, 20, 3)
+    assert (x0, y0) == (40, 40)
+    np.testing.assert_array_equal(view, base[40:60, 40:60])
+
+
+def test_crop_view_pads_out_of_bounds(M):
+    base = np.full((50, 50, 3), 200, dtype=np.uint8)
+    view, x0, y0 = M._crop_view(base, 0, 0, 40, 40)
+    assert view.shape == (40, 40, 3)
+    # Top-left quadrant is padding (gray 40), bottom-right is real data
+    assert view[0, 0, 0] == 40
+    assert view[-1, -1, 0] == 200
+
+
+def test_draw_gps_overlay_marks_position(M):
+    view = np.zeros((64, 64, 3), dtype=np.uint8)
+    out  = M._draw_gps_overlay(view, (32, 32), [(10, 10), (20, 20), (32, 32)])
+    assert out.shape == view.shape
+    assert (out != view).any()            # something was drawn
+    assert (view == 0).all()              # input untouched (copy semantics)
+
+
+def test_draw_gps_overlay_offscreen_marker_noop(M):
+    view = np.zeros((64, 64, 3), dtype=np.uint8)
+    out  = M._draw_gps_overlay(view, (-500, -500), [])
+    np.testing.assert_array_equal(out, view)
+
+
+def test_render_live_view_none_without_composite(M):
+    node = _make_node(M)
+    node._gps_trace = []
+    assert node._render_live_view(_make_params(M)) is None
+
+
+def test_render_live_view_after_cache_hit(M):
+    """Once a composite exists, the live view renders at the display size and
+    moves continuously with the GPS position."""
+    node   = _make_node(M)
+    node._gps_trace = []
+    params = _make_params(M, lat=48.852, lon=2.349)
+    # Distinct per-tile values so scrolling is detectable in the rendered view
+    tiles, _ = M._bbox_tiles(params["lat"], params["lon"], params["radius"])
+    for i, (tl, tlon) in enumerate(tiles):
+        key = M._tile_key(
+            params["cdse_id"], tl, tlon,
+            params["es_hash"],
+            params["date_from"], params["date_to"],
+            params["cloud"],
+        )
+        M._save_tile(key, _make_tile(M, value=i / max(1, len(tiles) - 1)))
+    assert node._try_serve_from_cache(params) is not None
+    assert node._latest_composite is not None
+    assert node._composite_geo is not None
+
+    node._current_lat, node._current_lon = params["lat"], params["lon"]
+    node._gps_trace.append((params["lat"], params["lon"]))
+    v1 = node._render_live_view(params)
+    assert v1 is not None
+    assert v1.shape == (node._display_h, node._display_w, 3)
+
+    # Moving the position shifts the rendered view (continuous scroll)
+    node._current_lat = params["lat"] + 3e-4
+    v2 = node._render_live_view(params)
+    assert (v1 != v2).any()
