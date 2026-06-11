@@ -11,6 +11,10 @@ Space Ecosystem (CDSE) Process API, with:
   • Intelligent disk cache at 1 km × 1 km tile granularity
     – tiles are stored as ``~/.cv_studio/copernicus_tiles/<key>.npy``
     – on each new request only missing tiles are downloaded from CDSE
+    – cache keys include the tile definition (pixel resolution) and zoom
+      (tile size in degrees) so tiles never collide across resolutions
+    – once the first (non-default) position is defined the 8 km² beside it
+      (a 3×3 neighbourhood) are prefetched in the background
   • Colormap rendering with per-formula default (NDVI → RdYlGn, etc.)
   • Maximum zoom: the display is cropped / rendered at full resolution with no
     unnecessary down-sampling.
@@ -75,6 +79,12 @@ _TILE_PX    = 128
 _MAX_TILES  = 20   # → maximum 20×20 km² display area
 # Maximum parallel tile downloads (mirrors the OSM tile prefetch pool size)
 _FETCH_WORKERS = 4
+# Ring of ~1 km tiles prefetched around the centre tile so the "8 km beside"
+# the position are already cached for smooth panning / zoom.  A ring of 1 tile
+# yields the 8 tiles adjacent to the centre (a 3×3 grid = centre 1 km² + the 8
+# neighbouring km²).  Prefetching runs in the background after the central area
+# has been rendered and only downloads tiles that are not already cached.
+_PREFETCH_RING = 1
 
 # Default display resolution (pixels)
 _DISPLAY_W  = 512
@@ -208,7 +218,12 @@ def _tile_cache_dir() -> str:
 def _tile_key(cdse_id: str, tile_lat: int, tile_lon: int,
                formula_hash: str, date_from: str, date_to: str,
                cloud: int) -> str:
-    raw = f"{cdse_id}_{tile_lat}_{tile_lon}_{formula_hash}_{date_from}_{date_to}_{cloud}"
+    # _TILE_PX (definition / pixel resolution) and _TILE_DEG (zoom / tile size
+    # in degrees) are part of the key so cached tiles are never reused across a
+    # different definition or zoom level — keeping the cache coherent if those
+    # constants ever change.
+    raw = (f"{cdse_id}_{tile_lat}_{tile_lon}_{formula_hash}_{date_from}_"
+           f"{date_to}_{cloud}_{_TILE_PX}_{_TILE_DEG}")
     return hashlib.md5(raw.encode()).hexdigest()
 
 
@@ -344,6 +359,22 @@ def _tile_bbox(tile_lat: int, tile_lon: int) -> list:
         (tile_lon + 1) * _TILE_DEG,
         (tile_lat + 1) * _TILE_DEG,
     ]
+
+
+def _ring_tiles(lat_center: float, lon_center: float, ring: int):
+    """Return the tiles of a ``(2*ring+1)×(2*ring+1)`` grid centred on the tile
+    that contains ``(lat_center, lon_center)``.
+
+    For ``ring == 1`` this yields the centre tile plus its 8 neighbours (a 3×3
+    grid), i.e. the 1 km² around the position and the 8 km² beside it.
+    """
+    c_lat = math.floor(lat_center / _TILE_DEG)
+    c_lon = math.floor(lon_center / _TILE_DEG)
+    tiles = []
+    for dlat in range(-ring, ring + 1):
+        for dlon in range(-ring, ring + 1):
+            tiles.append((c_lat + dlat, c_lon + dlon))
+    return tiles
 
 
 # ---------------------------------------------------------------------------
@@ -618,6 +649,7 @@ class _Node(Node):
     _latest_meta     = {}
     _fetch_thread    = None
     _fetching        = False
+    _prefetching     = False
     _frame_lock      = None
 
     def __init__(self):
@@ -627,6 +659,7 @@ class _Node(Node):
         self._latest_meta   = {}
         self._frame_lock    = threading.Lock()
         self._fetching      = False
+        self._prefetching   = False
         # Coordinates driven by JSON input (CoordinateExample or similar)
         self._current_lat       = 48.8566
         self._current_lon       = 2.3522
@@ -767,6 +800,73 @@ class _Node(Node):
             "tiles_new": 0,
         }
         return display, meta
+
+    # ── Background prefetch of the 8 km² beside the position ─────────────────
+
+    def _neighbour_keys(self, params: dict) -> list:
+        """Return ``[(tile_lat, tile_lon, key), …]`` for the 3×3 neighbourhood
+        (the 1 km² around the position and the 8 km² beside it).
+
+        Pure helper — no I/O — so it can be unit-tested without a network or
+        DearPyGui.
+        """
+        out = []
+        for (tl, tlon) in _ring_tiles(params["lat"], params["lon"], _PREFETCH_RING):
+            key = _tile_key(
+                params["cdse_id"], tl, tlon,
+                params["es_hash"],
+                params["date_from"], params["date_to"],
+                params["cloud"],
+            )
+            out.append((tl, tlon, key))
+        return out
+
+    def _prefetch_surrounding(self, params: dict) -> None:
+        """Download the 8 km² beside the position into the disk cache.
+
+        Mirrors the OSM tile prefetch in ``node_map.py``: launched in the
+        background after the central area is rendered, it downloads only the
+        neighbouring tiles that are not already cached so that subsequent
+        panning / zoom around the first position is served instantly from disk.
+        Skips quietly when ``requests`` is unavailable or another prefetch is
+        already in flight.
+        """
+        if self._prefetching or not _HAS_REQUESTS:
+            return
+        missing = [
+            (tl, tlon, key)
+            for (tl, tlon, key) in self._neighbour_keys(params)
+            if _load_tile(key) is None
+        ]
+        if not missing:
+            return
+
+        self._prefetching = True
+
+        def _worker():
+            try:
+                def _download(item):
+                    tl, tlon, key = item
+                    try:
+                        data = _fetch_tile_with_params(
+                            params["cdse_id"], _tile_bbox(tl, tlon),
+                            params["evalscript"],
+                            params["date_from"], params["date_to"],
+                            params["cloud"],
+                        )
+                        _save_tile(key, data)
+                    except Exception as exc:
+                        print(f"[CopernicusMap] prefetch tile ({tl},{tlon}) failed: {exc}")
+
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=min(_FETCH_WORKERS, len(missing))
+                ) as pool:
+                    list(pool.map(_download, missing))
+                print(f"[CopernicusMap] Prefetched {len(missing)} neighbour tile(s)")
+            finally:
+                self._prefetching = False
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _on_fetch(self, sender, app_data, user_data):
         """Fetch button callback — launches a background download."""
@@ -923,6 +1023,10 @@ class _Node(Node):
             dpg_set_value(tag_node + ":Status",
                           f"Status: Done ✓  ({total} new tiles)")
 
+            # Warm the cache with the 8 km² beside the position so subsequent
+            # panning / zoom around this first position is served from disk.
+            self._prefetch_surrounding(params)
+
         except Exception as exc:
             print(f"[CopernicusMap] ERROR: {exc}")
             print(traceback.format_exc())
@@ -1007,15 +1111,17 @@ class _Node(Node):
                           f"type={type(coords).__name__} value={coords!r:.100}")
                 break
 
-        # ── Auto-fetch when no map data is available or the center has shifted ──
-        # Trigger when: no fetch is in progress, and either no frame has been
-        # rendered yet (first arrival) or the center has shifted by at least half
-        # a tile (~500 m at the equator).  Uses the default Paris coordinates
-        # until an explicit JSON input overrides them.
+        # ── Auto-fetch only after the first *non-default* position is defined ──
+        # The default Paris coordinates must NOT trigger a download: a fetch is
+        # only started once a real position has arrived from the JSON input
+        # (``_coord_from_input``).  The manual Fetch button still works
+        # regardless.  Once triggered, fetch when no frame has been rendered yet
+        # (first arrival) or when the center has shifted by at least half a tile
+        # (~500 m at the equator).
         # Thread-safety note: _current_lat/_current_lon are only written here in
         # update() (main thread); _frame_lock guards _latest_frame which is written
         # by the background fetch thread, hence the targeted lock scope below.
-        if not self._fetching:
+        if not self._fetching and self._coord_from_input:
             with self._frame_lock:
                 has_frame = self._latest_frame is not None
             needs_fetch = (
@@ -1046,6 +1152,8 @@ class _Node(Node):
                         dpg_set_value(tag_node + ":Status", "Status: Ready ✓ (from cache)")
                     except Exception:
                         pass
+                    # Warm the cache with the 8 km² beside the position.
+                    self._prefetch_surrounding(params)
                 else:
                     # Some tiles are missing — start a background download
                     dpg_set_value(tag_node + ":Status", "Status: Fetching…")
