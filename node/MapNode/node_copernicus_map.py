@@ -152,7 +152,9 @@ class _TokenManager:
         if not _HAS_REQUESTS:
             raise ImportError("The 'requests' package is required.")
         print(f"[CopernicusMap] POST {_TOKEN_URL}")
-        print(f"[CopernicusMap]   grant_type=client_credentials  client_id={creds['client_id']}")
+        _cid = creds['client_id']
+        _cid_masked = _cid[:6] + "…" + _cid[-4:] if len(_cid) > 10 else "***"
+        print(f"[CopernicusMap]   grant_type=client_credentials  client_id={_cid_masked}")
         resp = _requests.post(
             _TOKEN_URL,
             data={
@@ -164,7 +166,7 @@ class _TokenManager:
         )
         print(f"[CopernicusMap] Token response: HTTP {resp.status_code}")
         if not resp.ok:
-            print(f"[CopernicusMap] Auth error body:\n{resp.text}")
+            print(f"[CopernicusMap] Auth error body:\n{resp.text[:500]}")
             raise RuntimeError(
                 f"Copernicus auth failed ({resp.status_code}): {resp.text[:300]}"
             )
@@ -713,6 +715,7 @@ class _Node(Node):
             f"  radius={params['radius']} km  source={params['source_name']}"
             f"  dates={params['date_from']}→{params['date_to']}  cloud<={params['cloud']}%"
         )
+        print(f"[CopernicusMap] Evalscript:\n{params['evalscript']}")
         try:
             tiles, (lat_min, lat_max, lon_min, lon_max) = _bbox_tiles(
                 params["lat"], params["lon"], params["radius"]
@@ -949,13 +952,12 @@ def _fetch_tile_with_params(cdse_id: str, bbox: list, evalscript: str,
 
     print(f"[CopernicusMap] POST {_PROCESS_URL}")
     print(f"[CopernicusMap]   bbox={bbox}  cdse_id={cdse_id}  dates={date_from}→{date_to}  cloud<={cloud}%")
-    print(f"[CopernicusMap]   evalscript:\n{evalscript}")
 
     resp = _requests.post(_PROCESS_URL, json=payload, headers=headers, timeout=timeout)
     print(f"[CopernicusMap] Process response: HTTP {resp.status_code}"
           f"  content-type={resp.headers.get('Content-Type', '?')}")
     if not resp.ok:
-        print(f"[CopernicusMap] Process error body:\n{resp.text}")
+        print(f"[CopernicusMap] Process error body:\n{resp.text[:500]}")
         raise RuntimeError(
             f"CDSE Process API error ({resp.status_code}): {resp.text[:300]}"
         )
