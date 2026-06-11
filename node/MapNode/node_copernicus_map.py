@@ -252,11 +252,18 @@ def _formula_to_js(formula: str) -> str:
     return formula
 
 
-def _build_evalscript(formula: str, bands: list, slot_bands: list) -> str:
+def _build_evalscript(formula: str, bands: list, slot_bands: list,
+                      use_float32: bool = True) -> str:
     """Return a SentinelHub evalscript for the given formula and bands.
 
     *slot_bands* lists the explicitly selected band slots; if any band in the
     formula is not in *slot_bands* it is added automatically.
+
+    *use_float32* should be ``True`` when the response format supports 32-bit
+    floats (e.g. ``image/tiff``).  Pass ``False`` when using ``image/png``,
+    which only supports integer sample types: the evalscript will use
+    ``sampleType: "AUTO"`` and clamp the output to ``[0, 1]`` so that the PNG
+    response can be decoded correctly.
     """
     all_bands = list(dict.fromkeys(slot_bands + bands))  # preserve order, dedup
     if not all_bands:
@@ -266,17 +273,24 @@ def _build_evalscript(formula: str, bands: list, slot_bands: list) -> str:
     assignments  = "\n  ".join(f"var {b} = sample.{b};" for b in all_bands)
     js_formula   = _formula_to_js(formula) if formula.strip() else all_bands[0]
 
+    if use_float32:
+        sample_type = "FLOAT32"
+        clamp       = f"Math.max(-3.4e38, Math.min(3.4e38, {js_formula}))"
+    else:
+        sample_type = "AUTO"
+        clamp       = f"Math.max(0.0, Math.min(1.0, {js_formula}))"
+
     return f"""\
 //VERSION=3
 function setup() {{
   return {{
     input: [{{bands: [{band_list_js}]}}],
-    output: {{bands: 1, sampleType: "FLOAT32"}}
+    output: {{bands: 1, sampleType: "{sample_type}"}}
   }};
 }}
 function evaluatePixel(sample) {{
   {assignments}
-  return [Math.max(-3.4e38, Math.min(3.4e38, {js_formula}))];
+  return [{clamp}];
 }}
 """
 
@@ -690,7 +704,8 @@ class _Node(Node):
         cdse_id     = src_info["cdse_id"]
         avail_bands = src_info["bands"]
         extra_bands = _extract_bands_from_formula(formula, avail_bands)
-        evalscript  = _build_evalscript(formula, extra_bands, slot_bands)
+        evalscript  = _build_evalscript(formula, extra_bands, slot_bands,
+                                        use_float32=_HAS_TIFFFILE)
         es_hash     = hashlib.md5(evalscript.encode()).hexdigest()[:8]
 
         return {
