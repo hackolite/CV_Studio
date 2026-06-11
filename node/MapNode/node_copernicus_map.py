@@ -19,6 +19,7 @@ Credentials are read from ``~/.cv_studio/copernicus_credentials.json``
 (written by the companion *Settings* node in the System category).
 """
 
+import datetime
 import hashlib
 import json
 import math
@@ -102,6 +103,16 @@ _FORMULA_CMAP_HINTS = {
     "ndsi": "cool",
     "evi":  "YlGn",
 }
+
+
+def _last_month_dates() -> tuple:
+    """Return (date_from, date_to) strings covering the previous calendar month."""
+    today = datetime.date.today()
+    first_of_this_month = today.replace(day=1)
+    last_of_last_month  = first_of_this_month - datetime.timedelta(days=1)
+    first_of_last_month = last_of_last_month.replace(day=1)
+    return first_of_last_month.isoformat(), last_of_last_month.isoformat()
+
 
 # ---------------------------------------------------------------------------
 # Credentials helper (reads what the Settings node saved)
@@ -459,17 +470,18 @@ class FactoryNode:
                     width=160,
                 )
                 dpg.add_spacer(height=3)
+                _df, _dt = _last_month_dates()
                 dpg.add_input_text(
                     tag=tag + ":DateFrom",
                     label="From",
-                    default_value="2024-01-01",
+                    default_value=_df,
                     width=130,
                     hint="YYYY-MM-DD",
                 )
                 dpg.add_input_text(
                     tag=tag + ":DateTo",
                     label="To",
-                    default_value="2024-06-30",
+                    default_value=_dt,
                     width=130,
                     hint="YYYY-MM-DD",
                 )
@@ -525,19 +537,11 @@ class FactoryNode:
                 )
                 dpg.add_spacer(height=4)
 
-            # ── Fetch button + status ──────────────────────────────────────
+            # ── Status ────────────────────────────────────────────────────
             with dpg.node_attribute(
                 tag=tag + ":FetchStatic",
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
-                dpg.add_button(
-                    tag=tag + ":FetchBtn",
-                    label="  Fetch  ",
-                    width=100,
-                    callback=node._on_fetch,
-                    user_data=tag,
-                )
-                dpg.add_spacer(height=3)
                 dpg.add_text(tag=tag + ":Status", default_value="Status: —")
                 dpg.add_spacer(height=2)
 
@@ -688,8 +692,9 @@ class _Node(Node):
         lat         = self._current_lat
         lon         = self._current_lon
         radius      = int(dpg_get_value(tag_node + ":Radius") or 5)
-        date_from   = str(dpg_get_value(tag_node + ":DateFrom") or "2024-01-01")
-        date_to     = str(dpg_get_value(tag_node + ":DateTo")   or "2024-06-30")
+        _lm_from, _lm_to = _last_month_dates()
+        date_from   = str(dpg_get_value(tag_node + ":DateFrom") or _lm_from)
+        date_to     = str(dpg_get_value(tag_node + ":DateTo")   or _lm_to)
         cloud       = int(dpg_get_value(tag_node + ":CloudCover") or 30)
         formula     = str(dpg_get_value(tag_node + ":Formula") or "(B08 - B04) / (B08 + B04)")
         cmap        = str(dpg_get_value(tag_node + ":Colormap") or "RdYlGn")
@@ -888,13 +893,16 @@ class _Node(Node):
                             pass
                 break
 
-        # ── Auto-fetch when coordinates from input have moved to a new area ──
-        # Trigger only when: coordinates came from a connected input, no fetch
-        # is in progress, and the center has shifted by at least half a tile
-        # (~500 m at the equator) from the last successfully fetched position.
+        # ── Auto-fetch when coordinates arrive and no map data is available ──
+        # Trigger when: coordinates came from a connected input, no fetch is in
+        # progress, and either no frame has been rendered yet (first arrival) or
+        # the center has shifted by at least half a tile (~500 m at the equator).
         if self._coord_from_input and not self._fetching:
+            with self._frame_lock:
+                has_frame = self._latest_frame is not None
             needs_fetch = (
-                self._last_fetch_lat is None
+                not has_frame
+                or self._last_fetch_lat is None
                 or self._last_fetch_lon is None
                 or abs(self._current_lat - self._last_fetch_lat) > _TILE_DEG * 0.5
                 or abs(self._current_lon - self._last_fetch_lon) > _TILE_DEG * 0.5
