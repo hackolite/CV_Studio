@@ -106,7 +106,9 @@ _FORMULA_CMAP_HINTS = {
 
 
 def _last_month_dates() -> tuple:
-    """Return (date_from, date_to) strings covering the previous calendar month."""
+    """Return ``(date_from, date_to)`` as ISO-format strings (YYYY-MM-DD)
+    covering the previous calendar month, e.g. ``('2026-05-01', '2026-05-31')``.
+    """
     today = datetime.date.today()
     first_of_this_month = today.replace(day=1)
     last_of_last_month  = first_of_this_month - datetime.timedelta(days=1)
@@ -897,6 +899,9 @@ class _Node(Node):
         # Trigger when: coordinates came from a connected input, no fetch is in
         # progress, and either no frame has been rendered yet (first arrival) or
         # the center has shifted by at least half a tile (~500 m at the equator).
+        # Thread-safety note: _current_lat/_current_lon are only written here in
+        # update() (main thread); _frame_lock guards _latest_frame which is written
+        # by the background fetch thread, hence the targeted lock scope below.
         if self._coord_from_input and not self._fetching:
             with self._frame_lock:
                 has_frame = self._latest_frame is not None
