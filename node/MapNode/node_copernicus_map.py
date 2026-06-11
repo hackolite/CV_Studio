@@ -193,7 +193,13 @@ def _load_tile(key: str):
     p = _cache_path(key)
     if os.path.exists(p):
         try:
-            return np.load(p, allow_pickle=False)
+            arr = np.load(p, allow_pickle=False)
+            # Validate shape and dtype to reject corrupted cache files
+            if arr.ndim != 2 or arr.shape != (_TILE_PX, _TILE_PX):
+                return None
+            if arr.dtype != np.float32:
+                arr = arr.astype(np.float32)
+            return arr
         except Exception:
             pass
     return None
@@ -259,79 +265,11 @@ function setup() {{
 }}
 function evaluatePixel(sample) {{
   {assignments}
-  var _eps = 1e-10;
-  return [clamp({js_formula}, -3.4e38, 3.4e38)];
+  return [Math.max(-3.4e38, Math.min(3.4e38, {js_formula}))];
 }}
 """
 
 
-# ---------------------------------------------------------------------------
-# CDSE tile fetcher
-# ---------------------------------------------------------------------------
-
-def _fetch_tile(cdse_id: str, bbox: list, evalscript: str, timeout: int = 60) -> np.ndarray:
-    """Download a single tile from the CDSE Process API.
-
-    Returns a 2-D float32 array of shape (H, W).  Raises on failure.
-    """
-    if not _HAS_REQUESTS:
-        raise ImportError("requests is required.")
-
-    token = _TOKEN_MGR.get_token()
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type":  "application/json",
-    }
-
-    lon_min, lat_min, lon_max, lat_max = bbox
-
-    # Choose output format — TIFF float32 preferred, PNG uint8 fallback
-    if _HAS_TIFFFILE:
-        fmt = {"type": "image/tiff", "parameters": {"compression": "none"}}
-    else:
-        fmt = {"type": "image/png"}
-
-    payload = {
-        "input": {
-            "bounds": {
-                "bbox": [lon_min, lat_min, lon_max, lat_max],
-                "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"},
-            },
-            "data": [{
-                "type": cdse_id,
-                "dataFilter": {
-                    "timeRange": {
-                        "from": "2024-01-01T00:00:00Z",
-                        "to":   "2024-06-30T23:59:59Z",
-                    },
-                    "maxCloudCoverage": 30,
-                },
-            }],
-        },
-        "output": {
-            "width":  _TILE_PX,
-            "height": _TILE_PX,
-            "responses": [{"identifier": "default", "format": fmt}],
-        },
-        "evalscript": evalscript,
-    }
-
-    resp = _requests.post(_PROCESS_URL, json=payload, headers=headers, timeout=timeout)
-    resp.raise_for_status()
-
-    if _HAS_TIFFFILE:
-        import io
-        arr = _tifffile.imread(io.BytesIO(resp.content))
-        arr = arr.squeeze().astype(np.float32)
-    else:
-        # PNG path — decode uint8 → first channel, normalise to float
-        img_arr = np.frombuffer(resp.content, dtype=np.uint8)
-        img     = cv2.imdecode(img_arr, cv2.IMREAD_GRAYSCALE)
-        if img is None:
-            raise ValueError("Failed to decode PNG response from CDSE.")
-        arr = img.astype(np.float32) / 255.0
-
-    return arr
 
 
 def _bbox_tiles(lat_center: float, lon_center: float, radius_km: float):

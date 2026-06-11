@@ -228,8 +228,7 @@ class _Node(Node):
         return {
             "image": None,
             "json": {
-                "copernicus_client_id":   creds["client_id"],
-                "copernicus_has_secret":  bool(creds["client_secret"]),
+                "copernicus_client_id": creds["client_id"],
             },
             "audio": None,
         }
