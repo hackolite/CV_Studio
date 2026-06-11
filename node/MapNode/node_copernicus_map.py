@@ -1080,6 +1080,7 @@ class _Node(Node):
         src_info    = _SOURCES.get(source_name, _SOURCES[_SOURCE_NAMES[0]])
         cdse_id     = src_info["cdse_id"]
         avail_bands = src_info["bands"]
+        extra_bands = _extract_bands_from_formula(formula, avail_bands)
         if self._visible_only(tag_node):
             visible = src_info.get("visible_bands", [])
             avail_bands = visible
@@ -1087,11 +1088,9 @@ class _Node(Node):
                 slot_bands = list(visible)
             # Drop the formula when it references non-visible wavelengths so
             # the evalscript never pulls bands outside the visible spectrum.
-            formula_bands = _extract_bands_from_formula(
-                formula, src_info["bands"])
-            if any(b not in visible for b in formula_bands):
+            if any(b not in visible for b in extra_bands):
                 formula = ""
-        extra_bands = _extract_bands_from_formula(formula, avail_bands)
+                extra_bands = []
         evalscript  = _build_evalscript(formula, extra_bands, slot_bands,
                                         use_float32=_HAS_TIFFFILE)
         es_hash     = hashlib.md5(evalscript.encode()).hexdigest()[:8]
