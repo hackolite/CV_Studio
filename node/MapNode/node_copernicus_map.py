@@ -26,6 +26,7 @@ import os
 import re
 import threading
 import time
+import traceback
 
 import cv2
 import numpy as np
@@ -150,6 +151,8 @@ class _TokenManager:
             )
         if not _HAS_REQUESTS:
             raise ImportError("The 'requests' package is required.")
+        print(f"[CopernicusMap] POST {_TOKEN_URL}")
+        print(f"[CopernicusMap]   grant_type=client_credentials  client_id={creds['client_id']}")
         resp = _requests.post(
             _TOKEN_URL,
             data={
@@ -159,13 +162,16 @@ class _TokenManager:
             },
             timeout=20,
         )
+        print(f"[CopernicusMap] Token response: HTTP {resp.status_code}")
         if not resp.ok:
+            print(f"[CopernicusMap] Auth error body:\n{resp.text}")
             raise RuntimeError(
                 f"Copernicus auth failed ({resp.status_code}): {resp.text[:300]}"
             )
         data         = resp.json()
         self._token  = data["access_token"]
         self._expiry = time.time() + float(data.get("expires_in", 3600))
+        print(f"[CopernicusMap] Token obtained, expires_in={data.get('expires_in', 3600)}s")
         return self._token
 
 
@@ -702,6 +708,11 @@ class _Node(Node):
 
     def _fetch_worker(self, tag_node: str, params: dict):
         """Background worker: download missing tiles, assemble and render."""
+        print(
+            f"[CopernicusMap] Fetch started — lat={params['lat']:.4f}  lon={params['lon']:.4f}"
+            f"  radius={params['radius']} km  source={params['source_name']}"
+            f"  dates={params['date_from']}→{params['date_to']}  cloud<={params['cloud']}%"
+        )
         try:
             tiles, (lat_min, lat_max, lon_min, lon_max) = _bbox_tiles(
                 params["lat"], params["lon"], params["radius"]
@@ -739,6 +750,8 @@ class _Node(Node):
                     need_download.append((tl, tlon, key))
 
             total = len(need_download)
+            print(f"[CopernicusMap] {len(tiles)} tile(s) total, {total} to download, "
+                  f"{len(tiles) - total} from cache")
             for i, (tl, tlon, key) in enumerate(need_download):
                 dpg_set_value(
                     tag_node + ":Status",
@@ -792,11 +805,16 @@ class _Node(Node):
                     "tiles_new": total,
                 }
 
+            print(f"[CopernicusMap] Fetch done — {total} new tile(s) downloaded")
             dpg_set_value(tag_node + ":Status",
                           f"Status: Done ✓  ({total} new tiles)")
 
         except Exception as exc:
-            dpg_set_value(tag_node + ":Status", f"Error: {str(exc)[:80]}")
+            print(f"[CopernicusMap] ERROR: {exc}")
+            print(traceback.format_exc())
+            short = str(exc)
+            dpg_set_value(tag_node + ":Status",
+                          f"Error: {short[:120]}" if len(short) > 120 else f"Error: {short}")
         finally:
             self._fetching = False
 
@@ -929,8 +947,15 @@ def _fetch_tile_with_params(cdse_id: str, bbox: list, evalscript: str,
         "evalscript": evalscript,
     }
 
+    print(f"[CopernicusMap] POST {_PROCESS_URL}")
+    print(f"[CopernicusMap]   bbox={bbox}  cdse_id={cdse_id}  dates={date_from}→{date_to}  cloud<={cloud}%")
+    print(f"[CopernicusMap]   evalscript:\n{evalscript}")
+
     resp = _requests.post(_PROCESS_URL, json=payload, headers=headers, timeout=timeout)
+    print(f"[CopernicusMap] Process response: HTTP {resp.status_code}"
+          f"  content-type={resp.headers.get('Content-Type', '?')}")
     if not resp.ok:
+        print(f"[CopernicusMap] Process error body:\n{resp.text}")
         raise RuntimeError(
             f"CDSE Process API error ({resp.status_code}): {resp.text[:300]}"
         )
@@ -943,6 +968,8 @@ def _fetch_tile_with_params(cdse_id: str, bbox: list, evalscript: str,
         img_arr = np.frombuffer(resp.content, dtype=np.uint8)
         img = cv2.imdecode(img_arr, cv2.IMREAD_GRAYSCALE)
         if img is None:
+            print(f"[CopernicusMap] PNG decode failed. Response size={len(resp.content)} bytes")
+            print(f"[CopernicusMap] First 200 bytes: {resp.content[:200]}")
             raise ValueError("Failed to decode PNG response from CDSE.")
         arr = img.astype(np.float32) / 255.0
 
