@@ -79,9 +79,9 @@ _TILE_PX    = 128
 _MAX_TILES  = 20   # → maximum 20×20 km² display area
 # Maximum parallel tile downloads (mirrors the OSM tile prefetch pool size)
 _FETCH_WORKERS = 4
-# Ring of ~1 km tiles prefetched around the centre tile so the "8 km beside"
+# Ring of ~1 km tiles prefetched around the center tile so the "8 km beside"
 # the position are already cached for smooth panning / zoom.  A ring of 1 tile
-# yields the 8 tiles adjacent to the centre (a 3×3 grid = centre 1 km² + the 8
+# yields the 8 tiles adjacent to the center (a 3×3 grid = center 1 km² + the 8
 # neighbouring km²).  Prefetching runs in the background after the central area
 # has been rendered and only downloads tiles that are not already cached.
 _PREFETCH_RING = 1
@@ -361,11 +361,11 @@ def _tile_bbox(tile_lat: int, tile_lon: int) -> list:
     ]
 
 
-def _ring_tiles(lat_center: float, lon_center: float, ring: int):
-    """Return the tiles of a ``(2*ring+1)×(2*ring+1)`` grid centred on the tile
+def _ring_tiles(lat_center: float, lon_center: float, ring: int) -> list:
+    """Return the tiles of a ``(2*ring+1)×(2*ring+1)`` grid centered on the tile
     that contains ``(lat_center, lon_center)``.
 
-    For ``ring == 1`` this yields the centre tile plus its 8 neighbours (a 3×3
+    For ``ring == 1`` this yields the center tile plus its 8 neighbours (a 3×3
     grid), i.e. the 1 km² around the position and the 8 km² beside it.
     """
     c_lat = math.floor(lat_center / _TILE_DEG)
@@ -856,7 +856,7 @@ class _Node(Node):
                         )
                         _save_tile(key, data)
                     except Exception as exc:
-                        print(f"[CopernicusMap] prefetch tile ({tl},{tlon}) failed: {exc}")
+                        print(f"[CopernicusMap] prefetch tile ({tl}, {tlon}) failed: {exc}")
 
                 with concurrent.futures.ThreadPoolExecutor(
                     max_workers=min(_FETCH_WORKERS, len(missing))
