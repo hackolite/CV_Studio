@@ -90,6 +90,9 @@ _PREFETCH_RING = 1
 _DISPLAY_W  = 512
 _DISPLAY_H  = 512
 
+# Maximum number of GPS positions kept in the on-map trace history
+_TRACE_MAX  = 5000
+
 # Sentinel-2 L2A bands available in CDSE
 _S2_BANDS = [
     "B01", "B02", "B03", "B04", "B05", "B06",
@@ -413,6 +416,100 @@ def _apply_colormap(arr: np.ndarray, cmap_name: str,
 
 
 # ---------------------------------------------------------------------------
+# Geo ↔ composite-pixel helpers (continuous GPS overlay rendering)
+# ---------------------------------------------------------------------------
+
+def _composite_geo_bounds(t_lat_min: int, t_lat_max: int,
+                          t_lon_min: int, t_lon_max: int) -> tuple:
+    """Return ``(lat_min, lat_max, lon_min, lon_max)`` in degrees for a
+    composite assembled from the inclusive tile-index range."""
+    return (
+        t_lat_min       * _TILE_DEG,
+        (t_lat_max + 1) * _TILE_DEG,
+        t_lon_min       * _TILE_DEG,
+        (t_lon_max + 1) * _TILE_DEG,
+    )
+
+
+def _latlon_to_composite_px(lat: float, lon: float, geo: tuple) -> tuple:
+    """Convert ``(lat, lon)`` to float pixel ``(x, y)`` inside a composite
+    whose geographic bounds are *geo* = (lat_min, lat_max, lon_min, lon_max).
+
+    Row 0 of the composite is the northern edge (``lat_max``); pixels scale
+    linearly at ``_TILE_PX / _TILE_DEG`` px per degree on both axes.
+    """
+    lat_min, lat_max, lon_min, lon_max = geo
+    ppd = _TILE_PX / _TILE_DEG
+    x = (lon - lon_min) * ppd
+    y = (lat_max - lat) * ppd
+    return x, y
+
+
+def _pick_cmap(cmap: str, formula: str) -> str:
+    """Return *cmap* or, when empty, a per-formula heuristic default."""
+    if cmap:
+        return cmap
+    fl = (formula or "").lower().replace(" ", "")
+    for kw, cm in _FORMULA_CMAP_HINTS.items():
+        if kw in fl:
+            return cm
+    return "RdYlGn"
+
+
+def _crop_view(base_bgr: np.ndarray, center_x: float, center_y: float,
+               view_w: int, view_h: int) -> tuple:
+    """Crop a ``view_h × view_w`` window centered on ``(center_x, center_y)``
+    out of *base_bgr*, padding out-of-bounds areas with dark gray.
+
+    Returns ``(view_bgr, x0, y0)`` where ``(x0, y0)`` is the top-left corner
+    of the window in composite-pixel coordinates (needed to place overlay
+    markers inside the view).
+    """
+    h, w = base_bgr.shape[:2]
+    x0 = int(round(center_x - view_w / 2.0))
+    y0 = int(round(center_y - view_h / 2.0))
+
+    view = np.full((view_h, view_w, 3), 40, dtype=np.uint8)
+    sx0, sy0 = max(0, x0), max(0, y0)
+    sx1, sy1 = min(w, x0 + view_w), min(h, y0 + view_h)
+    if sx1 > sx0 and sy1 > sy0:
+        view[sy0 - y0:sy1 - y0, sx0 - x0:sx1 - x0] = base_bgr[sy0:sy1, sx0:sx1]
+    return view, x0, y0
+
+
+def _draw_gps_overlay(view: np.ndarray, marker_xy: tuple,
+                      trace_xy: list = None) -> np.ndarray:
+    """Draw the GPS trace polyline and the current-position marker on *view*.
+
+    Mirrors the OSM map node marker styling (node_map.py): a historic trace
+    polyline (white halo + red line), then the live position as a
+    semi-transparent halo + solid red dot + white rim, so the progression is
+    visible directly on the satellite imagery.
+    """
+    out = view.copy()
+    h, w = out.shape[:2]
+
+    pts = [
+        (int(round(x)), int(round(y)))
+        for (x, y) in (trace_xy or [])
+        if -w <= x < 2 * w and -h <= y < 2 * h
+    ]
+    if len(pts) >= 2:
+        arr = np.array(pts, dtype=np.int32).reshape(-1, 1, 2)
+        cv2.polylines(out, [arr], False, (255, 255, 255), 5, cv2.LINE_AA)
+        cv2.polylines(out, [arr], False, (0, 30, 220), 2, cv2.LINE_AA)
+
+    mx, my = int(round(marker_xy[0])), int(round(marker_xy[1]))
+    if -20 <= mx < w + 20 and -20 <= my < h + 20:
+        halo = out.copy()
+        cv2.circle(halo, (mx, my), 11, (0, 80, 255), -1, cv2.LINE_AA)
+        cv2.addWeighted(halo, 0.35, out, 0.65, 0, out)
+        cv2.circle(out, (mx, my), 5, (0, 30, 220), -1, cv2.LINE_AA)
+        cv2.circle(out, (mx, my), 5, (255, 255, 255), 1, cv2.LINE_AA)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Display assembly helper (shared by the cache-hit path and _fetch_worker)
 # ---------------------------------------------------------------------------
 
@@ -423,14 +520,7 @@ def _assemble_display(composite: np.ndarray, params: dict,
     Used by both the synchronous cache-hit path in ``update()`` and the
     background ``_fetch_worker`` so the two code paths produce identical output.
     """
-    cmap = params.get("cmap") or ""
-    if not cmap:
-        fl = params.get("formula", "").lower().replace(" ", "")
-        cmap = "RdYlGn"
-        for kw, cm in _FORMULA_CMAP_HINTS.items():
-            if kw in fl:
-                cmap = cm
-                break
+    cmap = _pick_cmap(params.get("cmap") or "", params.get("formula", ""))
     bgr_img = _apply_colormap(composite, cmap)
     finite  = composite[np.isfinite(composite)]
     if finite.size > 0:
@@ -652,6 +742,15 @@ class _Node(Node):
     _prefetching     = False
     _frame_lock      = None
 
+    # Raw composite + its geographic bounds, kept so update() can re-render a
+    # continuous view (sub-tile scrolling + GPS overlay) on every frame
+    # without waiting for a new block fetch — mirrors node_map.py behaviour.
+    _latest_composite = None
+    _composite_geo    = None   # (lat_min, lat_max, lon_min, lon_max)
+    _base_bgr         = None   # colormapped full composite (BGR uint8)
+    _base_sig         = None   # (id(composite), cmap) cache signature
+    _gps_trace        = None   # list of (lat, lon) — progression history
+
     def __init__(self):
         self._band_slots    = []
         self._band_slot_ctr = 0
@@ -660,6 +759,11 @@ class _Node(Node):
         self._frame_lock    = threading.Lock()
         self._fetching      = False
         self._prefetching   = False
+        self._latest_composite = None
+        self._composite_geo    = None
+        self._base_bgr         = None
+        self._base_sig         = None
+        self._gps_trace        = []
         # Coordinates driven by JSON input (CoordinateExample or similar)
         self._current_lat       = 48.8566
         self._current_lon       = 2.3522
@@ -789,6 +893,10 @@ class _Node(Node):
             _paste_tile(composite, tile_data, tl, tlon, t_lat_max, t_lon_min)
 
         display = _assemble_display(composite, params, self._display_w, self._display_h)
+        geo = _composite_geo_bounds(t_lat_min, t_lat_max, t_lon_min, t_lon_max)
+        with self._frame_lock:
+            self._latest_composite = composite
+            self._composite_geo    = geo
         meta = {
             "source":    params["source_name"],
             "formula":   params["formula"],
@@ -1003,6 +1111,10 @@ class _Node(Node):
 
             with self._frame_lock:
                 self._latest_frame = display
+                self._latest_composite = composite
+                self._composite_geo    = _composite_geo_bounds(
+                    t_lat_min, t_lat_max, t_lon_min, t_lon_max,
+                )
                 self._latest_meta  = {
                     "source":    params["source_name"],
                     "formula":   params["formula"],
@@ -1035,6 +1147,65 @@ class _Node(Node):
                           f"Error: {short[:120]}" if len(short) > 120 else f"Error: {short}")
         finally:
             self._fetching = False
+
+    # ── Continuous view rendering (GPS overlay + sub-tile scrolling) ─────────
+
+    def _render_live_view(self, params: dict):
+        """Render the display from the cached composite, centered on the
+        *current* GPS position with sub-tile precision, then draw the trace
+        polyline and position marker on top.
+
+        Mirrors node_map.py: the map is re-rendered from cached data on every
+        update so the view scrolls continuously instead of jumping by blocks,
+        and the GPS point is always visible as an overlay.
+
+        Returns the BGR display image, or ``None`` when no composite is
+        available yet (caller falls back to the last block-rendered frame).
+        """
+        with self._frame_lock:
+            composite = self._latest_composite
+            geo       = self._composite_geo
+        if composite is None or geo is None:
+            return None
+
+        # Colormap the full composite once per (composite, cmap) pair — the
+        # per-frame work is then only a crop + resize + overlay.
+        cmap = _pick_cmap(params.get("cmap") or "", params.get("formula", ""))
+        sig  = (id(composite), cmap)
+        if self._base_bgr is None or self._base_sig != sig:
+            self._base_bgr = _apply_colormap(composite, cmap)
+            self._base_sig = sig
+
+        lat, lon = self._current_lat, self._current_lon
+        ppd    = _TILE_PX / _TILE_DEG     # pixels per degree
+        half_h = (params["radius"] / 111.0) * ppd
+        half_w = (params["radius"]
+                  / (111.0 * max(math.cos(math.radians(lat)), 1e-6))) * ppd
+        view_h = max(2, int(round(2 * half_h)))
+        view_w = max(2, int(round(2 * half_w)))
+
+        cx, cy = _latlon_to_composite_px(lat, lon, geo)
+        view, x0, y0 = _crop_view(self._base_bgr, cx, cy, view_w, view_h)
+
+        sx = self._display_w / float(view_w)
+        sy = self._display_h / float(view_h)
+        disp = cv2.resize(view, (self._display_w, self._display_h),
+                          interpolation=cv2.INTER_NEAREST)
+
+        marker = ((cx - x0) * sx, (cy - y0) * sy)
+        trace  = []
+        for (tlat, tlon) in (self._gps_trace or []):
+            tx, ty = _latlon_to_composite_px(tlat, tlon, geo)
+            trace.append(((tx - x0) * sx, (ty - y0) * sy))
+        disp = _draw_gps_overlay(disp, marker, trace)
+
+        finite = composite[np.isfinite(composite)]
+        if finite.size > 0:
+            legend = (f"{params.get('formula', '')}  "
+                      f"[{float(finite.min()):.3f}, {float(finite.max()):.3f}]")
+        else:
+            legend = params.get("formula", "")
+        return _draw_legend(disp, legend)
 
     # ── Node lifecycle ──────────────────────────────────────────────────────
 
@@ -1096,6 +1267,14 @@ class _Node(Node):
                         self._current_lat      = centroid_lat
                         self._current_lon      = centroid_lon
                         self._coord_from_input = True
+                        # Record the progression so it can be drawn as a trace
+                        # overlay on the map (skip duplicate consecutive points).
+                        if (not self._gps_trace
+                                or abs(self._gps_trace[-1][0] - centroid_lat) > 1e-7
+                                or abs(self._gps_trace[-1][1] - centroid_lon) > 1e-7):
+                            self._gps_trace.append((centroid_lat, centroid_lon))
+                            if len(self._gps_trace) > _TRACE_MAX:
+                                self._gps_trace = self._gps_trace[-_TRACE_MAX:]
                         try:
                             dpg_set_value(
                                 tag_node + ":CoordDisplay",
@@ -1123,9 +1302,9 @@ class _Node(Node):
         # by the background fetch thread, hence the targeted lock scope below.
         if not self._fetching and self._coord_from_input:
             with self._frame_lock:
-                has_frame = self._latest_frame is not None
+                has_composite = self._latest_composite is not None
             needs_fetch = (
-                not has_frame
+                not has_composite
                 or self._last_fetch_lat is None
                 or self._last_fetch_lon is None
                 or abs(self._current_lat - self._last_fetch_lat) > _TILE_DEG * 0.5
@@ -1166,9 +1345,24 @@ class _Node(Node):
                     t.start()
                     self._fetch_thread = t
 
+        # ── Continuous render: re-draw the view from the cached composite on
+        # every update, centered on the current GPS position with the trace +
+        # marker overlay — like the OSM map node — instead of waiting for the
+        # next block fetch to refresh the texture.
+        live_frame = None
+        if self._coord_from_input:
+            try:
+                live_frame = self._render_live_view(self._collect_params(tag_node))
+            except Exception as exc:
+                print(f"[CopernicusMap] live view render failed: {exc}")
+
         with self._frame_lock:
-            frame = self._latest_frame
+            frame = live_frame if live_frame is not None else self._latest_frame
             meta  = dict(self._latest_meta)
+
+        if live_frame is not None:
+            meta["gps"] = {"lat": self._current_lat, "lon": self._current_lon}
+            meta["trace_len"] = len(self._gps_trace)
 
         if frame is not None:
             # Push texture to DPG (max-zoom: no intermediate down-sample)
