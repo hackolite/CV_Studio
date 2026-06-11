@@ -954,7 +954,14 @@ class _Node(Node):
                       f"src_result type={type(src_result).__name__}")
                 coords = None
                 if isinstance(src_result, dict):
-                    coords = src_result.get("json")
+                    # node_result_dict stores data["json"] directly (main.py:230),
+                    # so src_result is already the coordinate payload — either a bare
+                    # coordinate dict (latitude/lon keys from RouteTripPlayer) or a
+                    # dict that wraps further data under a "json" key.
+                    if "latitude" in src_result or "lat" in src_result:
+                        coords = src_result
+                    else:
+                        coords = src_result.get("json")
                 elif isinstance(src_result, list):
                     coords = src_result
                 print(f"[CopernicusMap] coords extracted — type={type(coords).__name__} "
