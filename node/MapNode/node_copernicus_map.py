@@ -466,7 +466,7 @@ class FactoryNode:
                 dpg.add_slider_int(
                     tag=tag + ":Radius",
                     label="Radius (km)",
-                    default_value=5,
+                    default_value=1,
                     min_value=1,
                     max_value=50,
                     width=160,
@@ -693,7 +693,7 @@ class _Node(Node):
         source_name = dpg_get_value(tag_node + ":Source") or _SOURCE_NAMES[0]
         lat         = self._current_lat
         lon         = self._current_lon
-        radius      = int(dpg_get_value(tag_node + ":Radius") or 5)
+        radius      = int(dpg_get_value(tag_node + ":Radius") or 1)
         _lm_from, _lm_to = _last_month_dates()
         date_from   = str(dpg_get_value(tag_node + ":DateFrom") or _lm_from)
         date_to     = str(dpg_get_value(tag_node + ":DateTo")   or _lm_to)
@@ -895,14 +895,15 @@ class _Node(Node):
                             pass
                 break
 
-        # ── Auto-fetch when coordinates arrive and no map data is available ──
-        # Trigger when: coordinates came from a connected input, no fetch is in
-        # progress, and either no frame has been rendered yet (first arrival) or
-        # the center has shifted by at least half a tile (~500 m at the equator).
+        # ── Auto-fetch when no map data is available or the centre has shifted ──
+        # Trigger when: no fetch is in progress, and either no frame has been
+        # rendered yet (first arrival) or the centre has shifted by at least half
+        # a tile (~500 m at the equator).  Uses the default Paris coordinates
+        # until an explicit JSON input overrides them.
         # Thread-safety note: _current_lat/_current_lon are only written here in
         # update() (main thread); _frame_lock guards _latest_frame which is written
         # by the background fetch thread, hence the targeted lock scope below.
-        if self._coord_from_input and not self._fetching:
+        if not self._fetching:
             with self._frame_lock:
                 has_frame = self._latest_frame is not None
             needs_fetch = (
