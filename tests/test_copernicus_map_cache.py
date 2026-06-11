@@ -337,3 +337,68 @@ def test_try_serve_from_cache_meta_tiles_new_is_zero(M):
     assert result is not None
     _, meta = result
     assert meta["tiles_new"] == 0
+
+
+# ── Coordinate extraction from JSON input ─────────────────────────────────────
+
+def _extract_coords_from_src_result(M, src_result):
+    """Replicate the CopernicusMap coordinate-extraction logic for unit testing."""
+    coords = None
+    if isinstance(src_result, dict):
+        if "latitude" in src_result or "lat" in src_result:
+            coords = src_result
+        else:
+            coords = src_result.get("json")
+    elif isinstance(src_result, list):
+        coords = src_result
+    if isinstance(coords, dict):
+        coords = [coords]
+    return coords
+
+
+def test_coord_extraction_bare_latitude_longitude_dict(M):
+    """A bare dict from RouteTripPlayer (latitude/longitude keys) must be extracted."""
+    src_result = {
+        "latitude": 48.851257,
+        "longitude": 2.345743,
+        "is_moving": 1.0,
+        "rpm": 1200.0,
+    }
+    coords = _extract_coords_from_src_result(M, src_result)
+    assert isinstance(coords, list) and len(coords) == 1
+    item = coords[0]
+    assert item.get("latitude") == 48.851257
+    assert item.get("longitude") == 2.345743
+
+
+def test_coord_extraction_bare_lat_lon_dict(M):
+    """A bare dict with lat/lon keys (alternative naming) must also be extracted."""
+    src_result = {"lat": 48.8566, "lon": 2.3522, "is_moving": 1.0}
+    coords = _extract_coords_from_src_result(M, src_result)
+    assert isinstance(coords, list) and len(coords) == 1
+    assert coords[0].get("lat") == 48.8566
+
+
+def test_coord_extraction_list_of_dicts(M):
+    """A list of coordinate dicts (GPS simulation) must pass through unchanged."""
+    src_result = [
+        {"latitude": 48.8566, "longitude": 2.3522, "name": "A"},
+        {"latitude": 48.8666, "longitude": 2.3622, "name": "B"},
+    ]
+    coords = _extract_coords_from_src_result(M, src_result)
+    assert coords == src_result
+
+
+def test_coord_extraction_empty_list(M):
+    """An empty list produces an empty/falsy result without errors."""
+    coords = _extract_coords_from_src_result(M, [])
+    # empty list is falsy — the caller guards with `if isinstance(coords, list) and coords`
+    assert coords == []
+
+
+def test_coord_extraction_unknown_dict_falls_back_to_json_key(M):
+    """A dict without lat/latitude falls back to the 'json' key (legacy path)."""
+    inner = [{"latitude": 1.0, "longitude": 2.0}]
+    src_result = {"json": inner, "other": "stuff"}
+    coords = _extract_coords_from_src_result(M, src_result)
+    assert coords == inner
