@@ -608,3 +608,105 @@ def test_render_live_view_after_cache_hit(M):
     node._current_lat = params["lat"] + 3e-4
     v2 = node._render_live_view(params)
     assert (v1 != v2).any()
+
+
+# ── Visible-spectrum-only option ──────────────────────────────────────────────
+
+def test_visible_bands_constants(M):
+    assert M._S2_VISIBLE_BANDS == ["B02", "B03", "B04"]
+    assert M._SOURCES["Sentinel-2 L2A"]["visible_bands"] == M._S2_VISIBLE_BANDS
+    assert M._SOURCES["Sentinel-2 L1C"]["visible_bands"] == M._S2_VISIBLE_BANDS
+    # Sentinel-1 is radar: nothing in the visible spectrum
+    assert M._SOURCES["Sentinel-1 GRD"]["visible_bands"] == []
+
+
+def test_get_slot_bands_filters_non_visible(M):
+    node = _make_node(M)
+    node._band_slots = [("a1", "c1"), ("a2", "c2"), ("a3", "c3")]
+    vals = {
+        "n:VisibleOnly": True, "n:Source": "Sentinel-2 L2A",
+        "c1": "B04", "c2": "B08", "c3": "B02",
+    }
+    with mock.patch.object(M, "dpg_get_value", side_effect=vals.get):
+        assert node._get_slot_bands("n") == ["B04", "B02"]
+
+
+def test_get_slot_bands_unfiltered_when_unchecked(M):
+    node = _make_node(M)
+    node._band_slots = [("a1", "c1"), ("a2", "c2")]
+    vals = {
+        "n:VisibleOnly": False, "n:Source": "Sentinel-2 L2A",
+        "c1": "B04", "c2": "B08",
+    }
+    with mock.patch.object(M, "dpg_get_value", side_effect=vals.get):
+        assert node._get_slot_bands("n") == ["B04", "B08"]
+
+
+def test_grayout_disables_non_visible_slots(M):
+    node = _make_node(M)
+    node._band_slots = [("a1", "c1"), ("a2", "c2")]
+    vals = {
+        "n:VisibleOnly": True, "n:Source": "Sentinel-2 L2A",
+        "c1": "B08", "c2": "B03",
+    }
+    calls = {}
+    with mock.patch.object(M, "dpg_get_value", side_effect=vals.get), \
+         mock.patch.object(M.dpg, "configure_item",
+                           side_effect=lambda tag, **kw: calls.update({tag: kw})):
+        node._refresh_band_slot_grayout("n")
+    # Non-visible band (B08): grayed out, items restricted to visible bands
+    assert calls["c1"]["enabled"] is False
+    assert calls["c1"]["items"] == M._S2_VISIBLE_BANDS
+    # Visible band (B03): stays enabled with visible-only items
+    assert calls["c2"]["enabled"] is True
+    assert calls["c2"]["items"] == M._S2_VISIBLE_BANDS
+
+
+def test_grayout_restores_full_band_list_when_unchecked(M):
+    node = _make_node(M)
+    node._band_slots = [("a1", "c1")]
+    vals = {
+        "n:VisibleOnly": False, "n:Source": "Sentinel-2 L2A",
+        "c1": "B08",
+    }
+    calls = {}
+    with mock.patch.object(M, "dpg_get_value", side_effect=vals.get), \
+         mock.patch.object(M.dpg, "configure_item",
+                           side_effect=lambda tag, **kw: calls.update({tag: kw})):
+        node._refresh_band_slot_grayout("n")
+    assert calls["c1"]["enabled"] is True
+    assert calls["c1"]["items"] == M._S2_BANDS
+
+
+def test_collect_params_visible_only_filters_evalscript(M):
+    node = _make_node(M)
+    node._band_slots = [("a1", "c1"), ("a2", "c2")]
+    vals = {
+        "n:VisibleOnly": True, "n:Source": "Sentinel-2 L2A",
+        "n:Radius": 1, "n:DateFrom": "2026-05-01", "n:DateTo": "2026-05-31",
+        "n:CloudCover": 30, "n:Colormap": "RdYlGn",
+        "n:Formula": "(B08 - B04) / (B08 + B04)",
+        "c1": "B04", "c2": "B08",
+    }
+    with mock.patch.object(M, "dpg_get_value", side_effect=vals.get):
+        params = node._collect_params("n")
+    # The NDVI formula references B08 (NIR, non-visible): dropped entirely
+    assert "B08" not in params["evalscript"]
+    assert "B04" in params["evalscript"]
+
+
+def test_collect_params_visible_only_keeps_visible_formula(M):
+    node = _make_node(M)
+    node._band_slots = [("a1", "c1")]
+    vals = {
+        "n:VisibleOnly": True, "n:Source": "Sentinel-2 L2A",
+        "n:Radius": 1, "n:DateFrom": "2026-05-01", "n:DateTo": "2026-05-31",
+        "n:CloudCover": 30, "n:Colormap": "RdYlGn",
+        "n:Formula": "(B04 - B02) / (B04 + B02)",
+        "c1": "B03",
+    }
+    with mock.patch.object(M, "dpg_get_value", side_effect=vals.get):
+        params = node._collect_params("n")
+    assert "B04" in params["evalscript"]
+    assert "B02" in params["evalscript"]
+    assert "B08" not in params["evalscript"]

@@ -16,6 +16,8 @@ Space Ecosystem (CDSE) Process API, with:
     – once the first (non-default) position is defined the 8 km² beside it
       (a 3×3 neighbourhood) are prefetched in the background
   • Colormap rendering with per-formula default (NDVI → RdYlGn, etc.)
+  • "Visible spectrum only" checkbox: restricts band options to the visible
+    spectrum (B02/B03/B04) and grays out band slots set to other wavelengths
   • Maximum zoom: the display is cropped / rendered at full resolution with no
     unnecessary down-sampling.
 
@@ -100,10 +102,19 @@ _S2_BANDS = [
 ]
 _S1_BANDS = ["VV", "VH"]
 
+# Sentinel-2 bands within the visible spectrum (~380-700 nm):
+#   B02 (blue ≈490 nm), B03 (green ≈560 nm), B04 (red ≈665 nm)
+_S2_VISIBLE_BANDS = ["B02", "B03", "B04"]
+# Sentinel-1 is radar (C-band microwave) — nothing in the visible spectrum
+_S1_VISIBLE_BANDS = []
+
 _SOURCES = {
-    "Sentinel-2 L2A": {"cdse_id": "sentinel-2-l2a",  "bands": _S2_BANDS},
-    "Sentinel-2 L1C": {"cdse_id": "sentinel-2-l1c",  "bands": _S2_BANDS},
-    "Sentinel-1 GRD": {"cdse_id": "sentinel-1-grd",   "bands": _S1_BANDS},
+    "Sentinel-2 L2A": {"cdse_id": "sentinel-2-l2a",  "bands": _S2_BANDS,
+                       "visible_bands": _S2_VISIBLE_BANDS},
+    "Sentinel-2 L1C": {"cdse_id": "sentinel-2-l1c",  "bands": _S2_BANDS,
+                       "visible_bands": _S2_VISIBLE_BANDS},
+    "Sentinel-1 GRD": {"cdse_id": "sentinel-1-grd",   "bands": _S1_BANDS,
+                       "visible_bands": _S1_VISIBLE_BANDS},
 }
 _SOURCE_NAMES = list(_SOURCES.keys())
 
@@ -658,6 +669,13 @@ class FactoryNode:
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_text("── Bands ──")
+                dpg.add_checkbox(
+                    tag=tag + ":VisibleOnly",
+                    label="Visible spectrum only",
+                    default_value=False,
+                    callback=node._on_visible_only_toggle,
+                    user_data=tag,
+                )
                 dpg.add_button(
                     tag=tag + ":AddBandBtn",
                     label="+ Add band slot",
@@ -773,6 +791,51 @@ class _Node(Node):
 
     # ── Band-slot management ────────────────────────────────────────────────
 
+    def _visible_only(self, tag_node: str) -> bool:
+        """Return True when the 'Visible spectrum only' checkbox is checked."""
+        try:
+            return bool(dpg_get_value(tag_node + ":VisibleOnly"))
+        except Exception:
+            return False
+
+    @staticmethod
+    def _source_band_lists(tag_node: str) -> tuple:
+        """Return ``(all_bands, visible_bands)`` for the current source."""
+        source_name = dpg_get_value(tag_node + ":Source") or _SOURCE_NAMES[0]
+        src = _SOURCES.get(source_name, _SOURCES[_SOURCE_NAMES[0]])
+        return src["bands"], src.get("visible_bands", [])
+
+    def _on_visible_only_toggle(self, sender, app_data, user_data):
+        """Checkbox callback: gray out band options outside the visible
+        spectrum (or restore the full band list when unchecked)."""
+        tag_node = user_data
+        self._refresh_band_slot_grayout(tag_node)
+
+    def _refresh_band_slot_grayout(self, tag_node: str):
+        """Apply the visible-only filter to every band-slot combo.
+
+        When the filter is on, each combo only proposes visible-spectrum
+        bands; a combo whose current selection is a non-visible wavelength is
+        disabled (grayed out).  When the filter is off, the full band list is
+        restored and every combo is re-enabled.
+        """
+        visible_only = self._visible_only(tag_node)
+        bands, visible = self._source_band_lists(tag_node)
+        for _, combo_tag in self._band_slots:
+            try:
+                value = dpg_get_value(combo_tag)
+                if visible_only:
+                    in_visible = value in visible
+                    dpg.configure_item(
+                        combo_tag,
+                        items=visible,
+                        enabled=in_visible and bool(visible),
+                    )
+                else:
+                    dpg.configure_item(combo_tag, items=bands, enabled=True)
+            except Exception:
+                pass
+
     def _add_band_slot_internal(self, tag_node: str, default_band: str = "B04"):
         """Add a band slot to the node UI (called at init time or from button)."""
         self._band_slot_ctr += 1
@@ -782,8 +845,9 @@ class _Node(Node):
         slot_del  = tag_node + f":BandDel{idx}"
 
         # Determine the source to get band list
-        source_name = dpg_get_value(tag_node + ":Source") or _SOURCE_NAMES[0]
-        bands = _SOURCES.get(source_name, _SOURCES[_SOURCE_NAMES[0]])["bands"]
+        bands, visible = self._source_band_lists(tag_node)
+        if self._visible_only(tag_node) and visible:
+            bands = visible
 
         # The node attribute is inserted above the formula section
         # We rely on DPG's parent ordering — attributes are appended in order
@@ -796,7 +860,8 @@ class _Node(Node):
                 dpg.add_combo(
                     tag=slot_combo,
                     items=bands,
-                    default_value=default_band if default_band in bands else bands[0],
+                    default_value=(default_band if default_band in bands
+                                   else (bands[0] if bands else "")),
                     width=100,
                     label=f"B{idx}",
                 )
@@ -813,9 +878,10 @@ class _Node(Node):
     def _add_band_slot(self, sender, app_data, user_data):
         """Button callback: add a new band slot."""
         tag_node = user_data
-        source_name = dpg_get_value(tag_node + ":Source") or _SOURCE_NAMES[0]
-        bands = _SOURCES.get(source_name, _SOURCES[_SOURCE_NAMES[0]])["bands"]
-        default = bands[0]
+        bands, visible = self._source_band_lists(tag_node)
+        if self._visible_only(tag_node) and visible:
+            bands = visible
+        default = bands[0] if bands else ""
         self._add_band_slot_internal(tag_node, default)
 
     def _remove_band_slot(self, sender, app_data, user_data):
@@ -831,12 +897,18 @@ class _Node(Node):
             pass
 
     def _get_slot_bands(self, tag_node: str) -> list:
-        """Return the list of bands currently selected in the slots."""
+        """Return the list of bands currently selected in the slots.
+
+        When the 'Visible spectrum only' option is checked, bands outside the
+        visible spectrum (grayed-out slots) are excluded.
+        """
+        visible_only = self._visible_only(tag_node)
+        _, visible = self._source_band_lists(tag_node)
         result = []
         for _, combo_tag in self._band_slots:
             try:
                 v = dpg_get_value(combo_tag)
-                if v:
+                if v and (not visible_only or v in visible):
                     result.append(v)
             except Exception:
                 pass
@@ -1008,6 +1080,17 @@ class _Node(Node):
         src_info    = _SOURCES.get(source_name, _SOURCES[_SOURCE_NAMES[0]])
         cdse_id     = src_info["cdse_id"]
         avail_bands = src_info["bands"]
+        if self._visible_only(tag_node):
+            visible = src_info.get("visible_bands", [])
+            avail_bands = visible
+            if not slot_bands:
+                slot_bands = list(visible)
+            # Drop the formula when it references non-visible wavelengths so
+            # the evalscript never pulls bands outside the visible spectrum.
+            formula_bands = _extract_bands_from_formula(
+                formula, src_info["bands"])
+            if any(b not in visible for b in formula_bands):
+                formula = ""
         extra_bands = _extract_bands_from_formula(formula, avail_bands)
         evalscript  = _build_evalscript(formula, extra_bands, slot_bands,
                                         use_float32=_HAS_TIFFFILE)
