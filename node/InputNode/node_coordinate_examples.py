@@ -2149,6 +2149,16 @@ class Node(BaseNode):
                 # Return empty list when None selected
                 json_output = []
 
+        # Debug log: show what is being emitted so the map integration can be traced
+        if json_output and selected_example == ROAD_ROUTE_NAME:
+            if isinstance(json_output, dict):
+                print(f"[CoordinateExamples] Road Route emitting dict — "
+                      f"lat={json_output.get('latitude'):.6f}  "
+                      f"lon={json_output.get('longitude'):.6f}  "
+                      f"is_moving={json_output.get('is_moving')}")
+            elif isinstance(json_output, list):
+                print(f"[CoordinateExamples] Road Route emitting list — "
+                      f"len={len(json_output)}  first={json_output[0] if json_output else None}")
         return {"image": None, "json": json_output, "audio": None}
 
     def close(self, node_id):

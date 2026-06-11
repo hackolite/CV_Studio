@@ -950,11 +950,21 @@ class _Node(Node):
             if conn_type == self.TYPE_JSON:
                 src_key = ":".join(conn[0].split(":")[:2])
                 src_result = node_result_dict.get(src_key, {})
+                print(f"[CopernicusMap] JSON input received — src_key={src_key} "
+                      f"src_result type={type(src_result).__name__}")
                 coords = None
                 if isinstance(src_result, dict):
                     coords = src_result.get("json")
                 elif isinstance(src_result, list):
                     coords = src_result
+                print(f"[CopernicusMap] coords extracted — type={type(coords).__name__} "
+                      f"value={coords!r:.200}" if coords is not None else
+                      f"[CopernicusMap] coords extracted — None")
+                # RouteTripPlayer.get_coordinates() returns a bare dict (not a list);
+                # wrap it so the loop below can process it uniformly.
+                if isinstance(coords, dict):
+                    print(f"[CopernicusMap] Bare dict coord received — wrapping in list")
+                    coords = [coords]
                 if isinstance(coords, list) and coords:
                     lats = []
                     lons = []
@@ -969,6 +979,9 @@ class _Node(Node):
                     if lats and lons:
                         centroid_lat = sum(lats) / len(lats)
                         centroid_lon = sum(lons) / len(lons)
+                        print(f"[CopernicusMap] Coords updated from input — "
+                              f"lat={centroid_lat:.6f}  lon={centroid_lon:.6f}  "
+                              f"(from {len(lats)} point(s))")
                         self._current_lat      = centroid_lat
                         self._current_lon      = centroid_lon
                         self._coord_from_input = True
@@ -979,6 +992,12 @@ class _Node(Node):
                             )
                         except Exception:
                             pass
+                    else:
+                        print(f"[CopernicusMap] No valid lat/lon found in coords list "
+                              f"(len={len(coords)})")
+                else:
+                    print(f"[CopernicusMap] coords is empty or not a list/dict — "
+                          f"type={type(coords).__name__} value={coords!r:.100}")
                 break
 
         # ── Auto-fetch when no map data is available or the center has shifted ──
