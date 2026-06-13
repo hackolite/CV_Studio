@@ -832,7 +832,7 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
 
 | Category | Emoji | Nodes | Description |
 |----------|-------|-------|-------------|
-| [Input](#-input-nodes) | 📥 | Image, Video, Webcam, RTSP, HLS, WebRTC, Microphone, API, MQTT, Websocket, Weather, YouTube… | All video/image/data sources |
+| [Input](#-input-nodes) | 📥 | Image, Video, Webcam, RTSP, HLS, WebRTC, Microphone, API, MQTT, WebSocket, Weather, YouTube… | All video/image/data sources |
 | [Process](#-process-nodes) | ⚙️ | Blur, Canny, Resize, Crop, CLAHE, Morphology, Color Space… | Classic image processing filters |
 | [Deep Learning](#-deep-learning-nodes) | 🤖 | Object Detection, Pose Estimation, Segmentation, Online Training… | ONNX/MediaPipe AI inference |
 | [Audio Model](#-audio-model-node) | 🎵 | AudioClassification | Audio classification with YAMNet or custom ONNX |
@@ -963,7 +963,7 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         </td>
     </tr>
     <tr>
-        <td width="200"><strong>Websocket</strong></td>
+        <td width="200"><strong>WebSocket</strong></td>
         <td width="320">🔗 WebSocket</td>
         <td width="760">
             Connects to a WebSocket server and outputs received messages as JSON data in real time.
@@ -1220,7 +1220,7 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
 <summary>AI/ML inference nodes (ONNX, MediaPipe)</summary>
 
 You can select the model from the drop-down list and toggle CPU / GPU inference.<br>
-See each node's directory under <code>node/DLNode/</code> for model licences.
+See each node's directory under <code>node/DLNode/</code> for model licenses.
 
 <table>
     <tr>
@@ -1277,7 +1277,7 @@ See each node's directory under <code>node/DLNode/</code> for model licences.
         <td width="760">
             Continuously fine-tunes a student ONNX model in real time using teacher detections as supervision.<br>
             Supports backprop via <em>onnx2torch</em> (head or full backbone) with distillation losses
-            (Hungarian matching, IoU+CE/KL, cardinality, FP/FN).<br>
+            (Hungarian matching, IoU + CE/KL (Cross-Entropy / Kullback–Leibler), cardinality, FP/FN (False Positives / False Negatives)).<br>
             Falls back to a lightweight affine-head correction when PyTorch is unavailable.
         </td>
     </tr>
@@ -1426,17 +1426,15 @@ See each node's directory under <code>node/DLNode/</code> for model licences.
         <td width="320">🗺️ Sentinel-2 / S1 map</td>
         <td width="760">
             Fetches live Sentinel-2 (or Sentinel-1) satellite imagery from the Copernicus Data Space Ecosystem.<br>
-            <strong>Features:</strong>
-            <ul>
-                <li>Dynamic band slots (add / remove) — same UI pattern as VideoConcat</li>
-                <li>Band-formula field: e.g. <code>(B08 - B04) / (B08 + B04)</code> for NDVI</li>
-                <li>Smart 1 km×1 km tile cache in <code>~/.cv_studio/copernicus_tiles/</code></li>
-                <li>Background 3×3 neighbourhood pre-fetch on first GPS fix</li>
-                <li>Colormap rendering with per-formula defaults (NDVI → RdYlGn, etc.)</li>
-                <li><strong>Visible spectrum only</strong> checkbox: restricts bands to B02/B03/B04</li>
-                <li><strong>True color (naked eye)</strong> checkbox: renders natural-color RGB (2.5×B04/B03/B02)</li>
-                <li>Continuous GPS overlay with position marker and trace</li>
-            </ul>
+            <strong>Features:</strong><br>
+            • Dynamic band slots (add / remove) — same UI pattern as VideoConcat<br>
+            • Band-formula field: e.g. <code>(B08 - B04) / (B08 + B04)</code> for NDVI<br>
+            • Smart 1 km×1 km tile cache in <code>~/.cv_studio/copernicus_tiles/</code><br>
+            • Background 3×3 neighbourhood pre-fetch on first GPS fix<br>
+            • Colormap rendering with per-formula defaults (NDVI → RdYlGn, etc.)<br>
+            • <strong>Visible spectrum only</strong> checkbox: restricts bands to B02/B03/B04<br>
+            • <strong>True color (naked eye)</strong> checkbox: renders natural-color RGB (2.5×B04/B03/B02)<br>
+            • Continuous GPS overlay with position marker and trace<br>
             Credentials are stored by the <em>Settings</em> system node.
         </td>
     </tr>
@@ -1488,7 +1486,7 @@ See each node's directory under <code>node/DLNode/</code> for model licences.
         <td width="760">
             Computes IoU between bounding boxes from two Object Detection inputs.<br>
             Uses Hungarian matching (DETR cost = 1−IoU + class cost) for set-based distillation loss output
-            (box L1+IoU, class CE/KL, cardinality, FP/FN, class-mismatch + detection_score).
+            (box L1+IoU, class CE/KL (Cross-Entropy / Kullback–Leibler), cardinality, FP/FN (False Positives / False Negatives), class-mismatch + detection_score).
         </td>
     </tr>
     <tr>
