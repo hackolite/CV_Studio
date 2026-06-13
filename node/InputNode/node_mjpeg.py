@@ -75,7 +75,7 @@ class FactoryNode:
 
             with dpg.node_attribute():
                 dpg.add_button(
-                    label='Start/Stop',
+                    label=node._start_label,
                     tag=node.tag_node_button_value_name,
                     callback=node._button,
                     user_data=node.tag_node_name,
@@ -87,6 +87,8 @@ class FactoryNode:
 
 class MjpegNode(Node):
     _ver = '0.0.1'
+    _start_label = 'Start'
+    _stop_label = 'Stop'
 
     def __init__(self):
         super().__init__()
@@ -95,6 +97,26 @@ class MjpegNode(Node):
         self._last_frame = {}
         self._last_frame_time = {}
         self._is_streaming = {}
+
+    def _open_capture(self, url):
+        cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+        if cap is not None and cap.isOpened():
+            return cap
+
+        try:
+            cap.release()
+        except Exception:
+            pass
+
+        cap = cv2.VideoCapture(url)
+        if cap is not None and cap.isOpened():
+            return cap
+
+        try:
+            cap.release()
+        except Exception:
+            pass
+        return None
 
     # -------------------------
     # START / STOP
@@ -108,14 +130,17 @@ class MjpegNode(Node):
         label = dpg.get_item_label(button_tag)
         url = dpg_get_value(url_tag)
 
-        if label == "Start":
+        if label == self._start_label:
 
             if url:
-                cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)  # 🔥 FIX IMPORTANT
-                self._capture[node_id] = cap
-                self._is_streaming[node_id] = True
-
-            dpg.set_item_label(button_tag, "Stop")
+                cap = self._open_capture(url)
+                if cap is not None:
+                    self._capture[node_id] = cap
+                    self._is_streaming[node_id] = True
+                    dpg.set_item_label(button_tag, self._stop_label)
+                    return
+            self._is_streaming[node_id] = False
+            dpg.set_item_label(button_tag, self._start_label)
 
         else:
 
@@ -128,7 +153,7 @@ class MjpegNode(Node):
                     pass
                 del self._capture[node_id]
 
-            dpg.set_item_label(button_tag, "Start")
+            dpg.set_item_label(button_tag, self._start_label)
 
     # -------------------------
     # UPDATE LOOP
@@ -136,6 +161,7 @@ class MjpegNode(Node):
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
 
         node_id = str(node_id)
+        tag_node_name = node_id + ':' + self.node_tag
 
         if not self._is_streaming.get(node_id, False):
             return {'image': None, 'json': None, 'audio': None}
@@ -145,7 +171,7 @@ class MjpegNode(Node):
             return {'image': None, 'json': None, 'audio': None}
 
         # FPS control
-        target_fps = 10  # 🔥 ESP32 SAFE LIMIT
+        target_fps = dpg_get_value(tag_node_name + ':fps') or 10
         min_interval = 1.0 / target_fps
 
         now = time.monotonic()
@@ -172,7 +198,7 @@ class MjpegNode(Node):
         # -------------------------
         if not ret or frame is None:
 
-            url_tag = node_id + ':text:Input01Value'
+            url_tag = tag_node_name + ':text:Input01Value'
             url = dpg_get_value(url_tag)
 
             try:
@@ -183,11 +209,11 @@ class MjpegNode(Node):
             gc.collect()
             time.sleep(0.3)
 
-            new_cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
-
-            if new_cap.isOpened():
+            new_cap = self._open_capture(url)
+            if new_cap is not None:
                 self._capture[node_id] = new_cap
             else:
+                self._capture.pop(node_id, None)
                 print("[MJPEG] reconnect failed")
 
             return {'image': self._last_frame.get(node_id), 'json': None, 'audio': None}
@@ -205,7 +231,7 @@ class MjpegNode(Node):
             self.small_window_h
         )
 
-        dpg_set_value(node_id + ':image:Output01Value', texture)
+        dpg_set_value(tag_node_name + ':image:Output01Value', texture)
 
         return {'image': frame, 'json': None, 'audio': None}
 
