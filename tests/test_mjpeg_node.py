@@ -4,10 +4,9 @@ import os
 import sys
 import unittest.mock as mock
 
-import numpy as np
-
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+sys.modules['cv2'] = mock.MagicMock()
 sys.modules['dearpygui'] = mock.MagicMock()
 sys.modules['dearpygui.dearpygui'] = mock.MagicMock()
 
@@ -20,7 +19,7 @@ def test_update_writes_texture_to_mjpeg_tag():
     node.small_window_w = 240
     node.small_window_h = 135
 
-    frame = np.zeros((32, 32, 3), dtype=np.uint8)
+    frame = object()
     cap = mock.MagicMock()
     cap.isOpened.return_value = True
     cap.read.return_value = (True, frame)
@@ -51,7 +50,7 @@ def test_update_reconnect_uses_mjpeg_url_tag():
     node._capture[node_id] = cap
     node._is_streaming[node_id] = True
 
-    with mock.patch('node.InputNode.node_mjpeg.dpg_get_value', return_value='http://cam/stream') as m_get, \
+    with mock.patch('node.InputNode.node_mjpeg.dpg_get_value', side_effect=[10, 'http://cam/stream']) as m_get, \
          mock.patch.object(node, '_open_capture', return_value=None), \
          mock.patch('node.InputNode.node_mjpeg.time.sleep', return_value=None):
         node.update(1, [], {}, {}, {})
