@@ -340,58 +340,91 @@ class DpgNodeEditor(object):
                 
                 # print(menu_dict.items())
 
+                # Project root is the parent of node_dir (used to compute import paths at any depth)
+                _project_root = os.path.dirname(node_dir)
+
+                def _node_source_to_import(node_source):
+                    """Return the dotted Python import path for *node_source* relative to the project root."""
+                    path_no_ext = os.path.splitext(os.path.normpath(node_source))[0]
+                    rel = os.path.relpath(path_no_ext, _project_root)
+                    return rel.replace(os.sep, ".")
+
+                def _try_add_node_item(node_source, menu_label, parent_menu=None):
+                    """Import *node_source*, create a FactoryNode and add a menu item.
+
+                    If *parent_menu* is given the item is added inside that submenu context,
+                    otherwise it is added directly in the current DPG context.
+                    Returns the FactoryNode on success, None otherwise.
+                    """
+                    basename = os.path.basename(node_source)
+                    if basename.startswith("_"):
+                        return None
+
+                    import_path = _node_source_to_import(node_source)
+                    if import_path.endswith("__init__"):
+                        return None
+
+                    try:
+                        module = import_module(import_path)
+                        factorynode = module.FactoryNode()
+                        if menu_label == "DataProcess" and factorynode.node_tag == "BAR":
+                            return None
+                        dpg.add_menu_item(
+                            tag="Menu_" + factorynode.node_tag,
+                            label=factorynode.node_label,
+                            callback=self._callback_add_node,
+                            user_data=factorynode.node_tag,
+                        )
+                        factorynode.style = node_style(menu_label)
+                        self._node_factory_list[factorynode.node_tag] = factorynode
+                        return factorynode
+                    except AttributeError:
+                        logger.debug(f"Skipping {import_path}: no FactoryNode attribute")
+                        return None
+
                 for menu_info in menu_dict.items():
                     menu_label = menu_info[0]
                     logger.debug(f"Creating menu: {menu_label}")
+                    category_dir = os.path.join(node_dir, menu_info[1])
                     with dpg.menu(label=menu_label):
-                        node_sources_path = os.path.join(
-                            node_dir,
-                            menu_info[1],
-                            "*.py",
-                        )
-
-                        node_sources = glob(node_sources_path)
-                        # print(node_sources)
-
+                        # --- root-level nodes (existing behaviour) ---
+                        node_sources = sorted(glob(os.path.join(category_dir, "*.py")))
                         for node_source in node_sources:
-                            # Skip files starting with underscore (disabled nodes)
-                            basename = os.path.basename(node_source)
-                            if basename.startswith("_"):
-                                continue
-                                
-                            import_path = os.path.splitext(
-                                os.path.normpath(node_source)
-                            )[0]
-                            if platform.system() == "Windows":
-                                import_path = import_path.replace("\\", ".")
-                            else:
-                                import_path = import_path.replace("/", ".")
+                            _try_add_node_item(node_source, menu_label)
 
-                            import_path = import_path.split(".")
-                            import_path = ".".join(import_path[-3:])
-
-                            if import_path.endswith("__init__"):
-                                continue
-
-                            try:
-                                module = import_module(import_path)
-                                factorynode = module.FactoryNode()
-                                if menu_label == "DataProcess" and factorynode.node_tag == "BAR":
+                        # --- nodes inside subdirectories (new: one submenu per subdir) ---
+                        # Canonical display names for well-known subdirectory names
+                        _subdir_labels = {
+                            "database": "Database",
+                            "streaming": "Streaming",
+                            "rabbitmq": "RabbitMQ",
+                            "restapi": "REST API",
+                            "logs": "Logs",
+                            "mqtt": "MQTT",
+                            "mongodb": "MongoDB",
+                        }
+                        if os.path.isdir(category_dir):
+                            for subdir in sorted(
+                                d for d in os.listdir(category_dir)
+                                if os.path.isdir(os.path.join(category_dir, d))
+                            ):
+                                subdir_path = os.path.join(category_dir, subdir)
+                                # Only create a submenu if the subdir contains at least one usable node
+                                sub_sources = sorted(glob(os.path.join(subdir_path, "*.py")))
+                                usable = [
+                                    s for s in sub_sources
+                                    if not os.path.basename(s).startswith("_")
+                                    and not _node_source_to_import(s).endswith("__init__")
+                                ]
+                                if not usable:
                                     continue
-                                # print("Factory Instance :", factorynode.node_tag)
-                                dpg.add_menu_item(
-                                    tag="Menu_" + factorynode.node_tag,
-                                    label=factorynode.node_label,
-                                    callback=self._callback_add_node,
-                                    user_data=factorynode.node_tag,
+                                submenu_label = _subdir_labels.get(
+                                    subdir.lower(), subdir.replace("_", " ").title()
                                 )
-
-                                factorynode.style = node_style(menu_label)
-                                self._node_factory_list[factorynode.node_tag] = factorynode
-                            except AttributeError:
-                                # Skip files without FactoryNode class (utility modules)
-                                logger.debug(f"Skipping {import_path}: no FactoryNode attribute")
-                                continue
+                                logger.debug(f"Creating submenu: {menu_label} > {submenu_label}")
+                                with dpg.menu(label=submenu_label):
+                                    for node_source in usable:
+                                        _try_add_node_item(node_source, menu_label)
 
                 # Uptime text (far right of menu bar)
                 dpg.add_text(
