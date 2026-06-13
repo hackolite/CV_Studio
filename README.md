@@ -21,9 +21,13 @@ CV Studio is an advanced node-based image processing application that allows you
 
 - 🎨 **Visual Node Editor** - Intuitive drag-and-drop interface powered by DearPyGUI
 - 🔄 **Real-time Processing** - See results instantly as you build your pipeline
-- 🧩 **100+ Built-in Nodes** - Input, processing, ML/DL, analysis, and visualization nodes
-- 🤖 **ML/DL Integration** - Support for ONNX models, MediaPipe, and custom models
-- 📹 **Multiple Input Sources** - Webcam, video files, images, RTSP streams, screen capture
+- 🧩 **150+ Built-in Nodes** - Input, processing, ML/DL, audio, analysis, visualization, and action nodes
+- 🤖 **ML/DL Integration** - ONNX, MediaPipe, YOLOv8/YOLO11, YAMNet, VLM and custom models
+- 📹 **Multiple Input Sources** - Webcam, video, images, RTSP, HLS, WebRTC, WebSocket, MQTT, API, YouTube, screen capture
+- 🔊 **Audio Pipeline** - Microphone input → audio processing → AudioClassification with passthrough sync
+- 🗺️ **Satellite Imagery** - Copernicus/Sentinel-2 live tile streaming with band combinations and NDVI formulas
+- 🧠 **On-Device Training** - OnlineTraining node for live distillation fine-tuning (PyTorch backprop)
+- ➕ **In-Node Model Import** - Upload custom ONNX models directly from any DL node UI without restarting
 - 💾 **Save & Load** - Export and import your processing graphs as JSON
 - 🏗️ **Modern Architecture** - Professional codebase with proper error handling, logging, and testing
 - 🔌 **Extensible** - Easy to add custom nodes and processing algorithms
@@ -38,6 +42,12 @@ dearpygui       2.0.0 or later
 mediapipe       0.8.10 or later  ※ Required for MediaPipe nodes
 protobuf        3.20.0 or later  ※ Required for MediaPipe nodes
 filterpy        1.4.5 or later   ※ Required for MOT (Multi-Object Tracking) nodes
+librosa         0.9.0 or later   ※ Required for AudioClassification and audio resampling
+sounddevice     0.4.0 or later   ※ Required for Microphone node
+pymongo         4.0.0 or later   ※ Required for MongoDB action node
+requests        2.28.0 or later  ※ Required for VLM and CopernicusMap nodes
+torch           1.13.0 or later  ※ Optional, enables OnlineTraining backprop
+onnx2torch      1.5.0 or later   ※ Optional, enables OnlineTraining ONNX→torch conversion
 ```
 
 ## 🚀 Installation
@@ -826,599 +836,877 @@ python -m pytest tests/ --cov=src --cov=node --cov-report=html
 
 ## 📚 Available Nodes
 
-# Node
+> All inference nodes support **CPU and GPU** execution (select via the GPU checkbox). If the model does not support GPU inference, it falls back to CPU automatically.
+
 <details>
-<summary>Input Node</summary>
+<summary>📥 Input Node</summary>
 
 <table>
     <tr>
-        <td width="200">
-            Image
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172031017-fd0107a5-2a33-4e47-a18b-ea53213f65e1.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Image</b></td>
         <td width="760">
-            Node that reads still images (bmp, jpg, png, gif) and outputs images<br>
-            Open the file dialog with the "Select Image" button
+            Reads still images (bmp, jpg, png, gif) and outputs them frame by frame.<br>
+            Open the file dialog with the <b>Select Image</b> button.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Video
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172031118-9382a9f6-d45c-4d39-ae82-59575a109664.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Video</b></td>
         <td width="760">
-            A node that reads a video (mp4, avi) and outputs an image for each frame<br>
-            Open the file dialog with the "Select Movie" button<br>
-            Check "Loop" to play the video in a loop<br>
-            "Skip rate" sets the interval for skipping the output image.
+            Reads a video file (mp4, avi) and outputs one image per frame.<br>
+            Open the file dialog with <b>Select Movie</b>.<br>
+            Check <b>Loop</b> to repeat playback; <b>Skip rate</b> sets the frame skip interval.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Video(Set Frame Position)
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/211860076-00b700a5-18e1-46cc-ae30-376976d54f63.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Video (Set Frame Position)</b></td>
         <td width="760">
-            A node that reads a video (mp4, avi) and outputs an image at the specified frame position<br>
-            Open the file dialog with "Select Movie" button
+            Reads a video file and outputs the image at a user-specified frame position.<br>
+            Open the file dialog with <b>Select Movie</b>.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            WebCam
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172031202-2ec0e976-12c7-41a9-94e4-ef162302f0b1.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>WebCam</b></td>
         <td width="760">
-            A node that reads a webcam and outputs an image for each frame<br>
-            Specify the camera number in the Device No drop-down list<br>
+            Reads a webcam and outputs one image per frame.<br>
+            Select the camera index in the <b>Device No</b> drop-down list.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            RTSP
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/178135453-293836c2-e38d-476f-9b64-ea654470ba2e.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>RTSP</b></td>
         <td width="760">
-            A node that reads the RTSP input of a network camera and outputs an image for each frame<br>
+            Reads the RTSP stream of a network camera and outputs one image per frame.<br>
+            Enter the RTSP URL and press <b>Start</b>.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Microphone
-        </td>
-        <td width="320">
-            (Audio Input Node)
-        </td>
+        <td width="200"><b>HLS</b></td>
         <td width="760">
-            A node that captures real-time audio from a microphone and outputs audio data<br>
-            Select audio device from the dropdown list<br>
-            Configure sample rate (8kHz to 48kHz) and chunk duration (0.1s to 5.0s)<br>
-            Click "Start" to begin recording, "Stop" to pause<br>
-            Outputs audio data compatible with Spectrogram and other audio processing nodes<br>
-            See <a href="node/InputNode/README_Microphone.md">README_Microphone.md</a> for details
+            Reads an HLS (HTTP Live Streaming) stream and outputs video frames.<br>
+            Enter the HLS URL (.m3u8) and press <b>Start</b>.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Int Value
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172031284-95255053-6eaf-4298-a392-062129e698f6.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>YouTube</b></td>
         <td width="760">
-            Node that outputs an integer value<br>
+            Streams a YouTube video and outputs frames.<br>
+            Enter the video URL and press <b>Start</b>. Requires <code>yt-dlp</code> or <code>pytube</code>.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Float Value
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172031323-98ae0273-7083-48d0-9ef2-f02af7fde482.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>WebRTC</b></td>
         <td width="760">
-            Node that outputs the float value<br>
+            Receives a WebRTC video stream and outputs frames in real time.<br>
+            Configure the signaling server URL and press <b>Start</b>.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>WebSocket</b></td>
+        <td width="760">
+            Receives image frames published over a WebSocket connection.<br>
+            Configure host, port and topic, then press <b>Start</b>.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>MQTT</b></td>
+        <td width="760">
+            Receives image frames published over an MQTT broker.<br>
+            Configure broker address, port and topic, then press <b>Start</b>.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>API</b></td>
+        <td width="760">
+            Exposes an HTTP endpoint that accepts image frames (POST) and injects them into the pipeline.<br>
+            Configure the listening port and press <b>Start</b>.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Microphone</b></td>
+        <td width="760">
+            Captures real-time audio from a microphone and outputs audio chunks.<br>
+            <b>Options:</b><br>
+            &bull; Device selector — choose from all available audio input devices<br>
+            &bull; Sample rate — 8 kHz to 48 kHz (default 16 kHz)<br>
+            &bull; Chunk duration — 0.1 s to 5.0 s<br>
+            Click <b>Start</b> to begin recording, <b>Stop</b> to pause.<br>
+            Output is compatible with all AudioProcess and AudioClassification nodes.<br>
+            See <a href="node/InputNode/README_Microphone.md">README_Microphone.md</a> for details.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Screen Capture</b></td>
+        <td width="760">
+            Captures and outputs the full desktop screen as a video source.<br>
+            Useful for applying CV pipelines to desktop content in real time.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Temperature</b></td>
+        <td width="760">
+            Reads temperature sensor data and outputs it as a numeric value.<br>
+            Compatible with Raspberry Pi GPIO sensors.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Int Value</b></td>
+        <td width="760">
+            Outputs a user-defined integer constant. Use as a parameter source for other nodes.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Float Value</b></td>
+        <td width="760">
+            Outputs a user-defined float constant. Use as a parameter source for other nodes.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>JSON Boolean</b></td>
+        <td width="760">
+            Outputs a boolean value that can be toggled in the UI.<br>
+            Useful for conditional routing and trigger nodes.
         </td>
     </tr>
 </table>
 </details>
 
 <details>
-<summary>Process Node</summary>
+<summary>🖼️ Process Node</summary>
 
 <table>
     <tr>
-        <td width="200">
-            ApplyColorMap
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172031657-81e70c61-05a3-4bff-9423-67ac9e486f5c.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>ApplyColorMap</b></td>
         <td width="760">
-            A node that applies pseudo color to the input image and outputs a pseudo color image
+            Applies a pseudo-color map to a grayscale input image.<br>
+            Select from all OpenCV colormaps (JET, HOT, VIRIDIS, etc.) via the dropdown.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Blur
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172031667-399472c9-7731-4cc2-8258-6879a1836b66.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Blur</b></td>
         <td width="760">
-            A node that executes smoothing processing on the input image and outputs the smoothed image
+            Applies smoothing (averaging, Gaussian, median, or bilateral) to the input image.<br>
+            Kernel size is adjustable via slider.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Brightness
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172031761-9ab8d83d-9bac-4854-9a6d-44c34692a002.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Brightness</b></td>
         <td width="760">
-            A node that executes brightness adjustment processing on the input image and outputs the brightness adjustment image<br>
-            Brightness adjustment value can be changed with the "alpha" slide bar<br>
+            Adjusts image brightness. Change value with the <b>alpha</b> slider.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Canny
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172032723-df30d0bb-ed24-4909-afee-c3a78f66dad9.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Canny</b></td>
         <td width="760">
-            A node that executes edge detection processing using the Canny method on the input image and outputs the edge detection image.<br>
-           Specify the minimum and maximum thresholds with the slider
+            Applies Canny edge detection. Adjust minimum and maximum thresholds with sliders.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Contrast
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172042432-dab55644-f95f-4854-bcc4-45bb54d9c5bd.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>CLAHE</b></td>
         <td width="760">
-            A node that executes contrast adjustment processing on the input image and outputs the contrast adjustment image.<br>
-           Contrast adjustment value can be changed with the "beta" slide bar<br>
+            Applies Contrast Limited Adaptive Histogram Equalization to the input image.<br>
+            Adjust clip limit and tile grid size.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Crop
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172042627-1c90f1ca-2d57-45b4-8dbe-ce0e4917d08e.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Contrast</b></td>
         <td width="760">
-            A node that performs cropping of the input image and outputs the cropped image<br>
-            Upper left coordinates(x1, y1) and upper right coordinates(x2, y2) can be changed with the slider<br>
+            Adjusts image contrast. Change value with the <b>beta</b> slider.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            EqualizeHist
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172042718-4f14021f-c29e-4886-b44f-46af644a74fe.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Crop</b></td>
         <td width="760">
-            Node that performs histogram flattening of the brightness part of the input image and outputs the image<br>
+            Crops the input image. Adjust upper-left (x1, y1) and lower-right (x2, y2) coordinates with sliders.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Flip
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172042828-62d5ba24-69f9-4d6b-b3f9-322f43af0284.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>EqualizeHist</b></td>
         <td width="760">
-            A node that performs horizontal/vertical inversion to the input image and outputs the image<br>
+            Performs histogram equalization on the brightness channel of the input image.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Gamma Correction
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172042880-7804d210-72f7-4977-ac11-41f9e7883a65.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Flip</b></td>
         <td width="760">
-            A node that performs gamma correction on the input image and outputs the image<br>
-            Gamma value can be changed with the slider
+            Flips the image horizontally, vertically, or both.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Grayscale
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172042929-1501d980-b00b-42f7-bbb3-a078d95be5ff.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Gamma Correction</b></td>
         <td width="760">
-            A node that grayscales the input image and outputs the image<br>
+            Applies gamma correction to the input image. Gamma value adjustable via slider.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Threshold
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172042985-3e7908cc-f485-4684-884c-8cfe3d020004.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Grayscale</b></td>
         <td width="760">
-            A node that binarizes the input image and outputs the image<br>
-            Specify the binarization algorithm with "type"<br>
-            Change threshold with "threshold"<br><br>
-            In "type", "Otsu binarization (THRESH_OTSU)" is an automatic threshold determination algorithm, so the "threshold" value is ignored.
+            Converts the input image to grayscale.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Simple Filter
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/178098739-ee15159c-d66f-4b5d-822d-dbaf686448d6.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Illumination Correct</b></td>
         <td width="760">
-            A node that performs 3x3 2D filtering processing on the input image and outputs the image
+            Corrects uneven illumination (shading) across the image using background subtraction techniques.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Omnidirectional Viewer
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/182130848-fff3d053-6c21-4a03-9e96-371111112226.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Image Alpha Blend</b></td>
         <td width="760">
-            A node that transforms an input image(360-degree image) with the specified roll, pitch, and yaw axes and outputs the image<br>
-            The input image is assumed to be an equirectangular projection image
+            Alpha-blends two input images. Adjust the blending ratio with the alpha slider.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Resize
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/210739536-5f70e55a-3433-4325-81e2-79619943bd9f.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Kernel Sharpen</b></td>
         <td width="760">
-            A node that resizes the input image with the specified height, width and interpolation method and outputs the image.
-        </td>
-    </tr>
-</table>
-</details>
-
-
-<details>
-<summary>Deep Learning Node</summary>
-
-You can specify the model in the drop-down list and change the device at the time of inference with the CPU / GPU checkbox.<br>
-* If the model does not support GPU inference, checking GPU will still result in CPU inference<br>
-Refer to each directory of "node/deep_learning_node/XXXXXXXX" for the license of the model used by the node.
-<table>
-    <tr>
-        <td width="200">
-            Classification
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172043243-2c037f0b-e1ba-4e3b-96a8-b0e3358f6616.png" loading="lazy" width="300px">
-        </td>
-        <td width="760">
-            Node that performs classification on the input image<br>
-            The output image is a raw image<br><br>
-            Performs classification on the bounding box when an Object Detection node is connected
+            Applies a sharpening convolution kernel to the input image.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Face Detection
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172045704-23c00432-90b1-4a53-b621-6413ba8f18dd.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Morphology</b></td>
         <td width="760">
-            Node that performs face detection on the input image<br>
-            The output image is a raw image
+            Applies morphological operations (erode, dilate, open, close, gradient, tophat, blackhat).<br>
+            Select the operation type and adjust kernel size.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Low-Light Image Enhancement
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172045825-8ad902e0-d11d-44b7-8390-bb3e7ab12622.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>NLM Denoise</b></td>
         <td width="760">
-            A node that performs Low-Light Image Enhancement on the input image<br>
-            The output image is an image with Low-Light Image Enhancement applied.
+            Applies Non-Local Means (NLM) denoising to reduce noise in the input image.<br>
+            Adjust filter strength (h), template window, and search window.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Monocular Depth Estimation
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172045864-8e249b46-d5bf-4d48-b540-2e5102afbe21.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Omnidirectional Viewer</b></td>
         <td width="760">
-            A node that performs monocular depth estimation on the input image<br>
-            The output image is a grayscale image to which monocular depth estimation is applied.
+            Transforms a 360-degree equirectangular image by roll, pitch, and yaw axes.<br>
+            Use sliders to navigate the virtual camera inside the sphere.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Object Detection
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172044154-1ef0a081-0e1e-4e3f-8d0d-599b73ee895d.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Resize</b></td>
         <td width="760">
-            Node that performs object detection on the input image<br>
-            The output image is a raw image
+            Resizes the image to the specified width and height using a selectable interpolation method<br>
+            (nearest, linear, cubic, area, Lanczos).
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Pose Estimation
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172045920-cf18889d-d2f8-43ba-b3a5-773fd8df7eec.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Simple Filter</b></td>
         <td width="760">
-            Node that performs attitude estimation for the input image<br>
-            The output image is a raw image
+            Applies a 3×3 2D convolution filter to the image. Choose from preset kernels or enter custom values.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Semantic Segmentation
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172045965-6d77f4ef-d208-40c9-a335-25a9d1d07acc.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Adaptive Threshold</b></td>
         <td width="760">
-            Node that performs semantic segmentation on the input image<br>
-            The output image is a raw image
+            Applies adaptive thresholding (mean or Gaussian). Adjustable block size and C constant.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            QR Code Detection
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/174199447-f92a18ef-cc76-46a3-abf5-314f8f9e01fe.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Bilateral Filter</b></td>
         <td width="760">
-            Node that executes QR code detection for the input image<br>
-            The output image is a raw image
+            Applies a bilateral filter that smooths while preserving edges.<br>
+            Adjust diameter, sigma color, and sigma space.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Color Space</b></td>
+        <td width="760">
+            Converts the image between color spaces (BGR, RGB, HSV, HLS, LAB, YCrCb, etc.).
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Threshold</b></td>
+        <td width="760">
+            Binarizes the input image. Select the algorithm type (binary, Otsu, etc.) and adjust the threshold value.<br>
+            In Otsu mode the threshold value is determined automatically.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Unsharp Mask</b></td>
+        <td width="760">
+            Applies unsharp masking for sharpness enhancement. Adjust radius, amount, and threshold.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Zoom</b></td>
+        <td width="760">
+            Digitally zooms into a region of the image. Adjust zoom factor and center point.
         </td>
     </tr>
 </table>
 </details>
 
 <details>
-<summary>Analysis Node</summary>
+<summary>🤖 Deep Learning Node</summary>
+
+All deep learning nodes share the following common features:
+- **Model selector** — choose from built-in models via the drop-down list
+- **GPU checkbox** — switch between CPU and GPU inference (falls back to CPU if GPU is unavailable)
+- **➕ Add Model button** — import any custom ONNX model directly from the node UI (no restart required); uploaded models are saved persistently and appear in the drop-down list on the next launch
+- Refer to each model subdirectory under `node/DLNode/` for individual model licenses
 
 <table>
     <tr>
-        <td width="200">
-            FPS
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172046425-ad00b7ea-b91b-4542-81d2-c92002f8a925.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Object Detection</b></td>
         <td width="760">
-            A node that calculates FPS based on the processing time(ms) of the node<br>
-           Processing time input terminal can be added with "Add Slot"
+            Detects objects in the input image and outputs bounding boxes, class names, and confidence scores.<br>
+            <b>Built-in models:</b><br>
+            &bull; YOLOX-Nano (416×416) — 80 COCO classes<br>
+            &bull; YOLOX-Tiny (416×416) — 80 COCO classes<br>
+            &bull; YOLOX-S (640×640) — 80 COCO classes<br>
+            &bull; YOLO11Nano (608×416) — 80 COCO classes<br>
+            &bull; FreeYOLO-Nano (640×640) — 80 COCO classes<br>
+            &bull; FreeYOLO-CrowdHuman (640×640) — person only<br>
+            &bull; Light-Weight Person Detector (192×192) — person only<br>
+            &bull; YOLOTENNIS (608×608) — player1, player2, ball<br>
+            &bull; YOLO-DOTA-OBB (416×416) — 16 aerial object classes (oriented bounding boxes)<br>
+            <b>Options:</b><br>
+            &bull; Score threshold, NMS threshold, max detections (sliders)<br>
+            &bull; Draw bounding boxes toggle; box thickness slider<br>
+            &bull; ▼/▶ Settings collapse button to hide advanced parameters<br>
+            &bull; <b>Add Model</b> button — upload any custom ONNX detection model; choose output format (yolo11 / yolox) and class source (COCO or generic labels) when the ONNX has no embedded class names
         </td>
     </tr>
     <tr>
-        <td width="200">
-            RGB Histgram
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172046609-45ce392e-cbf1-4f14-b4eb-ee6b3fe7cc80.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Semantic Segmentation</b></td>
         <td width="760">
-            Node that calculates the histogram of each RGB channel of the input image and displays it in the graph
+            Performs pixel-wise semantic segmentation on the input image.<br>
+            <b>Built-in models:</b><br>
+            &bull; DeepLabV3 (MobileNetV2 backbone)<br>
+            &bull; Road Segmentation ADAS 0001<br>
+            &bull; Skin / Clothes / Hair Segmentation (DeepLabV3+)<br>
+            &bull; MediaPipe Selfie Segmentation — Normal mode<br>
+            &bull; MediaPipe Selfie Segmentation — LandScape mode<br>
+            &bull; YOLOv8-nano-seg (instance segmentation)<br>
+            &bull; FLAIR Aerial Segmentation — IGN aerial imagery (19 classes)<br>
+            &bull; FLAIR Aerial INT8 — quantized ONNX variant<br>
+            <b>Options:</b><br>
+            &bull; Model selector drop-down<br>
+            &bull; GPU / CPU toggle<br>
+            &bull; <b>Add Model</b> button — import a custom ONNX segmentation model; specify input resolution, number of classes, and a display name
         </td>
     </tr>
     <tr>
-        <td width="200">
-            BRISQUE
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/173472170-cc47e04e-80e7-4126-949f-a0f034b9f0b8.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Classification</b></td>
         <td width="760">
-            A node that evaluates image quality using BRISQUE<br>
-            * The higher the number, the worse
+            Classifies the input image (or bounding-box crops when connected downstream of an Object Detection node).<br>
+            <b>Options:</b> model selector, GPU toggle, top-k results
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Face Detection</b></td>
+        <td width="760">
+            Detects faces in the input image and outputs bounding boxes and keypoints.<br>
+            <b>Options:</b> model selector, score threshold, GPU toggle
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Pose Estimation</b></td>
+        <td width="760">
+            Estimates human body keypoints (skeleton) for the input image.<br>
+            <b>Options:</b> model selector (MediaPipe / ONNX), score threshold, GPU toggle
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Monocular Depth Estimation</b></td>
+        <td width="760">
+            Estimates per-pixel depth from a single RGB image.<br>
+            Outputs a grayscale depth map.<br>
+            <b>Options:</b> model selector, GPU toggle
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Low-Light Image Enhancement</b></td>
+        <td width="760">
+            Enhances images captured in low-light or night-time conditions using ONNX-based enhancement models.<br>
+            <b>Options:</b> model selector, GPU toggle
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Audio Classification</b></td>
+        <td width="760">
+            Classifies audio chunks (from a Microphone or AudioProcess node) and outputs a top-k label list and a mel-spectrogram image.<br>
+            Also provides an <b>audio passthrough</b> output, enabling synchronized audio+video pipelines (e.g. into ImageConcat → VideoWriter).<br>
+            <b>Built-in models:</b><br>
+            &bull; YAMNet (Google/Qualcomm) — 521 AudioSet classes, 16 kHz, waveform input<br>
+            <b>Options:</b><br>
+            &bull; Model selector drop-down<br>
+            &bull; Top-k results slider<br>
+            &bull; Class label source (ONNX metadata / ESC-50 built-in / YAMNet built-in)<br>
+            &bull; <b>Add Model</b> button — upload a custom ONNX audio model; specify input type (waveform or spectrogram), sample rate, and class names
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Online Training</b></td>
+        <td width="760">
+            Performs on-device distillation / fine-tuning of a student detection model guided by a teacher model.<br>
+            Supports PyTorch backprop (full head or backbone) and affine-head fallback when PyTorch is unavailable.<br>
+            Displays a live distillation loss chart (IoU, class CE/KL, cardinality, FP/FN losses).<br>
+            <b>Options:</b> teacher model, student model, train scope (head / all), learning rate, loss weights
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>TinyBert Vigilance</b></td>
+        <td width="760">
+            Runs a TinyBERT NLP model on text input to predict a vigilance / attention score.<br>
+            Outputs a float score and a label; connects to the Vigilance Gauge visual node.
         </td>
     </tr>
 </table>
 </details>
 
 <details>
-<summary>Draw Node</summary>
+<summary>🔊 Audio Process Node</summary>
+
+Audio processing nodes receive audio chunks and output transformed audio chunks. Chain them after a Microphone node.
 
 <table>
     <tr>
-        <td width="200">
-            Draw Information
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172046789-0d43ca22-b202-404a-ba01-dd80a01d01e5.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Spectrogram</b></td>
         <td width="760">
-            Draw the analysis result for the image of the node that outputs the raw image such as Classification node and Object Detection node.
+            Computes a mel-spectrogram from an audio chunk and outputs it as an image.<br>
+            <b>Options:</b> FFT size, hop length, number of mel bands, frequency range
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Image Concat
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172046873-1bb27261-160a-452e-b454-05d249ec1aca.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>BandPass Filter</b></td>
         <td width="760">
-            Node that displays multiple input images side by side<br>
-           Image input terminal can be added with "Add Slot"
+            Applies a bandpass filter to the audio signal.<br>
+            <b>Options:</b> low-cut and high-cut frequency sliders
         </td>
     </tr>
     <tr>
-        <td width="200">
-            PutText
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172046942-7d004807-348d-4576-bac5-f4da27f0e5ed.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Compressor</b></td>
         <td width="760">
-            A node that draws text in the upper left of the input image<br>
-            Drawing color can be selected in the color map<br>
-            By connecting the processing time input terminal, the processing time is also drawn.
+            Applies dynamic range compression to the audio signal.<br>
+            <b>Options:</b> threshold (dB), ratio, attack, release
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Result Image
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172047088-eb867eab-98bf-4f46-8435-533f03a8f9b0.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Decibel</b></td>
         <td width="760">
-            Node to display the image<br>
-            Display larger than the processing node<br>
-            Also, if you connect a node that outputs raw images such as a Classification node or Object Detection node, the analysis result will be added and drawn.
+            Measures the RMS amplitude and outputs it as a dB value.<br>
+            Useful for level monitoring and trigger conditions.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Result Image(Large)
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172047088-eb867eab-98bf-4f46-8435-533f03a8f9b0.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Equalizer</b></td>
         <td width="760">
-            Larger than the Result Image node
+            Multi-band parametric equalizer.<br>
+            <b>Options:</b> per-band gain sliders (configurable center frequency and bandwidth)
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Noise Gate</b></td>
+        <td width="760">
+            Suppresses audio below a configurable threshold (noise floor).<br>
+            <b>Options:</b> threshold (dB), attack, release
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Normalize</b></td>
+        <td width="760">
+            Normalizes audio amplitude to a target peak or RMS level.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Resample</b></td>
+        <td width="760">
+            Resamples the audio chunk to a new target sample rate.<br>
+            <b>Options:</b> target sample rate selector
         </td>
     </tr>
 </table>
 </details>
 
 <details>
-<summary>Other Node</summary>
+<summary>📊 Stats / Analysis Node</summary>
 
 <table>
     <tr>
-        <td width="200">
-            ON/OFF Switch
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172047545-e0887c75-16d0-450e-8cc2-50f4065173e0.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>FPS</b></td>
         <td width="760">
-            Node to switch whether to output the input image or not
+            Calculates FPS from processing-time inputs. Add slots with <b>Add Slot</b>.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Video Writer
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172047578-7ee450ff-0816-4006-814f-55f854ca921a.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>RGB Histogram</b></td>
         <td width="760">
-            Node to export the input image as a video<br>
-            Output destination, output size, FPS are specified in "setting.json"
+            Calculates and displays the per-channel RGB histogram of the input image.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>BRISQUE</b></td>
+        <td width="760">
+            Evaluates perceptual image quality using the BRISQUE metric (higher = worse quality).
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>IoU</b></td>
+        <td width="760">
+            Computes Intersection-over-Union between two sets of bounding boxes.<br>
+            Also computes set-level distillation metrics (Hungarian matching, cardinality, FP/FN) for use with OnlineTraining.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Homography</b></td>
+        <td width="760">
+            Estimates and applies a homography transform between two sets of keypoints.<br>
+            Useful for court or field calibration (e.g. tennis court bird's-eye view).
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>BAR</b></td>
+        <td width="760">
+            Displays numeric values as a live bar chart. Add input slots as needed.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Operator</b></td>
+        <td width="760">
+            Applies arithmetic or logical operations (+, −, ×, ÷, min, max, abs, …) on two scalar inputs.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>DistanceTracker</b></td>
+        <td width="760">
+            Tracks the cumulative distance traveled by detected objects across frames.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Dataprocessing Keypoints</b></td>
+        <td width="760">
+            Extracts, filters, and transforms keypoint data from Pose Estimation or Object Detection nodes.
         </td>
     </tr>
 </table>
 </details>
 
 <details>
-<summary>Preview Release Node</summary>
+<summary>🎨 Visual / Overlay Node</summary>
 
-Nodes whose specifications may change significantly in the future
 <table>
     <tr>
-        <td width="200">
-            MOT
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/172049681-67df2cc3-3db3-4766-a96e-f7c557e4a5b9.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Draw Information</b></td>
         <td width="760">
-            Node that inputs an Object Detection node and executes MOT(Multi Object Tracking)<br>
-            Supports 6 tracking algorithms: motpy, ByteTrack, Norfair, IOU Tracker, SORT, and CenterTrack<br>
-            See <a href="node/TrackerNode/mot/README.md">TrackerNode/mot/README.md</a> for details on each algorithm
+            Draws analysis results (labels, bounding boxes, keypoints) onto the image from Classification, Object Detection, Pose Estimation, or Segmentation nodes.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Exec Python Code
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/179454389-7b707584-ef3b-43f2-8e99-db74005c76e8.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>Image Concat</b></td>
         <td width="760">
-            Node that executes Python code <br>
-            The variable for the input image is "input_image" <br>
-            The variable for the output image is "output_image"
+            Displays multiple input images side by side in a single output frame.<br>
+            Add more image inputs with <b>Add Slot</b>.<br>
+            Also forwards audio from connected audio sources, enabling synchronized audio+video output.
         </td>
     </tr>
     <tr>
-        <td width="200">
-            Screen Capture
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/216200610-5a5714c0-99ac-4ec9-a56e-90ae99088815.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>PutText</b></td>
         <td width="760">
-            Node that captures and outputs the desktop full screen<br>
+            Draws a text string on the image. Select color from the color map; optionally overlay processing time.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Result Image</b></td>
+        <td width="760">
+            Displays the image in the node canvas. If connected to a raw-output node (Classification, Object Detection…) the analysis result is drawn automatically.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Result Image (Large)</b></td>
+        <td width="760">
+            Same as Result Image but with a larger preview area.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Overlay</b></td>
+        <td width="760">
+            Overlays a semi-transparent mask or colored region over the input image.<br>
+            <b>Options:</b> color picker, alpha slider
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Overlay Image</b></td>
+        <td width="760">
+            Overlays a second image (PNG with alpha channel supported) on top of the input image.<br>
+            <b>Options:</b> position (x, y), scale, alpha blend ratio
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>HeatMap</b></td>
+        <td width="760">
+            Accumulates object detections over time and renders a 2D spatial density heatmap.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>ObjHeatMap</b></td>
+        <td width="760">
+            Renders a heatmap from object bounding-box center positions; useful for crowd/traffic density analysis.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Chart</b></td>
+        <td width="760">
+            Plots detection metrics (count, confidence, distillation losses) as a live time-series chart.<br>
+            Connects to Object Detection, OnlineTraining, or IoU nodes.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Map</b></td>
+        <td width="760">
+            Renders a 2D floor/field map and plots object positions on it.<br>
+            <b>Options:</b> background image, coordinate transform, labels overlay toggle
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>TennisCourt</b></td>
+        <td width="760">
+            Renders a top-view tennis court diagram and overlays player/ball positions from detection output.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Word Cloud</b></td>
+        <td width="760">
+            Generates a word cloud image from text classification output (e.g. AudioClassification labels).
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Vigilance Gauge</b></td>
+        <td width="760">
+            Displays a gauge that visualizes a vigilance / attention score (0–1).<br>
+            Connects to TinyBert Vigilance node output.
         </td>
     </tr>
 </table>
 </details>
 
-# Node(Other repository)
-It is a node published in other repositories.<br>
-To use it with Image-Processing-Node-Editor, follow the installation instructions for each repository.
-
 <details>
-<summary>Input Node</summary>
+<summary>🗺️ Map Node</summary>
 
 <table>
     <tr>
-        <td width="200">
-            <a href=https://github.com/Kazuhito00/IPNE-YouTube-Input-Node>YouTube</a> 
-        </td>
-        <td width="320">
-            <img src="https://user-images.githubusercontent.com/37477845/179450682-f7cc8237-e9d8-4c0f-b5d8-d2caac453f04.png" loading="lazy" width="300px">
-        </td>
+        <td width="200"><b>CopernicusMap</b></td>
         <td width="760">
-            Node that reads YouTube and outputs images<br>
-            Please specify the URL of the YouTube video in the URL field and press the "Start" button<br>
-            It will take some time before playback starts<br>
-            Specify the YouTube loading interval with "Interval(ms)"
+            Streams satellite imagery from the Copernicus Sentinel Hub (Sentinel-2 / Sentinel-1) and renders it as a live tile map.<br>
+            <b>Options:</b><br>
+            &bull; Sentinel-2 band combinations (B02, B03, B04, B08, B11, B12, …)<br>
+            &bull; <b>True Color (naked eye)</b> checkbox — renders a natural RGB composite (B04/B03/B02 ×2.5)<br>
+            &bull; <b>Visible Spectrum Only</b> checkbox — restricts band slots to visible bands (B02/B03/B04)<br>
+            &bull; Custom formula input (NDVI, EVI, …)<br>
+            &bull; GPS position overlay with trace<br>
+            &bull; Tile cache to avoid redundant API calls<br>
+            Requires a Sentinel Hub API key (set in Settings node or environment variable).
         </td>
     </tr>
 </table>
+</details>
 
+<details>
+<summary>📡 Tracker Node</summary>
+
+<table>
+    <tr>
+        <td width="200"><b>MOT</b></td>
+        <td width="760">
+            Multi-Object Tracking: takes Object Detection output and assigns persistent IDs to objects across frames.<br>
+            <b>Supported algorithms:</b> motpy, ByteTrack, Norfair, IOU Tracker, SORT, CenterTrack<br>
+            Select the algorithm from the drop-down; each has its own tuning parameters.<br>
+            See <a href="node/TrackerNode/mot/README.md">TrackerNode/mot/README.md</a> for per-algorithm details.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>ReId</b></td>
+        <td width="760">
+            Re-Identification: matches detected persons across cameras or after re-entry using appearance features.<br>
+            Connects downstream of an Object Detection or MOT node.
+        </td>
+    </tr>
+</table>
+</details>
+
+<details>
+<summary>⏱️ Trigger / Logic Node</summary>
+
+<table>
+    <tr>
+        <td width="200"><b>Trigger</b></td>
+        <td width="760">
+            Fires a boolean signal when a connected numeric value crosses a configurable threshold.<br>
+            <b>Options:</b> threshold, comparison operator, hysteresis
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>ObjDetCount</b></td>
+        <td width="760">
+            Counts the number of detected objects (by class) and outputs a boolean trigger when the count satisfies a condition.<br>
+            <b>Options:</b> target class, count threshold, comparison operator
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>DbDetCount</b></td>
+        <td width="760">
+            Triggers when a database detection count crosses a threshold; used with the MongoDB node.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>CourtKeypointDeviation</b></td>
+        <td width="760">
+            Triggers when a tracked keypoint (e.g. player position on a court) deviates beyond a set distance from a reference point.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Boolean Inverter</b></td>
+        <td width="760">
+            Inverts (NOT) a boolean input signal.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>ON/OFF Switch</b></td>
+        <td width="760">
+            Routes the input image to the output only when switched ON. Toggle manually or via a boolean input.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Simple Router</b></td>
+        <td width="760">
+            Routes the input image to one of multiple output slots based on a boolean or index signal.
+        </td>
+    </tr>
+</table>
+</details>
+
+<details>
+<summary>⚡ Action Node</summary>
+
+<table>
+    <tr>
+        <td width="200"><b>VLM (Vision Language Model)</b></td>
+        <td width="760">
+            Sends the current frame to an external VLM HTTP endpoint and displays the natural-language response.<br>
+            <b>Options:</b><br>
+            &bull; Server URL (e.g. local Ollama endpoint)<br>
+            &bull; Model name (e.g. <code>llava</code>, <code>bakllava</code>)<br>
+            &bull; Prompt / caption text input<br>
+            Requests are sent in a subprocess so the GUI never blocks.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>MongoDB</b></td>
+        <td width="760">
+            Stores detection results (bounding boxes, classes, timestamps) in a MongoDB collection.<br>
+            <b>Options:</b> connection URI, database name, collection name, write interval
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>CamControl (PTZ)</b></td>
+        <td width="760">
+            Controls a PTZ (Pan-Tilt-Zoom) camera based on detected object positions.<br>
+            <b>Options:</b> connection settings, pan/tilt/zoom speed, target-following mode
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Buzzer</b></td>
+        <td width="760">
+            Triggers a GPIO buzzer (e.g. on Raspberry Pi) when a boolean input goes HIGH.<br>
+            <b>Options:</b> GPIO pin, frequency, duration
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Video Recorder</b></td>
+        <td width="760">
+            Records the input video stream to a file when a trigger signal is active.<br>
+            <b>Options:</b> output path, codec, FPS
+        </td>
+    </tr>
+</table>
+</details>
+
+<details>
+<summary>💾 Video / Output Node</summary>
+
+<table>
+    <tr>
+        <td width="200"><b>Video Writer</b></td>
+        <td width="760">
+            Exports the input image stream as a video file (mp4/avi).<br>
+            Supports synchronized audio+video output when connected via ImageConcat with an audio source.<br>
+            <b>Options:</b><br>
+            &bull; Output path and filename<br>
+            &bull; Codec (H.264, MPEG-4, …)<br>
+            &bull; Target FPS<br>
+            &bull; Output resolution<br>
+            &bull; Audio passthrough (chunk deduplication and pts_ms alignment)
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Dynamic Play</b></td>
+        <td width="760">
+            Plays back a recorded video file with real-time playback controls (play, pause, seek).
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Image Concat</b></td>
+        <td width="760">
+            See Visual / Overlay Node section above.
+        </td>
+    </tr>
+</table>
+</details>
+
+<details>
+<summary>⏳ Timeseries Node</summary>
+
+<table>
+    <tr>
+        <td width="200"><b>Position Prediction</b></td>
+        <td width="760">
+            Predicts the next position of a tracked object using a Kalman filter or similar time-series model.<br>
+            Connects downstream of MOT or Object Detection nodes.
+        </td>
+    </tr>
+</table>
+</details>
+
+<details>
+<summary>🔧 System Node</summary>
+
+<table>
+    <tr>
+        <td width="200"><b>Settings</b></td>
+        <td width="760">
+            Global application settings node: configure API keys, default output paths, GPU settings, logging level, and other application-wide parameters.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Sizing</b></td>
+        <td width="760">
+            Dynamically resizes all node thumbnails in the canvas to a chosen preview resolution.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>SyncQueue</b></td>
+        <td width="760">
+            Synchronizes frames from multiple asynchronous sources (e.g. different cameras or streams) by timestamp, ensuring frame-aligned output.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>SystemResource</b></td>
+        <td width="760">
+            Displays real-time CPU, RAM, and GPU utilization as gauges and time-series charts.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Scan</b></td>
+        <td width="760">
+            Scans a connected device or network for available cameras or streams and populates the result.
+        </td>
+    </tr>
+    <tr>
+        <td width="200"><b>Deploy</b></td>
+        <td width="760">
+            Packages the current processing graph and models into a deployable bundle (e.g. for edge devices).
+        </td>
+    </tr>
+</table>
 </details>
 
 ---
