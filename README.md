@@ -865,7 +865,8 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         </td>
         <td width="760">
             Reads still images (bmp, jpg, png, gif) and outputs them as image frames.<br>
-            Open the file dialog with the <em>Select Image</em> button.
+            <strong>Options:</strong><br>
+            • <em>Select Image</em> — opens a file dialog to pick an image file
         </td>
     </tr>
     <tr>
@@ -875,7 +876,13 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         </td>
         <td width="760">
             Reads a video file (mp4, avi) and outputs one image per frame.<br>
-            Check <em>Loop</em> to repeat the video. <em>Skip rate</em> controls frame decimation.
+            <strong>Options:</strong><br>
+            • <em>Select Movie</em> — opens a file dialog to pick a video file<br>
+            • <em>Loop</em> — checkbox to repeat the video<br>
+            • <em>Skip Rate</em> — integer slider to drop every N frames<br>
+            • <em>Target FPS</em> — target playback frame rate<br>
+            • <em>Speed</em> — float multiplier for playback speed<br>
+            • <em>Frames only</em> — checkbox to strip audio and output frames only
         </td>
     </tr>
     <tr>
@@ -885,7 +892,8 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         </td>
         <td width="760">
             Reads a webcam and outputs an image for each frame.<br>
-            Specify the camera with the <em>Device No</em> drop-down.
+            <strong>Options:</strong><br>
+            • <em>Device No</em> — drop-down to select the camera device index
         </td>
     </tr>
     <tr>
@@ -894,21 +902,27 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
             <img src="https://user-images.githubusercontent.com/37477845/178135453-293836c2-e38d-476f-9b64-ea654470ba2e.png" loading="lazy" width="300px">
         </td>
         <td width="760">
-            Reads an RTSP stream from a network/IP camera and outputs frames.
+            Reads an RTSP stream from a network/IP camera and outputs frames.<br>
+            <strong>Options:</strong><br>
+            • <em>URL</em> — text field for the RTSP stream URL
         </td>
     </tr>
     <tr>
         <td width="200"><strong>HLS</strong></td>
         <td width="320">🎞️ HLS Stream</td>
         <td width="760">
-            Reads an HLS (HTTP Live Streaming) URL and outputs video frames in real time.
+            Reads an HLS (HTTP Live Streaming) URL and outputs video frames in real time.<br>
+            <strong>Output:</strong> Audio passthrough slot
         </td>
     </tr>
     <tr>
         <td width="200"><strong>WebRTC</strong></td>
         <td width="320">📡 WebRTC</td>
         <td width="760">
-            Receives a live WebRTC video stream and outputs frames for downstream processing.
+            Receives a live WebRTC video stream and outputs frames for downstream processing.<br>
+            <strong>Options:</strong><br>
+            • <em>URL</em> — WebRTC signalling server URL<br>
+            • <em>Interval(ms)</em> — polling interval in milliseconds
         </td>
     </tr>
     <tr>
@@ -917,7 +931,8 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
             <img src="https://user-images.githubusercontent.com/37477845/216200610-5a5714c0-99ac-4ec9-a56e-90ae99088815.png" loading="lazy" width="300px">
         </td>
         <td width="760">
-            Captures the desktop full-screen and outputs it as a continuous image stream.
+            Captures the desktop full-screen and outputs it as a continuous image stream.<br>
+            No configurable parameters — starts capturing immediately when added.
         </td>
     </tr>
     <tr>
@@ -927,7 +942,10 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         </td>
         <td width="760">
             Reads a YouTube video URL and outputs frames.<br>
-            Enter the URL and press <em>Start</em>. Configure loading interval with <em>Interval(ms)</em>.
+            <strong>Options:</strong><br>
+            • <em>URL</em> — text field for the YouTube video URL<br>
+            • <em>Interval(ms)</em> — frame polling interval in milliseconds<br>
+            • <em>Start</em> — button to begin streaming
         </td>
     </tr>
 </table>
@@ -942,7 +960,13 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         <td width="320">🎤 Audio Input</td>
         <td width="760">
             Captures real-time audio from a microphone and outputs audio data chunks.<br>
-            Select device from dropdown; configure sample rate (8–48 kHz) and chunk duration (0.1–5 s).<br>
+            <strong>Options:</strong><br>
+            • <em>Device</em> — drop-down to select audio input device<br>
+            • <em>Sample Rate</em> — drop-down (8000–48000 Hz)<br>
+            • <em>Chunk (s)</em> — float slider for audio chunk duration (0.1–5 s)<br>
+            • <em>Output Mode</em> — drop-down to select output format<br>
+            • <em>Channels</em> — mono or stereo<br>
+            • <em>Slide (s)</em> — float slider for sliding-window overlap duration<br>
             Outputs audio compatible with Spectrogram and all AudioProcess nodes.
         </td>
     </tr>
@@ -951,7 +975,9 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         <td width="320">🌐 REST API</td>
         <td width="760">
             Polls a REST API endpoint and outputs the response as JSON data.<br>
-            Configure URL, method, headers, and polling interval.
+            <strong>Options:</strong><br>
+            • <em>URL</em> — text field for the endpoint URL<br>
+            • <em>Skip Rate</em> — integer slider to control polling frequency
         </td>
     </tr>
     <tr>
@@ -959,14 +985,17 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         <td width="320">📨 MQTT</td>
         <td width="760">
             Subscribes to an MQTT broker topic and outputs incoming messages as JSON.<br>
-            Configure broker host, port, topic, and credentials.
+            <strong>Options:</strong><br>
+            • <em>Start</em> — button to connect and begin subscribing
         </td>
     </tr>
     <tr>
         <td width="200"><strong>WebSocket</strong></td>
         <td width="320">🔗 WebSocket</td>
         <td width="760">
-            Connects to a WebSocket server and outputs received messages as JSON data in real time.
+            Connects to a WebSocket server and outputs received messages as JSON data in real time.<br>
+            <strong>Options:</strong><br>
+            • <em>Start</em> — button to open the connection
         </td>
     </tr>
     <tr>
@@ -974,7 +1003,10 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         <td width="320">🌡️ Weather / Temperature</td>
         <td width="760">
             Fetches live weather/temperature data from an external API and outputs it as JSON.<br>
-            Useful for environment-aware pipelines (e.g. combine with trigger logic).
+            <strong>Options:</strong><br>
+            • <em>Latitude</em> — text field for decimal latitude<br>
+            • <em>Longitude</em> — text field for decimal longitude<br>
+            • <em>Fetch Weather</em> — button to trigger a manual fetch
         </td>
     </tr>
     <tr>
@@ -982,14 +1014,23 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         <td width="320">✅ JSON Boolean</td>
         <td width="760">
             Outputs a configurable boolean value as a JSON signal.<br>
-            Toggle on/off in the node UI to gate downstream trigger nodes.
+            <strong>Options:</strong><br>
+            • <em>Enabled</em> — checkbox to set the output value (true/false)
         </td>
     </tr>
     <tr>
         <td width="200"><strong>CoordinateExamples</strong></td>
         <td width="320">📍 Coordinate Examples</td>
         <td width="760">
-            Outputs example GPS/coordinate data as JSON for testing map and spatial nodes.
+            Outputs example GPS/coordinate data as JSON for testing map and spatial nodes.<br>
+            <strong>Options:</strong><br>
+            • <em>Example</em> — drop-down to pick a built-in route<br>
+            • <em>From</em> / <em>To</em> — text fields for custom origin and destination<br>
+            • <em>km/h</em> — float input for simulated speed<br>
+            • <em>OBD</em> — drop-down to attach OBD vehicle data<br>
+            • <em>📂 Load GeoJSON</em> — button to load a custom GeoJSON file<br>
+            • <em>Use timestamps</em> — checkbox to replay with original timing<br>
+            • <em>Start</em> — button to begin the simulation
         </td>
     </tr>
     <tr>
@@ -1026,21 +1067,35 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         <td width="320">
             <img src="https://user-images.githubusercontent.com/37477845/172031657-81e70c61-05a3-4bff-9423-67ac9e486f5c.png" loading="lazy" width="300px">
         </td>
-        <td width="760">Applies a pseudo-color map to a grayscale or depth image.</td>
+        <td width="760">
+            Applies a pseudo-color map to a grayscale or depth image.<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass the node<br>
+            • <em>type</em> — drop-down to select the colormap (Jet, Viridis, Hot…)
+        </td>
     </tr>
     <tr>
         <td width="200"><strong>Blur</strong></td>
         <td width="320">
             <img src="https://user-images.githubusercontent.com/37477845/172031667-399472c9-7731-4cc2-8258-6879a1836b66.png" loading="lazy" width="300px">
         </td>
-        <td width="760">Smoothing filter (average, Gaussian, median). Kernel size is adjustable.</td>
+        <td width="760">
+            Smoothing filter (average, Gaussian, median).<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>kernel</em> — integer slider for kernel size
+        </td>
     </tr>
     <tr>
         <td width="200"><strong>Bilateral Filter</strong></td>
         <td width="320">🔲 Edge-preserving blur</td>
         <td width="760">
             Applies a bilateral filter that smooths textures while preserving sharp edges.<br>
-            Configure diameter, sigmaColor, and sigmaSpace.
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>Diameter</em> — integer slider for filter diameter<br>
+            • <em>Sigma Color</em> — float slider for color-space sigma<br>
+            • <em>Sigma Space</em> — float slider for coordinate-space sigma
         </td>
     </tr>
     <tr>
@@ -1048,21 +1103,35 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         <td width="320">
             <img src="https://user-images.githubusercontent.com/37477845/172031761-9ab8d83d-9bac-4854-9a6d-44c34692a002.png" loading="lazy" width="300px">
         </td>
-        <td width="760">Adjusts image brightness with the <em>alpha</em> slider.</td>
+        <td width="760">
+            Adjusts image brightness.<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>beta</em> — integer slider for brightness offset
+        </td>
     </tr>
     <tr>
         <td width="200"><strong>Canny</strong></td>
         <td width="320">
             <img src="https://user-images.githubusercontent.com/37477845/172032723-df30d0bb-ed24-4909-afee-c3a78f66dad9.png" loading="lazy" width="300px">
         </td>
-        <td width="760">Canny edge detection. Set min/max thresholds with sliders.</td>
+        <td width="760">
+            Canny edge detection.<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>min val</em> — integer slider for lower hysteresis threshold<br>
+            • <em>max val</em> — integer slider for upper hysteresis threshold
+        </td>
     </tr>
     <tr>
         <td width="200"><strong>CLAHE</strong></td>
         <td width="320">📊 Adaptive histogram equalization</td>
         <td width="760">
             Contrast Limited Adaptive Histogram Equalization — enhances local contrast.<br>
-            Adjust clip limit and tile grid size.
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>Clip Limit</em> — float slider for contrast limit<br>
+            • <em>Tile Grid Size</em> — integer slider for tile size
         </td>
     </tr>
     <tr>
@@ -1070,7 +1139,9 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         <td width="320">🎨 Color Space conversion</td>
         <td width="760">
             Converts the input image between color spaces (BGR↔HSV, BGR↔LAB, BGR↔YCrCb, etc.).<br>
-            Select the target color space from the dropdown.
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>Color Space</em> — drop-down to select the target color space
         </td>
     </tr>
     <tr>
@@ -1078,64 +1149,105 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         <td width="320">
             <img src="https://user-images.githubusercontent.com/37477845/172042432-dab55644-f95f-4854-bcc4-45bb54d9c5bd.png" loading="lazy" width="300px">
         </td>
-        <td width="760">Adjusts image contrast with the <em>beta</em> slider.</td>
+        <td width="760">
+            Adjusts image contrast.<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>alpha</em> — float slider for contrast multiplier
+        </td>
     </tr>
     <tr>
         <td width="200"><strong>Crop</strong></td>
         <td width="320">
             <img src="https://user-images.githubusercontent.com/37477845/172042627-1c90f1ca-2d57-45b4-8dbe-ce0e4917d08e.png" loading="lazy" width="300px">
         </td>
-        <td width="760">Crops a region from the image using (x1,y1)–(x2,y2) sliders.</td>
+        <td width="760">
+            Crops a region from the image.<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>min x</em> / <em>max x</em> — float sliders for horizontal crop bounds (0–1)<br>
+            • <em>min y</em> / <em>max y</em> — float sliders for vertical crop bounds (0–1)
+        </td>
     </tr>
     <tr>
         <td width="200"><strong>EqualizeHist</strong></td>
         <td width="320">
             <img src="https://user-images.githubusercontent.com/37477845/172042718-4f14021f-c29e-4886-b44f-46af644a74fe.png" loading="lazy" width="300px">
         </td>
-        <td width="760">Global histogram equalization on the brightness channel.</td>
+        <td width="760">
+            Global histogram equalization on the brightness channel.<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass
+        </td>
     </tr>
     <tr>
         <td width="200"><strong>Flip</strong></td>
         <td width="320">
             <img src="https://user-images.githubusercontent.com/37477845/172042828-62d5ba24-69f9-4d6b-b3f9-322f43af0284.png" loading="lazy" width="300px">
         </td>
-        <td width="760">Horizontal / vertical / both flip of the input image.</td>
+        <td width="760">
+            Horizontal / vertical / both flip of the input image.<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>Horizontal flip</em> — checkbox<br>
+            • <em>Vertical flip</em> — checkbox
+        </td>
     </tr>
     <tr>
         <td width="200"><strong>Gamma Correction</strong></td>
         <td width="320">
             <img src="https://user-images.githubusercontent.com/37477845/172042880-7804d210-72f7-4977-ac11-41f9e7883a65.png" loading="lazy" width="300px">
         </td>
-        <td width="760">Applies gamma correction. Gamma value is adjustable with a slider.</td>
+        <td width="760">
+            Applies gamma correction.<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>gamma</em> — float slider for gamma value
+        </td>
     </tr>
     <tr>
         <td width="200"><strong>Grayscale</strong></td>
         <td width="320">
             <img src="https://user-images.githubusercontent.com/37477845/172042929-1501d980-b00b-42f7-bbb3-a078d95be5ff.png" loading="lazy" width="300px">
         </td>
-        <td width="760">Converts the input image to grayscale.</td>
+        <td width="760">
+            Converts the input image to grayscale.<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass
+        </td>
     </tr>
     <tr>
         <td width="200"><strong>Illumination Correct</strong></td>
         <td width="320">💡 Illumination correction</td>
         <td width="760">
             Corrects uneven illumination using background subtraction or homomorphic filtering.<br>
-            Useful for normalizing lighting across frames.
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>Method</em> — drop-down to select algorithm<br>
+            • <em>Kernel Size</em> — integer slider for background estimation window
         </td>
     </tr>
     <tr>
         <td width="200"><strong>Image Alpha Blend</strong></td>
         <td width="320">🔀 Alpha blend</td>
         <td width="760">
-            Blends two input images together with a configurable alpha weight (0–1).<br>
-            Connects two image inputs; outputs <code>α·A + (1−α)·B</code>.
+            Blends two input images together.<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>alpha val</em> — float slider for weight of the first image<br>
+            • <em>beta val</em> — float slider for weight of the second image<br>
+            • <em>gamma val</em> — integer slider for additive brightness offset
         </td>
     </tr>
     <tr>
         <td width="200"><strong>Kernel Sharpen</strong></td>
         <td width="320">🔪 Sharpening</td>
         <td width="760">
-            Applies a configurable sharpening convolution kernel to the input image.
+            Applies a configurable sharpening convolution kernel.<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>Kernel Type</em> — drop-down to select the sharpening kernel<br>
+            • <em>Strength</em> — float slider for sharpening intensity
         </td>
     </tr>
     <tr>
@@ -1143,7 +1255,11 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         <td width="320">🔲 Morphological ops</td>
         <td width="760">
             Applies morphological operations (erode, dilate, open, close, gradient, top-hat, black-hat).<br>
-            Configure operation type, kernel shape, and kernel size.
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>Operation</em> — drop-down to select the morphological operation<br>
+            • <em>Kernel Size</em> — integer slider<br>
+            • <em>Iterations</em> — integer slider for repetition count
         </td>
     </tr>
     <tr>
@@ -1151,7 +1267,12 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         <td width="320">🌀 Non-local means</td>
         <td width="760">
             Non-Local Means denoising for high-quality noise removal.<br>
-            Adjust <em>h</em> (filter strength) and template/search window sizes.
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>h (Luminance)</em> — float slider for luminance filter strength<br>
+            • <em>h (Color)</em> — float slider for color filter strength<br>
+            • <em>Template Size</em> — integer slider for patch size<br>
+            • <em>Search Size</em> — integer slider for search window size
         </td>
     </tr>
     <tr>
@@ -1160,7 +1281,13 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
             <img src="https://user-images.githubusercontent.com/37477845/182130848-fff3d053-6c21-4a03-9e96-371111112226.png" loading="lazy" width="300px">
         </td>
         <td width="760">
-            Transforms a 360° equirectangular image using roll/pitch/yaw sliders.
+            Transforms a 360° equirectangular image.<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>pitch</em> — integer slider (vertical rotation)<br>
+            • <em>yaw</em> — integer slider (horizontal rotation)<br>
+            • <em>roll</em> — integer slider (tilt rotation)<br>
+            • <em>image point</em> — float slider for projection point
         </td>
     </tr>
     <tr>
@@ -1168,21 +1295,37 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         <td width="320">
             <img src="https://user-images.githubusercontent.com/37477845/210739536-5f70e55a-3433-4325-81e2-79619943bd9f.png" loading="lazy" width="300px">
         </td>
-        <td width="760">Resizes the image to the specified width, height and interpolation method.</td>
+        <td width="760">
+            Resizes the image to the specified dimensions.<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>Width</em> — integer input field<br>
+            • <em>Height</em> — integer input field
+        </td>
     </tr>
     <tr>
         <td width="200"><strong>Simple Filter</strong></td>
         <td width="320">
             <img src="https://user-images.githubusercontent.com/37477845/178098739-ee15159c-d66f-4b5d-822d-dbaf686448d6.png" loading="lazy" width="300px">
         </td>
-        <td width="760">Applies a 3×3 2D convolution filter (preset kernels: identity, edge, emboss…).</td>
+        <td width="760">
+            Applies a 3×3 2D convolution filter (preset kernels: identity, edge, emboss…).<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • Nine float sliders for each kernel cell (x−1/y−1 … x+1/y+1) plus a normalization factor <em>K</em>
+        </td>
     </tr>
     <tr>
         <td width="200"><strong>Adaptive Threshold</strong></td>
         <td width="320">🌓 Adaptive binarization</td>
         <td width="760">
-            Binarizes the image using a locally-adaptive threshold (mean or Gaussian neighbourhood).<br>
-            Configure block size and constant C.
+            Binarizes the image using a locally-adaptive threshold.<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>Method</em> — drop-down (Mean / Gaussian neighbourhood)<br>
+            • <em>Type</em> — drop-down (Binary / Binary Inv)<br>
+            • <em>Block Size</em> — integer slider for neighbourhood size<br>
+            • <em>C Value</em> — float slider for constant subtracted from the mean
         </td>
     </tr>
     <tr>
@@ -1191,7 +1334,11 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
             <img src="https://user-images.githubusercontent.com/37477845/172042985-3e7908cc-f485-4684-884c-8cfe3d020004.png" loading="lazy" width="300px">
         </td>
         <td width="760">
-            Binarizes with a global threshold. Supports THRESH_BINARY, THRESH_OTSU (auto), THRESH_TRIANGLE…
+            Binarizes with a global threshold.<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>type</em> — drop-down (THRESH_BINARY, THRESH_OTSU, THRESH_TRIANGLE…)<br>
+            • <em>threshold</em> — integer slider for threshold value
         </td>
     </tr>
     <tr>
@@ -1199,14 +1346,23 @@ CV Studio ships with **100+ nodes** across 17 categories. Use the table below fo
         <td width="320">🔭 Unsharp mask</td>
         <td width="760">
             Sharpens the image using the unsharp masking technique.<br>
-            Adjust blur radius and amount slider.
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>Kernel Size</em> — integer slider for blur radius<br>
+            • <em>Amount</em> — float slider for sharpening intensity<br>
+            • <em>Threshold</em> — integer slider (minimum difference to sharpen)
         </td>
     </tr>
     <tr>
         <td width="200"><strong>Zoom</strong></td>
         <td width="320">🔍 Digital zoom</td>
         <td width="760">
-            Digitally zooms into the centre of the image by a configurable factor and crops to original size.
+            Digitally zooms into the image and crops to the original size.<br>
+            <strong>Options:</strong><br>
+            • <em>Enable processing</em> — checkbox to bypass<br>
+            • <em>width</em> — float slider for zoom factor<br>
+            • <em>center x</em> — float slider for horizontal zoom centre<br>
+            • <em>center y</em> — float slider for vertical zoom centre
         </td>
     </tr>
 </table>
@@ -1230,7 +1386,9 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         </td>
         <td width="760">
             Image classification via ONNX model. When an Object Detection node is connected upstream,
-            classifies each detected bounding box individually.
+            classifies each detected bounding box individually.<br>
+            <strong>Options:</strong><br>
+            • <em>Add Model</em> — button to upload a custom ONNX classification model
         </td>
     </tr>
     <tr>
@@ -1239,7 +1397,10 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
             <img src="https://user-images.githubusercontent.com/37477845/172045704-23c00432-90b1-4a53-b621-6413ba8f18dd.png" loading="lazy" width="300px">
         </td>
         <td width="760">
-            Detects faces in the input image. Outputs raw image + detection JSON.
+            Detects faces in the input image. Outputs raw image + detection JSON.<br>
+            <strong>Options:</strong><br>
+            • <em>score</em> — float slider for confidence threshold<br>
+            • <em>Add Model</em> — button to upload a custom ONNX face detection model
         </td>
     </tr>
     <tr>
@@ -1248,7 +1409,8 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
             <img src="https://user-images.githubusercontent.com/37477845/172045825-8ad902e0-d11d-44b7-8390-bb3e7ab12622.png" loading="lazy" width="300px">
         </td>
         <td width="760">
-            Enhances dark / low-light images using a deep learning model. Output is the enhanced image.
+            Enhances dark / low-light images using a deep learning model. Output is the enhanced image.<br>
+            No configurable parameters — model is fixed.
         </td>
     </tr>
     <tr>
@@ -1257,7 +1419,9 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
             <img src="https://user-images.githubusercontent.com/37477845/172045864-8e249b46-d5bf-4d48-b540-2e5102afbe21.png" loading="lazy" width="300px">
         </td>
         <td width="760">
-            Estimates depth from a single RGB image. Output is a grayscale depth map.
+            Estimates depth from a single RGB image. Output is a grayscale depth map.<br>
+            <strong>Options:</strong><br>
+            • <em>Add Model</em> — button to upload a custom ONNX depth estimation model
         </td>
     </tr>
     <tr>
@@ -1267,8 +1431,15 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         </td>
         <td width="760">
             Real-time object detection (YOLOX, YOLO, NanoDet, FreeYOLO, custom ONNX…).<br>
-            ONNX upload with automatic class-name picker (COCO vs generic).<br>
-            Collapsible settings panel (provider, score threshold, draw bbox, line thickness).
+            <strong>Options:</strong><br>
+            • <em>▼ Settings</em> — collapse/expand button for the settings panel<br>
+            • <em>score</em> — float slider for detection confidence threshold<br>
+            • <em>Reject</em> — drop-down to exclude a class label from output<br>
+            • <em>Draw Bounding Boxes</em> — checkbox to toggle bbox overlay<br>
+            • <em>thickness</em> — integer slider for bounding box line thickness<br>
+            • <em>Add Model</em> — button to upload a custom ONNX model<br>
+            • <em>Delete Model</em> — button to remove the current model<br>
+            ONNX upload preview offers a class-source picker (COCO vs generic) when no class names are embedded.
         </td>
     </tr>
     <tr>
@@ -1276,9 +1447,16 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">🧠 Distillation / fine-tuning</td>
         <td width="760">
             Continuously fine-tunes a student ONNX model in real time using teacher detections as supervision.<br>
+            <strong>Options:</strong><br>
+            • <em>score_th</em> — float slider for detection confidence threshold<br>
+            • <em>learning_rate</em> — float slider for backprop learning rate<br>
+            • <em>Training Active</em> — checkbox to pause/resume training<br>
+            • <em>bbox_thickness</em> — integer slider for bbox overlay thickness<br>
+            • <em>Load Student ONNX</em> — button to load the student model<br>
+            • <em>Export Student ONNX</em> — button to save the current student weights<br>
+            • <em>Reset Student</em> — button to reinitialise student weights<br>
             Supports backprop via <em>onnx2torch</em> (head or full backbone) with distillation losses
-            (Hungarian matching, IoU + CE/KL (Cross-Entropy / Kullback–Leibler), cardinality, FP/FN (False Positives / False Negatives)).<br>
-            Falls back to a lightweight affine-head correction when PyTorch is unavailable.
+            (Hungarian matching, IoU + CE/KL, cardinality, FP/FN).
         </td>
     </tr>
     <tr>
@@ -1287,7 +1465,10 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
             <img src="https://user-images.githubusercontent.com/37477845/172045920-cf18889d-d2f8-43ba-b3a5-773fd8df7eec.png" loading="lazy" width="300px">
         </td>
         <td width="760">
-            Human pose estimation (skeleton keypoints) on the input image. Outputs raw image + JSON.
+            Human pose estimation (skeleton keypoints) on the input image. Outputs raw image + JSON.<br>
+            <strong>Options:</strong><br>
+            • <em>score</em> — float slider for keypoint confidence threshold<br>
+            • <em>Add Model</em> — button to upload a custom ONNX pose model
         </td>
     </tr>
     <tr>
@@ -1296,7 +1477,10 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
             <img src="https://user-images.githubusercontent.com/37477845/172045965-6d77f4ef-d208-40c9-a335-25a9d1d07acc.png" loading="lazy" width="300px">
         </td>
         <td width="760">
-            Per-pixel semantic segmentation on the input image. Output is a coloured segmentation mask.
+            Per-pixel semantic segmentation on the input image. Output is a coloured segmentation mask.<br>
+            <strong>Options:</strong><br>
+            • <em>score</em> — float slider for segmentation confidence threshold<br>
+            • <em>Add Model</em> — button to upload a custom ONNX segmentation model
         </td>
     </tr>
 </table>
@@ -1315,10 +1499,15 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">🔊 Audio classifier</td>
         <td width="760">
             Classifies audio chunks using a deep learning model (built-in YAMNet at 16 kHz, or custom ONNX).<br>
-            Accepts audio from a Microphone or other audio source node.<br>
+            <strong>Options:</strong><br>
+            • <em>Model</em> — drop-down to select the built-in or loaded model<br>
+            • <em>N Mels</em> — drop-down for mel spectrogram bands<br>
+            • <em>Max seconds</em> — drop-down for input window length<br>
+            • <em>Top-K</em> — drop-down for number of top predictions to return<br>
+            • <em>Labels</em> — drop-down to select label set<br>
+            • <em>Add Model</em> — button to upload a custom ONNX audio model<br>
             Produces a spectrogram image output and a classification JSON alongside an audio passthrough,
-            enabling the chain: <code>VideoNode → AudioClassification → ImageConcat</code> for frame-aligned sync.<br>
-            Automatic resampling to model target sample rate via librosa.
+            enabling the chain: <code>VideoNode → AudioClassification → ImageConcat</code> for frame-aligned sync.
         </td>
     </tr>
 </table>
@@ -1337,56 +1526,83 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">📊 Mel spectrogram</td>
         <td width="760">
             Converts an audio chunk to a mel spectrogram image.<br>
-            Configure n_mels, hop length, FFT size, and color map.
+            <strong>Options:</strong><br>
+            • <em>Method</em> — drop-down to select spectrogram type (mel, STFT…)
         </td>
     </tr>
     <tr>
         <td width="200"><strong>BandPass Filter</strong></td>
         <td width="320">🎚️ Band-pass</td>
         <td width="760">
-            Applies a band-pass filter to the audio stream. Set low-cut and high-cut frequencies.
+            Applies a band-pass (or low-pass / high-pass) filter to the audio stream.<br>
+            <strong>Options:</strong><br>
+            • <em>Mode</em> — drop-down (band-pass, low-pass, high-pass)<br>
+            • <em>Low Cut (Hz)</em> — float slider for the lower cutoff frequency<br>
+            • <em>High Cut (Hz)</em> — float slider for the upper cutoff frequency
         </td>
     </tr>
     <tr>
         <td width="200"><strong>Compressor</strong></td>
         <td width="320">📉 Dynamic compressor</td>
         <td width="760">
-            Dynamic range compressor. Configure threshold (dB), ratio, attack, and release.
+            Dynamic range compressor.<br>
+            <strong>Options:</strong><br>
+            • <em>Threshold (dB)</em> — float slider for gate threshold<br>
+            • <em>Ratio</em> — float slider for compression ratio<br>
+            • <em>Attack (ms)</em> — float slider for attack time<br>
+            • <em>Release (ms)</em> — float slider for release time<br>
+            • <em>Makeup (dB)</em> — float slider for makeup gain
         </td>
     </tr>
     <tr>
         <td width="200"><strong>Decibel</strong></td>
         <td width="320">🔢 dB meter</td>
         <td width="760">
-            Computes the RMS level in dB of the incoming audio chunk and outputs it as a numeric value.
+            Computes the RMS level in dB of the incoming audio chunk and outputs it as a numeric value.<br>
+            No configurable parameters.
         </td>
     </tr>
     <tr>
         <td width="200"><strong>Equalizer</strong></td>
         <td width="320">🎛️ Parametric EQ</td>
         <td width="760">
-            Multi-band parametric equalizer. Adjust gain per frequency band to shape the audio spectrum.
+            Multi-band parametric equalizer.<br>
+            <strong>Options:</strong><br>
+            • <em>Bass (dB)</em> — float slider<br>
+            • <em>Mid-Bass (dB)</em> — float slider<br>
+            • <em>Mid (dB)</em> — float slider<br>
+            • <em>Mid-Treble (dB)</em> — float slider<br>
+            • <em>Treble (dB)</em> — float slider
         </td>
     </tr>
     <tr>
         <td width="200"><strong>Noise Gate</strong></td>
         <td width="320">🚪 Noise gate</td>
         <td width="760">
-            Silences the signal when its level falls below a configurable threshold (gate open/close).
+            Silences the signal when its level falls below a configurable threshold.<br>
+            <strong>Options:</strong><br>
+            • <em>Threshold (dB)</em> — float slider for gate open/close level<br>
+            • <em>Attack (ms)</em> — float slider for gate open time<br>
+            • <em>Release (ms)</em> — float slider for gate close time
         </td>
     </tr>
     <tr>
         <td width="200"><strong>Normalize</strong></td>
         <td width="320">📐 Normalizer</td>
         <td width="760">
-            Normalizes the amplitude of an audio chunk to a target peak level.
+            Normalizes the amplitude of an audio chunk to a target peak level.<br>
+            <strong>Options:</strong><br>
+            • <em>Mode</em> — drop-down (peak, RMS…)<br>
+            • <em>Target (dB)</em> — float slider for the target level
         </td>
     </tr>
     <tr>
         <td width="200"><strong>Resample</strong></td>
         <td width="320">🔄 Resampler</td>
         <td width="760">
-            Resamples the audio stream from its source sample rate to a target sample rate using librosa.
+            Resamples the audio stream to a target sample rate using librosa.<br>
+            <strong>Options:</strong><br>
+            • <em>Target SR (Hz)</em> — drop-down for target sample rate (e.g. 8000, 16000, 44100…)
         </td>
     </tr>
 </table>
@@ -1406,8 +1622,12 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="760">
             Encodes an input text sentence with TinyBERT and compares it against a pre-built CSV vigilance database
             using nearest-neighbour search.<br>
-            Outputs a vigilance score (0–1) as JSON, consumed by the <em>Vigilance Gauge</em> visual node.<br>
-            Both the model and the vector database are cached in memory after the first load.
+            <strong>Options:</strong><br>
+            • <em>Model</em> — text field for the path to the TinyBERT ONNX model<br>
+            • <em>CSV</em> — text field for the path to the vigilance database CSV<br>
+            • <em>Load Database</em> — button to load and index the CSV<br>
+            • <em>DB Cache</em> — drop-down to select a cached database<br>
+            Outputs a vigilance score (0–1) as JSON, consumed by the <em>Vigilance Gauge</em> visual node.
         </td>
     </tr>
 </table>
@@ -1426,15 +1646,16 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">🗺️ Sentinel-2 / S1 map</td>
         <td width="760">
             Fetches live Sentinel-2 (or Sentinel-1) satellite imagery from the Copernicus Data Space Ecosystem.<br>
-            <strong>Features:</strong><br>
-            • Dynamic band slots (add / remove) — same UI pattern as VideoConcat<br>
-            • Band-formula field: e.g. <code>(B08 - B04) / (B08 + B04)</code> for NDVI<br>
-            • Smart 1 km×1 km tile cache in <code>~/.cv_studio/copernicus_tiles/</code><br>
-            • Background 3×3 neighbourhood pre-fetch on first GPS fix<br>
-            • Colormap rendering with per-formula defaults (NDVI → RdYlGn, etc.)<br>
-            • <strong>Visible spectrum only</strong> checkbox: restricts bands to B02/B03/B04<br>
-            • <strong>True color (naked eye)</strong> checkbox: renders natural-color RGB (2.5×B04/B03/B02)<br>
-            • Continuous GPS overlay with position marker and trace<br>
+            <strong>Options:</strong><br>
+            • <em>Source</em> — drop-down to select satellite source (Sentinel-2 / Sentinel-1)<br>
+            • <em>Radius (km)</em> — integer slider for the fetch area around the GPS centre<br>
+            • <em>From</em> / <em>To</em> — text fields for date range<br>
+            • <em>Cloud % max</em> — integer slider for maximum cloud coverage filter<br>
+            • <em>Visible spectrum only</em> — checkbox: restricts band combos to B02/B03/B04<br>
+            • <em>True color (naked eye)</em> — checkbox: renders natural-color RGB (2.5×B04/B03/B02)<br>
+            • <em>+ Add band slot</em> — button to add a spectral band input<br>
+            • <em>Colormap</em> — drop-down for pseudo-color rendering (NDVI → RdYlGn, etc.)<br>
+            Smart 1 km×1 km tile cache in <code>~/.cv_studio/copernicus_tiles/</code>.<br>
             Credentials are stored by the <em>Settings</em> system node.
         </td>
     </tr>
@@ -1456,6 +1677,10 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         </td>
         <td width="760">
             Takes Object Detection output and assigns persistent track IDs across frames.<br>
+            <strong>Options:</strong><br>
+            • <em>confidence</em> — float slider for minimum detection confidence<br>
+            • <em>Enable Tracking</em> — checkbox to pause/resume tracking<br>
+            • <em>thickness</em> — integer slider for track overlay line thickness<br>
             Supports 6 algorithms: <strong>motpy</strong>, <strong>ByteTrack</strong>, <strong>Norfair</strong>,
             <strong>IOU Tracker</strong>, <strong>SORT</strong>, and <strong>CenterTrack</strong>.<br>
             See <a href="node/TrackerNode/mot/README.md">TrackerNode/mot/README.md</a> for details.
@@ -1466,7 +1691,10 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">🪪 Person Re-ID</td>
         <td width="760">
             Person / object re-identification using appearance embeddings.<br>
-            Associates detections across disjoint camera views or time gaps using feature similarity.
+            <strong>Options:</strong><br>
+            • <em>Method</em> — drop-down to select the Re-ID algorithm<br>
+            • <em>Add Slot</em> / <em>Remove Slot</em> — buttons to add or remove camera input slots<br>
+            • <em>Reset KMeans</em> — button to reset cluster centroids
         </td>
     </tr>
 </table>
@@ -1485,17 +1713,18 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">📐 Intersection over Union</td>
         <td width="760">
             Computes IoU between bounding boxes from two Object Detection inputs.<br>
-            Uses Hungarian matching (DETR cost = 1−IoU + class cost) for set-based distillation loss output
-            (box L1+IoU, class CE/KL (Cross-Entropy / Kullback–Leibler), cardinality, FP/FN (False Positives / False Negatives), class-mismatch + detection_score).
+            <strong>Options:</strong><br>
+            • <em>IoU match th</em> — float slider for matching threshold<br>
+            • <em>Match by class</em> — checkbox to restrict matching to same-class boxes
         </td>
     </tr>
     <tr>
         <td width="200"><strong>Homography</strong></td>
         <td width="320">📌 Court homography</td>
         <td width="760">
-            Computes a homography transform mapping detected keypoints to a reference court/field template
-            (sport templates selectable from dropdown).<br>
-            Tracks player kinematics over a 60-frame sliding window.
+            Computes a homography transform mapping detected keypoints to a reference court/field template.<br>
+            <strong>Options:</strong><br>
+            • <em>Sport Template</em> — drop-down to select the reference court layout
         </td>
     </tr>
     <tr>
@@ -1503,7 +1732,9 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">📏 Distance tracker</td>
         <td width="760">
             Tracks the cumulative distance travelled by detected objects over time.<br>
-            Outputs per-track distance metrics as JSON.
+            <strong>Options:</strong><br>
+            • <em>Alert Threshold</em> — float slider to trigger an alert above a distance value<br>
+            • <em>K-Means Clusters</em> — integer slider for grouping tracks
         </td>
     </tr>
     <tr>
@@ -1511,14 +1742,17 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">📊 Data histogram</td>
         <td width="760">
             Computes and plots a histogram of numeric values received over a sliding window.<br>
-            Configurable number of bins and display range.
+            <strong>Options:</strong><br>
+            • <em>Reduce</em> / <em>Maximiser</em> — buttons to resize the display panel
         </td>
     </tr>
     <tr>
         <td width="200"><strong>BAR</strong></td>
         <td width="320">📊 Bar chart node</td>
         <td width="760">
-            Renders a live bar chart from numeric or classification data, updating every frame.
+            Renders a live bar chart from numeric or classification data, updating every frame.<br>
+            <strong>Options:</strong><br>
+            • <em>Interval(ms)</em> — integer slider for chart refresh interval
         </td>
     </tr>
     <tr>
@@ -1526,14 +1760,16 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">🏟️ Court keypoint data</td>
         <td width="760">
             Processes and formats keypoint JSON from Pose Estimation for court-specific analytics
-            (downstream of Homography).
+            (downstream of Homography). No configurable parameters.
         </td>
     </tr>
     <tr>
         <td width="200"><strong>Operator</strong></td>
         <td width="320">➕ Math operator</td>
         <td width="760">
-            Applies a binary arithmetic operation (+, −, ×, ÷, min, max, abs diff) to two numeric inputs.
+            Applies a binary arithmetic operation to two numeric inputs.<br>
+            <strong>Options:</strong><br>
+            • <em>Operation</em> — drop-down (+, −, ×, ÷, min, max, abs diff)
         </td>
     </tr>
 </table>
@@ -1552,49 +1788,78 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">📈 Detection chart</td>
         <td width="760">
             Plots detection scores over time as a live line chart.<br>
-            Accepts Object Detection / OnlineTraining distillation_losses as input.
+            <strong>Options:</strong><br>
+            • <em>Time Unit</em> — drop-down for x-axis scale (seconds, frames…)<br>
+            • <em>Chart Type</em> — drop-down (line, bar…)<br>
+            • <em>Class 1</em> — drop-down to select which class to plot<br>
+            • <em>Add Class Slot</em> — button to add more class traces<br>
+            • <em>Download Chart Image</em> — button to save the chart as an image
         </td>
     </tr>
     <tr>
         <td width="200"><strong>HeatMap</strong></td>
         <td width="320">🌡️ Pixel heatmap</td>
         <td width="760">
-            Accumulates pixel-level activity (motion, detections) into a heatmap overlay rendered on the source image.
+            Accumulates pixel-level activity (motion, detections) into a heatmap overlay.<br>
+            <strong>Options:</strong><br>
+            • <em>threshold</em> — integer slider for activation threshold<br>
+            • <em>Memory</em> — float slider for temporal decay (0 = no memory, 1 = full)<br>
+            • <em>Blur</em> — integer slider for heatmap blur radius<br>
+            • <em>Colormap</em> — drop-down for heatmap color palette<br>
+            • <em>Blend Alpha</em> — float slider for overlay transparency
         </td>
     </tr>
     <tr>
         <td width="200"><strong>ObjHeatMap</strong></td>
         <td width="320">🟥 Object heatmap</td>
         <td width="760">
-            Projects bounding-box centroids onto a persistent heatmap to show where objects appear most frequently.
+            Projects bounding-box centroids onto a persistent heatmap.<br>
+            <strong>Options:</strong><br>
+            • <em>Class</em> — drop-down to select which detection class to visualise<br>
+            • <em>Memory</em> — float slider for temporal decay<br>
+            • <em>Blur</em> — integer slider for heatmap blur radius<br>
+            • <em>Colormap</em> — drop-down for color palette<br>
+            • <em>Blend Alpha</em> — float slider for overlay transparency
         </td>
     </tr>
     <tr>
         <td width="200"><strong>Map</strong></td>
         <td width="320">🗺️ GPS map</td>
         <td width="760">
-            Displays a GPS track on a map background. Renders position marker, heading, and historical trace.
+            Displays a GPS track on a map background.<br>
+            <strong>Options:</strong><br>
+            • <em>HiDPI tiles (@2x)</em> — checkbox to request retina-resolution tiles<br>
+            • <em>Labels overlay</em> — checkbox to show place names on tiles<br>
+            • <em>Metric</em> — drop-down to select the data metric displayed<br>
+            • <em>Trace</em> — checkbox to draw the historical position trace<br>
+            • <em>Cache Maps</em> — checkbox to cache downloaded tiles locally
         </td>
     </tr>
     <tr>
         <td width="200"><strong>TennisCourt</strong></td>
         <td width="320">🎾 Tennis court view</td>
         <td width="760">
-            Renders player positions on a top-down tennis court diagram using homography-projected coordinates.
+            Renders player positions on a top-down tennis court diagram using homography-projected coordinates.<br>
+            No configurable parameters.
         </td>
     </tr>
     <tr>
         <td width="200"><strong>Vigilance Gauge</strong></td>
         <td width="320">🔔 Gauge display</td>
         <td width="760">
-            Displays the vigilance score from the <em>TinyBert Vigilance</em> node as an animated gauge widget.
+            Displays the vigilance score from the <em>TinyBert Vigilance</em> node as an animated gauge widget.<br>
+            No configurable parameters.
         </td>
     </tr>
     <tr>
         <td width="200"><strong>Word Cloud</strong></td>
         <td width="320">☁️ Word cloud</td>
         <td width="760">
-            Renders a word cloud image from text output produced by the <em>VLM</em> action node or any JSON text field.
+            Renders a word cloud image from text output produced by the <em>VLM</em> action node or any JSON text field.<br>
+            <strong>Options:</strong><br>
+            • <em>Colourmap</em> — drop-down for the word cloud colour palette<br>
+            • <em>Max words</em> — integer slider for maximum number of words displayed<br>
+            • <em>ΔT (s)</em> — integer slider for the sliding time window
         </td>
     </tr>
 </table>
@@ -1614,21 +1879,33 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
             <img src="https://user-images.githubusercontent.com/37477845/172046789-0d43ca22-b202-404a-ba01-dd80a01d01e5.png" loading="lazy" width="300px">
         </td>
         <td width="760">
-            Draws detection results (bounding boxes, labels, keypoints, masks) from upstream DL nodes onto the image.
+            Draws detection results (bounding boxes, labels, keypoints, masks) from upstream DL nodes onto the image.<br>
+            No configurable parameters — rendering style is fixed by the upstream node.
         </td>
     </tr>
     <tr>
         <td width="200"><strong>Overlay</strong></td>
         <td width="320">🔀 Image overlay</td>
         <td width="760">
-            Blends a secondary image (or shape mask) over the primary input image at a configurable opacity and position.
+            Blends a secondary image (or shape mask) over the primary input image.<br>
+            <strong>Options:</strong><br>
+            • <em>Font Scale</em> — float slider for text font size<br>
+            • <em>Text Color</em> — color picker<br>
+            • <em>Background</em> — color picker for text background<br>
+            • <em>Position</em> — drop-down to select overlay anchor position
         </td>
     </tr>
     <tr>
         <td width="200"><strong>OverlayImage</strong></td>
         <td width="320">🖼️ Static overlay</td>
         <td width="760">
-            Composites a static image asset (PNG with alpha) onto the input frame at a specified position and scale.
+            Composites a static image asset (PNG with alpha) onto the input frame.<br>
+            <strong>Options:</strong><br>
+            • <em>X Position</em> — integer slider for horizontal position<br>
+            • <em>Y Position</em> — integer slider for vertical position<br>
+            • <em>Width</em> — integer slider for overlay width<br>
+            • <em>Height</em> — integer slider for overlay height<br>
+            • <em>Transparency</em> — float slider for alpha compositing level
         </td>
     </tr>
     <tr>
@@ -1637,7 +1914,8 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
             <img src="https://user-images.githubusercontent.com/37477845/172046942-7d004807-348d-4576-bac5-f4da27f0e5ed.png" loading="lazy" width="300px">
         </td>
         <td width="760">
-            Draws custom text on the image. Supports color selection and optional processing-time display.
+            Draws custom text on the image. Supports color selection and optional processing-time display.<br>
+            No separate configurable parameters — text and style are entered directly in the node.
         </td>
     </tr>
 </table>
@@ -1658,7 +1936,9 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         </td>
         <td width="760">
             Concatenates multiple image/video streams side by side.<br>
-            Add image or audio slots dynamically with <em>Add Slot</em>.<br>
+            <strong>Options:</strong><br>
+            • <em>Slot Type</em> — drop-down to choose IMAGE or AUDIO for the new slot<br>
+            • <em>Add Slot</em> — button to dynamically add an input slot<br>
             Forwards audio from explicit AUDIO slots or falls back to IMAGE source audio automatically.
         </td>
     </tr>
@@ -1669,6 +1949,8 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         </td>
         <td width="760">
             Writes the input video stream to a file (mp4/avi).<br>
+            <strong>Options:</strong><br>
+            • <em>Mode</em> — drop-down to select recording mode (manual trigger / continuous)<br>
             Uses a SyncVideoWriter for frame-ordered recording with audio support (A/V sync via PyAV encoder).
         </td>
     </tr>
@@ -1676,7 +1958,9 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="200"><strong>DynamicPlay</strong></td>
         <td width="320">▶️ Dynamic player</td>
         <td width="760">
-            Plays back a video file at a controllable speed, with seek and frame-step controls available at runtime.
+            Plays back a video file at a controllable speed, with seek and frame-step controls available at runtime.<br>
+            <strong>Options:</strong><br>
+            • <em>Add Slot</em> — button to add an additional video input slot
         </td>
     </tr>
     <tr>
@@ -1685,7 +1969,8 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
             <img src="https://user-images.githubusercontent.com/37477845/216200610-5a5714c0-99ac-4ec9-a56e-90ae99088815.png" loading="lazy" width="300px">
         </td>
         <td width="760">
-            Captures and outputs the desktop full screen as a live image stream.
+            Captures and outputs the desktop full screen as a live image stream.<br>
+            No configurable parameters.
         </td>
     </tr>
 </table>
@@ -1704,21 +1989,31 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">🔢 Frame counter</td>
         <td width="760">
             Counts incoming frames and fires a trigger event every N frames.<br>
-            Configurable count threshold and reset behaviour.
+            <strong>Options:</strong><br>
+            • <em>type</em> — drop-down to select counter mode<br>
+            • <em>threshold</em> — integer slider for the frame count threshold
         </td>
     </tr>
     <tr>
         <td width="200"><strong>ObjDetCount</strong></td>
         <td width="320">👁️ Detection counter</td>
         <td width="760">
-            Fires a trigger when the number of detections from an Object Detection node crosses a threshold.
+            Fires a trigger when the number of detections crosses a threshold.<br>
+            <strong>Options:</strong><br>
+            • <em>Class to Count</em> — drop-down to select which class to count<br>
+            • <em>Min Threshold</em> — integer input for minimum detection count<br>
+            • <em>Max Threshold</em> — integer input for maximum detection count<br>
+            • <em>Window (seconds)</em> — float input for the counting time window
         </td>
     </tr>
     <tr>
         <td width="200"><strong>DbDetCount</strong></td>
         <td width="320">🗄️ DB detection counter</td>
         <td width="760">
-            Same as ObjDetCount but counts detections retrieved from a database record.
+            Same as ObjDetCount but counts detections retrieved from a database record.<br>
+            <strong>Options:</strong><br>
+            • <em>AverageMean (s)</em> — float input for averaging window<br>
+            • <em>Delta</em> — float input for trigger delta threshold
         </td>
     </tr>
     <tr>
@@ -1727,21 +2022,25 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
             <img src="https://user-images.githubusercontent.com/37477845/172047545-e0887c75-16d0-450e-8cc2-50f4065173e0.png" loading="lazy" width="300px">
         </td>
         <td width="760">
-            Passes or blocks the input image stream. Toggle with the UI button or a JSON boolean input.
+            Passes or blocks the input image stream. Toggle with the UI button or a JSON boolean input.<br>
+            No additional configurable parameters.
         </td>
     </tr>
     <tr>
         <td width="200"><strong>BooleanInverter</strong></td>
         <td width="320">🔄 NOT gate</td>
         <td width="760">
-            Inverts a boolean JSON value (<code>true → false</code> and vice versa). Used to negate trigger conditions.
+            Inverts a boolean JSON value (<code>true → false</code> and vice versa). No configurable parameters.
         </td>
     </tr>
     <tr>
         <td width="200"><strong>CourtKeypointDeviation</strong></td>
         <td width="320">📐 Keypoint deviation trigger</td>
         <td width="760">
-            Fires a trigger when a player's court keypoint position deviates beyond a configurable threshold.
+            Fires a trigger when a player's court keypoint position deviates beyond a threshold.<br>
+            <strong>Options:</strong><br>
+            • <em>Threshold</em> — float slider for the deviation trigger level<br>
+            • <em>Sample Count</em> — drop-down for the number of frames to average
         </td>
     </tr>
 </table>
@@ -1760,8 +2059,10 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">🔔 Audio alarm</td>
         <td width="760">
             Plays a configurable beep / alarm sound via <em>sounddevice</em> when triggered by a JSON boolean input.<br>
-            Thread-safe playback lock prevents simultaneous calls from multiple instances.<br>
-            Crash-dump logging to <code>node/ActionNode/logs/</code>.
+            <strong>Options:</strong><br>
+            • <em>Sound Indicator</em> — drop-down to select the alarm sound<br>
+            • <em>Buzz Duration (s)</em> — float slider for how long the buzz lasts<br>
+            • <em>Insensitivity Delay (s)</em> — float slider for refractory period between buzzes
         </td>
     </tr>
     <tr>
@@ -1769,7 +2070,9 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">🎥 Triggered recorder</td>
         <td width="760">
             Records video to disk only while a JSON trigger is active (e.g. from ObjDetCount).<br>
-            Configurable output path, codec, and FPS.
+            <strong>Options:</strong><br>
+            • <em>Format</em> — drop-down to select output container (mp4, avi…)<br>
+            • <em>Duration (s)</em> — integer slider for clip length
         </td>
     </tr>
     <tr>
@@ -1777,9 +2080,12 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">📷 PTZ camera control</td>
         <td width="760">
             Controls a PTZ (Pan-Tilt-Zoom) camera via the ONVIF protocol.<br>
-            Accepts a JSON input with <code>url_ptz</code>, username, and password.<br>
-            Provides directional and zoom buttons (up/down/left/right/zoom-in/zoom-out/home/stop).<br>
-            Commands are sent in a background thread to keep the GUI responsive.
+            <strong>Options:</strong><br>
+            • <em>Up</em> / <em>Down</em> / <em>Left</em> / <em>Right</em> — directional buttons<br>
+            • <em>Zoom +</em> / <em>Zoom -</em> — zoom buttons<br>
+            • <em>Home</em> — button to return to the home preset<br>
+            • <em>STOP</em> — button to halt movement<br>
+            Accepts a JSON input with <code>url_ptz</code>, username, and password.
         </td>
     </tr>
     <tr>
@@ -1787,7 +2093,10 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">🗄️ MongoDB writer</td>
         <td width="760">
             Inserts detection or analytics results as JSON documents into a MongoDB collection.<br>
-            Configure connection URI, database, and collection name in the node UI.
+            <strong>Options:</strong><br>
+            • <em>URI</em> — text field for the MongoDB connection URI<br>
+            • <em>Database</em> — text field for the target database name<br>
+            • <em>Collection</em> — text field for the target collection name
         </td>
     </tr>
     <tr>
@@ -1814,8 +2123,13 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="200"><strong>Settings</strong></td>
         <td width="320">⚙️ Global settings</td>
         <td width="760">
-            Central configuration node: sets resolution, GPU flag, API credentials (Copernicus, etc.),
-            and writes them to <code>~/.cv_studio/</code> config files for other nodes to read.
+            Central configuration node: sets API credentials (Copernicus, etc.) and writes them
+            to <code>~/.cv_studio/</code> config files for other nodes to read.<br>
+            <strong>Options:</strong><br>
+            • <em>Client ID</em> — text field for the API client identifier<br>
+            • <em>Secret</em> — text field for the API secret key<br>
+            • <em>Save</em> — button to persist the credentials<br>
+            • <em>Test connection</em> — button to verify the credentials are valid
         </td>
     </tr>
     <tr>
@@ -1823,7 +2137,14 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">🚀 Pipeline deploy</td>
         <td width="760">
             Exports the current node graph to a deployable configuration and optionally starts it
-            as a background service.
+            as a background service.<br>
+            <strong>Options:</strong><br>
+            • <em>Output Dir</em> — text field for the deployment output directory<br>
+            • <em>Project</em> — text field for the project name<br>
+            • <em>Profile</em> — drop-down to select the deployment profile<br>
+            • <em>Overwrite existing</em> — checkbox to allow overwriting an existing deployment<br>
+            • <em>Save &amp; Convert</em> — button to serialise the graph<br>
+            • <em>Deploy</em> — button to start the deployment service
         </td>
     </tr>
     <tr>
@@ -1831,7 +2152,10 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">🔍 Network / device scan</td>
         <td width="760">
             Scans the local network or system for available devices (cameras, ONVIF PTZ cameras, etc.)
-            and outputs the discovered list as JSON.
+            and outputs the discovered list as JSON.<br>
+            <strong>Options:</strong><br>
+            • <em>Scan Network</em> — button to start the discovery scan<br>
+            • <em>Copy Results</em> — button to copy the result JSON to the clipboard
         </td>
     </tr>
     <tr>
@@ -1839,22 +2163,32 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">⏱️ Sync queue</td>
         <td width="760">
             Inserts a timestamped FIFO buffer between nodes to synchronise data streams with different
-            processing speeds or latencies.
+            processing speeds or latencies.<br>
+            <strong>Options:</strong><br>
+            • <em>Add Slot</em> — button to add an additional synchronisation slot
         </td>
     </tr>
     <tr>
         <td width="200"><strong>SystemResource</strong></td>
         <td width="320">📈 Resource monitor</td>
         <td width="760">
-            Displays real-time CPU, RAM, and GPU utilisation. Outputs metrics as JSON for downstream monitoring.
+            Displays real-time CPU, RAM, and GPU utilisation. Outputs metrics as JSON for downstream monitoring.<br>
+            No configurable parameters.
         </td>
     </tr>
     <tr>
         <td width="200"><strong>Sizing</strong></td>
         <td width="320">📐 Sizing helper</td>
         <td width="760">
-            Reports the resolution (width × height) of the connected image stream as a JSON value,
-            useful for dynamic resize or crop configuration.
+            Reports the resolution (width × height) of the connected image stream and estimates compute requirements.<br>
+            <strong>Options:</strong><br>
+            • <em>Resolution</em> — drop-down to select target resolution<br>
+            • <em>Runtime</em> — drop-down to select the inference runtime<br>
+            • <em>Target FPS</em> — integer input for target frame rate<br>
+            • <em>CPU cores</em> — integer input for available CPU threads<br>
+            • <em>RAM</em> — drop-down for available RAM<br>
+            • <em>Modèle GPU</em> — drop-down for GPU model<br>
+            • <em>🔍▶ Scan &amp; Calculate</em> — button to run the sizing estimation
         </td>
     </tr>
 </table>
@@ -1873,7 +2207,9 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">🔀 Simple router</td>
         <td width="760">
             Routes the input image to one of two output paths based on a JSON boolean condition.<br>
-            Enables branching pipelines — e.g. send detections down one path and clean frames down another.
+            <strong>Options:</strong><br>
+            • <em>Window (seconds)</em> — float input for the routing decision time window<br>
+            • <em>Add Slot</em> / <em>Remove Slot</em> — buttons to manage output slots
         </td>
     </tr>
 </table>
@@ -1892,8 +2228,10 @@ See each node's directory under <code>node/DLNode/</code> for model licenses.
         <td width="320">🎯 Kalman predictor</td>
         <td width="760">
             Predicts the future position of a tracked object using a Kalman filter.<br>
-            Accepts bounding-box or keypoint JSON from detection / tracking nodes and outputs
-            a predicted position N frames ahead.
+            <strong>Options:</strong><br>
+            • <em>Pred Steps</em> — integer slider for the number of frames to predict ahead<br>
+            • <em>Process Noise</em> — float slider for the Kalman process noise covariance<br>
+            • <em>Meas. Noise</em> — float slider for the Kalman measurement noise covariance
         </td>
     </tr>
 </table>
