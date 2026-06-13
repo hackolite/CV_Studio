@@ -35,7 +35,7 @@ def test_update_writes_texture_to_mjpeg_tag():
 
     assert out['image'] is frame
     m_set_value.assert_called_once()
-    assert m_set_value.call_args.args[0] == "1:MJPEG:image:Output01Value"
+    assert m_set_value.call_args.args[0] == "1:MJPEG:IMAGE:Output01Value"
 
 
 def test_update_reconnect_uses_mjpeg_url_tag():
@@ -57,16 +57,16 @@ def test_update_reconnect_uses_mjpeg_url_tag():
         node.update(1, [], {}, {}, {})
 
     assert m_get.call_args_list[0].args[0] == "1:MJPEG:fps"
-    assert m_get.call_args_list[1].args[0] == "1:MJPEG:text:Input01Value"
+    assert m_get.call_args_list[1].args[0] == "1:MJPEG:TEXT:Input01Value"
     assert node._is_streaming[node_id] is False
-    m_set_label.assert_called_once_with("1:MJPEG:text:ButtonValue", "Start")
+    m_set_label.assert_called_once_with("1:MJPEG:TEXT:ButtonValue", "Start")
 
 
 def test_button_start_opens_stream_and_sets_stop_label():
     node = MjpegNode()
     node_id = "1"
     tag_node_name = f"{node_id}:MJPEG"
-    button_tag = f"{tag_node_name}:text:ButtonValue"
+    button_tag = f"{tag_node_name}:TEXT:ButtonValue"
 
     cap = mock.MagicMock()
     with mock.patch('node.InputNode.node_mjpeg.dpg.get_item_label', return_value='Start'), \

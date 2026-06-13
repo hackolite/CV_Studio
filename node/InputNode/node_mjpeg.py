@@ -25,11 +25,14 @@ class FactoryNode:
 
         node.tag_node_name = str(node_id) + ':' + node.node_tag
 
-        node.tag_node_input01_value_name = node.tag_node_name + ':text:Input01Value'
-        node.tag_node_output01_value_name = node.tag_node_name + ':image:Output01Value'
-        node.tag_node_button_value_name = node.tag_node_name + ':text:ButtonValue'
-        node.tag_node_output_audio_value_name = node.tag_node_name + ':audio:OutputAudioValue'
-        node.tag_node_output_json_value_name = node.tag_node_name + ':json:OutputJsonValue'
+        node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01'
+        node.tag_node_input01_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input01Value'
+        node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
+        node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
+        node.tag_node_button_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Button'
+        node.tag_node_button_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':ButtonValue'
+        node.tag_node_output_audio_value_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudioValue'
+        node.tag_node_output_json_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':OutputJsonValue'
 
         node._opencv_setting_dict = opencv_setting_dict
         node.small_window_w = opencv_setting_dict['input_window_width']
@@ -53,14 +56,17 @@ class FactoryNode:
 
         with dpg.node(tag=node.tag_node_name, parent=parent, label=node.node_label, pos=pos):
 
-            with dpg.node_attribute():
+            with dpg.node_attribute(
+                tag=node.tag_node_input01_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
                 dpg.add_input_text(
                     tag=node.tag_node_input01_value_name,
                     label='URL',
                     width=node.small_window_w - 20,
                 )
 
-            with dpg.node_attribute():
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
                 dpg.add_slider_int(
                     tag=node.tag_node_name + ':fps',
                     label='FPS',
@@ -70,10 +76,16 @@ class FactoryNode:
                     width=node.small_window_w - 20,
                 )
 
-            with dpg.node_attribute():
+            with dpg.node_attribute(
+                tag=node.tag_node_output01_name,
+                attribute_type=dpg.mvNode_Attr_Output,
+            ):
                 dpg.add_image(node.tag_node_output01_value_name)
 
-            with dpg.node_attribute():
+            with dpg.node_attribute(
+                tag=node.tag_node_button_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
                 dpg.add_button(
                     label=node._start_label,
                     tag=node.tag_node_button_value_name,
@@ -124,8 +136,8 @@ class MjpegNode(Node):
     def _button(self, sender, app_data, user_data):
 
         node_id = user_data.split(':')[0]
-        url_tag = user_data + ':text:Input01Value'
-        button_tag = user_data + ':text:ButtonValue'
+        url_tag = user_data + ':' + self.TYPE_TEXT + ':Input01Value'
+        button_tag = user_data + ':' + self.TYPE_TEXT + ':ButtonValue'
 
         label = dpg.get_item_label(button_tag)
         url = dpg_get_value(url_tag)
@@ -199,7 +211,7 @@ class MjpegNode(Node):
         # -------------------------
         if not ret or frame is None:
 
-            url_tag = tag_node_name + ':text:Input01Value'
+            url_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input01Value'
             url = dpg_get_value(url_tag)
 
             try:
@@ -216,7 +228,7 @@ class MjpegNode(Node):
             else:
                 self._capture.pop(node_id, None)
                 self._is_streaming[node_id] = False
-                dpg.set_item_label(tag_node_name + ':text:ButtonValue', self._start_label)
+                dpg.set_item_label(tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue', self._start_label)
                 print("[MJPEG] reconnect failed")
 
             return {'image': self._last_frame.get(node_id), 'json': None, 'audio': None}
@@ -234,7 +246,7 @@ class MjpegNode(Node):
             self.small_window_h
         )
 
-        dpg_set_value(tag_node_name + ':image:Output01Value', texture)
+        dpg_set_value(tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value', texture)
 
         return {'image': frame, 'json': None, 'audio': None}
 
