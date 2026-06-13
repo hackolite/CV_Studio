@@ -224,7 +224,7 @@ def _get_device_profiles(xaddr, username="admin", pw="admin", timeout=5):
                 profile_info["video_encoding"] = getattr(vec, "Encoding", None)
                 res = getattr(vec, "Resolution", None)
                 if res:
-                    profile_info["resolution"] = f"{getattr(res, 'Width', '?')}x{getattr(res, 'Height', '?')}"
+                    profile_info["resolution"] = f"{getattr(res, 'Width', '-')}x{getattr(res, 'Height', '-')}"
 
             # Audio encoder config
             aec = getattr(profile, "AudioEncoderConfiguration", None)
@@ -426,7 +426,7 @@ class ScanNode(Node):
 
         lines = []
         for dev in devices:
-            host = dev.get("host", "?")
+            host = dev.get("host", "-")
             manufacturer = dev.get("manufacturer", "Unknown")
             model = dev.get("model", "Unknown")
             ptz = dev.get("ptz_supported", False)
@@ -444,9 +444,9 @@ class ScanNode(Node):
                 lines.append(f"  Error: {error}")
 
             for prof in dev.get("profiles", []):
-                name = prof.get("name", "?")
-                res = prof.get("resolution", "?")
-                v_enc = prof.get("video_encoding", "?")
+                name = prof.get("name", "-")
+                res = prof.get("resolution", "-")
+                v_enc = prof.get("video_encoding", "-")
                 a_enc = prof.get("audio_encoding", "None")
                 v_uri = _mask_credentials(prof.get("video_stream_uri")) or "N/A"
                 lines.append(f"  Profile: {name}")
@@ -522,7 +522,7 @@ class ScanNode(Node):
 
             # Populate with rich device cards
             for idx, dev in enumerate(devices):
-                host = dev.get("host", "?")
+                host = dev.get("host", "-")
                 manufacturer = dev.get("manufacturer", "Unknown")
                 model = dev.get("model", "Unknown")
                 ptz = dev.get("ptz_supported", False)
@@ -580,9 +580,9 @@ class ScanNode(Node):
 
                 # Profiles
                 for prof in dev.get("profiles", []):
-                    name = prof.get("name", "?")
-                    res = prof.get("resolution", "?")
-                    v_enc = prof.get("video_encoding", "?")
+                    name = prof.get("name", "-")
+                    res = prof.get("resolution", "-")
+                    v_enc = prof.get("video_encoding", "-")
                     a_enc = prof.get("audio_encoding", "None")
                     v_uri = _mask_credentials(prof.get("video_stream_uri")) or "N/A"
 

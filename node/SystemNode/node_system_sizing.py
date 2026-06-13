@@ -1,22 +1,23 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Sizing Node  (System category)
+SystemSizing Node  (System category)
 
 Aide au dimensionnement des ressources hardware pour un pipeline CV_Studio.
 
 L'utilisateur renseigne :
   • Résolution des flux (size)
   • Runtime cible (DeepStream / OpenVINO / OpenCV-ONNXRuntime)
+  • Type de board cible (Custom ou carte embarquée prédéfinie)
   • GPU cible (sélectionné dans le catalogue — détermine automatiquement la VRAM)
   • CPU disponibles (cores logiques)
   • RAM disponible (GB, par créneaux de 8 GB)
   • FPS cible
 
-Le bouton "Scan Éditeur" détecte automatiquement :
-  • Modèles AI actifs (nœuds VisionModel / AudioModel présents dans l'éditeur)
-  • Nombre de flux entrants (nœuds Input présents dans l'éditeur)
-  • Nœuds VisionProcess et AudioProcess (overhead de traitement)
+Le bouton "Scan Editeur" détecte automatiquement :
+  • Modèles AI actifs (noeuds VisionModel / AudioModel présents dans l'éditeur)
+  • Nombre de flux entrants (noeuds Input présents dans l'éditeur)
+  • Noeuds VisionProcess et AudioProcess (overhead de traitement)
 
 La sortie est un graphique matplotlib rendu en texture DPG :
   • Barres vertes  → ressource suffisante
@@ -72,17 +73,47 @@ _GPU_CATALOG = {
     "RTX 3070":          {"vram_gb":  8,  "tflops":  20.3},
     "RTX 3060 Ti":       {"vram_gb":  8,  "tflops":  16.2},
     "RTX 3060":          {"vram_gb": 12,  "tflops":  12.7},
-    "CPU only":          {"vram_gb":  0,  "tflops":   0.0},
+    # Embedded / Jetson (memoire unifiee – vram_gb partage avec RAM systeme)
+    "Jetson Orin AGX":       {"vram_gb":  0,  "tflops":  5.3},
+    "Jetson Orin NX":        {"vram_gb":  0,  "tflops":  3.5},
+    "Jetson Orin Nano":      {"vram_gb":  0,  "tflops":  1.5},
+    "Jetson Xavier NX":      {"vram_gb":  0,  "tflops":  2.1},
+    "Jetson TX2":            {"vram_gb":  0,  "tflops":  1.3},
+    "Jetson Nano (Maxwell)": {"vram_gb":  0,  "tflops":  0.5},
+    "CPU only":              {"vram_gb":  0,  "tflops":  0.0},
 }
 
 _GPU_NAMES = list(_GPU_CATALOG.keys())
 
 # ---------------------------------------------------------------------------
-# Coûts par type de nœud AI détecté dans l'éditeur
+# Catalogue des boards embarquees
+# None -> champs editables (mode Custom)
+# cpu_cores : nombre de coeurs CPU
+# ram_gb    : RAM systeme totale (GB)
+# gpu       : cle dans _GPU_CATALOG
+# ---------------------------------------------------------------------------
+_BOARD_CATALOG = {
+    "Custom":                  None,
+    "Jetson Orin AGX 64GB":    {"cpu_cores": 12, "ram_gb": 64, "gpu": "Jetson Orin AGX"},
+    "Jetson Orin AGX 32GB":    {"cpu_cores": 12, "ram_gb": 32, "gpu": "Jetson Orin AGX"},
+    "Jetson Orin NX 16GB":     {"cpu_cores":  8, "ram_gb": 16, "gpu": "Jetson Orin NX"},
+    "Jetson Orin NX 8GB":      {"cpu_cores":  8, "ram_gb":  8, "gpu": "Jetson Orin NX"},
+    "Jetson Orin Nano 8GB":    {"cpu_cores":  6, "ram_gb":  8, "gpu": "Jetson Orin Nano"},
+    "Jetson Orin Nano 4GB":    {"cpu_cores":  6, "ram_gb":  4, "gpu": "Jetson Orin Nano"},
+    "Jetson Xavier NX 16GB":   {"cpu_cores":  6, "ram_gb": 16, "gpu": "Jetson Xavier NX"},
+    "Jetson Xavier NX 8GB":    {"cpu_cores":  6, "ram_gb":  8, "gpu": "Jetson Xavier NX"},
+    "Jetson TX2":              {"cpu_cores":  6, "ram_gb":  8, "gpu": "Jetson TX2"},
+    "Jetson Nano (Maxwell) 4GB": {"cpu_cores": 4, "ram_gb": 4, "gpu": "Jetson Nano (Maxwell)"},
+}
+
+_BOARD_NAMES = list(_BOARD_CATALOG.keys())
+
+# ---------------------------------------------------------------------------
+# Couts par type de noeud AI detecte dans l'editeur
 #
-# vram_gb     : VRAM pour charger les poids (une fois par nœud)
-# ram_gb      : RAM hôte pour les poids + overhead framework
-# cpu_per_inf : cœurs logiques consommés par inférence à _BASELINE_FPS
+# vram_gb     : VRAM pour charger les poids (une fois par noeud)
+# ram_gb      : RAM hote pour les poids + overhead framework
+# cpu_per_inf : coeurs logiques consommes par inference a _BASELINE_FPS
 # ---------------------------------------------------------------------------
 _NODE_AI_COSTS = {
     # VisionModel nodes
@@ -182,11 +213,11 @@ _RESOLUTIONS = [
 ]
 _RESOLUTION_DEFAULT = "HD  (1280×720)"
 
-# RAM slots disponibles (créneaux de 8 GB)
-_RAM_SLOTS = [f"{n} GB" for n in [8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512]]
+# RAM slots disponibles (inclut 4 GB pour boards embarquees)
+_RAM_SLOTS = [f"{n} GB" for n in [4, 8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512]]
 _RAM_DEFAULT = "32 GB"
 
-# Overhead réseau / capture par flux (RAM GB, CPU cores à 30 fps)
+# Overhead reseau / capture par flux (RAM GB, CPU cores a 30 fps)
 _STREAM_RAM_OVERHEAD  = 0.12   # GB / flux
 _STREAM_CPU_OVERHEAD  = 0.40   # cores / flux @ 30 fps
 _STREAM_VRAM_OVERHEAD = 0.04   # GB / flux (pipeline GPU)
@@ -374,8 +405,8 @@ def _render_chart(avail_cpu, avail_ram, avail_vram, need_cpu, need_ram, need_vra
 
 
 class FactoryNode:
-    node_label = 'Sizing'
-    node_tag = 'Sizing'
+    node_label = 'SystemSizing'
+    node_tag = 'SystemSizing'
 
     def __init__(self):
         pass
@@ -422,7 +453,7 @@ class FactoryNode:
                 # Resolution
                 dpg.add_combo(
                     tag=tag + ':Resolution',
-                    label='Résolution',
+                    label='Resolution',
                     items=_RESOLUTIONS,
                     default_value=_RESOLUTION_DEFAULT,  # HD
                     width=220,
@@ -435,6 +466,17 @@ class FactoryNode:
                     items=_RUNTIMES,
                     default_value=_RUNTIMES[0],
                     width=220,
+                )
+
+                # Board type (Custom = mode libre, sinon verrouille CPU/RAM/GPU)
+                dpg.add_combo(
+                    tag=tag + ':Board',
+                    label='Board type',
+                    items=_BOARD_NAMES,
+                    default_value=_BOARD_NAMES[0],
+                    width=220,
+                    callback=_callback_board_change,
+                    user_data=tag,
                 )
 
                 dpg.add_spacer(height=4)
@@ -469,7 +511,7 @@ class FactoryNode:
                     width=100,
                 )
 
-                # RAM (créneaux de 8 GB)
+                # RAM
                 dpg.add_combo(
                     tag=tag + ':AvailRAM',
                     label='RAM',
@@ -481,10 +523,10 @@ class FactoryNode:
                 dpg.add_spacer(height=4)
                 dpg.add_text('-- GPU cible --', color=(200, 200, 200))
 
-                # GPU model selector → auto-sets VRAM
+                # GPU model selector -> auto-sets VRAM
                 dpg.add_combo(
                     tag=tag + ':GPU',
-                    label='Modèle GPU',
+                    label='Modele GPU',
                     items=_GPU_NAMES,
                     default_value=_GPU_NAMES[0],
                     width=220,
@@ -503,7 +545,7 @@ class FactoryNode:
                 )
 
                 dpg.add_spacer(height=4)
-                dpg.add_text('-- Modèles AI actifs --', color=(200, 200, 200))
+                dpg.add_text('-- Modeles AI actifs --', color=(200, 200, 200))
 
                 # Read-only display of editor-scanned AI nodes
                 dpg.add_text(
@@ -518,7 +560,7 @@ class FactoryNode:
                 # Combined Scan + Compute button
                 dpg.add_button(
                     tag=tag + ':BtnScanCompute',
-                    label='  🔍▶  Scan & Calculer  ',
+                    label='  Scan & Calculer  ',
                     width=220,
                     callback=_callback_scan_and_compute,
                     user_data=node,
@@ -535,7 +577,7 @@ class FactoryNode:
                 )
 
                 dpg.add_spacer(height=6)
-                dpg.add_text('-- GFLOPs total (estimé) --', color=(200, 200, 200))
+                dpg.add_text('-- GFLOPs total (estime) --', color=(200, 200, 200))
                 dpg.add_text(
                     tag=tag + ':GFLOPsTotal',
                     default_value='(scan requis)',
@@ -573,6 +615,30 @@ def _callback_gpu_change(sender, app_data, user_data):
     )
     try:
         dpg.set_value(tag + ':VRAMLabel', label)
+    except Exception:
+        pass
+
+
+def _callback_board_change(sender, app_data, user_data):
+    """Lock/unlock CPU, RAM, GPU fields based on selected board."""
+    tag = user_data
+    board_name = app_data or _BOARD_NAMES[0]
+    spec = _BOARD_CATALOG.get(board_name)
+    is_custom = spec is None
+    try:
+        dpg.configure_item(tag + ':AvailCPU', enabled=is_custom)
+        dpg.configure_item(tag + ':AvailRAM', enabled=is_custom)
+        dpg.configure_item(tag + ':GPU',      enabled=is_custom)
+        if not is_custom:
+            dpg.set_value(tag + ':AvailCPU', spec["cpu_cores"])
+            ram_str = f"{spec['ram_gb']} GB"
+            if ram_str not in _RAM_SLOTS:
+                ram_str = _RAM_SLOTS[0]
+            dpg.set_value(tag + ':AvailRAM', ram_str)
+            gpu_key = spec["gpu"]
+            if gpu_key in _GPU_CATALOG:
+                dpg.set_value(tag + ':GPU', gpu_key)
+                _callback_gpu_change(None, gpu_key, tag)
     except Exception:
         pass
 
@@ -699,10 +765,10 @@ def _do_scan_and_compute(node):
 # ---------------------------------------------------------------------------
 
 class _Node(Node):
-    _ver = '0.0.2'
+    _ver = '0.0.3'
 
-    node_label = 'Sizing'
-    node_tag = 'Sizing'
+    node_label = 'SystemSizing'
+    node_tag = 'SystemSizing'
 
     _opencv_setting_dict = None
     tag_chart_texture = ''
@@ -718,7 +784,7 @@ class _Node(Node):
         node_result_dict,
         node_audio_dict,
     ):
-        # Sizing is a purely interactive node – no per-frame computation needed.
+        # SystemSizing is a purely interactive node – no per-frame computation needed.
         return {"image": None, "json": None, "audio": None}
 
     def close(self, node_id):
@@ -733,6 +799,7 @@ class _Node(Node):
             "pos": pos,
             "resolution": dpg_get_value(tag + ':Resolution') or _RESOLUTION_DEFAULT,
             "runtime": dpg_get_value(tag + ':Runtime') or _RUNTIMES[0],
+            "board": dpg_get_value(tag + ':Board') or _BOARD_NAMES[0],
             "fps": int(dpg_get_value(tag + ':FPS') or 30),
             "avail_cpu": int(dpg_get_value(tag + ':AvailCPU') or 8),
             "avail_ram": dpg_get_value(tag + ':AvailRAM') or _RAM_DEFAULT,
@@ -751,31 +818,43 @@ class _Node(Node):
             dpg.set_value(tag + ':Resolution', res_val)
             dpg.set_value(tag + ':Runtime',
                           setting_dict.get("runtime", _RUNTIMES[0]))
-            dpg.set_value(tag + ':FPS', setting_dict.get("fps", 30))
-            dpg.set_value(tag + ':AvailCPU', setting_dict.get("avail_cpu", 8))
 
-            # RAM slot – migrate old float value to nearest 8-GB slot string
-            ram_val = setting_dict.get("avail_ram", _RAM_DEFAULT)
-            if isinstance(ram_val, (int, float)):
-                ram_val = f"{_ceil8(float(ram_val))} GB"
-            if ram_val not in _RAM_SLOTS:
-                ram_val = _RAM_DEFAULT
-            dpg.set_value(tag + ':AvailRAM', ram_val)
+            # Board type
+            board_val = setting_dict.get("board", _BOARD_NAMES[0])
+            if board_val not in _BOARD_CATALOG:
+                board_val = _BOARD_NAMES[0]
+            dpg.set_value(tag + ':Board', board_val)
+            _callback_board_change(None, board_val, tag)
 
-            # GPU model
-            gpu_val = setting_dict.get("gpu", _GPU_NAMES[0])
-            if gpu_val not in _GPU_CATALOG:
-                gpu_val = _GPU_NAMES[0]
-            dpg.set_value(tag + ':GPU', gpu_val)
-            info = _GPU_CATALOG[gpu_val]
-            vram = info["vram_gb"]
-            tflops = info.get("tflops", 0.0)
-            label = (
-                f"VRAM : {vram} GB  |  FP32 : {tflops:.1f} TFLOPS"
-                if tflops > 0 else
-                f"VRAM : {vram} GB  (CPU only)"
-            )
-            dpg.set_value(tag + ':VRAMLabel', label)
+            # Only restore CPU/RAM/GPU when board is Custom (not locked)
+            if _BOARD_CATALOG.get(board_val) is None:
+                dpg.set_value(tag + ':FPS', setting_dict.get("fps", 30))
+                dpg.set_value(tag + ':AvailCPU', setting_dict.get("avail_cpu", 8))
+
+                # RAM slot – migrate old float value to nearest slot string
+                ram_val = setting_dict.get("avail_ram", _RAM_DEFAULT)
+                if isinstance(ram_val, (int, float)):
+                    ram_val = f"{_ceil8(float(ram_val))} GB"
+                if ram_val not in _RAM_SLOTS:
+                    ram_val = _RAM_DEFAULT
+                dpg.set_value(tag + ':AvailRAM', ram_val)
+
+                # GPU model
+                gpu_val = setting_dict.get("gpu", _GPU_NAMES[0])
+                if gpu_val not in _GPU_CATALOG:
+                    gpu_val = _GPU_NAMES[0]
+                dpg.set_value(tag + ':GPU', gpu_val)
+                info = _GPU_CATALOG[gpu_val]
+                vram = info["vram_gb"]
+                tflops = info.get("tflops", 0.0)
+                label = (
+                    f"VRAM : {vram} GB  |  FP32 : {tflops:.1f} TFLOPS"
+                    if tflops > 0 else
+                    f"VRAM : {vram} GB  (CPU only)"
+                )
+                dpg.set_value(tag + ':VRAMLabel', label)
+            else:
+                dpg.set_value(tag + ':FPS', setting_dict.get("fps", 30))
 
         except Exception:
             pass
