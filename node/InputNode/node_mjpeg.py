@@ -183,7 +183,7 @@ class MjpegNode(Node):
         self.yellow_button_theme = None
 
         # Per-instance streaming state (keyed by node_id string)
-        self._capture = {}          # url -> cv2.VideoCapture
+        self._capture = {}          # node_id -> cv2.VideoCapture
         self._last_frame = {}       # node_id -> last captured frame
         self._last_frame_time = {}  # node_id -> monotonic timestamp of last grab
         self._is_streaming = {}     # node_id -> bool
@@ -261,10 +261,13 @@ class MjpegNode(Node):
             return {'image': frame, 'json': None, 'audio': None}
 
         # Grab next frame from the MJPEG stream
+        ret, frame = False, None
         try:
             ret, frame = cap.read()
-        except Exception:
-            ret, frame = False, None
+        except cv2.error as exc:
+            print(f'[MJPEG] cv2 read error: {exc}')
+        except Exception as exc:
+            print(f'[MJPEG] Unexpected read error: {exc}')
 
         if not ret or frame is None:
             # Try to reconnect
@@ -277,8 +280,8 @@ class MjpegNode(Node):
             try:
                 new_cap = cv2.VideoCapture(mjpeg_url)
                 self._capture[node_id_str] = new_cap
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f'[MJPEG] Reconnect failed: {exc}')
             return {'image': self._last_frame.get(node_id_str), 'json': None, 'audio': None}
 
         self._last_frame[node_id_str] = frame
