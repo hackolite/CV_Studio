@@ -215,6 +215,8 @@ class MjpegNode(Node):
                 self._capture[node_id] = new_cap
             else:
                 self._capture.pop(node_id, None)
+                self._is_streaming[node_id] = False
+                dpg.set_item_label(tag_node_name + ':text:ButtonValue', self._start_label)
                 print("[MJPEG] reconnect failed")
 
             return {'image': self._last_frame.get(node_id), 'json': None, 'audio': None}

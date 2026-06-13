@@ -52,11 +52,14 @@ def test_update_reconnect_uses_mjpeg_url_tag():
 
     with mock.patch('node.InputNode.node_mjpeg.dpg_get_value', side_effect=[10, 'http://cam/stream']) as m_get, \
          mock.patch.object(node, '_open_capture', return_value=None), \
+         mock.patch('node.InputNode.node_mjpeg.dpg.set_item_label') as m_set_label, \
          mock.patch('node.InputNode.node_mjpeg.time.sleep', return_value=None):
         node.update(1, [], {}, {}, {})
 
     assert m_get.call_args_list[0].args[0] == "1:MJPEG:fps"
     assert m_get.call_args_list[1].args[0] == "1:MJPEG:text:Input01Value"
+    assert node._is_streaming[node_id] is False
+    m_set_label.assert_called_once_with("1:MJPEG:text:ButtonValue", "Start")
 
 
 def test_button_start_opens_stream_and_sets_stop_label():
