@@ -140,6 +140,7 @@ class MjpegNode(Node):
                     dpg.set_item_label(button_tag, self._stop_label)
                     return
             self._is_streaming[node_id] = False
+            self._capture.pop(node_id, None)
             dpg.set_item_label(button_tag, self._start_label)
 
         else:
