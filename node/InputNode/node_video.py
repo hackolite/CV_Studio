@@ -951,9 +951,9 @@ class VideoNode(Node):
         # Get audio chunk data for this frame to pass to other audio nodes.
         # In "Frames only" mode audio preprocessing is skipped entirely, so
         # the audio output is always None.
+        current_frame_num = self._frame_count.get(str(node_id), 0)
         audio_chunk_data = None
         if not frames_only_mode:
-            current_frame_num = self._frame_count.get(str(node_id), 0)
             if str(node_id) in self._audio_chunk_paths:
                 audio_chunk_data = self._get_audio_chunk_for_frame(str(node_id), current_frame_num)
 
