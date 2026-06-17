@@ -89,13 +89,13 @@ class PotholeYOLOSeg:
         if segmentation_map is None or len(segmentation_map) == 0:
             return counts
 
-        # Group masks by class and OR them (union) before counting
+        # Group masks by class, take union, then count pixels
         for class_id in np.unique(class_ids):
-            class_indices = np.where(class_ids == int(class_id))[0]
-            union_mask = np.zeros(segmentation_map.shape[1:], dtype=np.float32)
-            for idx in class_indices:
-                union_mask = np.maximum(union_mask, segmentation_map[idx])
-            pixel_count = int(np.sum(union_mask > 0.5))
+            class_indices = np.where(class_ids == class_id)[0]
+            union_mask = np.any(
+                segmentation_map[class_indices] > 0.5, axis=0
+            )
+            pixel_count = int(np.count_nonzero(union_mask))
             class_name = self.CLASS_NAMES.get(int(class_id), f"class_{class_id}")
             counts[class_name] = pixel_count
 

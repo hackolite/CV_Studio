@@ -123,7 +123,7 @@ class Node(Node):
         'FLAIR Aerial INT8 (ONNX)': _model_base_path +
         'aerial_segmentation_flair/model/flair_aerial_seg_int8_N.onnx',
         'Pothole YOLO-seg': _model_base_path +
-        'pothole/model/potehole.onnx',
+        'pothole/model/pothole.onnx',
     }
     _model_instance = {}
 
@@ -321,15 +321,15 @@ class Node(Node):
         onnx_path = cls._model_path_setting.get(name)
         if onnx_path:
             try:
-                onnx_abs = os.path.abspath(onnx_path)
-                uploads_abs = os.path.abspath(_SEG_UPLOADS_DIR)
+                onnx_real = os.path.realpath(onnx_path)
+                uploads_real = os.path.realpath(_SEG_UPLOADS_DIR)
                 if (
-                    os.path.commonpath([onnx_abs, uploads_abs]) == uploads_abs
-                    and onnx_abs != uploads_abs
-                    and os.path.isfile(onnx_abs)
+                    os.path.commonpath([onnx_real, uploads_real]) == uploads_real
+                    and onnx_real != uploads_real
+                    and os.path.isfile(onnx_real)
                 ):
-                    os.remove(onnx_abs)
-                    logger.info(f"[Delete] ONNX file deleted: {onnx_abs}")
+                    os.remove(onnx_real)
+                    logger.info(f"[Delete] ONNX file deleted: {onnx_real}")
             except Exception as exc:
                 logger.warning(f"[Delete] Could not delete ONNX file for '{name}': {exc}")
         try:
