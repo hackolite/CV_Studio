@@ -59,6 +59,7 @@ _BUILTIN_SEG_MODEL_NAMES: set = {
     'FLAIR Aerial (IGN)',
     'FLAIR Aerial INT8 (ONNX)',
     'Pothole YOLO-seg',
+    'Pothole YOLO-seg (v12)',
 }
 
 class FactoryNode:
@@ -106,6 +107,8 @@ class Node(Node):
         FlairAerialSegmentationONNX,
         'Pothole YOLO-seg':
         PotholeYOLOSeg,
+        'Pothole YOLO-seg (v12)':
+        PotholeYOLOSeg,
     }
     _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/semantic_segmentation/'
     _model_path_setting = {
@@ -124,6 +127,8 @@ class Node(Node):
         'aerial_segmentation_flair/model/flair_aerial_seg_int8_N.onnx',
         'Pothole YOLO-seg': _model_base_path +
         'pothole/model/pothole.onnx',
+        'Pothole YOLO-seg (v12)': _model_base_path +
+        'pothole/model/potehole_12.onnx',
     }
     _model_instance = {}
 
@@ -707,9 +712,9 @@ class Node(Node):
             class_num = self._model_instance[
                 model_name_with_provider].get_class_num()
 
-            # Pothole YOLO-seg returns (masks, class_ids) tuple and produces
+            # PotholeYOLOSeg returns (masks, class_ids) tuple and produces
             # a flat {class_name: pixel_count} JSON for the Chart node.
-            if model_name == 'Pothole YOLO-seg':
+            if isinstance(self._model_instance[model_name_with_provider], PotholeYOLOSeg):
                 segmentation_map, class_ids = self._model_instance[
                     model_name_with_provider](frame)
                 pixel_counts = self._model_instance[
@@ -732,8 +737,8 @@ class Node(Node):
 
         # 描画
         if frame is not None:
-            # Pothole YOLO-seg: draw contours (same style as YOLOv8-nano-seg)
-            if model_name == 'Pothole YOLO-seg':
+            # PotholeYOLOSeg: draw contours (same style as YOLOv8-nano-seg)
+            if isinstance(self._model_instance[model_name_with_provider], PotholeYOLOSeg):
                 debug_frame = self.draw_yolov8_seg_contours(
                     frame,
                     segmentation_map,
