@@ -29,7 +29,7 @@ from node.DLNode.semantic_segmentation.aerial_segmentation_flair.aerial_segmenta
     overlay_flair,
     overlay_flair2,
 )
-from node.DLNode.semantic_segmentation.pothole.pothole_seg import PotholeYOLOSeg
+from node.DLNode.semantic_segmentation.pothole.pothole_seg import PotholeYOLOSeg, PotholeYOLOSegV12
 from node.DLNode.semantic_segmentation import custom_models_registry as _seg_registry
 from node.DLNode.object_detection import onnx_inspector
 
@@ -108,7 +108,7 @@ class Node(Node):
         'Pothole YOLO-seg':
         PotholeYOLOSeg,
         'Pothole YOLO-seg (v12)':
-        PotholeYOLOSeg,
+        PotholeYOLOSegV12,
     }
     _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/semantic_segmentation/'
     _model_path_setting = {
@@ -737,8 +737,12 @@ class Node(Node):
 
         # 描画
         if frame is not None:
-            # PotholeYOLOSeg: draw contours (same style as YOLOv8-nano-seg)
-            if isinstance(self._model_instance[model_name_with_provider], PotholeYOLOSeg):
+            # PotholeYOLOSegV12: coloured overlay + contours + bounding boxes
+            if isinstance(self._model_instance[model_name_with_provider], PotholeYOLOSegV12):
+                debug_frame = self._model_instance[
+                    model_name_with_provider].draw_result(frame, segmentation_map)
+            # PotholeYOLOSeg (v1): draw contours only
+            elif isinstance(self._model_instance[model_name_with_provider], PotholeYOLOSeg):
                 debug_frame = self.draw_yolov8_seg_contours(
                     frame,
                     segmentation_map,

@@ -22,6 +22,11 @@ def test_pothole_seg_import():
     assert PotholeYOLOSeg is not None
 
 
+def test_pothole_v12_seg_import():
+    from node.DLNode.semantic_segmentation.pothole.pothole_seg import PotholeYOLOSegV12
+    assert PotholeYOLOSegV12 is not None
+
+
 def test_pothole_seg_interface():
     from node.DLNode.semantic_segmentation.pothole.pothole_seg import PotholeYOLOSeg
     assert hasattr(PotholeYOLOSeg, "get_class_num")
@@ -29,6 +34,16 @@ def test_pothole_seg_interface():
     assert hasattr(PotholeYOLOSeg, "compute_pixel_counts")
     assert hasattr(PotholeYOLOSeg, "_preprocess")
     assert hasattr(PotholeYOLOSeg, "_postprocess")
+
+
+def test_pothole_v12_seg_interface():
+    from node.DLNode.semantic_segmentation.pothole.pothole_seg import (
+        PotholeYOLOSeg, PotholeYOLOSegV12,
+    )
+    assert issubclass(PotholeYOLOSegV12, PotholeYOLOSeg)
+    assert hasattr(PotholeYOLOSegV12, "draw_result")
+    assert hasattr(PotholeYOLOSegV12, "_nms")
+    assert hasattr(PotholeYOLOSegV12, "compute_pixel_counts")
 
 
 def _make_dummy_frame(h=480, w=640):
@@ -80,9 +95,9 @@ def test_pothole_v12_no_white_output():
 @pytest.mark.skipif(not os.path.isfile(_MODEL_V12), reason="potehole_12.onnx not found")
 def test_pothole_v12_pixel_counts():
     """compute_pixel_counts must return a dict with 'Pothole' key."""
-    from node.DLNode.semantic_segmentation.pothole.pothole_seg import PotholeYOLOSeg
+    from node.DLNode.semantic_segmentation.pothole.pothole_seg import PotholeYOLOSegV12
 
-    model = PotholeYOLOSeg(_MODEL_V12, providers=["CPUExecutionProvider"])
+    model = PotholeYOLOSegV12(_MODEL_V12, providers=["CPUExecutionProvider"])
     frame = _make_dummy_frame()
     seg_map, class_ids = model(frame)
     counts = model.compute_pixel_counts(seg_map, class_ids)
@@ -90,6 +105,21 @@ def test_pothole_v12_pixel_counts():
     assert isinstance(counts, dict)
     assert "Pothole" in counts
     assert isinstance(counts["Pothole"], int)
+
+
+@pytest.mark.skipif(not os.path.isfile(_MODEL_V12), reason="potehole_12.onnx not found")
+def test_pothole_v12_draw_result_returns_bgr_image():
+    """draw_result() must return a BGR image of the same dimensions as the input."""
+    from node.DLNode.semantic_segmentation.pothole.pothole_seg import PotholeYOLOSegV12
+
+    model = PotholeYOLOSegV12(_MODEL_V12, providers=["CPUExecutionProvider"])
+    frame = _make_dummy_frame(h=480, w=640)
+    seg_map, class_ids = model(frame)
+    result = model.draw_result(frame, seg_map)
+
+    assert isinstance(result, np.ndarray)
+    assert result.shape == frame.shape
+    assert result.dtype == np.uint8
 
 
 def test_node_registers_v12_builtin():
@@ -104,15 +134,22 @@ def test_node_registers_v12_builtin():
 
 
 def test_node_model_class_v12_is_pothole_yolo_seg():
-    """The model class for 'Pothole YOLO-seg (v12)' must be PotholeYOLOSeg."""
+    """The model class for 'Pothole YOLO-seg (v12)' must be PotholeYOLOSegV12."""
     try:
         from node.DLNode.node_semantic_segmentation import Node
     except ImportError as e:
         if 'dearpygui' in str(e):
             pytest.skip("Skipping due to missing GUI dependencies")
         raise
-    from node.DLNode.semantic_segmentation.pothole.pothole_seg import PotholeYOLOSeg
-    assert Node._model_class.get("Pothole YOLO-seg (v12)") is PotholeYOLOSeg
+    from node.DLNode.semantic_segmentation.pothole.pothole_seg import (
+        PotholeYOLOSeg, PotholeYOLOSegV12,
+    )
+    cls = Node._model_class.get("Pothole YOLO-seg (v12)")
+    assert cls is PotholeYOLOSegV12, (
+        f"Expected PotholeYOLOSegV12, got {cls}"
+    )
+    # PotholeYOLOSegV12 must be a subclass of PotholeYOLOSeg
+    assert issubclass(PotholeYOLOSegV12, PotholeYOLOSeg)
 
 
 def test_node_model_path_v12_points_to_file():
