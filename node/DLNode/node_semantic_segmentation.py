@@ -29,6 +29,7 @@ from node.DLNode.semantic_segmentation.aerial_segmentation_flair.aerial_segmenta
     overlay_flair,
     overlay_flair2,
 )
+from node.DLNode.semantic_segmentation.pothole.pothole_seg import PotholeYOLOSeg
 from node.DLNode.semantic_segmentation import custom_models_registry as _seg_registry
 from node.DLNode.object_detection import onnx_inspector
 
@@ -37,13 +38,28 @@ from node.basenode import Node
 from src.utils.logging import get_logger
 logger = get_logger(__name__)
 
+_SEG_BASE = os.path.dirname(os.path.abspath(__file__))
+
 if getattr(sys, 'frozen', False):
     from src.utils.paths import get_models_dir
     _SEG_UPLOADS_DIR = get_models_dir('semantic_segmentation')
 else:
     _SEG_UPLOADS_DIR = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), 'semantic_segmentation', 'CustomONNX', 'models'
+        _SEG_BASE, 'semantic_segmentation', 'CustomONNX', 'models'
     )
+
+# Built-in model names — these cannot be deleted by the user.
+_BUILTIN_SEG_MODEL_NAMES: set = {
+    'DeepLabV3',
+    'Road Segmentation ADAS 0001',
+    'Skin Clothes Hair Segmentation',
+    'MediaPipe SelfieSegmentation(Normal)',
+    'MediaPipe SelfieSegmentation(LandScape)',
+    'YOLOv8-nano-seg',
+    'FLAIR Aerial (IGN)',
+    'FLAIR Aerial INT8 (ONNX)',
+    'Pothole YOLO-seg',
+}
 
 class FactoryNode:
     node_label = 'SemanticSegmentation'
@@ -88,6 +104,8 @@ class Node(Node):
         FlairAerialSegmentation,
         'FLAIR Aerial INT8 (ONNX)':
         FlairAerialSegmentationONNX,
+        'Pothole YOLO-seg':
+        PotholeYOLOSeg,
     }
     _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/semantic_segmentation/'
     _model_path_setting = {
@@ -104,6 +122,8 @@ class Node(Node):
         'FLAIR Aerial (IGN)': None,
         'FLAIR Aerial INT8 (ONNX)': _model_base_path +
         'aerial_segmentation_flair/model/flair_aerial_seg_int8_N.onnx',
+        'Pothole YOLO-seg': _model_base_path +
+        'pothole/model/potehole.onnx',
     }
     _model_instance = {}
 
@@ -274,6 +294,76 @@ class Node(Node):
         except Exception as exc:
             logger.warning(f"[SemanticSegmentation Upload] Could not update model dropdown: {exc}")
 
+        # Disable the delete button when the newly-selected model is built-in
+        try:
+            is_builtin = name in _BUILTIN_SEG_MODEL_NAMES
+            dpg.configure_item(node.tag_delete_btn, enabled=not is_builtin)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Delete model
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _delete_custom_model(cls, name: str) -> bool:
+        """Remove a custom model from the registry and runtime dicts.
+
+        Built-in models cannot be deleted.  Returns True when the model
+        was found and removed.
+        """
+        if not name:
+            return False
+        if name in _BUILTIN_SEG_MODEL_NAMES:
+            logger.warning(f"[Delete] '{name}' is a built-in model and cannot be deleted.")
+            return False
+        found = name in cls._model_class or name in cls._model_path_setting
+        onnx_path = cls._model_path_setting.get(name)
+        if onnx_path:
+            try:
+                onnx_abs = os.path.abspath(onnx_path)
+                uploads_abs = os.path.abspath(_SEG_UPLOADS_DIR)
+                if (
+                    os.path.commonpath([onnx_abs, uploads_abs]) == uploads_abs
+                    and onnx_abs != uploads_abs
+                    and os.path.isfile(onnx_abs)
+                ):
+                    os.remove(onnx_abs)
+                    logger.info(f"[Delete] ONNX file deleted: {onnx_abs}")
+            except Exception as exc:
+                logger.warning(f"[Delete] Could not delete ONNX file for '{name}': {exc}")
+        try:
+            _seg_registry.remove_entry(name)
+        except Exception as exc:
+            logger.warning(f"[Delete] Could not remove registry entry for '{name}': {exc}")
+        cls._model_class.pop(name, None)
+        cls._model_path_setting.pop(name, None)
+        for key in [k for k in cls._model_instance if k == name or k.startswith(name + '_')]:
+            cls._model_instance.pop(key, None)
+        return found
+
+    def _delete_selected_model(self, name: str):
+        """Delete the currently-selected model and refresh the combobox."""
+        if not name:
+            return
+        if name in _BUILTIN_SEG_MODEL_NAMES:
+            logger.warning(f"[Delete] '{name}' is a built-in model and cannot be deleted.")
+            return
+        Node._delete_custom_model(name)
+        model_combo_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
+        remaining = list(Node._model_class.keys())
+        new_default = remaining[0] if remaining else ""
+        try:
+            dpg.configure_item(model_combo_tag, items=remaining, default_value=new_default)
+        except Exception as exc:
+            logger.warning(f"[Delete] Could not update model dropdown: {exc}")
+        # Re-enable / disable the delete button for the new default
+        try:
+            is_builtin = new_default in _BUILTIN_SEG_MODEL_NAMES
+            dpg.configure_item(self.tag_delete_btn, enabled=not is_builtin)
+        except Exception:
+            pass
+
     def add_node(
         self,
         parent,
@@ -418,11 +508,20 @@ class Node(Node):
                     tag=tag_node_input02_name,
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
+                def _on_model_change(sender, app_data, user_data):
+                    selected = app_data
+                    try:
+                        is_builtin = selected in _BUILTIN_SEG_MODEL_NAMES
+                        dpg.configure_item(self.tag_delete_btn, enabled=not is_builtin)
+                    except Exception:
+                        pass
+
                 dpg.add_combo(
                     list(self._model_class.keys()),
                     default_value=list(self._model_class.keys())[0],
                     width=small_window_w,
                     tag=tag_node_input02_value_name,
+                    callback=_on_model_change,
                 )
             if use_gpu:
 	            # CPU/GPU切り替え
@@ -498,6 +597,36 @@ class Node(Node):
                     callback=_on_upload_clicked,
                 )
                 dpg.bind_item_theme(add_model_btn, add_model_btn_theme)
+
+            # ---- Delete model button (red, only enabled for custom models) --
+            self.tag_delete_btn = tag_node_name + ':DeleteONNX'
+
+            def _on_delete_clicked(sender, app_data, user_data):
+                selected = dpg_get_value(tag_node_input02_value_name)
+                self._delete_selected_model(selected)
+
+            with dpg.node_attribute(
+                    tag=tag_node_name + ':DeleteAttr',
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                with dpg.theme() as delete_model_btn_theme:
+                    with dpg.theme_component(dpg.mvButton):
+                        dpg.add_theme_color(dpg.mvThemeCol_Button, (200, 60, 60, 255))
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (230, 90, 90, 255))
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (170, 40, 40, 255))
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))
+
+                delete_btn = dpg.add_button(
+                    label=u"Delete Model",
+                    tag=self.tag_delete_btn,
+                    width=small_window_w,
+                    callback=_on_delete_clicked,
+                )
+                dpg.bind_item_theme(delete_btn, delete_model_btn_theme)
+                # Disable for the initially-selected model if it is built-in
+                default_selected = list(self._model_class.keys())[0] if self._model_class else ""
+                if default_selected in _BUILTIN_SEG_MODEL_NAMES:
+                    dpg.configure_item(delete_btn, enabled=False)
 
         self.tag_node_name = tag_node_name
         return self
@@ -577,11 +706,22 @@ class Node(Node):
         if frame is not None:
             class_num = self._model_instance[
                 model_name_with_provider].get_class_num()
-            segmentation_map = self._model_instance[model_name_with_provider](
-                frame)
-            result['score_th'] = score_th
-            result['class_num'] = class_num
-            result['segmentation_map'] = segmentation_map
+
+            # Pothole YOLO-seg returns (masks, class_ids) tuple and produces
+            # a flat {class_name: pixel_count} JSON for the Chart node.
+            if model_name == 'Pothole YOLO-seg':
+                segmentation_map, class_ids = self._model_instance[
+                    model_name_with_provider](frame)
+                pixel_counts = self._model_instance[
+                    model_name_with_provider].compute_pixel_counts(
+                        segmentation_map, class_ids)
+                result = pixel_counts  # flat numeric dict → Chart node compatible
+            else:
+                segmentation_map = self._model_instance[model_name_with_provider](
+                    frame)
+                result['score_th'] = score_th
+                result['class_num'] = class_num
+                result['segmentation_map'] = segmentation_map
 
         # 計測終了
         if frame is not None and use_pref_counter:
@@ -592,8 +732,14 @@ class Node(Node):
 
         # 描画
         if frame is not None:
+            # Pothole YOLO-seg: draw contours (same style as YOLOv8-nano-seg)
+            if model_name == 'Pothole YOLO-seg':
+                debug_frame = self.draw_yolov8_seg_contours(
+                    frame,
+                    segmentation_map,
+                )
             # Special handling for YOLOv8-seg to draw only contours
-            if model_name == 'YOLOv8-nano-seg':
+            elif model_name == 'YOLOv8-nano-seg':
                 debug_frame = self.draw_yolov8_seg_contours(
                     frame,
                     segmentation_map,
