@@ -12,8 +12,7 @@ for the Chart node's flat-numeric-dict path.
 
 PotholeYOLOSegV12 extends PotholeYOLOSeg for potehole_12.onnx:
   - Uses letterbox preprocessing (preserves aspect ratio with grey padding)
-  - Applies NMS to filter overlapping detections
-  - Provides draw_result() for coloured overlay + contours + bounding boxes
+  - Provides draw_result() for coloured overlay + contours
 """
 
 import os
@@ -179,30 +178,22 @@ class PotholeYOLOSegV12(PotholeYOLOSeg):
 
     * ``_preprocess`` performs letterbox resize (aspect-ratio-preserving with
       grey padding) instead of a plain resize.
-    * ``_postprocess`` applies NMS and correctly unprojects masks / bounding
-      boxes back to the original image coordinate space.
-    * ``draw_result`` renders a per-instance coloured overlay, green contours,
-      green bounding boxes, and confidence labels on the original frame.
+    * ``_postprocess`` correctly unprojects masks back to the original image
+      coordinate space.
+    * ``draw_result`` renders a per-instance coloured overlay and green contours.
     """
 
     _OVERLAY_COLOR = (0, 0, 255)   # BGR red for pothole
     _CONTOUR_COLOR = (0, 255, 0)   # BGR green
-    _BBOX_COLOR    = (0, 255, 0)
-    _LABEL_COLOR   = (0, 255, 0)
     _PAD_VALUE     = 114
 
     def __init__(self, model_path: str, providers=None,
-                 confidence_threshold: float = 0.25,
-                 iou_threshold: float = 0.45):
+                 confidence_threshold: float = 0.25):
         super().__init__(model_path, providers, confidence_threshold)
-        self.iou_threshold = iou_threshold
         # State stored by _preprocess and consumed by _postprocess / draw_result
         self._scale: float = 1.0
         self._pad_top: int = 0
         self._pad_left: int = 0
-        # Stored after _postprocess for use in draw_result
-        self._last_boxes: np.ndarray = np.empty((0, 4), dtype=np.float32)
-        self._last_scores: np.ndarray = np.empty((0,), dtype=np.float32)
 
     # ------------------------------------------------------------------
     # Letterbox preprocessing
@@ -236,40 +227,12 @@ class PotholeYOLOSegV12(PotholeYOLOSeg):
         return blob
 
     # ------------------------------------------------------------------
-    # NMS helper
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _nms(boxes: np.ndarray, scores: np.ndarray,
-             iou_thresh: float) -> list:
-        """Greedy NMS.  ``boxes`` in xyxy format."""
-        x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
-        areas = (x2 - x1) * (y2 - y1)
-        order = scores.argsort()[::-1]
-        keep = []
-        while order.size > 0:
-            i = order[0]
-            keep.append(int(i))
-            xx1 = np.maximum(x1[i], x1[order[1:]])
-            yy1 = np.maximum(y1[i], y1[order[1:]])
-            xx2 = np.minimum(x2[i], x2[order[1:]])
-            yy2 = np.minimum(y2[i], y2[order[1:]])
-            inter = np.maximum(0.0, xx2 - xx1) * np.maximum(0.0, yy2 - yy1)
-            iou = inter / (areas[i] + areas[order[1:]] - inter + 1e-6)
-            order = order[1:][iou < iou_thresh]
-        return keep
-
-    # ------------------------------------------------------------------
     # Postprocessing with letterbox unprojection
     # ------------------------------------------------------------------
 
     def _postprocess(self, outputs, image_width: int,
                      image_height: int):
-        """Decode model outputs, apply NMS, and unproject to original size.
-
-        Stores ``_last_boxes`` (xyxy in original image coords) and
-        ``_last_scores`` on ``self`` for use in ``draw_result``.
-        """
+        """Decode model outputs and unproject masks to original size."""
         pred       = outputs[0][0].T   # [8400, 5 + 32]
         proto      = outputs[1][0]     # [32, 160, 160]
 
@@ -278,41 +241,14 @@ class PotholeYOLOSegV12(PotholeYOLOSeg):
         pred = pred[mask_keep]
 
         if len(pred) == 0:
-            self._last_boxes  = np.empty((0, 4), dtype=np.float32)
-            self._last_scores = np.empty((0,), dtype=np.float32)
             empty = np.zeros((0, image_height, image_width), dtype=np.float32)
             return empty, np.array([], dtype=np.int32)
 
-        scores = pred[:, 4]
         coefs  = pred[:, 5:]   # [N, 32]
-
-        # cx, cy, w, h → x1, y1, x2, y2 (letterbox space)
-        cx, cy = pred[:, 0], pred[:, 1]
-        bw, bh = pred[:, 2], pred[:, 3]
-        boxes_lb = np.stack(
-            [cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2], axis=1
-        )
-
-        # NMS
-        keep = self._nms(boxes_lb, scores, self.iou_threshold)
-        boxes_lb = boxes_lb[keep]
-        scores   = scores[keep]
-        coefs    = coefs[keep]
 
         proto_h, proto_w = proto.shape[1], proto.shape[2]
         in_h, in_w = self.input_height, self.input_width
         scale, pad_top, pad_left = self._scale, self._pad_top, self._pad_left
-
-        # Convert letterbox boxes → original image coords
-        orig_boxes = np.stack([
-            np.clip((boxes_lb[:, 0] - pad_left) / scale, 0, image_width),
-            np.clip((boxes_lb[:, 1] - pad_top)  / scale, 0, image_height),
-            np.clip((boxes_lb[:, 2] - pad_left) / scale, 0, image_width),
-            np.clip((boxes_lb[:, 3] - pad_top)  / scale, 0, image_height),
-        ], axis=1)
-
-        self._last_boxes  = orig_boxes.astype(np.float32)
-        self._last_scores = scores.astype(np.float32)
 
         # Decode per-instance masks
         # [N, 32] @ [32, 160*160] → [N, 160, 160]
@@ -341,7 +277,7 @@ class PotholeYOLOSegV12(PotholeYOLOSeg):
             )
             resized_masks.append((mask_orig > 0.5).astype(np.float32))
 
-        class_ids = np.zeros(len(keep), dtype=np.int32)
+        class_ids = np.zeros(len(resized_masks), dtype=np.int32)
         return np.array(resized_masks), class_ids
 
     # ------------------------------------------------------------------
@@ -350,12 +286,7 @@ class PotholeYOLOSegV12(PotholeYOLOSeg):
 
     def draw_result(self, frame: np.ndarray,
                     segmentation_map: np.ndarray) -> np.ndarray:
-        """Return a copy of ``frame`` with coloured mask overlays, contours,
-        and bounding boxes drawn.
-
-        Uses the bounding boxes and scores stored during the most recent
-        ``__call__``.  The image returned also has the pixel-count per
-        instance displayed as an annotation.
+        """Return a copy of ``frame`` with coloured mask overlays and contours.
 
         Parameters
         ----------
@@ -370,10 +301,8 @@ class PotholeYOLOSegV12(PotholeYOLOSeg):
             Annotated BGR image.
         """
         result = frame.copy()
-        boxes  = self._last_boxes
-        scores = self._last_scores
 
-        for i, binary_f in enumerate(segmentation_map):
+        for binary_f in segmentation_map:
             binary = binary_f.astype(np.uint8)
 
             # Coloured overlay (red)
@@ -390,22 +319,5 @@ class PotholeYOLOSegV12(PotholeYOLOSeg):
                 binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
             )
             cv2.drawContours(result, contours, -1, self._CONTOUR_COLOR, 2)
-
-            # Pixel count annotation
-            pixel_count = int(np.count_nonzero(binary))
-
-            # Bounding box + label
-            if i < len(boxes):
-                bx1 = int(boxes[i, 0])
-                by1 = int(boxes[i, 1])
-                bx2 = int(boxes[i, 2])
-                by2 = int(boxes[i, 3])
-                cv2.rectangle(result, (bx1, by1), (bx2, by2),
-                              self._BBOX_COLOR, 2)
-                score  = float(scores[i]) if i < len(scores) else 0.0
-                label  = f"Pothole {score:.2f}  px:{pixel_count}"
-                cv2.putText(result, label, (bx1, max(by1 - 8, 12)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.55,
-                            self._LABEL_COLOR, 2)
 
         return result
