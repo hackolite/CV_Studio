@@ -439,8 +439,8 @@ class Node:
 
         segmentation_map = np.where(segmentation_map > score_th, 0, 1)
 
-        # color map list
-        color_map = self.get_color_map_list(class_num)
+        # color map list — use at least as many entries as there are masks
+        color_map = self.get_color_map_list(max(class_num, len(segmentation_map)))
 
         for index, mask in enumerate(segmentation_map):
             bg_image = np.zeros(image.shape, dtype=np.uint8)
