@@ -326,7 +326,7 @@ def draw_semantic_segmentation_info(
         mask = np.stack((mask, ) * 3, axis=-1).astype('uint8')
 
         mask_image = np.where(mask, debug_image, bg_image)
-        debug_image = cv2.addWeighted(debug_image, 0.5, mask_image, 0.5, 1.0)
+        debug_image = cv2.addWeighted(debug_image, 0.5, mask_image, 0.5, 0)
 
     return debug_image
 
