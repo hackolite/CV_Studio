@@ -99,6 +99,7 @@ class FactoryNode:
 
 class MjpegNode(Node):
     _ver = '0.0.1'
+    node_tag = 'MJPEG'
     _start_label = 'Start'
     _stop_label = 'Stop'
 

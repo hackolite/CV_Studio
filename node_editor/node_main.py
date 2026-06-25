@@ -490,8 +490,19 @@ class DpgNodeEditor(object):
             logger.debug("Link callback triggered")
             source = dpg.get_item_alias(data[0])
             destination = dpg.get_item_alias(data[1])
-            source_type = source.split(":")[2]
-            destination_type = destination.split(":")[2]
+
+            source_parts = source.split(":") if source else []
+            destination_parts = destination.split(":") if destination else []
+
+            if len(source_parts) < 3 or len(destination_parts) < 3:
+                logger.warning(
+                    f"Cannot link: unregistered or malformed attribute aliases "
+                    f"{source!r} -> {destination!r}"
+                )
+                return
+
+            source_type = source_parts[2]
+            destination_type = destination_parts[2]
             logger.debug(f"Linking {source_type} -> {destination_type}")
 
             # ✨ Permettre AUDIO → IMAGE et IMAGE → IMAGE
