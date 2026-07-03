@@ -363,7 +363,7 @@ python build_unified.py --clean --cpu
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/hackolite/CV_Studio/issues)
-- **Documentation**: [README.md](README.md)
+- **Documentation**: [README.md](../README.md)
 - **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## License

@@ -378,10 +378,10 @@ Consultez [BUILD_EXE_GUIDE_FR.md](BUILD_EXE_GUIDE_FR.md) pour créer votre propr
 
 ## 📚 Ressources supplémentaires
 
-- **README principal** : [README.md](README.md) - Documentation complète du projet
-- **Guide d'utilisation** : Voir la section "Usage" dans [README.md](README.md)
+- **README principal** : [README.md](../README.md) - Documentation complète du projet
+- **Guide d'utilisation** : Voir la section "Usage" dans [README.md](../README.md)
 - **Exemples** : Dossier [examples/](examples/) pour des exemples de code
-- **Nœuds disponibles** : Liste complète dans [README.md](README.md)
+- **Nœuds disponibles** : Liste complète dans [README.md](../README.md)
 - **Tests** : [tests/](tests/) pour les tests unitaires
 
 ## 🆘 Support

@@ -309,6 +309,91 @@ def test_import_handles_empty_file():
     print("✓ Import handles cancelled file dialog correctly")
 
 
+def test_export_appends_json_extension(tmp_path):
+    """
+    Test that export appends a .json extension when the chosen path is missing
+    one, so the saved graph can always be located and re-imported.
+    """
+    print("\nTesting export appends .json extension...")
+
+    from node_editor.node_main import DpgNodeEditor
+
+    with patch('dearpygui.dearpygui.create_context'):
+        with patch('dearpygui.dearpygui.file_dialog'):
+            with patch('dearpygui.dearpygui.window'):
+                with patch('dearpygui.dearpygui.menu_bar'):
+                    with patch('dearpygui.dearpygui.node_editor'):
+                        with patch('dearpygui.dearpygui.handler_registry'):
+                            editor = DpgNodeEditor(
+                                width=800,
+                                height=600,
+                                opencv_setting_dict={
+                                    'webcam_width': 640,
+                                    'webcam_height': 480,
+                                    'input_window_width': 320,
+                                    'input_window_height': 240,
+                                },
+                            )
+
+    mock_node = MagicMock()
+    mock_node.get_setting_dict = MagicMock(return_value={
+        'ver': '1.0.0',
+        'pos': [10, 20],
+    })
+
+    node_id_name = "3:ExtNode"
+    editor._node_instances_list[node_id_name] = mock_node
+    editor._node_list = [node_id_name]
+    editor._node_link_list = []
+
+    # Path without extension (as returned by the file dialog when the user
+    # does not type one).
+    tmp_file = tmp_path / "my_graph"
+    editor._callback_file_export(None, {'file_path_name': str(tmp_file)})
+
+    expected_file = tmp_path / "my_graph.json"
+    assert expected_file.exists(), "Export should append .json extension"
+    assert not tmp_file.exists(), "Export should not create an extension-less file"
+
+    exported_data = json.loads(expected_file.read_text())
+    assert node_id_name in exported_data
+
+    print("✓ Export appends .json extension when missing")
+
+
+def test_export_ignores_cancelled_dialog(tmp_path):
+    """
+    Test that export does nothing when the file dialog is cancelled (empty path
+    or '.' file name), instead of crashing.
+    """
+    print("\nTesting export handles cancelled dialog...")
+
+    from node_editor.node_main import DpgNodeEditor
+
+    with patch('dearpygui.dearpygui.create_context'):
+        with patch('dearpygui.dearpygui.file_dialog'):
+            with patch('dearpygui.dearpygui.window'):
+                with patch('dearpygui.dearpygui.menu_bar'):
+                    with patch('dearpygui.dearpygui.node_editor'):
+                        with patch('dearpygui.dearpygui.handler_registry'):
+                            editor = DpgNodeEditor(
+                                width=800,
+                                height=600,
+                                opencv_setting_dict={
+                                    'webcam_width': 640,
+                                    'webcam_height': 480,
+                                    'input_window_width': 320,
+                                    'input_window_height': 240,
+                                },
+                            )
+
+    # Should not raise even though no nodes / no valid path are present.
+    editor._callback_file_export(None, {'file_name': '.', 'file_path_name': ''})
+    editor._callback_file_export(None, {})
+
+    print("✓ Export handles cancelled dialog gracefully")
+
+
 if __name__ == "__main__":
     import tempfile
     

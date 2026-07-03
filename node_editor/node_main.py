@@ -612,6 +612,19 @@ class DpgNodeEditor(object):
         return OrderedDict(node_connection_list)
 
     def _callback_file_export(self, sender, data):
+        file_path_name = data.get("file_path_name", "")
+
+        # Guard against a cancelled dialog or an empty/invalid selection so we
+        # never try to write the graph to a directory or a missing path.
+        if not file_path_name or data.get("file_name", "") == ".":
+            logger.warning("Export cancelled: no valid file path was provided.")
+            return
+
+        # Ensure the exported file always has a .json extension so that it can
+        # be located and re-imported later.
+        if not file_path_name.lower().endswith(".json"):
+            file_path_name += ".json"
+
         setting_dict = {}
 
         setting_dict["node_list"] = self._node_list
@@ -629,8 +642,16 @@ class DpgNodeEditor(object):
                 "setting": setting,
             }
 
-        with open(data["file_path_name"], "w") as fp:
-            json.dump(setting_dict, fp, indent=4)
+        try:
+            with open(file_path_name, "w") as fp:
+                json.dump(setting_dict, fp, indent=4)
+        except (OSError, TypeError, ValueError) as error:
+            logger.error(
+                f"Failed to export node graph to '{file_path_name}': {error}"
+            )
+            return
+
+        logger.info(f"Node graph exported to '{file_path_name}'.")
 
         if self._use_debug_print:
             logger.debug("_callback_file_export details:")

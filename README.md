@@ -131,8 +131,8 @@ onnx2torch      1.5.0 or later   ※ Optional, enables OnlineTraining ONNX→tor
 ## 🚀 Installation
 
 > **📘 Windows Users**: For detailed Windows-specific installation instructions with troubleshooting, see:
-> - 🇬🇧 [INSTALLATION_WINDOWS.md](INSTALLATION_WINDOWS.md) (English)
-> - 🇫🇷 [INSTALLATION_WINDOWS_FR.md](INSTALLATION_WINDOWS_FR.md) (Français)
+> - 🇬🇧 [INSTALLATION_WINDOWS.md](doc/INSTALLATION_WINDOWS.md) (English)
+> - 🇫🇷 [INSTALLATION_WINDOWS_FR.md](doc/INSTALLATION_WINDOWS_FR.md) (Français)
 
 ### Method 1: Direct Installation (Recommended)
 
@@ -207,7 +207,7 @@ For Windows users who want a standalone .exe file that doesn't require Python in
 5. **Download** the `CV_Studio-Windows-Executable.zip` from the Artifacts section
 6. **Extract and run** `CV_Studio.exe` - Done! 🎉
 
-📖 **Detailed instructions:** See [COMMENT_OBTENIR_EXE.md](COMMENT_OBTENIR_EXE.md) (Français) or [HOW_TO_GET_EXE.md](HOW_TO_GET_EXE.md) (English)
+📖 **Detailed instructions:** See [COMMENT_OBTENIR_EXE.md](doc/COMMENT_OBTENIR_EXE.md) (Français) or [HOW_TO_GET_EXE.md](doc/HOW_TO_GET_EXE.md) (English)
 
 #### 🎬 Option B: Automated Build Script (RECOMMENDED FOR LOCAL BUILD)
 
@@ -231,7 +231,7 @@ The script automatically:
 - ✅ Builds the .exe with PyInstaller
 - ✅ Shows you where to find the result
 
-📖 **Full guide:** See [BUILD_WINDOWS_SCRIPT.md](BUILD_WINDOWS_SCRIPT.md) for detailed instructions and troubleshooting
+📖 **Full guide:** See [BUILD_WINDOWS_SCRIPT.md](doc/BUILD_WINDOWS_SCRIPT.md) for detailed instructions and troubleshooting
 
 #### ⚡ Option C: Unified Build System (NEW - CROSS-PLATFORM)
 
@@ -261,8 +261,8 @@ python build_unified.py --clean --cpu
 - ✅ CI/CD friendly
 
 **Quick Reference:**
-- 📖 [BUILD_QUICKREF.md](BUILD_QUICKREF.md) - One-page cheat sheet
-- 📚 [BUILD_GUIDE.md](BUILD_GUIDE.md) - Comprehensive guide
+- 📖 [BUILD_QUICKREF.md](doc/BUILD_QUICKREF.md) - One-page cheat sheet
+- 📚 [BUILD_GUIDE.md](doc/BUILD_GUIDE.md) - Comprehensive guide
 
 #### 🔧 Option D: Manual Build on Your Windows Machine (Legacy)
 
@@ -430,9 +430,9 @@ pip install -r requirements-build.txt
 #### 📚 Documentation détaillée / Detailed Documentation
 
 **For comprehensive guides, see:**
-- [Quick Reference](BUILD_EXE_QUICKREF.md) - Quick start guide
-- [Full Guide (English)](BUILD_EXE_GUIDE.md) - Complete documentation with all options
-- [Guide complet (Français)](BUILD_EXE_GUIDE_FR.md) - Documentation complète en français
+- [Quick Reference](doc/BUILD_EXE_QUICKREF.md) - Quick start guide
+- [Full Guide (English)](doc/BUILD_EXE_GUIDE.md) - Complete documentation with all options
+- [Guide complet (Français)](doc/BUILD_EXE_GUIDE_FR.md) - Documentation complète en français
 
 ## 💡 Usage
 
@@ -801,7 +801,7 @@ flowchart TD
 - ✅ **Backward Compatibility** - Existing nodes work without modifications
 - ✅ **Queue Management** - Automatic size limits prevent memory overflow
 
-Each node that sends data to other nodes does so through its own timestamped queue. When nodes retrieve data, they get the oldest data from the FIFO queue, ensuring chronological processing order. See [TIMESTAMPED_QUEUE_SYSTEM.md](TIMESTAMPED_QUEUE_SYSTEM.md) for detailed documentation.
+Each node that sends data to other nodes does so through its own timestamped queue. When nodes retrieve data, they get the oldest data from the FIFO queue, ensuring chronological processing order. See [TIMESTAMPED_QUEUE_SYSTEM.md](doc/TIMESTAMPED_QUEUE_SYSTEM.md) for detailed documentation.
 
 ```mermaid
 sequenceDiagram
@@ -916,7 +916,7 @@ class MyNode(EnhancedNode):
 ### Documentation
 
 - **[src/README.md](src/README.md)** - Technical architecture documentation
-- **[Timestamped Queue System](TIMESTAMPED_QUEUE_SYSTEM.md)** - FIFO queue documentation 🆕
+- **[Timestamped Queue System](doc/TIMESTAMPED_QUEUE_SYSTEM.md)** - FIFO queue documentation 🆕
 
 ## 🧪 Testing
 
