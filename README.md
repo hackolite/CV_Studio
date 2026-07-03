@@ -31,10 +31,10 @@ flowchart LR
         A3["RTSP · HLS · WebRTC"]
         A4["Satellite / API"]
     end
-    subgraph Process["⚙️ Processing & AI"]
-        B1["Filters &<br/>Transforms"]
+    subgraph Process["⚙️ Processing &amp; AI"]
+        B1["Filters &amp;<br/>Transforms"]
         B2["ML / DL Models<br/>(ONNX · YOLO · MediaPipe)"]
-        B3["Tracking &<br/>Analysis"]
+        B3["Tracking &amp;<br/>Analysis"]
     end
     subgraph Outputs["📤 Outputs"]
         C1["Result Viewer"]
@@ -67,7 +67,7 @@ flowchart LR
 ## 🎥 See It In Action
 
 The following demonstrations were produced **entirely inside CV Studio**. They show real pipelines
-running end‑to‑end — from live input to AI inference and visualization — so you can see exactly what
+running end-to-end — from live input to AI inference and visualization — so you can see exactly what
 the studio delivers before installing it.
 
 <table>
@@ -87,7 +87,7 @@ the studio delivers before installing it.
     <td align="center" width="33%">
       <a href="https://youtu.be/9R3tdSiQISE">
         <img src="https://img.youtube.com/vi/9R3tdSiQISE/hqdefault.jpg" width="100%" alt="CV Studio demo 3"><br/>
-        <b>▶️ Demo 3 — Real‑Time Processing</b>
+        <b>▶️ Demo 3 — Real-Time Processing</b>
       </a>
     </td>
   </tr>
