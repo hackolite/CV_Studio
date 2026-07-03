@@ -17,6 +17,38 @@ CV Studio is an advanced node-based image processing application that allows you
 - **Development** - Build and validate processing pipelines before production
 - **Research** - Experiment with ML models and traditional CV techniques
 
+### How It Works
+
+CV Studio turns computer vision development into a visual workflow. You connect **Input** nodes to
+**Processing**, **ML/DL**, and **Analysis** nodes, then send the results to **Visualization** or
+**Action** nodes — no boilerplate code required. Data flows through the graph in real time.
+
+```mermaid
+flowchart LR
+    subgraph Inputs["📥 Inputs"]
+        A1["Webcam / Video"]
+        A2["Images / Screen"]
+        A3["RTSP · HLS · WebRTC"]
+        A4["Satellite / API"]
+    end
+    subgraph Process["⚙️ Processing & AI"]
+        B1["Filters &<br/>Transforms"]
+        B2["ML / DL Models<br/>(ONNX · YOLO · MediaPipe)"]
+        B3["Tracking &<br/>Analysis"]
+    end
+    subgraph Outputs["📤 Outputs"]
+        C1["Result Viewer"]
+        C2["Overlays &<br/>Annotations"]
+        C3["Actions<br/>(MQTT · MongoDB · API)"]
+    end
+
+    Inputs --> Process --> Outputs
+
+    style Inputs fill:#e3f2fd,stroke:#1976d2,color:#0d47a1
+    style Process fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c
+    style Outputs fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
+```
+
 ## ✨ Key Features
 
 - 🎨 **Visual Node Editor** - Intuitive drag-and-drop interface powered by DearPyGUI
@@ -31,6 +63,52 @@ CV Studio is an advanced node-based image processing application that allows you
 - 💾 **Save & Load** - Export and import your processing graphs as JSON
 - 🏗️ **Modern Architecture** - Professional codebase with proper error handling, logging, and testing
 - 🔌 **Extensible** - Easy to add custom nodes and processing algorithms
+
+## 🎥 See It In Action
+
+The following demonstrations were produced **entirely inside CV Studio**. They show real pipelines
+running end‑to‑end — from live input to AI inference and visualization — so you can see exactly what
+the studio delivers before installing it.
+
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <a href="https://youtu.be/TfLSFDp87cE">
+        <img src="https://img.youtube.com/vi/TfLSFDp87cE/hqdefault.jpg" width="100%" alt="CV Studio demo 1"><br/>
+        <b>▶️ Demo 1 — CV Studio in Action</b>
+      </a>
+    </td>
+    <td align="center" width="33%">
+      <a href="https://youtu.be/wz6MARjZr9w">
+        <img src="https://img.youtube.com/vi/wz6MARjZr9w/hqdefault.jpg" width="100%" alt="CV Studio demo 2"><br/>
+        <b>▶️ Demo 2 — Building a Vision Pipeline</b>
+      </a>
+    </td>
+    <td align="center" width="33%">
+      <a href="https://youtu.be/9R3tdSiQISE">
+        <img src="https://img.youtube.com/vi/9R3tdSiQISE/hqdefault.jpg" width="100%" alt="CV Studio demo 3"><br/>
+        <b>▶️ Demo 3 — Real‑Time Processing</b>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="33%">
+      <a href="https://youtu.be/JBO2-gcgkiU">
+        <img src="https://img.youtube.com/vi/JBO2-gcgkiU/hqdefault.jpg" width="100%" alt="CV Studio demo 4"><br/>
+        <b>▶️ Demo 4 — Models &amp; Detection</b>
+      </a>
+    </td>
+    <td align="center" width="33%">
+      <a href="https://youtu.be/lSLuxiJwC4Q">
+        <img src="https://img.youtube.com/vi/lSLuxiJwC4Q/hqdefault.jpg" width="100%" alt="CV Studio demo 5"><br/>
+        <b>▶️ Demo 5 — Advanced Workflow</b>
+      </a>
+    </td>
+    <td align="center" width="33%"></td>
+  </tr>
+</table>
+
+> 💡 Click any thumbnail to watch the full video on YouTube.
 
 ## 📋 Requirements
 
@@ -671,6 +749,49 @@ See [tests/dummy_servers/README.md](tests/dummy_servers/README.md) for examples 
 
 CV Studio features a modern, professional architecture designed for scalability and maintainability.
 
+### System Overview
+
+CV Studio is organized in clear layers: a **DearPyGUI-based editor** drives a **node graph engine**,
+which schedules node execution and moves data between nodes through **thread-safe, timestamped FIFO
+queues**. Nodes are grouped by responsibility (input, processing, ML/DL, overlay, action), keeping the
+system modular and easy to extend.
+
+```mermaid
+flowchart TD
+    subgraph UI["🖥️ Presentation Layer"]
+        E["Node Editor UI<br/>(DearPyGUI · drag &amp; drop · zoom)"]
+    end
+    subgraph Engine["🧠 Core Engine"]
+        G["Node Graph Manager"]
+        Q["Timestamped FIFO Queues<br/>(thread-safe)"]
+        R["Resource Manager · Logging · Settings"]
+    end
+    subgraph Nodes["🧩 Node Library (150+)"]
+        N1["Input Nodes"]
+        N2["Process Nodes"]
+        N3["ML / DL Nodes"]
+        N4["Overlay Nodes"]
+        N5["Action Nodes"]
+    end
+    subgraph Runtime["⚡ Runtime Backends"]
+        RT1["OpenCV"]
+        RT2["ONNX Runtime"]
+        RT3["MediaPipe · PyTorch"]
+    end
+
+    E --> G
+    G --> Q
+    G --> R
+    Q --> Nodes
+    N3 --> Runtime
+    N2 --> RT1
+
+    style UI fill:#e3f2fd,stroke:#1976d2,color:#0d47a1
+    style Engine fill:#fff3e0,stroke:#f57c00,color:#e65100
+    style Nodes fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c
+    style Runtime fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
+```
+
 ### Timestamped FIFO Queue System
 
 **New in this version**: CV Studio now implements a timestamped queue system for node data communication that ensures:
@@ -681,6 +802,18 @@ CV Studio features a modern, professional architecture designed for scalability 
 - ✅ **Queue Management** - Automatic size limits prevent memory overflow
 
 Each node that sends data to other nodes does so through its own timestamped queue. When nodes retrieve data, they get the oldest data from the FIFO queue, ensuring chronological processing order. See [TIMESTAMPED_QUEUE_SYSTEM.md](TIMESTAMPED_QUEUE_SYSTEM.md) for detailed documentation.
+
+```mermaid
+sequenceDiagram
+    participant P as Producer Node
+    participant Q as Timestamped FIFO Queue
+    participant C as Consumer Node
+    P->>Q: put(data, timestamp)
+    P->>Q: put(data, timestamp)
+    Note over Q: Oldest data kept at the front<br/>Size-limited (no overflow)
+    C->>Q: get() oldest first
+    Q-->>C: data (chronological order)
+```
 
 **Benefits:**
 - Proper temporal ordering of video frames and audio data
