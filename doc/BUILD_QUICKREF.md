@@ -84,4 +84,4 @@ Download: https://aka.ms/vs/17/release/vc_redist.x64.exe
 
 - **Full Guide**: [BUILD_GUIDE.md](BUILD_GUIDE.md)
 - **Issues**: [GitHub Issues](https://github.com/hackolite/CV_Studio/issues)
-- **README**: [README.md](README.md)
+- **README**: [README.md](../README.md)

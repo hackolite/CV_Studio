@@ -210,10 +210,10 @@ If you encounter issues not covered in this guide:
 
 After successful installation:
 
-1. Read the [README.md](README.md) for an overview of features
+1. Read the [README.md](../README.md) for an overview of features
 2. Check [QUICKSTART.md](QUICKSTART.md) for a quick tutorial
 3. Explore [examples/](examples/) for sample node configurations
-4. Visit the [documentation](docs/) for detailed usage instructions
+4. Visit the [documentation](../docs/) for detailed usage instructions
 
 ---
 

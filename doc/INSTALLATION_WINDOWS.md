@@ -378,10 +378,10 @@ See [BUILD_EXE_GUIDE.md](BUILD_EXE_GUIDE.md) to create your own .exe file.
 
 ## 📚 Additional Resources
 
-- **Main README**: [README.md](README.md) - Complete project documentation
-- **Usage Guide**: See the "Usage" section in [README.md](README.md)
+- **Main README**: [README.md](../README.md) - Complete project documentation
+- **Usage Guide**: See the "Usage" section in [README.md](../README.md)
 - **Examples**: [examples/](examples/) folder for code examples
-- **Available Nodes**: Complete list in [README.md](README.md)
+- **Available Nodes**: Complete list in [README.md](../README.md)
 - **Tests**: [tests/](tests/) for unit tests
 
 ## 🆘 Support

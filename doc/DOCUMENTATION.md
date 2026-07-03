@@ -438,7 +438,7 @@ class FactoryNode:
 | **Semantic Segmentation** | `node_semantic_segmentation.py` | Segmentation sémantique (FCN, DeepLab) |
 | **Monocular Depth** | `node_monocular_depth_estimation.py` | Estimation de profondeur (MiDaS) |
 | **Low Light Enhancement** | `node_low_light_image_enhancement.py` | Amélioration d'images sombres |
-| **Online Training** | `node_online_training.py` | Entraînement en temps réel (distillation teacher-student) — [📖 Documentation détaillée](docs/DISTILLATION.md) |
+| **Online Training** | `node_online_training.py` | Entraînement en temps réel (distillation teacher-student) — [📖 Documentation détaillée](../docs/DISTILLATION.md) |
 
 #### Système de registre de modèles
 
