@@ -506,6 +506,10 @@ class YoutubeNode(Node):
                     dpg.set_item_label(tag_node_button_value_name, self._start_label)
                     return
                 
+                # Limit the internal OpenCV decode buffer to 1 frame so we always
+                # read the most recent frame and avoid accumulating lag.
+                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                
                 print(f"✅ Stream YouTube démarré avec succès!")
                 self.is_streaming = True
                 self._frame_skip_counter = 0
@@ -567,7 +571,20 @@ class YoutubeNode(Node):
         frame = None
         if self.cap is not None and self.is_streaming and self.current_time - self._last_frame_time >= self._frame_interval:
             try:
-                ret, frame = self.cap.read()
+                # Drain stale frames from the decode buffer so we always deliver
+                # the most recent frame and avoid display lag.  grab() advances the
+                # decode pointer without copying pixel data; retrieve() fetches the
+                # last grabbed frame only.
+                grabbed = False
+                for _ in range(4):
+                    if self.cap.grab():
+                        grabbed = True
+                    else:
+                        break
+                if grabbed:
+                    ret, frame = self.cap.retrieve()
+                else:
+                    ret, frame = False, None
                 
                 if ret and frame is not None:
                     self._last_frame = frame

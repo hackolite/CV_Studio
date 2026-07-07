@@ -1380,7 +1380,7 @@ class Node(Node):
                 
                 if frame is not None:
                     # Display image: ALWAYS draw bounding boxes (for user feedback)
-                    display_frame = copy.deepcopy(frame)
+                    display_frame = frame.copy()
                     display_frame = self.draw_object_detection_info(
                         display_frame,
                         score_th,
@@ -1393,17 +1393,8 @@ class Node(Node):
                     
                     # Output image: Respect checkbox setting
                     if draw_bbox:
-                        # When checked: send frame WITH bounding boxes (for video recording)
-                        output_frame = copy.deepcopy(frame)
-                        output_frame = self.draw_object_detection_info(
-                            output_frame,
-                            score_th,
-                            bboxes,
-                            scores,
-                            class_ids,
-                            class_name_dict,
-                            thickness=bbox_thickness,
-                        )
+                        # When checked: reuse the already-drawn display_frame (avoids a second draw pass)
+                        output_frame = display_frame
                     else:
                         # When unchecked: send clean frame (for tracking)
                         output_frame = frame
