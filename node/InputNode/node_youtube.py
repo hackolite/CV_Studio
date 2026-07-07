@@ -316,6 +316,10 @@ class YoutubeNode(Node):
 
     _min_val = 1
     _max_val = 200
+    # Maximum number of stale frames to drain from the decode buffer per update
+    # tick.  A value of 4 covers typical 30 fps streams where up to ~4 frames
+    # may have accumulated during a 100 ms inference cycle.
+    _MAX_BUFFER_DRAIN_FRAMES = 4
 
     def __init__(self):
         super().__init__()
@@ -576,7 +580,7 @@ class YoutubeNode(Node):
                 # decode pointer without copying pixel data; retrieve() fetches the
                 # last grabbed frame only.
                 grabbed = False
-                for _ in range(4):
+                for _ in range(self._MAX_BUFFER_DRAIN_FRAMES):
                     if self.cap.grab():
                         grabbed = True
                     else:

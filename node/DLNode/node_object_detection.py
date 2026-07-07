@@ -1393,8 +1393,10 @@ class Node(Node):
                     
                     # Output image: Respect checkbox setting
                     if draw_bbox:
-                        # When checked: reuse the already-drawn display_frame (avoids a second draw pass)
-                        output_frame = display_frame
+                        # When checked: output frame already has bounding boxes drawn.
+                        # Take a shallow copy so downstream nodes work on an independent
+                        # array without the overhead of a second full draw pass.
+                        output_frame = display_frame.copy()
                     else:
                         # When unchecked: send clean frame (for tracking)
                         output_frame = frame
