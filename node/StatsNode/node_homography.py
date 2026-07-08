@@ -725,7 +725,7 @@ class Node(Node):
                         label = f" ({class_names.get(class_id, f'Object {class_id}')})"
                     elif isinstance(class_names, list) and class_id < len(class_names):
                         label = f" ({class_names[class_id]})"
-            print(f"  Object {i+1}{label}:")
+            print(f"  Player {i+1}{label}:")
             print(f"    Image coordinates (pixels): ({orig[0]:.1f}, {orig[1]:.1f})")
             print(f"    Court coordinates (meters): ({trans[0]:.2f}, {trans[1]:.2f})")
 
@@ -759,7 +759,7 @@ class Node(Node):
     def _add_slot(self, sender, data, user_data):
         tag_node_name = user_data
 
-        if self._max_slot_number > self._slot_id[tag_node_name]:
+        if self._max_slot_number >= self._slot_id[tag_node_name]:
             self._slot_id[tag_node_name] += 1
             slot_number = self._slot_id[tag_node_name]
 
