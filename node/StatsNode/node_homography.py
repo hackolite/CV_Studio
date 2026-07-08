@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import re
 import time
 import copy
 import numpy as np
@@ -51,6 +52,9 @@ class FactoryNode:
         node._opencv_setting_dict = opencv_setting_dict
         use_pref_counter = node._opencv_setting_dict['use_pref_counter']
 
+        if node.tag_node_name not in node._slot_id:
+            node._slot_id[node.tag_node_name] = 2
+
         with dpg.node(
             tag=node.tag_node_name,
             parent=parent,
@@ -66,15 +70,6 @@ class FactoryNode:
                     default_value='Master Keypoints (Pose)',
                 )
 
-            with dpg.node_attribute(
-                tag=node.tag_node_input_points_json_name,
-                attribute_type=dpg.mvNode_Attr_Input,
-            ):
-                dpg.add_text(
-                    tag=node.tag_node_input_points_json_value_name,
-                    default_value='Points to Transform',
-                )
-
             # Sport template combobox
             with dpg.node_attribute(
                 tag=node.tag_node_sport_name,
@@ -86,6 +81,20 @@ class FactoryNode:
                     items=self.SPORT_OPTIONS,
                     default_value='Tennis',
                     width=160,
+                )
+                dpg.add_button(
+                    label='Add Input',
+                    callback=node._add_slot,
+                    user_data=node.tag_node_name,
+                )
+
+            with dpg.node_attribute(
+                tag=node.tag_node_input_points_json_name,
+                attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_input_points_json_value_name,
+                    default_value='Points to Transform',
                 )
 
             with dpg.node_attribute(
@@ -117,6 +126,9 @@ class Node(Node):
     node_tag = 'Homography'
 
     _opencv_setting_dict = None
+
+    _slot_id = {}
+    _max_slot_number = 9
 
     # -----------------------------------------------------------------------
     # Tennis court template (real-world coordinates, meters)
@@ -527,47 +539,48 @@ class Node(Node):
             # DPG not initialised (e.g. in tests) – keep whatever is already selected
             selected_sport = self._selected_template.get('sport', 'Tennis')
 
-        # Find connections
+        # Find connections – Input01 is master keypoints; Input02..N are dynamic transform inputs
         master_keypoints_src = ''
-        points_to_transform_src = ''
-        
+        dynamic_inputs_src = {}  # {slot_number: src_key}
+
         for connection_info in connection_list:
             connection_type = connection_info[0].split(':')[2]
             connection_target = connection_info[1]
-            
-            # Match case-insensitively or use both Json and JSON
+
             if connection_type == self.TYPE_JSON or connection_type.upper() == 'JSON':
-                # Check which input this connects to
-                if ':Input01' in connection_target:
-                    # Master keypoints input
-                    master_keypoints_src = connection_info[0]
-                    master_keypoints_src = master_keypoints_src.split(':')[:2]
-                    master_keypoints_src = ':'.join(master_keypoints_src)
-                elif ':Input02' in connection_target:
-                    # Points to transform input
-                    points_to_transform_src = connection_info[0]
-                    points_to_transform_src = points_to_transform_src.split(':')[:2]
-                    points_to_transform_src = ':'.join(points_to_transform_src)
+                m = re.search(r':Input(\d+)$', connection_target)
+                if m:
+                    slot_num = int(m.group(1))
+                    src = ':'.join(connection_info[0].split(':')[:2])
+                    if slot_num == 1:
+                        master_keypoints_src = src
+                    elif slot_num >= 2:
+                        dynamic_inputs_src[slot_num] = src
 
         # Get JSON data
         master_json_data = node_result_dict.get(master_keypoints_src, None) if master_keypoints_src else None
-        points_json_data = node_result_dict.get(points_to_transform_src, None) if points_to_transform_src else None
+        # Collect all dynamic input data (for backward compat, also expose slot 2 as points_json_data)
+        dynamic_json_data = {
+            slot: node_result_dict.get(src, None)
+            for slot, src in dynamic_inputs_src.items()
+        }
+        points_json_data = dynamic_json_data.get(2, None)
 
-        if use_pref_counter and (master_json_data is not None or points_json_data is not None):
+        if use_pref_counter and (master_json_data is not None or any(v is not None for v in dynamic_json_data.values())):
             start_time = time.monotonic()
 
         # Process homography
         output_data = None
-        
+
         if master_json_data is not None:
             # Extract keypoints from pose estimation output
             if isinstance(master_json_data, dict) and 'results_list' in master_json_data:
                 detected_keypoints = master_json_data['results_list']
-                
+
                 # Calculate homography matrix
                 if isinstance(detected_keypoints, np.ndarray):
                     self._homography_matrix = self._calculate_homography(detected_keypoints)
-                    
+
                     # Prepare output data
                     output_data = {
                         'homography_matrix': self._homography_matrix.tolist() if self._homography_matrix is not None else None,
@@ -575,127 +588,49 @@ class Node(Node):
                         'sport': selected_sport,
                         'detected_keypoints': detected_keypoints.tolist(),
                         'transformed_points': None,
-                        'input_points': None
+                        'input_points': None,
+                        'transformed_inputs': {},
                     }
-        
-        # If we have points to transform and a valid homography matrix
-        if points_json_data is not None and self._homography_matrix is not None:
-            # Extract points from input
-            points_to_transform = None
-            bboxes_list = None  # Store original bboxes for reference
-            
-            if isinstance(points_json_data, dict):
-                # Check for 'bboxes' field (from ObjectDetection node)
-                if 'bboxes' in points_json_data:
-                    bboxes_list = points_json_data['bboxes']
-                    # Extract bottom-center points from bounding boxes
-                    points_to_transform = self._extract_bottom_center_from_bboxes(bboxes_list)
-                    print(f"[Homography] Extracted {len(points_to_transform) if points_to_transform is not None else 0} player positions from bboxes")
-                # Check for 'keypoints' field (structured input)
-                elif 'keypoints' in points_json_data:
-                    keypoints = points_json_data['keypoints']
-                    points_to_transform = []
-                    for kp in keypoints:
-                        if isinstance(kp, dict) and 'x' in kp and 'y' in kp:
-                            points_to_transform.append([kp['x'], kp['y']])
-                    points_to_transform = np.array(points_to_transform, dtype=np.float32)
-                # Check for direct points array
-                elif 'points' in points_json_data:
-                    points_to_transform = np.array(points_json_data['points'], dtype=np.float32)
-            elif isinstance(points_json_data, (list, np.ndarray)):
-                points_to_transform = np.array(points_json_data, dtype=np.float32)
-            
-            # Transform the points
-            if points_to_transform is not None and len(points_to_transform) > 0:
-                transformed = self._transform_points(points_to_transform, self._homography_matrix)
-                
-                if output_data is None:
-                    output_data = {
-                        'homography_matrix': self._homography_matrix.tolist(),
-                        'template': self.TENNIS_COURT_TEMPLATE,
-                    }
-                
-                output_data['input_points'] = points_to_transform.tolist()
-                output_data['transformed_points'] = transformed.tolist() if transformed is not None else None
-                
-                # Store original bboxes if available
-                if bboxes_list is not None:
-                    output_data['bboxes'] = bboxes_list
-                
-                # Pass through class information for label-based averaging
-                if 'class_ids' in points_json_data:
-                    output_data['class_ids'] = points_json_data['class_ids']
-                if 'class_names' in points_json_data:
-                    output_data['class_names'] = points_json_data['class_names']
-                if 'scores' in points_json_data:
-                    output_data['scores'] = points_json_data['scores']
-                
-                # Calculate averages by label
-                averages_by_label = {}
-                if transformed is not None and 'class_ids' in points_json_data and 'class_names' in points_json_data:
-                    averages_by_label = self._calculate_averages_by_label(
-                        transformed,
-                        points_json_data['class_ids'],
-                        points_json_data['class_names']
-                    )
-                    output_data['averages_by_label'] = averages_by_label
 
-                # Compute per-player kinematics (speed / acceleration / distance)
-                if averages_by_label:
-                    current_time = time.monotonic()
-                    player_stats = self._compute_player_kinematics(
-                        averages_by_label, current_time
-                    )
-                    output_data['player_stats'] = player_stats
-                
-                # Display coordinate transformation in console
-                CONSOLE_WIDTH = 70  # Character width for console output
-                print("\n" + "="*CONSOLE_WIDTH)
-                print("[Homography] Coordinate Transformation:")
-                print("="*CONSOLE_WIDTH)
-                if transformed is not None:
-                    for i, (orig, trans) in enumerate(zip(points_to_transform, transformed)):
-                        # Display label if available
-                        label = ""
-                        if 'class_ids' in points_json_data and 'class_names' in points_json_data:
-                            class_ids = points_json_data['class_ids']
-                            class_names = points_json_data['class_names']
-                            if i < len(class_ids):
-                                class_id = class_ids[i]
-                                if isinstance(class_names, dict):
-                                    label = f" ({class_names.get(class_id, f'Object {class_id}')})"
-                                elif isinstance(class_names, list) and class_id < len(class_names):
-                                    label = f" ({class_names[class_id]})"
-                        
-                        print(f"  Player {i+1}{label}:")
-                        print(f"    Image coordinates (pixels): ({orig[0]:.1f}, {orig[1]:.1f})")
-                        print(f"    Court coordinates (meters): ({trans[0]:.2f}, {trans[1]:.2f})")
-                    
-                    # Display averages by label
-                    if averages_by_label:
-                        print("\n" + "-"*CONSOLE_WIDTH)
-                        print("[Homography] Average Positions by Label:")
-                        print("-"*CONSOLE_WIDTH)
-                        for label, avg_coords in averages_by_label.items():
-                            print(f"  {label}:")
-                            print(f"    Average court coordinates (meters): ({avg_coords[0]:.2f}, {avg_coords[1]:.2f})")
+        # Process each dynamic input slot
+        if self._homography_matrix is not None and dynamic_json_data:
+            if output_data is None:
+                output_data = {
+                    'homography_matrix': self._homography_matrix.tolist(),
+                    'template': self._selected_template,
+                    'sport': selected_sport,
+                    'transformed_inputs': {},
+                }
+            if 'transformed_inputs' not in output_data:
+                output_data['transformed_inputs'] = {}
 
-                    # Display per-player kinematics
-                    player_stats = output_data.get('player_stats', {})
-                    if player_stats:
-                        print("\n" + "-"*CONSOLE_WIDTH)
-                        print("[Homography] Player Kinematics:")
-                        print("-"*CONSOLE_WIDTH)
-                        for label, s in player_stats.items():
-                            print(f"  {label}:")
-                            print(f"    Speed:        {s['speed_ms']:.3f} m/s")
-                            print(f"    Max Speed:    {s['max_speed_ms']:.3f} m/s")
-                            print(f"    Acceleration: {s['acceleration_ms2']:.3f} m/s²")
-                            print(f"    Distance:     {s['distance_m']:.3f} m")
-                
-                print("="*CONSOLE_WIDTH + "\n")
+            for slot_num in sorted(dynamic_json_data.keys()):
+                slot_json_data = dynamic_json_data[slot_num]
+                if slot_json_data is None:
+                    continue
 
-        if use_pref_counter and (master_json_data is not None or points_json_data is not None):
+                slot_result = self._process_single_input(slot_json_data, slot_num)
+                if slot_result is not None:
+                    output_data['transformed_inputs'][slot_num] = slot_result
+
+                    # Backward compatibility: expose slot 2 fields at the top level
+                    if slot_num == 2:
+                        output_data['input_points'] = slot_result.get('input_points')
+                        output_data['transformed_points'] = slot_result.get('transformed_points')
+                        if 'bboxes' in slot_result:
+                            output_data['bboxes'] = slot_result['bboxes']
+                        if 'class_ids' in slot_result:
+                            output_data['class_ids'] = slot_result['class_ids']
+                        if 'class_names' in slot_result:
+                            output_data['class_names'] = slot_result['class_names']
+                        if 'scores' in slot_result:
+                            output_data['scores'] = slot_result['scores']
+                        if 'averages_by_label' in slot_result:
+                            output_data['averages_by_label'] = slot_result['averages_by_label']
+                        if 'player_stats' in slot_result:
+                            output_data['player_stats'] = slot_result['player_stats']
+
+        if use_pref_counter and (master_json_data is not None or any(v is not None for v in dynamic_json_data.values())):
             elapsed_time = time.monotonic() - start_time
             elapsed_time = int(elapsed_time * 1000)
             try:
@@ -705,8 +640,151 @@ class Node(Node):
 
         return {"image": None, "json": output_data, "audio": None}
 
+    def _process_single_input(self, points_json_data, slot_num):
+        """Extract, transform points from one dynamic input and return a result dict."""
+        points_to_transform = None
+        bboxes_list = None
+
+        if isinstance(points_json_data, dict):
+            if 'bboxes' in points_json_data:
+                bboxes_list = points_json_data['bboxes']
+                points_to_transform = self._extract_bottom_center_from_bboxes(bboxes_list)
+                print(
+                    f"[Homography] Input{str(slot_num).zfill(2)}: Extracted "
+                    f"{len(points_to_transform) if points_to_transform is not None else 0} "
+                    f"player positions from bboxes"
+                )
+            elif 'keypoints' in points_json_data:
+                keypoints = points_json_data['keypoints']
+                pts = []
+                for kp in keypoints:
+                    if isinstance(kp, dict) and 'x' in kp and 'y' in kp:
+                        pts.append([kp['x'], kp['y']])
+                points_to_transform = np.array(pts, dtype=np.float32) if pts else None
+            elif 'points' in points_json_data:
+                points_to_transform = np.array(points_json_data['points'], dtype=np.float32)
+        elif isinstance(points_json_data, (list, np.ndarray)):
+            points_to_transform = np.array(points_json_data, dtype=np.float32)
+
+        if points_to_transform is None or len(points_to_transform) == 0:
+            return None
+
+        transformed = self._transform_points(points_to_transform, self._homography_matrix)
+        if transformed is None:
+            return None
+
+        result = {
+            'input_points': points_to_transform.tolist(),
+            'transformed_points': transformed.tolist(),
+        }
+
+        if bboxes_list is not None:
+            result['bboxes'] = bboxes_list
+
+        if isinstance(points_json_data, dict):
+            if 'class_ids' in points_json_data:
+                result['class_ids'] = points_json_data['class_ids']
+            if 'class_names' in points_json_data:
+                result['class_names'] = points_json_data['class_names']
+            if 'scores' in points_json_data:
+                result['scores'] = points_json_data['scores']
+
+        # Calculate averages by label
+        averages_by_label = {}
+        if (
+            isinstance(points_json_data, dict)
+            and 'class_ids' in points_json_data
+            and 'class_names' in points_json_data
+        ):
+            averages_by_label = self._calculate_averages_by_label(
+                transformed,
+                points_json_data['class_ids'],
+                points_json_data['class_names'],
+            )
+            result['averages_by_label'] = averages_by_label
+
+        # Compute per-player kinematics
+        if averages_by_label:
+            current_time = time.monotonic()
+            player_stats = self._compute_player_kinematics(averages_by_label, current_time)
+            result['player_stats'] = player_stats
+
+        # Console output
+        CONSOLE_WIDTH = 70
+        print("\n" + "=" * CONSOLE_WIDTH)
+        print(f"[Homography] Input{str(slot_num).zfill(2)} Coordinate Transformation:")
+        print("=" * CONSOLE_WIDTH)
+        for i, (orig, trans) in enumerate(zip(points_to_transform, transformed)):
+            label = ""
+            if isinstance(points_json_data, dict) and 'class_ids' in points_json_data and 'class_names' in points_json_data:
+                class_ids = points_json_data['class_ids']
+                class_names = points_json_data['class_names']
+                if i < len(class_ids):
+                    class_id = class_ids[i]
+                    if isinstance(class_names, dict):
+                        label = f" ({class_names.get(class_id, f'Object {class_id}')})"
+                    elif isinstance(class_names, list) and class_id < len(class_names):
+                        label = f" ({class_names[class_id]})"
+            print(f"  Object {i+1}{label}:")
+            print(f"    Image coordinates (pixels): ({orig[0]:.1f}, {orig[1]:.1f})")
+            print(f"    Court coordinates (meters): ({trans[0]:.2f}, {trans[1]:.2f})")
+
+        if averages_by_label:
+            print("\n" + "-" * CONSOLE_WIDTH)
+            print("[Homography] Average Positions by Label:")
+            print("-" * CONSOLE_WIDTH)
+            for lbl, avg_coords in averages_by_label.items():
+                print(f"  {lbl}:")
+                print(f"    Average court coordinates (meters): ({avg_coords[0]:.2f}, {avg_coords[1]:.2f})")
+
+        player_stats = result.get('player_stats', {})
+        if player_stats:
+            print("\n" + "-" * CONSOLE_WIDTH)
+            print("[Homography] Player Kinematics:")
+            print("-" * CONSOLE_WIDTH)
+            for lbl, s in player_stats.items():
+                print(f"  {lbl}:")
+                print(f"    Speed:        {s['speed_ms']:.3f} m/s")
+                print(f"    Max Speed:    {s['max_speed_ms']:.3f} m/s")
+                print(f"    Acceleration: {s['acceleration_ms2']:.3f} m/s²")
+                print(f"    Distance:     {s['distance_m']:.3f} m")
+
+        print("=" * CONSOLE_WIDTH + "\n")
+
+        return result
+
     def close(self, node_id):
         pass
+
+    def _add_slot(self, sender, data, user_data):
+        tag_node_name = user_data
+
+        if self._max_slot_number > self._slot_id[tag_node_name]:
+            self._slot_id[tag_node_name] += 1
+            slot_number = self._slot_id[tag_node_name]
+
+            prev_slot_number = slot_number - 1
+            before_tag = (
+                tag_node_name + ':' + self.TYPE_JSON + ':Input'
+                + str(prev_slot_number).zfill(2)
+            )
+
+            tag_input_name = (
+                tag_node_name + ':' + self.TYPE_JSON + ':Input'
+                + str(slot_number).zfill(2)
+            )
+            tag_input_value_name = tag_input_name + 'Value'
+
+            with dpg.node_attribute(
+                tag=tag_input_name,
+                attribute_type=dpg.mvNode_Attr_Input,
+                parent=tag_node_name,
+                before=before_tag,
+            ):
+                dpg.add_text(
+                    tag=tag_input_value_name,
+                    default_value='Points to Transform',
+                )
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
@@ -720,6 +798,7 @@ class Node(Node):
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
         setting_dict['sport'] = dpg_get_value(sport_value_tag) or 'Tennis'
+        setting_dict['slot_id'] = self._slot_id.get(tag_node_name, 2)
 
         return setting_dict
 
@@ -730,6 +809,10 @@ class Node(Node):
             dpg_set_value(sport_value_tag, setting_dict.get('sport', 'Tennis'))
         except Exception:
             pass
+
+        slot_number = int(setting_dict.get('slot_id', 2))
+        for slot_idx in range(3, slot_number + 1):
+            self._add_slot(None, None, tag_node_name)
 
 
 # Populate SPORT_TEMPLATES after the class is fully defined
