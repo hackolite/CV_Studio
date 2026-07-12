@@ -212,4 +212,8 @@ class BlazeFace:
         x2 = np.clip(x2, 0, orig_w)
         y2 = np.clip(y2, 0, orig_h)
 
+        # Guarantee x1 <= x2 and y1 <= y2 so cv2.rectangle draws correctly
+        x1, x2 = np.minimum(x1, x2), np.maximum(x1, x2)
+        y1, y2 = np.minimum(y1, y2), np.maximum(y1, y2)
+
         return np.stack([x1, y1, x2, y2], axis=1).astype(np.float32)
