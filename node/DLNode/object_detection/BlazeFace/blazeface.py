@@ -133,8 +133,12 @@ class BlazeFace:
                 np.empty((0,), dtype=np.int64),
             )
 
-        # selectedBoxes: (1, N, 16)  or  (1, 0, 16) when no detection
-        selected = outputs[0]  # shape (1, N, 16)
+        # selectedBoxes: (1, N, 16)  or  (1, 0, 16) when no detection.
+        # Some ONNX runtimes collapse the middle dimension when N==1,
+        # producing shape (1, 16) instead of (1, 1, 16).
+        selected = outputs[0]  # shape (1, N, 16) or (1, 16) when N==1
+        if selected.ndim == 2:
+            selected = selected[np.newaxis, ...]  # (1, 16) → (1, 1, 16)
         n_det = selected.shape[1]
 
         if n_det == 0:
