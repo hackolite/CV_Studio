@@ -8,7 +8,7 @@ import os
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from node.VisualNode.node_heatmap import Node
+from node.VisualNode._node_heatmap import Node
 import cv2
 import numpy as np
 
