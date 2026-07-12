@@ -243,6 +243,13 @@ class Node(Node):  # noqa: F811
             elif conn_type == self.TYPE_JSON and not src_json_key:
                 src_json_key = src_key
 
+        # If no explicit IMAGE connection, fall back to using the image
+        # from the same node that provides the JSON (e.g. ObjectDetection).
+        # This lets users wire only the JSON output of BlazeFace/ObjectDetection
+        # to BBoxBlur and still get a live image.
+        if not src_image_key and src_json_key:
+            src_image_key = src_json_key
+
         # ---- Fetch data -------------------------------------------------
         frame = node_image_dict.get(src_image_key, None) if src_image_key else None
         json_data = node_result_dict.get(src_json_key, None) if src_json_key else None
