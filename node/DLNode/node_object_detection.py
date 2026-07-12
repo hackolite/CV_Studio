@@ -23,6 +23,7 @@ import numpy as np
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.basenode import Node
 from node.DLNode.object_detection.CustomONNX.custom_onnx import CustomONNX
+from node.DLNode.object_detection.BlazeFace.blazeface import BlazeFace
 from node.DLNode.object_detection.coco_class_names import coco_class_names
 from node.DLNode.object_detection import onnx_inspector
 from node.DLNode.object_detection import custom_models_registry
@@ -167,6 +168,15 @@ _BUILTIN_MODELS = [
             11: 'helicopter', 12: 'roundabout', 13: 'soccer ball field',
             14: 'swimming pool', 15: 'container crane',
         },
+    },
+    {
+        'name': 'BlazeFace(128x128)',
+        'path': os.path.join(_OBJECT_DETECTION_BASE, 'blaze.onnx'),
+        'output_format': 'blazeface',
+        'input_width': 128,
+        'input_height': 128,
+        'num_classes': 1,
+        'class_names': {0: 'face'},
     },
 ]
 
@@ -736,8 +746,13 @@ class Node(Node):
             def factory(model_path, providers=None):
                 if providers is None:
                     providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+                if fmt == 'blazeface':
+                    return BlazeFace(
+                        model_path=model_path,
+                        providers=providers,
+                    )
                 return CustomONNX(
-                    model_path=p,
+                    model_path=model_path,
                     input_width=w,
                     input_height=h,
                     output_format=fmt,
@@ -1267,9 +1282,13 @@ class Node(Node):
                 result = {}
                 debug_frame = None
                 if frame is not None:
+                    # For BlazeFace, propagate the score threshold to the model's
+                    # conf_threshold so that the built-in NMS uses the same value.
+                    model_instance = self._model_instance[model_name_with_provider]
+                    if hasattr(model_instance, 'conf_threshold'):
+                        model_instance.conf_threshold = score_th
 
-                    bboxes, scores, class_ids = self._model_instance[
-                        model_name_with_provider](frame)
+                    bboxes, scores, class_ids = model_instance(frame)
                     
                     # Apply class rejection filter
                     if len(bboxes) > 0:
