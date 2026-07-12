@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-import urllib.request
 import cv2
 import numpy as np
 import dearpygui.dearpygui as dpg
@@ -37,8 +36,6 @@ class FactoryNode:
         node.tag_node_input01_name = node.tag_node_name + ':' + node.TYPE_INT + ':Input01'
         node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
         node.tag_node_output01_value_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
-        node.tag_node_input_url_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':InputURL'
-        node.tag_node_input_url_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':InputURLValue'
 
 
         node.tag_node_output_audio_name = node.tag_node_name + ':' + node.TYPE_AUDIO + ':OutputAudio'
@@ -128,17 +125,6 @@ class FactoryNode:
                 )
 
             with dpg.node_attribute(
-                    tag=node.tag_node_input_url_name,
-                    attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_input_text(
-                    tag=node.tag_node_input_url_value_name,
-                    label='URL',
-                    width=node.small_window_w - 30,
-                    hint='https://example.com/image.jpg',
-                )
-
-            with dpg.node_attribute(
                     tag=node.tag_node_output01_name,
                     attribute_type=dpg.mvNode_Attr_Output,
             ):
@@ -185,30 +171,23 @@ class ImageNode(Node):
     ):
         tag_node_name = str(node_id) + ':' + self.node_tag
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
-        url_value_tag = tag_node_name + ':' + self.TYPE_TEXT + ':InputURLValue'
 
         small_window_w = self._opencv_setting_dict['input_window_width']
         small_window_h = self._opencv_setting_dict['input_window_height']
 
-        # URL input takes priority over file dialog when non-empty
-        url_input = dpg_get_value(url_value_tag) or ''
-        url_input = url_input.strip()
-        if url_input:
-            image_path = url_input
-        else:
-            image_path = self._image_filepath.get(str(node_id), None)
 
+        image_path = self._image_filepath.get(str(node_id), None)
         prev_image_path = self._prev_image_filepath.get(str(node_id), None)
-
+        
         # Performance optimization: only reload and convert texture when image path changes
         # to prevent UI freezing from repeated texture conversion of the same static image
         if prev_image_path != image_path:
             if image_path is not None:
-                loaded_image = self._load_image(image_path)
+                loaded_image = cv2.imread(image_path)
                 if loaded_image is not None:
                     self._image[str(node_id)] = loaded_image
                     self._prev_image_filepath[str(node_id)] = image_path
-
+                    
                     # Convert and cache the texture only when image loads successfully
                     texture = self.convert_cv_to_dpg(
                         loaded_image,
@@ -230,26 +209,10 @@ class ImageNode(Node):
                 if str(node_id) in self._texture_cache:
                     del self._texture_cache[str(node_id)]
 
+
         frame = self._image.get(str(node_id), None)
 
         return {"image": frame, "json": None, "audio": None}
-
-    def _load_image(self, path):
-        """Load an image from a local file path or an HTTP/HTTPS URL."""
-        if path.startswith('http://') or path.startswith('https://'):
-            try:
-                req = urllib.request.Request(
-                    path,
-                    headers={'User-Agent': 'Mozilla/5.0'},
-                )
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    data = resp.read()
-                buf = np.frombuffer(data, dtype=np.uint8)
-                return cv2.imdecode(buf, cv2.IMREAD_COLOR)
-            except Exception as e:
-                print(f'[ImageNode] URL load failed ({path}): {e}')
-                return None
-        return cv2.imread(path)
 
     def close(self, node_id):
         # Clean up cached data for this node to prevent memory leaks

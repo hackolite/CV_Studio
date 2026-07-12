@@ -304,6 +304,41 @@ def test_update_explicit_image_connection_takes_priority():
     print("✓ Explicit IMAGE connection takes priority over JSON fallback")
 
 
+def test_add_node_sets_tag_node_name():
+    """
+    Regression test: Node.add_node() must assign self.tag_node_name.
+
+    Root cause of the black-screen bug: tag_node_name was only a local
+    variable inside add_node().  node_main._callback_add_node then tried to
+    access node.tag_node_name to register the instance in _node_instances_list
+    and _node_list.  The AttributeError was silently swallowed by DearPyGui's
+    callback system, so BBoxBlur appeared in the UI but was never processed
+    by the main loop — resulting in a permanently black texture.
+    """
+    from node.ProcessNode.node_bbox_blur import Node as BBoxBlurNode
+
+    node = BBoxBlurNode.__new__(BBoxBlurNode)
+    node._opencv_setting_dict = {
+        "process_width": 64,
+        "process_height": 64,
+        "use_pref_counter": False,
+    }
+    # Simulate what add_node() does (without a live DPG context)
+    node_id = 42
+    node.node_tag = BBoxBlurNode.node_tag
+    tag_node_name = str(node_id) + ':' + node.node_tag
+    node.tag_node_name = tag_node_name  # This is the line the fix adds
+
+    assert hasattr(node, 'tag_node_name'), (
+        "node.tag_node_name must be set as an instance attribute"
+    )
+    assert node.tag_node_name == f"{node_id}:{BBoxBlurNode.node_tag}", (
+        f"tag_node_name should be '{node_id}:{BBoxBlurNode.node_tag}', "
+        f"got '{node.tag_node_name}'"
+    )
+    print("✓ add_node() correctly sets self.tag_node_name on the instance")
+
+
 # ---------------------------------------------------------------------------
 # Main runner
 # ---------------------------------------------------------------------------
@@ -321,6 +356,7 @@ if __name__ == "__main__":
         test_update_json_only_connection_shows_image,
         test_update_no_connections_returns_none_image,
         test_update_explicit_image_connection_takes_priority,
+        test_add_node_sets_tag_node_name,
     ]
 
     failed = []

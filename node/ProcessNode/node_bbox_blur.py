@@ -98,6 +98,7 @@ class Node(Node):  # noqa: F811
             pos = [0, 0]
 
         tag_node_name = str(node_id) + ':' + self.node_tag
+        self.tag_node_name = tag_node_name
 
         # ---- Input tags ------------------------------------------------
         tag_input_image_name = tag_node_name + ':' + self.TYPE_IMAGE + ':Input01'
