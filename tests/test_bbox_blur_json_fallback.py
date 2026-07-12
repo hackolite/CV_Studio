@@ -135,7 +135,7 @@ def test_blur_bboxes_even_kernel_rounded_up():
 # Integration-style test for update() fallback behaviour
 # ---------------------------------------------------------------------------
 
-def test_update_json_only_connection_shows_image(monkeypatch=None):
+def test_update_json_only_connection_shows_image():
     """
     When only the JSON connection is present (no IMAGE connection),
     update() must fall back to using the JSON source's image instead
@@ -215,9 +215,16 @@ def test_update_no_connections_returns_none_image():
 
     import node.ProcessNode.node_bbox_blur as bbox_mod
 
+    def fake_get_no_conn(tag):
+        if "Kernel" in tag:
+            return 15
+        if "Score" in tag:
+            return 0.3
+        return None
+
     orig_get = bbox_mod.dpg_get_value
     orig_set = bbox_mod.dpg_set_value
-    bbox_mod.dpg_get_value = lambda tag: 15 if "Kernel" in tag else (0.3 if "Score" in tag else None)
+    bbox_mod.dpg_get_value = fake_get_no_conn
     bbox_mod.dpg_set_value = lambda tag, val: None
 
     try:
@@ -267,9 +274,16 @@ def test_update_explicit_image_connection_takes_priority():
 
     import node.ProcessNode.node_bbox_blur as bbox_mod
 
+    def fake_get_priority(tag):
+        if "Kernel" in tag:
+            return 15
+        if "Score" in tag:
+            return 0.3
+        return None
+
     orig_get = bbox_mod.dpg_get_value
     orig_set = bbox_mod.dpg_set_value
-    bbox_mod.dpg_get_value = lambda tag: 15 if "Kernel" in tag else (0.3 if "Score" in tag else None)
+    bbox_mod.dpg_get_value = fake_get_priority
     bbox_mod.dpg_set_value = lambda tag, val: None
 
     try:
