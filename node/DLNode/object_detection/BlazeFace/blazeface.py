@@ -11,7 +11,9 @@ The bundled ``blaze.onnx`` model takes 4 inputs:
 
 Output:
   - selectedBoxes  [1, N, 16] float32
-      Each row: [cx, cy, w, h, kp0x, kp0y, …, kp5x, kp5y] (normalised [0, 1])
+      Each row: [y1, x1, y2, x2, kp0x, kp0y, …, kp5x, kp5y] (normalised [0, 1])
+      The model applies an internal ``t_nub`` MatMul that converts
+      [cx, cy, w, h] → [y1, x1, y2, x2] before the NMS gather step.
       N is the number of detections that survived NMS.
 
 The wrapper satisfies the ``__call__(image) -> (bboxes, scores, class_ids)``
@@ -177,7 +179,13 @@ class BlazeFace:
     def _decode_boxes(
         self, rows: np.ndarray, orig_w: int, orig_h: int
     ) -> np.ndarray:
-        """Convert normalised [cx, cy, w, h] to pixel-space [x1, y1, x2, y2].
+        """Convert model output to pixel-space [x1, y1, x2, y2].
+
+        The ``blaze.onnx`` model applies an internal ``t_nub`` MatMul that
+        converts the raw [cx, cy, w, h] regression output into
+        [y1, x1, y2, x2] (normalised [0, 1]) before the NMS gather step.
+        The first four columns of ``selectedBoxes`` therefore hold
+        [y1, x1, y2, x2], not [cx, cy, w, h].
 
         Parameters
         ----------
@@ -188,15 +196,11 @@ class BlazeFace:
         -------
         np.ndarray  (N, 4)  float32  [[x1, y1, x2, y2], …]
         """
-        cx = rows[:, 0]
-        cy = rows[:, 1]
-        w = rows[:, 2]
-        h = rows[:, 3]
-
-        x1 = (cx - w / 2.0) * orig_w
-        y1 = (cy - h / 2.0) * orig_h
-        x2 = (cx + w / 2.0) * orig_w
-        y2 = (cy + h / 2.0) * orig_h
+        # selectedBoxes columns: [y1, x1, y2, x2, kp0x, kp0y, ...]  (normalised)
+        y1 = rows[:, 0] * orig_h
+        x1 = rows[:, 1] * orig_w
+        y2 = rows[:, 2] * orig_h
+        x2 = rows[:, 3] * orig_w
 
         # Clip to image bounds
         x1 = np.clip(x1, 0, orig_w)
