@@ -1,7 +1,7 @@
 [
   {
     "name": "YAMNet",
-    "path": "/home/runner/work/CV_Studio/CV_Studio/node/AudioModelNode/models/yamnet.onnx",
+    "path": "C:\\Users\\OPTIPLES 9020\\CV_Studio\\node\\AudioModelNode\\models\\yamnet.onnx",
     "n_mels": 64,
     "fixed_time": 96,
     "target_sr": 16000,
@@ -14,7 +14,7 @@
     "mel_norm": "log_offset",
     "output_activation": "sigmoid",
     "silence_rms_threshold": 0.001,
-    "num_classes": 0,
+    "num_classes": 521,
     "model_type": "mel_cnn",
     "class_names": {
       "0": "Speech",

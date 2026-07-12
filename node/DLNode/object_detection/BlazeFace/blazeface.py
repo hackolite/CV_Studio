@@ -43,9 +43,6 @@ logger = logging.getLogger(__name__)
 _INPUT_W = 128
 _INPUT_H = 128
 
-# Indices of the 4 box coordinate values inside each 16-element row
-_BOX_INDICES = [0, 1, 2, 3]  # cx, cy, w, h  (normalised)
-
 
 class BlazeFace:
     """BlazeFace face-detection wrapper compatible with the CvStudio detection interface."""

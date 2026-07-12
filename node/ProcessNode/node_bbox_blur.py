@@ -258,11 +258,8 @@ class Node(Node):  # noqa: F811
         if json_data and isinstance(json_data, dict):
             bboxes = json_data.get('bboxes', [])
             scores = json_data.get('scores', [])
-            # Prefer the JSON-embedded score_th unless the node slider is more
-            # restrictive (i.e. slider value overrides for finer control).
-            effective_score_th = max(score_th, json_data.get('score_th', 0.0))
             if bboxes and scores:
-                output_frame = _blur_bboxes(frame, bboxes, scores, effective_score_th, kernel_size)
+                output_frame = _blur_bboxes(frame, bboxes, scores, score_th, kernel_size)
 
         if use_pref_counter:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
