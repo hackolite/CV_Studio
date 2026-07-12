@@ -8,7 +8,7 @@ PROCESS = [
     "OmnidirectionalViewer", "Blur", "Canny", "SimpleFilter",
     "Threshold", "ImageAlphaBlend", "BilateralFilter", "Morphology",
     "UnsharpMask", "NLMDenoise", "ColorSpace", "AdaptiveThreshold",
-    "KernelSharpen", "IlluminationCorrect"
+    "KernelSharpen", "IlluminationCorrect", "BBoxBlur"
 ]
 MODEL = [
     "LLIE", "Classification", "PoseEstimation", "ObjectDetection",
