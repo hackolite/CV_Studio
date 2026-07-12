@@ -12,6 +12,10 @@ from node.node_abc import DpgNodeABC
 from node.basenode import Node
 from node.VisualNode.heatmap_utils import get_colormap, ensure_odd_blur_size, COLORMAP_NAMES
 
+# Guard against division by zero when memory_seconds is extremely small
+_MIN_MEMORY_SECONDS = 1e-6
+# Assumed frame-rate used only for backward-compat conversion of old float-decay saves
+_ASSUMED_FPS_FOR_COMPAT = 30.0
 
 class FactoryNode:
     node_label = 'ObjHeatMap'
@@ -329,7 +333,7 @@ class Node(Node):
         if memory_seconds >= 300:
             decay = 1.0  # full history — accumulate from node creation
         else:
-            decay = np.exp(-dt / max(memory_seconds, 1e-6))
+            decay = np.exp(-dt / max(memory_seconds, _MIN_MEMORY_SECONDS))
 
         if use_pref_counter:
             start_time = time.monotonic()
@@ -490,7 +494,7 @@ class Node(Node):
         if isinstance(raw, float) and raw < 1.0:
             import math
             try:
-                memory_seconds = int(round(-1.0 / (30.0 * math.log(raw))))
+                memory_seconds = int(round(-1.0 / (_ASSUMED_FPS_FOR_COMPAT * math.log(raw))))
                 memory_seconds = max(1, min(300, memory_seconds))
             except (ValueError, ZeroDivisionError):
                 memory_seconds = 30
