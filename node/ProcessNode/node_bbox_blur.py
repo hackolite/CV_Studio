@@ -11,7 +11,7 @@ ObjectDetection (JSON output)  ──► BBoxBlur (JSON input)
 
 The node reads bounding-box coordinates from the JSON input
 (keys ``bboxes``, ``scores``, ``score_th``) and blurs each region whose
-confidence score meets the threshold.  The result is useful for anonymising
+confidence score meets the threshold.  The result is useful for anonymizing
 faces detected by the BlazeFace model.
 
 When no JSON input is connected the node passes the image through unmodified.

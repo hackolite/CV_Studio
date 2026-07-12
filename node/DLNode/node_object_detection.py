@@ -748,11 +748,11 @@ class Node(Node):
                     providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
                 if fmt == 'blazeface':
                     return BlazeFace(
-                        model_path=p,
+                        model_path=model_path,
                         providers=providers,
                     )
                 return CustomONNX(
-                    model_path=p,
+                    model_path=model_path,
                     input_width=w,
                     input_height=h,
                     output_format=fmt,

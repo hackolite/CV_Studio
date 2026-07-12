@@ -16,8 +16,16 @@ Output:
 
 The wrapper satisfies the ``__call__(image) -> (bboxes, scores, class_ids)``
 interface expected by ``node_object_detection.py``.  All returned faces are
-assigned class_id = 0 and score = ``conf_threshold`` (the minimum confidence
-already guaranteed by the model's built-in NMS).
+assigned class_id = 0.
+
+Note on scores
+--------------
+The ``blaze.onnx`` model's single output tensor (``selectedBoxes``) contains
+only box coordinates and facial keypoints – the per-detection confidence scores
+are consumed internally by the ONNX NMS operator and are **not** included in
+the output.  To preserve interface compatibility, all returned detections are
+assigned ``score = conf_threshold``, which is the lower-bound confidence
+already guaranteed by the model's built-in NMS.
 
 Dynamic threshold support
 --------------------------
