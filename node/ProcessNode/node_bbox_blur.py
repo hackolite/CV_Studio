@@ -27,8 +27,26 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.basenode import Node
 
 
-def _blur_bboxes(image: np.ndarray, bboxes, scores, score_th: float, kernel_size: int) -> np.ndarray:
-    """Return a copy of *image* with each qualifying bbox region blurred."""
+def _blur_bboxes(
+    image: np.ndarray,
+    bboxes,
+    scores,
+    score_th: float,
+    kernel_size: int,
+    expand_w_pct: float = 0.0,
+    expand_h_pct: float = 0.0,
+) -> np.ndarray:
+    """Return a copy of *image* with each qualifying bbox region blurred.
+
+    Parameters
+    ----------
+    expand_w_pct : float
+        Percentage of the box *width* to add on **each** horizontal side
+        (e.g. 20 → expand the blurred region by 20 % of the box width
+        to the left *and* to the right).
+    expand_h_pct : float
+        Percentage of the box *height* to add on **each** vertical side.
+    """
     result = image.copy()
     h, w = image.shape[:2]
     # Ensure kernel size is odd and at least 1
@@ -39,10 +57,23 @@ def _blur_bboxes(image: np.ndarray, bboxes, scores, score_th: float, kernel_size
     for bbox, score in zip(bboxes, scores):
         if score < score_th:
             continue
-        x1 = max(0, int(bbox[0]))
-        y1 = max(0, int(bbox[1]))
-        x2 = min(w, int(bbox[2]))
-        y2 = min(h, int(bbox[3]))
+        # Normalise: ensure x1 < x2 and y1 < y2 regardless of model output order
+        rx1 = min(int(bbox[0]), int(bbox[2]))
+        ry1 = min(int(bbox[1]), int(bbox[3]))
+        rx2 = max(int(bbox[0]), int(bbox[2]))
+        ry2 = max(int(bbox[1]), int(bbox[3]))
+
+        # Expand by the requested percentages
+        box_w = rx2 - rx1
+        box_h = ry2 - ry1
+        pad_x = int(box_w * expand_w_pct / 100.0)
+        pad_y = int(box_h * expand_h_pct / 100.0)
+
+        x1 = max(0, rx1 - pad_x)
+        y1 = max(0, ry1 - pad_y)
+        x2 = min(w, rx2 + pad_x)
+        y2 = min(h, ry2 + pad_y)
+
         if x2 <= x1 or y2 <= y1:
             continue
         region = result[y1:y2, x1:x2]
@@ -117,6 +148,8 @@ class Node(Node):  # noqa: F811
         # ---- Control tags ----------------------------------------------
         tag_kernel = tag_node_name + ':KernelValue'
         tag_score_th = tag_node_name + ':ScoreThValue'
+        tag_expand_w = tag_node_name + ':ExpandWValue'
+        tag_expand_h = tag_node_name + ':ExpandHValue'
 
         self._opencv_setting_dict = opencv_setting_dict
         small_window_w = opencv_setting_dict['process_width']
@@ -197,6 +230,34 @@ class Node(Node):  # noqa: F811
                     max_value=1.0,
                 )
 
+            # Expand width (%) slider
+            with dpg.node_attribute(
+                tag=tag_node_name + ':ExpandWAttr',
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_int(
+                    tag=tag_expand_w,
+                    label='expand %W',
+                    width=small_window_w - 80,
+                    default_value=0,
+                    min_value=0,
+                    max_value=200,
+                )
+
+            # Expand height (%) slider
+            with dpg.node_attribute(
+                tag=tag_node_name + ':ExpandHAttr',
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_int(
+                    tag=tag_expand_h,
+                    label='expand %H',
+                    width=small_window_w - 80,
+                    default_value=0,
+                    min_value=0,
+                    max_value=200,
+                )
+
             # Elapsed time output
             if use_pref_counter:
                 with dpg.node_attribute(
@@ -223,6 +284,8 @@ class Node(Node):  # noqa: F811
         tag_output_time_value = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
         tag_kernel = tag_node_name + ':KernelValue'
         tag_score_th = tag_node_name + ':ScoreThValue'
+        tag_expand_w = tag_node_name + ':ExpandWValue'
+        tag_expand_h = tag_node_name + ':ExpandHValue'
 
         small_window_w = self._opencv_setting_dict['process_width']
         small_window_h = self._opencv_setting_dict['process_height']
@@ -232,6 +295,12 @@ class Node(Node):  # noqa: F811
         score_th = dpg_get_value(tag_score_th)
         if score_th is None:
             score_th = 0.3
+        expand_w = dpg_get_value(tag_expand_w)
+        if expand_w is None:
+            expand_w = 0
+        expand_h = dpg_get_value(tag_expand_h)
+        if expand_h is None:
+            expand_h = 0
 
         # ---- Resolve connections ----------------------------------------
         src_image_key = ''
@@ -260,7 +329,10 @@ class Node(Node):  # noqa: F811
             bboxes = json_data.get('bboxes', [])
             scores = json_data.get('scores', [])
             if bboxes and scores:
-                output_frame = _blur_bboxes(frame, bboxes, scores, score_th, kernel_size)
+                output_frame = _blur_bboxes(
+                    frame, bboxes, scores, score_th, kernel_size,
+                    expand_w_pct=expand_w, expand_h_pct=expand_h,
+                )
 
         if use_pref_counter:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
@@ -279,6 +351,8 @@ class Node(Node):  # noqa: F811
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_kernel = tag_node_name + ':KernelValue'
         tag_score_th = tag_node_name + ':ScoreThValue'
+        tag_expand_w = tag_node_name + ':ExpandWValue'
+        tag_expand_h = tag_node_name + ':ExpandHValue'
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -287,14 +361,22 @@ class Node(Node):  # noqa: F811
             'pos': pos,
             tag_kernel: dpg_get_value(tag_kernel),
             tag_score_th: dpg_get_value(tag_score_th),
+            tag_expand_w: dpg_get_value(tag_expand_w),
+            tag_expand_h: dpg_get_value(tag_expand_h),
         }
 
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_kernel = tag_node_name + ':KernelValue'
         tag_score_th = tag_node_name + ':ScoreThValue'
+        tag_expand_w = tag_node_name + ':ExpandWValue'
+        tag_expand_h = tag_node_name + ':ExpandHValue'
 
         if tag_kernel in setting_dict:
             dpg_set_value(tag_kernel, int(setting_dict[tag_kernel]))
         if tag_score_th in setting_dict:
             dpg_set_value(tag_score_th, float(setting_dict[tag_score_th]))
+        if tag_expand_w in setting_dict:
+            dpg_set_value(tag_expand_w, int(setting_dict[tag_expand_w]))
+        if tag_expand_h in setting_dict:
+            dpg_set_value(tag_expand_h, int(setting_dict[tag_expand_h]))
