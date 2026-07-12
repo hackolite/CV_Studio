@@ -119,17 +119,17 @@ class FactoryNode:
                     width=small_window_w - 100,
                 )
 
-            # Memory slider
+            # Memory slider (seconds; 300 = ∞ full history from node creation)
             with dpg.node_attribute(
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
-                dpg.add_slider_float(
+                dpg.add_slider_int(
                     tag=node.tag_node_alpha_value_name,
-                    label="Memory",
+                    label="Memory (s) [max=\u221e]",
                     width=small_window_w - 80,
-                    default_value=0.98,
-                    min_value=0.80,
-                    max_value=0.995,
+                    default_value=30,
+                    min_value=1,
+                    max_value=300,
                     callback=None,
                 )
 
@@ -215,12 +215,15 @@ class Node(Node):
             }
 
         self._opencv_setting_dict = opencv_setting_dict
-        
+
         # Accumulator for heatmap
         self.heatmap_accum = np.zeros((
             self._opencv_setting_dict['process_height'],
             self._opencv_setting_dict['process_width']
         ), dtype=np.float32)
+
+        # Timestamp of the last processed frame (used for time-based decay)
+        self._last_update_time = None
 
     def _prepare_image_for_display(self, image, target_width, target_height):
         """
@@ -282,7 +285,7 @@ class Node(Node):
         use_pref_counter = self._opencv_setting_dict['use_pref_counter']
 
         # Get parameters
-        decay = dpg_get_value(alpha_tag)
+        memory_seconds = dpg_get_value(alpha_tag)  # int, 1–300; 300 = ∞
         selected_class = dpg_get_value(class_tag)
         blur_size = dpg_get_value(blur_tag)
         colormap_name = dpg_get_value(colormap_tag)
@@ -311,7 +314,23 @@ class Node(Node):
         # Get detection data and input image
         node_result = node_result_dict.get(connection_info_src_json, {})
         input_image = node_image_dict.get(connection_info_src_image, None)
-        
+
+        # Compute time-based EMA decay factor (O(1), no history buffer needed).
+        # memory_seconds == 300 → infinite accumulation (decay = 1.0, full history
+        # from node creation).  For any finite T, decay = exp(-dt / T) so that
+        # after T seconds without detections the accumulator has fallen to ~37 %.
+        current_time = time.monotonic()
+        if self._last_update_time is None:
+            dt = 0.0
+        else:
+            dt = current_time - self._last_update_time
+        self._last_update_time = current_time
+
+        if memory_seconds >= 300:
+            decay = 1.0  # full history — accumulate from node creation
+        else:
+            decay = np.exp(-dt / max(memory_seconds, 1e-6))
+
         if use_pref_counter:
             start_time = time.monotonic()
 
@@ -436,7 +455,7 @@ class Node(Node):
         colormap_tag = tag_node_name + ':ColormapValue'
         blend_tag = tag_node_name + ':BlendValue'
 
-        decay = dpg_get_value(alpha_tag)
+        memory_seconds = dpg_get_value(alpha_tag)
         selected_class = dpg_get_value(class_tag)
         blur_size = dpg_get_value(blur_tag)
         colormap_name = dpg_get_value(colormap_tag)
@@ -447,7 +466,7 @@ class Node(Node):
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
-        setting_dict[alpha_tag] = decay
+        setting_dict[alpha_tag] = memory_seconds
         setting_dict[class_tag] = selected_class
         setting_dict[blur_tag] = blur_size
         setting_dict[colormap_tag] = colormap_name
@@ -463,14 +482,29 @@ class Node(Node):
         colormap_tag = tag_node_name + ':ColormapValue'
         blend_tag = tag_node_name + ':BlendValue'
 
-        decay = setting_dict.get(alpha_tag, 0.98)  # Default to 0.98 for backward compatibility
+        raw = setting_dict.get(alpha_tag, 30)
+        # Backward compatibility: old saves stored a float decay (0.80–0.995).
+        # Convert those to a rough equivalent in seconds so existing graphs
+        # still load without crashing.  A decay of d applied at ~30 fps gives
+        # a time constant of  T = -1 / (fps * ln(d)).  We assume 30 fps.
+        if isinstance(raw, float) and raw < 1.0:
+            import math
+            try:
+                memory_seconds = int(round(-1.0 / (30.0 * math.log(raw))))
+                memory_seconds = max(1, min(300, memory_seconds))
+            except (ValueError, ZeroDivisionError):
+                memory_seconds = 30
+        else:
+            memory_seconds = int(raw)
+
         selected_class = setting_dict.get(class_tag, "All")
-        blur_size = setting_dict.get(blur_tag, 25)  # Default to 25 for backward compatibility
-        colormap_name = setting_dict.get(colormap_tag, "JET")  # Default to JET for backward compatibility
-        blend_alpha = setting_dict.get(blend_tag, 0.6)  # Default to 0.6 for backward compatibility
-        
-        dpg_set_value(alpha_tag, decay)
+        blur_size = setting_dict.get(blur_tag, 25)
+        colormap_name = setting_dict.get(colormap_tag, "JET")
+        blend_alpha = setting_dict.get(blend_tag, 0.6)
+
+        dpg_set_value(alpha_tag, memory_seconds)
         dpg_set_value(class_tag, selected_class)
         dpg_set_value(blur_tag, blur_size)
         dpg_set_value(colormap_tag, colormap_name)
         dpg_set_value(blend_tag, blend_alpha)
+
