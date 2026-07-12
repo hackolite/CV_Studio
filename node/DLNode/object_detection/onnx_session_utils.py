@@ -61,6 +61,7 @@ def make_session(
     providers: List[str],
     disable_optimizations: bool = False,
     strip_initializer_inputs: bool = True,
+    log_severity_level: int = 2,
 ) -> onnxruntime.InferenceSession:
     """Create an onnxruntime InferenceSession, clamping IR version if needed.
 
@@ -84,14 +85,18 @@ def make_session(
         "Initializer ... appears in graph inputs" warnings and re-enables
         const-folding optimizations. Best-effort: any failure (e.g. ``onnx``
         not installed) leaves the original model untouched.
+    log_severity_level : int
+        OnnxRuntime log severity level (0=VERBOSE, 1=INFO, 2=WARNING,
+        3=ERROR, 4=FATAL).  Defaults to 2 (WARNING).  Pass 3 to suppress
+        expected per-frame warnings such as dynamic output shape mismatches.
 
     Returns
     -------
     onnxruntime.InferenceSession
     """
-    sess_options = None
+    sess_options = onnxruntime.SessionOptions()
+    sess_options.log_severity_level = log_severity_level
     if disable_optimizations:
-        sess_options = onnxruntime.SessionOptions()
         sess_options.graph_optimization_level = (
             onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
         )

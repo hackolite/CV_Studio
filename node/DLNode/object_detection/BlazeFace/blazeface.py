@@ -78,7 +78,11 @@ class BlazeFace:
             f"max_detections={max_detections}, providers={providers}"
         )
 
-        self.onnx_session = make_session(model_path, providers)
+        # log_severity_level=3 (ERROR) suppresses the per-frame ORT warning:
+        # "Expected shape {1,896,16} does not match actual shape {1,0,16}"
+        # which fires on every frame where no face is detected.  The zero-
+        # detection case is handled correctly; the warning is expected noise.
+        self.onnx_session = make_session(model_path, providers, log_severity_level=3)
 
         # Resolve input / output names from the session
         inputs = self.onnx_session.get_inputs()
