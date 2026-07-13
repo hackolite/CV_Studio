@@ -357,7 +357,9 @@ class Node(BaseNode):
                         # Skip invalid class format - expected when class string is malformed
                         pass
             elif results_list:
-                # Face detection format: each entry in results_list is one detected face
+                # Face detection format: each entry in results_list is one detected face.
+                # Class filtering is not applicable here because face detection only
+                # produces a single "face" class, so all detections are always counted.
                 count = len(results_list)
                 for _ in range(count):
                     self.detection_timestamps.append(current_time)
