@@ -181,12 +181,15 @@ class Node(BaseNode):
 
         current_time = time.time()
 
-        # Count detections in this frame
+        # Count detections in this frame (supports object detection and face detection formats)
         current_count = 0
         if node_result and isinstance(node_result, dict):
             class_ids = node_result.get('class_ids', [])
+            results_list = node_result.get('results_list', [])
             if class_ids:
                 current_count = len(class_ids)
+            elif results_list:
+                current_count = len(results_list)
 
         # Add the current sample
         self._samples.append((current_time, current_count))

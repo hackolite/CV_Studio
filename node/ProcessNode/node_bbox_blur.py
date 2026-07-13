@@ -2,17 +2,25 @@
 # -*- coding: utf-8 -*-
 """
 BBoxBlur – applies Gaussian blur inside every bounding box from a connected
-Object Detection JSON output.
+detection JSON output (ObjectDetection or FaceDetection).
 
 Typical usage
 -------------
 ObjectDetection (IMAGE output) ──► BBoxBlur (IMAGE input)
 ObjectDetection (JSON output)  ──► BBoxBlur (JSON input)
 
-The node reads bounding-box coordinates from the JSON input
-(keys ``bboxes``, ``scores``, ``score_th``) and blurs each region whose
-confidence score meets the threshold.  The result is useful for anonymizing
-faces detected by the BlazeFace model.
+  or
+
+FaceDetection (IMAGE output) ──► BBoxBlur (IMAGE input)
+FaceDetection (JSON output)  ──► BBoxBlur (JSON input)
+
+The node reads bounding-box coordinates from the JSON input and blurs each
+region whose confidence score meets the threshold.
+
+Supported JSON formats
+----------------------
+ObjectDetection: ``{'bboxes': [[x1,y1,x2,y2],...], 'scores': [s,...], ...}``
+FaceDetection:   ``{'results_list': [{'bbox': [x1,y1,x2,y2], 0: [x,y,score], ...}, ...], ...}``
 
 When no JSON input is connected the node passes the image through unmodified.
 """
@@ -80,6 +88,54 @@ def _blur_bboxes(
         result[y1:y2, x1:x2] = cv2.GaussianBlur(region, (k, k), 0)
 
     return result
+
+
+def _extract_bboxes_scores(json_data: dict):
+    """Return (bboxes, scores) from either ObjectDetection or FaceDetection JSON.
+
+    ObjectDetection format
+    ----------------------
+    ``{'bboxes': [[x1,y1,x2,y2],...], 'scores': [s,...], ...}``
+
+    FaceDetection format
+    --------------------
+    ``{'results_list': [{'bbox': [x1,y1,x2,y2], 0: [x,y,score], ...}, ...], ...}``
+    Each entry's score is taken from keypoint index 0:
+      - 3-element keypoints [x, y, score]  → score = kp[2]
+      - 4-element keypoints [x, y, z, score] → score = kp[3]
+    If no keypoint is present the detection is given a score of 1.0 so it is
+    always included (subject to the node's score-threshold slider).
+
+    Returns
+    -------
+    tuple[list, list]
+        (bboxes, scores) where bboxes is a list of [x1, y1, x2, y2] and
+        scores is a parallel list of float confidence values.
+        Both lists are empty when the JSON contains no recognisable data.
+    """
+    # ObjectDetection format ─ has an explicit 'bboxes' key
+    if 'bboxes' in json_data:
+        return json_data.get('bboxes', []), json_data.get('scores', [])
+
+    # FaceDetection format ─ has a 'results_list' key
+    results_list = json_data.get('results_list')
+    if results_list:
+        bboxes, scores = [], []
+        for result in results_list:
+            bbox = result.get('bbox')
+            if not bbox:
+                continue
+            bboxes.append(bbox)
+            keypoint = result.get(0, [])
+            if len(keypoint) >= 4:
+                scores.append(float(keypoint[3]))   # [x, y, z, score] – 3-D keypoint
+            elif len(keypoint) >= 3:
+                scores.append(float(keypoint[2]))   # [x, y, score]    – 2-D keypoint
+            else:
+                scores.append(1.0)
+        return bboxes, scores
+
+    return [], []
 
 
 class FactoryNode:
@@ -326,8 +382,7 @@ class Node(Node):  # noqa: F811
         # ---- Apply blur inside bounding boxes ---------------------------
         output_frame = frame
         if json_data and isinstance(json_data, dict):
-            bboxes = json_data.get('bboxes', [])
-            scores = json_data.get('scores', [])
+            bboxes, scores = _extract_bboxes_scores(json_data)
             if bboxes and scores:
                 output_frame = _blur_bboxes(
                     frame, bboxes, scores, score_th, kernel_size,

@@ -335,14 +335,14 @@ class Node(BaseNode):
                     # GUI item may not exist yet or be accessible
                     pass
 
-        # Process detections
+        # Process detections (supports both object detection and face detection formats)
         if node_result and isinstance(node_result, dict):
             class_ids = node_result.get('class_ids', [])
-            
+            results_list = node_result.get('results_list', [])
+
             if class_ids:
-                # Determine which class to count
+                # Object detection format: filter by class if needed
                 if selected_class == "All":
-                    # Count all detections
                     count = len(class_ids)
                     for _ in range(count):
                         self.detection_timestamps.append(current_time)
@@ -350,13 +350,19 @@ class Node(BaseNode):
                     # Parse "ID: name" format
                     try:
                         target_class_id = int(selected_class.split(":")[0].strip())
-                        # Count only detections of the selected class
                         count = sum(1 for cid in class_ids if int(cid) == target_class_id)
                         for _ in range(count):
                             self.detection_timestamps.append(current_time)
                     except (ValueError, IndexError, TypeError):
                         # Skip invalid class format - expected when class string is malformed
                         pass
+            elif results_list:
+                # Face detection format: each entry in results_list is one detected face.
+                # Class filtering is not applicable here because face detection only
+                # produces a single "face" class, so all detections are always counted.
+                count = len(results_list)
+                for _ in range(count):
+                    self.detection_timestamps.append(current_time)
         
         # Clean up old timestamps outside the sliding window
         cutoff_time = current_time - window_duration
