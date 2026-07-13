@@ -126,11 +126,11 @@ def _extract_bboxes_scores(json_data: dict):
             if not bbox:
                 continue
             bboxes.append(bbox)
-            kp = result.get(0, [])
-            if len(kp) >= 4:
-                scores.append(float(kp[3]))   # [x, y, z, score]
-            elif len(kp) >= 3:
-                scores.append(float(kp[2]))   # [x, y, score]
+            keypoint = result.get(0, [])
+            if len(keypoint) >= 4:
+                scores.append(float(keypoint[3]))   # [x, y, z, score] – 3-D keypoint
+            elif len(keypoint) >= 3:
+                scores.append(float(keypoint[2]))   # [x, y, score]    – 2-D keypoint
             else:
                 scores.append(1.0)
         return bboxes, scores
