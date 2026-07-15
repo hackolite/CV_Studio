@@ -35,6 +35,36 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.basenode import Node
 
 
+def _resolve_connection_sources(connection_list, type_image="IMAGE", type_json="JSON"):
+    """Parse a BBoxBlur connection list and return (src_image_key, src_json_key).
+
+    Each connection entry is ``[source_alias, dest_alias]`` where aliases use
+    the format ``"node_id:NodeTag:TYPE:PinName"``.
+
+    If no explicit JSON connection exists, the image source key is used as a
+    fallback so that users only need to wire the IMAGE output from a detection
+    node without a separate JSON wire.
+    """
+    src_image_key = ''
+    src_json_key = ''
+    for conn in connection_list:
+        conn_type = conn[0].split(':')[2]
+        src_key = ':'.join(conn[0].split(':')[:2])
+        if conn_type == type_image and not src_image_key:
+            src_image_key = src_key
+        elif conn_type == type_json and not src_json_key:
+            src_json_key = src_key
+
+    # If no explicit JSON connection is wired, automatically try to read
+    # detection JSON from the same source node as the IMAGE input.
+    # This allows users to connect only the IMAGE output from ObjectDetection
+    # or FaceDetection without needing a separate JSON wire.
+    if not src_json_key and src_image_key:
+        src_json_key = src_image_key
+
+    return src_image_key, src_json_key
+
+
 def _blur_bboxes(
     image: np.ndarray,
     bboxes,
@@ -359,22 +389,11 @@ class Node(Node):  # noqa: F811
             expand_h = 0
 
         # ---- Resolve connections ----------------------------------------
-        src_image_key = ''
-        src_json_key = ''
-        for conn in connection_list:
-            conn_type = conn[0].split(':')[2]
-            src_key = ':'.join(conn[0].split(':')[:2])
-            if conn_type == self.TYPE_IMAGE and not src_image_key:
-                src_image_key = src_key
-            elif conn_type == self.TYPE_JSON and not src_json_key:
-                src_json_key = src_key
-
-        # If no explicit JSON connection is wired, automatically try to read
-        # detection JSON from the same source node as the IMAGE input.
-        # This allows users to connect only the IMAGE output from ObjectDetection
-        # or FaceDetection without needing a separate JSON wire.
-        if not src_json_key and src_image_key:
-            src_json_key = src_image_key
+        src_image_key, src_json_key = _resolve_connection_sources(
+            connection_list,
+            type_image=self.TYPE_IMAGE,
+            type_json=self.TYPE_JSON,
+        )
 
         # ---- Fetch data -------------------------------------------------
         frame = node_image_dict.get(src_image_key, None) if src_image_key else None

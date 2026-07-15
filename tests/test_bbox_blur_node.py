@@ -21,7 +21,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # ---------------------------------------------------------------------------
 # Import only the pure-Python helpers – avoids the DearPyGUI / OpenCV GUI dep
 # ---------------------------------------------------------------------------
-from node.ProcessNode.node_bbox_blur import _extract_bboxes_scores, _blur_bboxes
+from node.ProcessNode.node_bbox_blur import (
+    _extract_bboxes_scores,
+    _blur_bboxes,
+    _resolve_connection_sources,
+)
 
 
 # ============================================================
@@ -101,29 +105,24 @@ class TestBlurBboxes:
 
     def test_blur_is_applied_inside_bbox(self):
         frame = self._grey_frame()
-        # Put a distinct pattern inside the target region
-        frame[50:150, 50:150] = 200
+        frame[60:70, 60:70] = 255   # small bright square inside bbox
+        original_frame = frame.copy()
         bboxes = [[50, 50, 150, 150]]
         scores = [0.9]
         result = _blur_bboxes(frame, bboxes, scores, score_th=0.3, kernel_size=15)
-        # The blurred region should no longer be uniformly 200
-        region = result[50:150, 50:150]
-        # GaussianBlur of a uniform patch is still that value – use a non-uniform patch
-        frame2 = self._grey_frame()
-        frame2[60:70, 60:70] = 255   # small bright square inside bbox
-        result2 = _blur_bboxes(frame2, bboxes, scores, score_th=0.3, kernel_size=15)
         # Outside bbox must be untouched
-        assert np.array_equal(result2[0:50, 0:50], frame2[0:50, 0:50])
+        assert np.array_equal(result[0:50, 0:50], original_frame[0:50, 0:50])
         # Inside bbox: the bright square should have been smeared out
-        assert not np.array_equal(result2[60:70, 60:70], frame2[60:70, 60:70])
+        assert not np.array_equal(result[60:70, 60:70], original_frame[60:70, 60:70])
 
     def test_outside_bbox_is_unchanged(self):
         frame = self._grey_frame()
         frame[10:20, 10:20] = 255   # bright area outside the bbox
+        original_frame = frame.copy()
         bboxes = [[80, 80, 150, 150]]
         scores = [0.9]
         result = _blur_bboxes(frame, bboxes, scores, score_th=0.3, kernel_size=15)
-        assert np.array_equal(result[10:20, 10:20], frame[10:20, 10:20])
+        assert np.array_equal(result[10:20, 10:20], original_frame[10:20, 10:20])
 
     def test_score_below_threshold_is_skipped(self):
         frame = self._grey_frame()
@@ -156,47 +155,9 @@ class TestBlurBboxes:
 
 class TestImplicitJsonFallback:
     """
-    Verify that BBoxBlur.update() uses JSON from the IMAGE source when no
-    explicit JSON connection is wired (the fix for the ObjectDetection use-case).
+    Verify that _resolve_connection_sources returns the correct keys and that
+    the implicit JSON fallback works when no explicit JSON wire is connected.
     """
-
-    def _make_node(self):
-        """Create a minimal BBoxBlur Node without DPG."""
-        from node.ProcessNode.node_bbox_blur import Node as BBoxBlurNode
-        node = BBoxBlurNode.__new__(BBoxBlurNode)
-        node._opencv_setting_dict = {
-            'process_width': 160,
-            'process_height': 120,
-            'use_pref_counter': False,
-        }
-        node.node_tag = 'BBoxBlur'
-        return node
-
-    def _run_update_logic(self, connection_list, node_image_dict, node_result_dict):
-        """
-        Execute only the connection-resolution + blur portion of update()
-        so we can test without a running DPG context.
-        """
-        TYPE_IMAGE = "IMAGE"
-        TYPE_JSON = "JSON"
-
-        src_image_key = ''
-        src_json_key = ''
-        for conn in connection_list:
-            conn_type = conn[0].split(':')[2]
-            src_key = ':'.join(conn[0].split(':')[:2])
-            if conn_type == TYPE_IMAGE and not src_image_key:
-                src_image_key = src_key
-            elif conn_type == TYPE_JSON and not src_json_key:
-                src_json_key = src_key
-
-        # Implicit fallback (the fix)
-        if not src_json_key and src_image_key:
-            src_json_key = src_image_key
-
-        frame = node_image_dict.get(src_image_key) if src_image_key else None
-        json_data = node_result_dict.get(src_json_key) if src_json_key else None
-        return frame, json_data
 
     def test_implicit_json_when_only_image_connected(self):
         """
@@ -206,6 +167,12 @@ class TestImplicitJsonFallback:
         connection_list = [
             ['0:ObjectDetection:IMAGE:Output01', '1:BBoxBlur:IMAGE:Input01'],
         ]
+        src_image_key, src_json_key = _resolve_connection_sources(connection_list)
+        assert src_image_key == '0:ObjectDetection'
+        assert src_json_key == '0:ObjectDetection', (
+            "json key must fall back to image source when no JSON wire exists"
+        )
+
         od_result = {
             'bboxes': [[10.0, 20.0, 110.0, 120.0]],
             'scores': [0.9],
@@ -215,9 +182,8 @@ class TestImplicitJsonFallback:
         node_image_dict = {'0:ObjectDetection': np.zeros((120, 160, 3), dtype=np.uint8)}
         node_result_dict = {'0:ObjectDetection': od_result}
 
-        frame, json_data = self._run_update_logic(
-            connection_list, node_image_dict, node_result_dict
-        )
+        frame = node_image_dict.get(src_image_key)
+        json_data = node_result_dict.get(src_json_key)
         assert frame is not None, "frame must be retrieved"
         assert json_data is not None, "json_data must be retrieved via implicit fallback"
         assert 'bboxes' in json_data
@@ -230,21 +196,21 @@ class TestImplicitJsonFallback:
             ['0:ObjectDetection:IMAGE:Output01', '1:BBoxBlur:IMAGE:Input01'],
             ['0:ObjectDetection:JSON:Output03', '1:BBoxBlur:JSON:Input02'],
         ]
-        od_result = {
-            'bboxes': [[10.0, 20.0, 110.0, 120.0]],
-            'scores': [0.9],
-        }
+        src_image_key, src_json_key = _resolve_connection_sources(connection_list)
+        assert src_image_key == '0:ObjectDetection'
+        assert src_json_key == '0:ObjectDetection'
+
+        od_result = {'bboxes': [[10.0, 20.0, 110.0, 120.0]], 'scores': [0.9]}
         node_image_dict = {'0:ObjectDetection': np.zeros((120, 160, 3), dtype=np.uint8)}
         node_result_dict = {'0:ObjectDetection': od_result}
 
-        frame, json_data = self._run_update_logic(
-            connection_list, node_image_dict, node_result_dict
-        )
+        frame = node_image_dict.get(src_image_key)
+        json_data = node_result_dict.get(src_json_key)
         assert frame is not None
         assert json_data == od_result
 
-    def test_no_connections_returns_none(self):
-        """No connections at all → frame and json_data are both None."""
-        frame, json_data = self._run_update_logic([], {}, {})
-        assert frame is None
-        assert json_data is None
+    def test_no_connections_returns_empty_keys(self):
+        """No connections at all → both keys are empty strings."""
+        src_image_key, src_json_key = _resolve_connection_sources([])
+        assert src_image_key == ''
+        assert src_json_key == ''
