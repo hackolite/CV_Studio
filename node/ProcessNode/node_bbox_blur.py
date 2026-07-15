@@ -369,6 +369,13 @@ class Node(Node):  # noqa: F811
             elif conn_type == self.TYPE_JSON and not src_json_key:
                 src_json_key = src_key
 
+        # If no explicit JSON connection is wired, automatically try to read
+        # detection JSON from the same source node as the IMAGE input.
+        # This allows users to connect only the IMAGE output from ObjectDetection
+        # or FaceDetection without needing a separate JSON wire.
+        if not src_json_key and src_image_key:
+            src_json_key = src_image_key
+
         # ---- Fetch data -------------------------------------------------
         frame = node_image_dict.get(src_image_key, None) if src_image_key else None
         json_data = node_result_dict.get(src_json_key, None) if src_json_key else None
