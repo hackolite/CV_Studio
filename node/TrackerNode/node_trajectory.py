@@ -254,7 +254,7 @@ class Node(Node):
             pts = list(points)
             if len(pts) < 2:
                 continue
-            color = self.get_color(int(tid) % _COLOR_CYCLE_MODULO)
+            color = self.get_color(hash(str(tid)) % _COLOR_CYCLE_MODULO)
             for i in range(1, len(pts)):
                 cv2.line(image, pts[i - 1], pts[i], color, thickness=thickness)
         return image
