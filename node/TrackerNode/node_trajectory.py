@@ -41,7 +41,8 @@ COCO_CLASSES = [
 # (index 0 in COCO_CLASSES is 'All classes', which is not a real COCO id)
 _COCO_NAME_TO_ID = {name: idx - 1 for idx, name in enumerate(COCO_CLASSES) if idx > 0}
 
-_DEFAULT_MAX_LEN = 60   # history length (frames)
+_DEFAULT_MAX_LEN = 60       # history length (frames)
+_COLOR_CYCLE_MODULO = 100   # cycle track-ID colours over this many slots
 
 
 class FactoryNode:
@@ -247,13 +248,13 @@ class Node(Node):
         return name == selected_class.lower()
 
     def _draw_trajectories(self, image, node_id_str, thickness):
-        """Draw all stored trajectory polylines onto *image* (in-place copy)."""
+        """Draw all stored trajectory polylines onto *image* (modifies in-place)."""
         traj_dict = self._trajectories.get(node_id_str, {})
         for tid, points in traj_dict.items():
             pts = list(points)
             if len(pts) < 2:
                 continue
-            color = self.get_color(tid % 100)
+            color = self.get_color(tid % _COLOR_CYCLE_MODULO)
             for i in range(1, len(pts)):
                 cv2.line(image, pts[i - 1], pts[i], color, thickness=thickness)
         return image
