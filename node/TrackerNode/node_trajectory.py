@@ -352,19 +352,18 @@ class Node(Node):
         output_frame = None
         if frame is not None:
             if opacity == 0:
-                # Skip trajectory drawing for performance; clear preview to original frame
-                output_frame = frame
-                texture = self.convert_cv_to_dpg(frame, small_window_w, small_window_h)
-                dpg_set_value(output_image_tag, texture)
+                # Black background, trajectories only — no frame blending needed
+                bg = np.zeros_like(frame)
+            elif opacity < 100:
+                alpha = opacity / 100.0
+                bg = (frame * alpha).astype(frame.dtype)
             else:
-                debug_frame = frame.copy()
-                debug_frame = self._draw_trajectories(debug_frame, node_id_str, thickness)
-                if opacity < 100:
-                    alpha = opacity / 100.0
-                    debug_frame = cv2.addWeighted(frame, 1.0 - alpha, debug_frame, alpha, 0)
-                output_frame = debug_frame
-                texture = self.convert_cv_to_dpg(debug_frame, small_window_w, small_window_h)
-                dpg_set_value(output_image_tag, texture)
+                # Copy to avoid modifying the shared frame in-place
+                bg = frame.copy()
+            bg = self._draw_trajectories(bg, node_id_str, thickness)
+            output_frame = bg
+            texture = self.convert_cv_to_dpg(bg, small_window_w, small_window_h)
+            dpg_set_value(output_image_tag, texture)
 
         if use_pref_counter and frame is not None:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
