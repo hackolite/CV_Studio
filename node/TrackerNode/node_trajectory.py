@@ -5,7 +5,6 @@ Trajectory node: receives tracking data from a MultiObjectTracking node and
 draws the trajectory (history of centre-point positions) of each tracked ID.
 A COCO-class filter lets the user restrict drawing to one class of interest.
 """
-import copy
 import time
 from collections import deque
 
@@ -79,6 +78,9 @@ class FactoryNode:
 
         node.tag_node_thickness_name = node.tag_node_name + ':Thickness'
         node.tag_node_thickness_value_name = node.tag_node_name + ':ThicknessValue'
+
+        node.tag_node_opacity_name = node.tag_node_name + ':Opacity'
+        node.tag_node_opacity_value_name = node.tag_node_name + ':OpacityValue'
 
         # ── output ports ─────────────────────────────────────────────────────
         node.tag_node_output01_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
@@ -189,6 +191,20 @@ class FactoryNode:
                     max_value=10,
                 )
 
+            # Image opacity slider (0 = hidden, 100 = fully opaque)
+            with dpg.node_attribute(
+                tag=node.tag_node_opacity_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_int(
+                    tag=node.tag_node_opacity_value_name,
+                    label='Image opacity',
+                    width=small_window_w - 80,
+                    default_value=100,
+                    min_value=0,
+                    max_value=100,
+                )
+
             # Elapsed time output
             if use_pref_counter:
                 with dpg.node_attribute(
@@ -286,6 +302,9 @@ class Node(Node):
         max_len = int(max_len) if max_len is not None else _DEFAULT_MAX_LEN
         thickness = dpg_get_value(thickness_tag)
         thickness = int(thickness) if thickness is not None else 2
+        opacity_tag = tag_node_name + ':OpacityValue'
+        opacity = dpg_get_value(opacity_tag)
+        opacity = int(opacity) if opacity is not None else 100
 
         # ── resolve connections ──────────────────────────────────────────────
         image_src = ''
@@ -332,11 +351,20 @@ class Node(Node):
 
         output_frame = None
         if frame is not None:
-            debug_frame = copy.deepcopy(frame)
-            debug_frame = self._draw_trajectories(debug_frame, node_id_str, thickness)
-            output_frame = debug_frame
-            texture = self.convert_cv_to_dpg(debug_frame, small_window_w, small_window_h)
-            dpg_set_value(output_image_tag, texture)
+            if opacity == 0:
+                # Skip trajectory drawing for performance; clear preview to original frame
+                output_frame = frame
+                texture = self.convert_cv_to_dpg(frame, small_window_w, small_window_h)
+                dpg_set_value(output_image_tag, texture)
+            else:
+                debug_frame = frame.copy()
+                debug_frame = self._draw_trajectories(debug_frame, node_id_str, thickness)
+                if opacity < 100:
+                    alpha = opacity / 100.0
+                    debug_frame = cv2.addWeighted(frame, 1.0 - alpha, debug_frame, alpha, 0)
+                output_frame = debug_frame
+                texture = self.convert_cv_to_dpg(debug_frame, small_window_w, small_window_h)
+                dpg_set_value(output_image_tag, texture)
 
         if use_pref_counter and frame is not None:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
@@ -355,6 +383,7 @@ class Node(Node):
         class_filter_tag = tag_node_name + ':ClassFilterValue'
         max_len_tag = tag_node_name + ':' + self.TYPE_INT + ':MaxLenValue'
         thickness_tag = tag_node_name + ':ThicknessValue'
+        opacity_tag = tag_node_name + ':OpacityValue'
         try:
             pos = dpg.get_item_pos(tag_node_name)
         except Exception:
@@ -365,6 +394,7 @@ class Node(Node):
             'class_filter': dpg_get_value(class_filter_tag) or 'All classes',
             'max_len': dpg_get_value(max_len_tag) or _DEFAULT_MAX_LEN,
             'thickness': dpg_get_value(thickness_tag) or 2,
+            'opacity': dpg_get_value(opacity_tag) if dpg_get_value(opacity_tag) is not None else 100,
         }
         return setting_dict
 
@@ -373,9 +403,11 @@ class Node(Node):
         class_filter_tag = tag_node_name + ':ClassFilterValue'
         max_len_tag = tag_node_name + ':' + self.TYPE_INT + ':MaxLenValue'
         thickness_tag = tag_node_name + ':ThicknessValue'
+        opacity_tag = tag_node_name + ':OpacityValue'
         try:
             dpg_set_value(class_filter_tag, setting_dict.get('class_filter', 'All classes'))
             dpg_set_value(max_len_tag, int(setting_dict.get('max_len', _DEFAULT_MAX_LEN)))
             dpg_set_value(thickness_tag, int(setting_dict.get('thickness', 2)))
+            dpg_set_value(opacity_tag, int(setting_dict.get('opacity', 100)))
         except Exception:
             pass
