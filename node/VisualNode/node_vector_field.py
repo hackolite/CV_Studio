@@ -17,6 +17,7 @@ Data is stored in a round-robin buffer with configurable retention:
 
 A "Cell size" slider controls the grid resolution (square cells, 10–200 px).
 """
+import math
 import time
 from collections import deque
 
@@ -34,6 +35,32 @@ _PERIOD_MODES = ['Minutes', 'Hours', 'Infinite']
 _DEFAULT_CELL_SIZE = 64
 _DEFAULT_PERIOD_MODE = 'Minutes'
 _DEFAULT_DURATION = 5
+
+
+def _draw_arrow(img, sx, sy, ex, ey, color, thickness, barb_angle=0.45, barb_ratio=0.30):
+    """Draw a precise arrow from (sx,sy) to (ex,ey) using cv2.line.
+
+    The arrowhead consists of two barb lines going back from the tip at
+    *barb_angle* radians on each side.  *barb_ratio* controls the barb
+    length relative to the total arrow length.
+    """
+    cv2.line(img, (sx, sy), (ex, ey), color, thickness, lineType=cv2.LINE_AA)
+
+    dx = ex - sx
+    dy = ey - sy
+    length = math.hypot(dx, dy)
+    if length < 1e-6:
+        return
+
+    barb_len = max(3, length * barb_ratio)
+    # Angle of the shaft
+    angle = math.atan2(dy, dx)
+
+    for sign in (+1, -1):
+        barb_angle_abs = angle + math.pi - sign * barb_angle
+        bx = int(ex + barb_len * math.cos(barb_angle_abs))
+        by = int(ey + barb_len * math.sin(barb_angle_abs))
+        cv2.line(img, (ex, ey), (bx, by), color, thickness, lineType=cv2.LINE_AA)
 
 
 def _speed_to_bgr(norm_speed: float):
@@ -384,25 +411,11 @@ class Node(Node):
                         color = _speed_to_bgr(norm_speed)
 
                         # Dark outline for contrast
-                        cv2.arrowedLine(
-                            overlay,
-                            (cx_cell, cy_cell),
-                            (ex, ey),
-                            (0, 0, 0),
-                            thickness=arrow_thickness + 2,
-                            tipLength=0.35,
-                            line_type=cv2.LINE_AA,
-                        )
+                        _draw_arrow(overlay, cx_cell, cy_cell, ex, ey,
+                                    (0, 0, 0), arrow_thickness + 2)
                         # Coloured arrow on top
-                        cv2.arrowedLine(
-                            overlay,
-                            (cx_cell, cy_cell),
-                            (ex, ey),
-                            color,
-                            thickness=arrow_thickness,
-                            tipLength=0.35,
-                            line_type=cv2.LINE_AA,
-                        )
+                        _draw_arrow(overlay, cx_cell, cy_cell, ex, ey,
+                                    color, arrow_thickness)
 
             # Draw faint grid lines on the overlay
             grid_color = (50, 50, 50)
