@@ -4,11 +4,11 @@
 VectorField node: receives tracking JSON from a MultiObjectTracking node and
 renders a vector field (arrows) on a grid overlay.
 
-Each cell of the grid shows the average velocity of tracked objects that have
-passed through it.  Arrow properties:
+Each cell of the grid shows the average velocity of tracked objects whose
+bounding box overlapped that cell.  Arrow properties:
   - direction   → motion direction
-  - thickness   → relative speed (1–6 px)
-  - color       → speed (blue=slow → green → red=fast)
+  - length      → fixed (uniform for all arrows)
+  - color       → speed norm (blue=slow → green → red=fast)
 
 Data is stored in a round-robin buffer with configurable retention:
   - Minutes  (1–60 min)
@@ -38,9 +38,9 @@ _DEFAULT_DURATION = 5
 
 def _speed_to_bgr(norm_speed: float):
     """Map a normalised speed in [0, 1] to a BGR colour (blue→green→red)."""
-    # Hue 240° (blue) → 120° (green) → 0° (red)
-    hue = int((1.0 - norm_speed) * 120)  # 0…120 → red…blue
-    hsv = np.array([[[hue, 220, 220]]], dtype=np.uint8)
+    # Hue 120° (green/blue) → 0° (red); full saturation and brightness for visibility
+    hue = int((1.0 - norm_speed) * 120)  # 0…120 → red…green
+    hsv = np.array([[[hue, 255, 255]]], dtype=np.uint8)
     bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
     return (int(bgr[0, 0, 0]), int(bgr[0, 0, 1]), int(bgr[0, 0, 2]))
 
@@ -212,7 +212,7 @@ class Node(Node):
         hist = self._history.get(node_id_str, {})
         for tid in list(hist.keys()):
             dq = hist[tid]
-            while dq and dq[0][2] < cutoff:
+            while dq and dq[0][4] < cutoff:
                 dq.popleft()
             if not dq:
                 del hist[tid]
@@ -277,11 +277,10 @@ class Node(Node):
             bboxes = json_data.get('bboxes', [])
             for tid, bbox in zip(track_ids, bboxes):
                 x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
-                cx = (x1 + x2) / 2.0
-                cy = (y1 + y2) / 2.0
                 if tid not in hist:
                     hist[tid] = deque()
-                hist[tid].append((cx, cy, now))
+                # Store full bbox + timestamp so all covered cells get contributions
+                hist[tid].append((x1, y1, x2, y2, now))
 
         # ── prune old entries ─────────────────────────────────────────────────
         self._prune_history(node_id_str, cutoff)
@@ -319,23 +318,28 @@ class Node(Node):
                 if len(pts) < 2:
                     continue
                 for i in range(1, len(pts)):
-                    px, py, pt = pts[i - 1]
-                    cx_, cy_, ct = pts[i]
+                    x1p, y1p, x2p, y2p, pt = pts[i - 1]
+                    x1c, y1c, x2c, y2c, ct = pts[i]
                     dt = ct - pt
                     if dt <= 1e-6:
                         continue
-                    # Velocity in display-pixel / second
-                    vx = (cx_ - px) / dt * scale_x
-                    vy = (cy_ - py) / dt * scale_y
-                    # Midpoint in display coords → grid cell
-                    mx = ((px + cx_) / 2.0) * scale_x
-                    my = ((py + cy_) / 2.0) * scale_y
-                    col = int(mx // cell_size)
-                    row = int(my // cell_size)
-                    if 0 <= col < n_cols and 0 <= row < n_rows:
-                        cell_vx[row, col] += vx
-                        cell_vy[row, col] += vy
-                        cell_cnt[row, col] += 1
+                    # Centre velocity in display-pixel / second
+                    vx = ((x1c + x2c) - (x1p + x2p)) / 2.0 / dt * scale_x
+                    vy = ((y1c + y2c) - (y1p + y2p)) / 2.0 / dt * scale_y
+                    # Average bbox in display coords covers all cells it overlaps
+                    ax1 = ((x1p + x1c) / 2.0) * scale_x
+                    ay1 = ((y1p + y1c) / 2.0) * scale_y
+                    ax2 = ((x2p + x2c) / 2.0) * scale_x
+                    ay2 = ((y2p + y2c) / 2.0) * scale_y
+                    col_min = max(0, int(ax1 // cell_size))
+                    col_max = min(n_cols - 1, int(ax2 // cell_size))
+                    row_min = max(0, int(ay1 // cell_size))
+                    row_max = min(n_rows - 1, int(ay2 // cell_size))
+                    for r in range(row_min, row_max + 1):
+                        for c in range(col_min, col_max + 1):
+                            cell_vx[r, c] += vx
+                            cell_vy[r, c] += vy
+                            cell_cnt[r, c] += 1
 
             # Build vector-field overlay
             overlay = np.zeros_like(display)
@@ -351,8 +355,9 @@ class Node(Node):
                 if max_speed < 1e-6:
                     max_speed = 1.0
 
-                # Arrow length is a fraction of the half-cell, scaled by norm_speed
-                arrow_max = max(2, half_cell - 4)
+                # All arrows share the same fixed length; only colour varies by speed
+                arrow_len = max(4, half_cell - 2)
+                arrow_thickness = 2
 
                 for r in range(n_rows):
                     for c in range(n_cols):
@@ -366,26 +371,35 @@ class Node(Node):
                         vx_ = avg_vx[r, c]
                         vy_ = avg_vy[r, c]
                         spd = speeds[r, c]
+                        if spd < 1e-9:
+                            continue
 
-                        # Normalise direction, scale arrow by relative speed
-                        arrow_len = int(arrow_max * norm_speed)
-                        if arrow_len < 1:
-                            arrow_len = 1
+                        # Unit direction vector; length is always arrow_len
                         nx = vx_ / spd
                         ny = vy_ / spd
 
                         ex = int(cx_cell + nx * arrow_len)
                         ey = int(cy_cell + ny * arrow_len)
 
-                        thickness = max(1, int(1 + norm_speed * 5))
                         color = _speed_to_bgr(norm_speed)
 
+                        # Dark outline for contrast
+                        cv2.arrowedLine(
+                            overlay,
+                            (cx_cell, cy_cell),
+                            (ex, ey),
+                            (0, 0, 0),
+                            thickness=arrow_thickness + 2,
+                            tipLength=0.35,
+                            line_type=cv2.LINE_AA,
+                        )
+                        # Coloured arrow on top
                         cv2.arrowedLine(
                             overlay,
                             (cx_cell, cy_cell),
                             (ex, ey),
                             color,
-                            thickness=thickness,
+                            thickness=arrow_thickness,
                             tipLength=0.35,
                             line_type=cv2.LINE_AA,
                         )
