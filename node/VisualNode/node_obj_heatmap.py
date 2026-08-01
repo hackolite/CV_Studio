@@ -11,6 +11,15 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node
 from node.VisualNode.heatmap_utils import get_colormap, ensure_odd_blur_size, COLORMAP_NAMES
+from node.DLNode.object_detection.coco_class_names import coco_class_names
+
+
+def get_class_dropdown_items():
+    """Generate dropdown items with class IDs and names from COCO dataset."""
+    items = ["All"]
+    for class_id, class_name in coco_class_names.items():
+        items.append(f"{class_id}: {class_name}")
+    return items
 
 # Guard against division by zero when memory_seconds is extremely small
 _MIN_MEMORY_SECONDS = 1e-6
@@ -118,7 +127,7 @@ class FactoryNode:
                 dpg.add_combo(
                     tag=node.tag_node_class_value_name,
                     label="Class",
-                    items=["All", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+                    items=get_class_dropdown_items(),
                     default_value="All",
                     width=small_window_w - 100,
                 )
@@ -129,7 +138,7 @@ class FactoryNode:
             ):
                 dpg.add_slider_int(
                     tag=node.tag_node_alpha_value_name,
-                    label="Memory (s) [max=\u221e]",
+                    label="Mmemory",
                     width=small_window_w - 80,
                     default_value=30,
                     min_value=1,
@@ -229,6 +238,58 @@ class Node(Node):
         # Timestamp of the last processed frame (used for time-based decay)
         self._last_update_time = None
 
+    def _build_dynamic_class_items(self, class_ids, class_names):
+        """Build dynamic combobox items from model class data.
+
+        Args:
+            class_ids: list of detected class IDs from input JSON
+            class_names: dict mapping class IDs (int or str) to human-readable names
+
+        Returns:
+            list of formatted strings like ["All", "0: person", "2: car"]
+        """
+        items = ["All"]
+        seen_ids = set()
+
+        if class_names:
+            for key in class_names.keys():
+                try:
+                    seen_ids.add(int(key))
+                except (ValueError, TypeError):
+                    pass
+
+        for cid in class_ids:
+            try:
+                seen_ids.add(int(cid))
+            except (ValueError, TypeError):
+                pass
+
+        for cid in sorted(seen_ids):
+            cid_str = str(cid)
+            name = None
+            if class_names:
+                name = class_names.get(cid_str) or class_names.get(cid)
+            if name is not None:
+                items.append(f"{cid}: {name}")
+            elif cid in coco_class_names:
+                items.append(f"{cid}: {coco_class_names[cid]}")
+            else:
+                items.append(f"{cid}: class_{cid}")
+
+        return items
+
+    def _update_class_combo(self, class_combo_tag, items):
+        """Update the class combo widget with new items, preserving current selection."""
+        if not dpg.does_item_exist(class_combo_tag):
+            return
+        normalized = [str(i) for i in items if i is not None]
+        if not normalized:
+            return
+        previous_value = dpg_get_value(class_combo_tag)
+        dpg.configure_item(class_combo_tag, items=normalized)
+        if previous_value not in normalized:
+            dpg_set_value(class_combo_tag, normalized[0])
+
     def _prepare_image_for_display(self, image, target_width, target_height):
         """
         Prepare an image for display by resizing and converting to BGR format.
@@ -319,6 +380,19 @@ class Node(Node):
         node_result = node_result_dict.get(connection_info_src_json, {})
         input_image = node_image_dict.get(connection_info_src_image, None)
 
+        # Dynamically update class combo from incoming JSON detection data
+        if node_result and isinstance(node_result, dict):
+            incoming_class_ids = node_result.get('class_ids', [])
+            incoming_class_names = node_result.get('class_names', {})
+            if incoming_class_ids or incoming_class_names:
+                dynamic_items = self._build_dynamic_class_items(
+                    incoming_class_ids, incoming_class_names
+                )
+                self._update_class_combo(class_tag, dynamic_items)
+
+        # Re-read selected_class after potential combo update
+        selected_class = dpg_get_value(class_tag)
+
         # Compute time-based EMA decay factor (O(1), no history buffer needed).
         # memory_seconds == 300 → infinite accumulation (decay = 1.0, full history
         # from node creation).  For any finite T, decay = exp(-dt / T) so that
@@ -379,9 +453,14 @@ class Node(Node):
                         if not class_ids or idx >= len(class_ids):
                             continue
                         try:
-                            if int(class_ids[idx]) != int(selected_class):
+                            # Parse "ID: name" format or plain integer
+                            if ":" in str(selected_class):
+                                target_class_id = int(str(selected_class).split(":")[0].strip())
+                            else:
+                                target_class_id = int(selected_class)
+                            if int(class_ids[idx]) != target_class_id:
                                 continue
-                        except (ValueError, TypeError):
+                        except (ValueError, TypeError, IndexError):
                             # Skip if class_id cannot be converted to int
                             continue
                     

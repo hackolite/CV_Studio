@@ -23,8 +23,17 @@ from node.TrackerNode.mot.ocsort.mc_ocsort import MultiClassOCSORT
 from node.TrackerNode.mot.botsort.mc_botsort import MultiClassBotSORT
 from node.TrackerNode.mot.kalman.mc_kalman import MultiClassKalmanFilter
 from src.utils.logging import get_logger
+from node.DLNode.object_detection.coco_class_names import coco_class_names
 
 logger = get_logger(__name__)
+
+
+def get_class_dropdown_items():
+    """Generate dropdown items with class IDs and names from COCO dataset."""
+    items = ["All"]
+    for class_id, class_name in coco_class_names.items():
+        items.append(f"{class_id}: {class_name}")
+    return items
 
 #from node.draw_node.draw_util.draw_util import draw_multi_object_tracking_info
 
@@ -74,6 +83,10 @@ class FactoryNode:
         # Tag for bounding box thickness slider
         node.tag_node_bbox_thickness_name = node.tag_node_name + ':BBoxThickness'
         node.tag_node_bbox_thickness_value_name = node.tag_node_name + ':BBoxThicknessValue'
+
+        # Tag for class filter combo
+        node.tag_node_class_filter_name = node.tag_node_name + ':ClassFilter'
+        node.tag_node_class_filter_value_name = node.tag_node_name + ':ClassFilterValue'
 
 
         node._opencv_setting_dict = opencv_setting_dict
@@ -200,6 +213,19 @@ class FactoryNode:
                     max_value=10,
                 )
 
+            # Class filter combo
+            with dpg.node_attribute(
+                    tag=node.tag_node_class_filter_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=node.tag_node_class_filter_value_name,
+                    label="Class",
+                    items=get_class_dropdown_items(),
+                    default_value="All",
+                    width=small_window_w - 100,
+                )
+
             if use_pref_counter:
                 with dpg.node_attribute(
                         tag=node.tag_node_output02_name,
@@ -256,6 +282,50 @@ class Node(Node):
 
     def __init__(self):
         pass
+
+    def _build_dynamic_class_items(self, class_ids, class_names):
+        """Build dynamic combobox items from model class data."""
+        items = ["All"]
+        seen_ids = set()
+
+        if class_names:
+            for key in class_names.keys():
+                try:
+                    seen_ids.add(int(key))
+                except (ValueError, TypeError):
+                    pass
+
+        for cid in class_ids:
+            try:
+                seen_ids.add(int(cid))
+            except (ValueError, TypeError):
+                pass
+
+        for cid in sorted(seen_ids):
+            cid_str = str(cid)
+            name = None
+            if class_names:
+                name = class_names.get(cid_str) or class_names.get(cid)
+            if name is not None:
+                items.append(f"{cid}: {name}")
+            elif cid in coco_class_names:
+                items.append(f"{cid}: {coco_class_names[cid]}")
+            else:
+                items.append(f"{cid}: class_{cid}")
+
+        return items
+
+    def _update_class_combo(self, class_combo_tag, items):
+        """Update the class combo widget with new items, preserving current selection."""
+        if not dpg.does_item_exist(class_combo_tag):
+            return
+        normalized = [str(i) for i in items if i is not None]
+        if not normalized:
+            return
+        previous_value = dpg_get_value(class_combo_tag)
+        dpg.configure_item(class_combo_tag, items=normalized)
+        if previous_value not in normalized:
+            dpg_set_value(class_combo_tag, normalized[0])
 
     def _is_valid_detection_format(self, data):
         """
@@ -317,6 +387,7 @@ class Node(Node):
         confidence_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':ConfThreshValue'
         enable_checkbox_tag = tag_node_name + ':EnableCheckbox'
         bbox_thickness_tag = tag_node_name + ':BBoxThicknessValue'
+        class_filter_tag = tag_node_name + ':ClassFilterValue'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
 
@@ -437,6 +508,26 @@ class Node(Node):
                 od_scores = node_result.get('scores', [])
                 od_class_ids = node_result.get('class_ids', [])
                 od_class_names = node_result.get('class_names', [])
+
+                # Dynamically update class filter combo from detection data
+                if od_class_ids or od_class_names:
+                    dynamic_items = self._build_dynamic_class_items(od_class_ids, od_class_names)
+                    self._update_class_combo(class_filter_tag, dynamic_items)
+
+                # Read selected class filter and apply it
+                selected_class = dpg_get_value(class_filter_tag)
+                if selected_class and selected_class != "All":
+                    try:
+                        if ":" in str(selected_class):
+                            target_class_id = int(str(selected_class).split(":")[0].strip())
+                        else:
+                            target_class_id = int(selected_class)
+                        mask_class = [int(cid) == target_class_id for cid in od_class_ids]
+                        od_bboxes = [b for b, keep in zip(od_bboxes, mask_class) if keep]
+                        od_scores = [s for s, keep in zip(od_scores, mask_class) if keep]
+                        od_class_ids = [c for c, keep in zip(od_class_ids, mask_class) if keep]
+                    except (ValueError, TypeError, IndexError):
+                        pass
                 
                 logger.debug(f"MOT received detections: {len(od_bboxes)} objects, class_ids={od_class_ids}")
                 
@@ -572,6 +663,7 @@ class Node(Node):
         confidence_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':ConfThreshValue'
         enable_checkbox_tag = tag_node_name + ':EnableCheckbox'
         bbox_thickness_tag = tag_node_name + ':BBoxThicknessValue'
+        class_filter_tag = tag_node_name + ':ClassFilterValue'
 
         # 選択モデル
         model_name = dpg_get_value(input_value02_tag)
@@ -589,6 +681,11 @@ class Node(Node):
         if bbox_thickness is None:
             bbox_thickness = self.DEFAULT_BBOX_THICKNESS
 
+        # Get class filter value
+        class_filter = dpg_get_value(class_filter_tag)
+        if class_filter is None:
+            class_filter = "All"
+
         pos = dpg.get_item_pos(tag_node_name)
 
         setting_dict = {}
@@ -598,6 +695,7 @@ class Node(Node):
         setting_dict[confidence_threshold_tag] = confidence_threshold
         setting_dict[enable_checkbox_tag] = enable_checkbox
         setting_dict[bbox_thickness_tag] = bbox_thickness
+        setting_dict[class_filter_tag] = class_filter
 
         return setting_dict
 
@@ -607,6 +705,7 @@ class Node(Node):
         confidence_threshold_tag = tag_node_name + ':' + self.TYPE_FLOAT + ':ConfThreshValue'
         enable_checkbox_tag = tag_node_name + ':EnableCheckbox'
         bbox_thickness_tag = tag_node_name + ':BBoxThicknessValue'
+        class_filter_tag = tag_node_name + ':ClassFilterValue'
 
         model_name = setting_dict[input_value02_tag]
 
@@ -623,3 +722,7 @@ class Node(Node):
         # Set bbox thickness with default value for backward compatibility
         bbox_thickness_value = setting_dict.get(bbox_thickness_tag, self.DEFAULT_BBOX_THICKNESS)
         dpg_set_value(bbox_thickness_tag, bbox_thickness_value)
+
+        # Set class filter with default value for backward compatibility
+        class_filter_value = setting_dict.get(class_filter_tag, "All")
+        dpg_set_value(class_filter_tag, class_filter_value)
