@@ -27,7 +27,7 @@ _MIN_MEMORY_SECONDS = 1e-6
 _ASSUMED_FPS_FOR_COMPAT = 30.0
 
 class FactoryNode:
-    node_label = 'ObjHeatMap'
+    node_label = 'Heatmap'
     node_tag = 'ObjHeatmap'
     
 
@@ -213,7 +213,7 @@ class FactoryNode:
 class Node(Node):
     _ver = '0.0.1'
 
-    node_label = 'ObjHeatMap'
+    node_label = 'Heatmap'
     node_tag = 'ObjHeatmap'
 
     
@@ -487,9 +487,16 @@ class Node(Node):
                 # No detections, just decay
                 self.heatmap_accum = self.heatmap_accum * decay
             
-            # Normalize and create colored heatmap
+            # Normalize and create colored heatmap.
+            # Use a high percentile (95th) as the normalization reference so that
+            # sparse detections (e.g. individual boats with low hit counts) are not
+            # crushed to near-zero by a single heavily-visited region.
             if self.heatmap_accum.max() > 0:
-                heatmap_norm = np.clip(self.heatmap_accum / self.heatmap_accum.max(), 0, 1)
+                nonzero_vals = self.heatmap_accum[self.heatmap_accum > 0]
+                norm_ref = float(np.percentile(nonzero_vals, 95))
+                if norm_ref <= 0:
+                    norm_ref = float(self.heatmap_accum.max())
+                heatmap_norm = np.clip(self.heatmap_accum / norm_ref, 0, 1)
             else:
                 heatmap_norm = self.heatmap_accum
             
