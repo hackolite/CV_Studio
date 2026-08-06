@@ -224,6 +224,17 @@ class FactoryNode:
                     width=small_window_w - 100,
                 )
 
+            # Flush button
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_button(
+                    label='Flush',
+                    width=small_window_w - 100,
+                    callback=lambda s, a, u: u.flush_data(),
+                    user_data=node,
+                )
+
             if use_pref_counter:
                 with dpg.node_attribute(
                         tag=node.tag_node_output02_name,
@@ -279,6 +290,13 @@ class Node(Chart):
         self.last_render_time = 0
         self.render_interval = 1.0  # Render chart at most once per second
         self.cached_chart_image = None
+
+    def flush_data(self):
+        """Clear all accumulated chart data and reset the output image to black."""
+        self.time_counts.clear()
+        self._avg_accumulators.clear()
+        self.cached_chart_image = None
+        self.current_chart_image = None
 
     @staticmethod
     def add_class_slot_callback(sender, app_data, user_data):

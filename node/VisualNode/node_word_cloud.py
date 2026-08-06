@@ -243,6 +243,15 @@ class FactoryNode:
                     label='ΔT (s)',
                 )
 
+            # ── Flush button ──────────────────────────────────────────
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_button(
+                    label='Flush',
+                    width=240,
+                    callback=lambda s, a, u: u.flush_data(),
+                    user_data=node,
+                )
+
             # ── Image output ──────────────────────────────────────────
             with dpg.node_attribute(
                 tag=node.tag_node_output_image_name,
@@ -284,6 +293,21 @@ class WordCloudNode(BaseNode):
         self._last_appended_text = ''
         # Combined text used for the last render (to detect changes)
         self._last_combined_text = ''
+        # Output texture tag (set during update; used by flush_data)
+        self._output_tex_tag = None
+
+    def flush_data(self):
+        """Clear the text buffer and force a re-render on next update."""
+        self._text_buffer = []
+        self._last_combined_text = ''
+        self._last_appended_text = ''
+        self._last_frame = None
+        if self._output_tex_tag is not None:
+            try:
+                texture = np.zeros(CANVAS_H * CANVAS_W * 3, dtype=np.float32)
+                dpg_set_value(self._output_tex_tag, texture)
+            except Exception:
+                pass
 
     def update(
         self, node_id, connection_list, node_image_dict,
@@ -293,6 +317,7 @@ class WordCloudNode(BaseNode):
         output_tex_tag = '{}:{}:OutputImageValue'.format(
             tag_node_name, self.TYPE_IMAGE,
         )
+        self._output_tex_tag = output_tex_tag
         tag_colourmap_value = tag_node_name + ':ColourmapValue'
         tag_max_words_value = tag_node_name + ':MaxWordsValue'
 

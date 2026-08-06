@@ -197,6 +197,17 @@ class FactoryNode:
                     callback=None,
                 )
 
+            # Flush button
+            with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_button(
+                    label='Flush',
+                    width=small_window_w,
+                    callback=lambda s, a, u: u.flush_data(),
+                    user_data=node,
+                )
+
             if use_pref_counter:
                 with dpg.node_attribute(
                         tag=node.tag_node_output02_name,
@@ -237,6 +248,20 @@ class Node(Node):
 
         # Timestamp of the last processed frame (used for time-based decay)
         self._last_update_time = None
+        # Tag of the output texture (set during update; used by flush_data)
+        self._output_image_tag = None
+
+    def flush_data(self):
+        """Clear the heatmap accumulator and reset the output image to black."""
+        self.heatmap_accum[:] = 0
+        self._last_update_time = None
+        if self._output_image_tag is not None:
+            try:
+                h, w = self.heatmap_accum.shape
+                texture = np.zeros(h * w * 3, dtype=np.float32)
+                dpg_set_value(self._output_image_tag, texture)
+            except Exception:
+                pass
 
     def _build_dynamic_class_items(self, class_ids, class_names):
         """Build dynamic combobox items from model class data.
@@ -343,6 +368,7 @@ class Node(Node):
         blend_tag = tag_node_name + ':BlendValue'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
+        self._output_image_tag = output_value01_tag
 
         small_window_w = self._opencv_setting_dict['process_width']
         small_window_h = self._opencv_setting_dict['process_height']

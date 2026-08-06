@@ -198,6 +198,16 @@ class FactoryNode:
                     max_value=1.0,
                 )
 
+            # Flush button
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_button(
+                    label='Flush',
+                    width=small_window_w,
+                    callback=lambda s, a, u: Node.flush_callback(s, a, u),
+                    user_data=(str(node_id), node.tag_node_output01_value_name,
+                               small_window_w, small_window_h),
+                )
+
             if use_pref_counter:
                 with dpg.node_attribute(
                     tag=node.tag_node_output02_name,
@@ -223,6 +233,16 @@ class Node(Node):
 
     def __init__(self):
         pass
+
+    # ── flush ─────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def flush_callback(sender, app_data, user_data):
+        """Clear all vector-field history and reset the output image to black."""
+        node_id_str, output_tag, w, h = user_data
+        Node._history[node_id_str] = {}
+        texture = np.zeros(h * w * 3, dtype=np.float32)
+        dpg_set_value(output_tag, texture)
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
