@@ -164,6 +164,9 @@ class FactoryNode:
         tag_node_delay_name = tag_node_name + ':Delay'
         tag_node_delay_value_name = tag_node_name + ':DelayValue'
 
+        tag_node_countdown_name = tag_node_name + ':Countdown'
+        tag_node_countdown_value_name = tag_node_name + ':CountdownValue'
+
         tag_node_status_name = tag_node_name + ':Status'
         tag_node_status_value_name = tag_node_name + ':StatusValue'
 
@@ -262,10 +265,21 @@ class FactoryNode:
             ):
                 dpg.add_slider_float(
                     tag=tag_node_delay_value_name,
+                    label='Delay (s)',
                     default_value=VLMNode.DEFAULT_INSENSITIVITY_DELAY,
                     min_value=0.0,
                     max_value=60.0,
-                    width=240,
+                    width=180,
+                )
+
+            # Countdown display (updated each frame during insensitivity period)
+            with dpg.node_attribute(
+                tag=tag_node_countdown_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_text(
+                    tag=tag_node_countdown_value_name,
+                    default_value='',
                 )
 
             # Status indicator
@@ -495,6 +509,7 @@ class VLMNode(BaseNode):
         tag_node_apikey_value_name = f"{tag_node_name}:ApiKeyValue"
         tag_node_prompt_value_name = f"{tag_node_name}:PromptValue"
         tag_node_delay_value_name = f"{tag_node_name}:DelayValue"
+        tag_node_countdown_value_name = f"{tag_node_name}:CountdownValue"
         tag_node_status_value_name = f"{tag_node_name}:StatusValue"
         tag_node_output_image_value_name = f"{tag_node_name}:{self.TYPE_IMAGE}:OutputImageValue"
         tag_node_output_canvas_image_name = f"{tag_node_name}:CanvasImage"
@@ -576,8 +591,11 @@ class VLMNode(BaseNode):
         if current_time < self._insensitivity_end_time:
             remaining = self._insensitivity_end_time - current_time
             dpg_set_value(tag_node_status_value_name, f'Next API call in {remaining:.1f}s')
+            dpg_set_value(tag_node_countdown_value_name, f'⏳ {remaining:.1f}s')
             json_out = {"TEXT": self._last_result_text, "prompt": self._last_prompt} if self._last_result_text else None
             return {"image": self._pending_frame, "json": json_out, "audio": None}
+        else:
+            dpg_set_value(tag_node_countdown_value_name, '')
 
         # Launch request in a subprocess when action fires and not already busy
         if should_act and frame is not None and not self._is_requesting:
