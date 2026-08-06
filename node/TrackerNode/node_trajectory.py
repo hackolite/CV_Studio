@@ -263,10 +263,13 @@ class Node(Node):
 
     @staticmethod
     def flush_callback(sender, app_data, user_data):
-        """Clear all trajectory history and reset the output image to black."""
+        """Clear all trajectory history and reset the output image to black.
+
+        Removes the node entry entirely so the next update() call reinitialises
+        it from scratch, preventing any stale-reference edge cases.
+        """
         node_id_str, output_tag, w, h = user_data
-        Node._trajectories[node_id_str] = {}
-        black = np.zeros((h, w, 3), dtype=np.uint8)
+        Node._trajectories.pop(node_id_str, None)
         texture = np.zeros(h * w * 3, dtype=np.float32)
         dpg_set_value(output_tag, texture)
 

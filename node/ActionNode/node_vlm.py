@@ -174,9 +174,7 @@ class FactoryNode:
         # Text canvas for the output
         canvas_w = small_window_w
         node.TEXT_CANVAS_W = canvas_w
-        canvas_min_h = canvas_w
-        node.TEXT_CANVAS_MIN_H = canvas_min_h
-        canvas_h = VLMNode.TEXT_CANVAS_H
+        canvas_h = VLMNode.TEXT_CANVAS_H   # fixed height – never changes at runtime
         black_canvas = np.zeros((canvas_h, canvas_w, 3))
         canvas_texture = node.convert_cv_to_dpg(black_canvas, canvas_w, canvas_h)
 
@@ -288,7 +286,8 @@ class FactoryNode:
                 dpg.add_image(
                     node.tag_node_output_image_value_name,
                     tag=node.tag_node_output_canvas_image_name,
-                    height=canvas_min_h,
+                    width=canvas_w,
+                    height=canvas_h,
                 )
 
             # JSON text output
@@ -307,20 +306,19 @@ class FactoryNode:
 
 
 class VLMNode(BaseNode):
-    _ver = '0.0.2'
+    _ver = '0.0.3'
 
     DEFAULT_API_KEY = ''
     DEFAULT_PROMPT = 'Describe this image in detail.'
     DEFAULT_INSENSITIVITY_DELAY = 0.0
 
-    MAX_LINES = 20
-    TEXT_CANVAS_W = 220       # narrow canvas for portrait orientation
-    TEXT_CANVAS_H = 760       # max texture height; 20 lines * 36px + 40px margin
-    TEXT_CANVAS_MIN_H = 300   # minimum display height
-    TEXT_LINE_HEIGHT = 36
-    TEXT_FONT_SCALE = 1.1
-    TEXT_THICKNESS = 2
-    TEXT_MARGIN = 10
+    MAX_LINES = 50
+    TEXT_CANVAS_W = 220       # canvas width (overridden per-node in add_node)
+    TEXT_CANVAS_H = 400       # fixed canvas height – never resized dynamically
+    TEXT_FONT_SCALE_MAX = 1.0 # maximum font scale (used when text is short)
+    TEXT_FONT_SCALE_MIN = 0.30
+    TEXT_THICKNESS = 1
+    TEXT_MARGIN = 8
 
     def __init__(self):
         super().__init__()
@@ -329,8 +327,7 @@ class VLMNode(BaseNode):
         self._available_models = []
         self._last_result_text = ''
         self._last_prompt = ''
-        self._text_lines = deque(maxlen=self.MAX_LINES)  # rolling 20-line buffer
-        self._new_lines_count = 0  # number of lines from the latest API response
+        self._text_lines = deque(maxlen=self.MAX_LINES)
         self._is_requesting = False
         self._request_process = None
         self._result_queue = None
@@ -344,51 +341,108 @@ class VLMNode(BaseNode):
             return None
         return base64.b64encode(buffer).decode('utf-8')
 
-    def _wrap_text_to_lines(self, text, max_width):
-        """Wrap text into lines that fit within max_width pixels at the canvas font size."""
+    @staticmethod
+    def _word_color(word):
+        """Return a BGR color for a word based on its semantic category.
+
+        - Numbers / percentages  → gold
+        - ALL-CAPS abbreviations → orange
+        - Capitalised words      → light cyan (possible proper nouns / key terms)
+        - Everything else        → white
+        """
+        clean = word.strip('.,!?;:()[]{}"\'-_*#')
+        if not clean:
+            return (255, 255, 255)
+        # Numbers (integers, floats, percentages)
+        try:
+            float(clean.rstrip('%'))
+            return (30, 200, 255)   # gold / amber (BGR)
+        except ValueError:
+            pass
+        # ALL-CAPS abbreviations (≥ 2 alpha chars, e.g. AI, VLM, GPS)
+        if len(clean) >= 2 and clean.isupper() and clean.isalpha():
+            return (0, 165, 255)    # orange (BGR)
+        # Capitalised words (proper nouns, start of key phrases)
+        if len(clean) >= 2 and clean[0].isupper():
+            return (180, 230, 100)  # soft lime-green (BGR)
+        return (255, 255, 255)      # white
+
+    def _wrap_at_scale(self, text, max_width, scale):
+        """Word-wrap *text* so each line fits within *max_width* pixels at *scale*."""
         font = cv2.FONT_HERSHEY_SIMPLEX
         words = text.split()
         lines = []
-        current_line = ''
+        current = ''
         for word in words:
-            test_line = (current_line + ' ' + word).strip()
-            (tw, _), _ = cv2.getTextSize(
-                test_line, font, self.TEXT_FONT_SCALE, self.TEXT_THICKNESS
-            )
+            test = (current + ' ' + word).strip()
+            (tw, _), _ = cv2.getTextSize(test, font, scale, self.TEXT_THICKNESS)
             if tw <= max_width:
-                current_line = test_line
+                current = test
             else:
-                if current_line:
-                    lines.append(current_line)
-                current_line = word
-        if current_line:
-            lines.append(current_line)
-        return lines
+                if current:
+                    lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+        return lines if lines else ['']
+
+    def _wrap_text_to_lines(self, text, max_width):
+        """Wrap at the maximum font scale (kept for legacy compatibility)."""
+        return self._wrap_at_scale(text, max_width, self.TEXT_FONT_SCALE_MAX)
 
     def _render_text_canvas(self):
-        """Render the rolling 20-line text buffer onto a black canvas with large clear text.
+        """Render the last VLM response on a fixed-size canvas.
 
-        All lines are rendered in white.
-        Empty spacer lines (inserted between responses) advance the vertical position
-        without drawing text, creating visual separation between responses.
+        The font scale is computed iteratively so that all lines fit inside
+        the canvas height.  Each word is coloured by category (numbers, proper
+        nouns, abbreviations) to improve readability.  The canvas size is
+        always TEXT_CANVAS_H × TEXT_CANVAS_W – it is never resized.
         """
         canvas = np.zeros((self.TEXT_CANVAS_H, self.TEXT_CANVAS_W, 3), dtype=np.uint8)
+        text = self._last_result_text
+        if not text:
+            return canvas
+
         font = cv2.FONT_HERSHEY_SIMPLEX
-        lines = list(self._text_lines)
-        for i, line in enumerate(lines):
-            y = self.TEXT_MARGIN + (i + 1) * self.TEXT_LINE_HEIGHT
-            # Defensive guard: the deque is bounded to MAX_LINES so this should never trigger
-            if y > self.TEXT_CANVAS_H - self.TEXT_MARGIN:
+        margin = self.TEXT_MARGIN
+        max_w = self.TEXT_CANVAS_W - 2 * margin
+        avail_h = self.TEXT_CANVAS_H - 2 * margin
+
+        # ── iterative adaptive font scale ────────────────────────────────────
+        scale = self.TEXT_FONT_SCALE_MAX
+        lines = self._wrap_at_scale(text, max_w, scale)
+        for _ in range(5):
+            n = max(len(lines), 1)
+            (_, ch), bl = cv2.getTextSize('Mg', font, scale, self.TEXT_THICKNESS)
+            lh = ch + bl + max(3, int(ch * 0.25))   # text height + descender + spacing
+            new_scale = scale * (avail_h / (n * lh))
+            new_scale = max(self.TEXT_FONT_SCALE_MIN, min(self.TEXT_FONT_SCALE_MAX, new_scale))
+            if abs(new_scale - scale) < 0.02:
                 break
-            if not line:  # spacer line: advance position without drawing
-                continue
-            color = (255, 255, 255)  # white (BGR)
-            cv2.putText(
-                canvas, line,
-                (self.TEXT_MARGIN, y),
-                font, self.TEXT_FONT_SCALE, color,
-                self.TEXT_THICKNESS, cv2.LINE_AA,
-            )
+            scale = new_scale
+            lines = self._wrap_at_scale(text, max_w, scale)
+
+        # ── final line-height at the chosen scale ────────────────────────────
+        (_, ch), bl = cv2.getTextSize('Mg', font, scale, self.TEXT_THICKNESS)
+        lh = ch + bl + max(3, int(ch * 0.25))
+        thickness = max(1, int(scale * 2))
+
+        # Cache wrapped lines for any external callers that inspect _text_lines
+        self._text_lines = deque(lines, maxlen=self.MAX_LINES)
+
+        # ── render word-by-word with per-word colours ────────────────────────
+        for i, line in enumerate(lines):
+            y = margin + ch + i * lh
+            if y > self.TEXT_CANVAS_H - margin:
+                break
+            x = margin
+            for word in line.split():
+                color = self._word_color(word)
+                cv2.putText(canvas, word, (x, y), font, scale, color,
+                            thickness, cv2.LINE_AA)
+                (ww, _), _ = cv2.getTextSize(word + ' ', font, scale, thickness)
+                x += ww
+
         return canvas
 
     def _draw_text_on_image(self, frame, text):
@@ -504,25 +558,13 @@ class VLMNode(BaseNode):
                 if 'error' in result:
                     dpg_set_value(tag_node_status_value_name, result['error'])
                 else:
-                    result_text = result['text']
-                    self._last_result_text = result_text
-                    max_text_w = self.TEXT_CANVAS_W - 2 * self.TEXT_MARGIN
-                    new_lines = self._wrap_text_to_lines(result_text, max_text_w)
-                    # Only display the latest response – clear previous text
-                    self._text_lines.clear()
-                    for line in new_lines:
-                        self._text_lines.append(line)
-                    self._new_lines_count = len(new_lines)
+                    self._last_result_text = result['text']
                     output_frame = self._render_text_canvas()
                     self._pending_frame = output_frame
                     texture = self.convert_cv_to_dpg(output_frame, self.TEXT_CANVAS_W, self.TEXT_CANVAS_H)
                     try:
                         dpg_set_value(tag_node_output_image_value_name, texture)
-                        # Dynamically resize: small for short text, grows for long text
-                        n_lines = len(self._text_lines)
-                        needed_h = 2 * self.TEXT_MARGIN + n_lines * self.TEXT_LINE_HEIGHT
-                        display_h = max(self.TEXT_CANVAS_MIN_H, min(needed_h, self.TEXT_CANVAS_H))
-                        dpg.configure_item(tag_node_output_canvas_image_name, height=display_h)
+                        # Canvas size is fixed – no dynamic resizing
                     except (SystemError, AttributeError):
                         pass
                     dpg_set_value(tag_node_status_value_name, 'Ready')
