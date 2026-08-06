@@ -297,6 +297,7 @@ class Node(Chart):
         self._avg_accumulators.clear()
         self.cached_chart_image = None
         self.current_chart_image = None
+        self.last_render_time = 0
 
     @staticmethod
     def add_class_slot_callback(sender, app_data, user_data):
