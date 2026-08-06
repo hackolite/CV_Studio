@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import base64
-import multiprocessing
 import queue
+import threading
 import time
 from collections import deque
 
@@ -568,7 +568,6 @@ class VLMNode(BaseNode):
         if self._result_queue is not None:
             try:
                 result = self._result_queue.get_nowait()
-                self._result_queue.close()
                 self._result_queue = None
                 if 'error' in result:
                     dpg_set_value(tag_node_status_value_name, result['error'])
@@ -608,8 +607,8 @@ class VLMNode(BaseNode):
                 self._last_prompt = prompt
                 self._insensitivity_end_time = current_time + insensitivity_delay
                 dpg_set_value(tag_node_status_value_name, 'Requesting...')
-                self._result_queue = multiprocessing.Queue()
-                self._request_process = multiprocessing.Process(
+                self._result_queue = queue.Queue()
+                self._request_process = threading.Thread(
                     target=_vlm_request_worker,
                     args=(self._result_queue, api_key, model, prompt, frame.copy()),
                     daemon=True,
@@ -623,7 +622,6 @@ class VLMNode(BaseNode):
         """Clean up when node is closed."""
         self._is_requesting = False
         if self._request_process and self._request_process.is_alive():
-            self._request_process.terminate()
             self._request_process.join(timeout=1.0)
 
     def get_setting_dict(self, node_id):
