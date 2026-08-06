@@ -15,9 +15,44 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node as BaseNode
 
+OPENROUTER_API_URL = 'https://openrouter.ai/api/v1'
+OPENROUTER_MODELS_URL = f'{OPENROUTER_API_URL}/models'
 
-def _vlm_request_worker(result_queue, server, model, caption, frame):
-    """Run a VLM HTTP request in a subprocess.
+
+def fetch_free_vision_models():
+    """Fetch free vision-capable models from OpenRouter.
+
+    Returns a list of model IDs (strings) ending with ``:free`` that declare
+    an image input modality.  Falls back to a hard-coded minimal list when the
+    network is unavailable.
+    """
+    fallback = [
+        'meta-llama/llama-4-scout:free',
+        'google/gemini-2.0-flash-exp:free',
+        'qwen/qwen2.5-vl-72b-instruct:free',
+    ]
+    try:
+        response = requests.get(OPENROUTER_MODELS_URL, timeout=10)
+        response.raise_for_status()
+        data = response.json().get('data', [])
+        vision_free = []
+        for model in data:
+            model_id = model.get('id', '')
+            if not model_id.endswith(':free'):
+                continue
+            arch = model.get('architecture', {})
+            modality = arch.get('input_modalities') or arch.get('modality', '')
+            if isinstance(modality, str):
+                modality = [modality]
+            if any('image' in m.lower() or 'vision' in m.lower() for m in modality):
+                vision_free.append(model_id)
+        return vision_free if vision_free else fallback
+    except Exception:
+        return fallback
+
+
+def _vlm_request_worker(result_queue, api_key, model, prompt, frame):
+    """Run an OpenRouter VLM request in a subprocess.
 
     Runs entirely outside the main process so the GUI event loop is never
     blocked.  Results are returned through *result_queue* as a dict:
@@ -30,15 +65,43 @@ def _vlm_request_worker(result_queue, server, model, caption, frame):
             result_queue.put({'error': 'Encode error'})
             return
         img_b64 = base64.b64encode(buffer).decode('utf-8')
-        payload = {'model': model, 'caption': caption, 'image': img_b64}
+        headers = {
+            'Authorization': 'Bearer ' + api_key,
+            'Content-Type': 'application/json',
+        }
+        payload = {
+            'model': model,
+            'messages': [
+                {
+                    'role': 'user',
+                    'content': [
+                        {
+                            'type': 'image_url',
+                            'image_url': {
+                                'url': f'data:image/jpeg;base64,{img_b64}',
+                            },
+                        },
+                        {
+                            'type': 'text',
+                            'text': prompt,
+                        },
+                    ],
+                }
+            ],
+        }
         response = requests.post(
-            server.rstrip('/') + '/vlm',
+            f'{OPENROUTER_API_URL}/chat/completions',
+            headers=headers,
             json=payload,
-            timeout=30,
+            timeout=60,
         )
         response.raise_for_status()
         data = response.json()
-        result_text = data.get('result', data.get('text', str(data)))
+        result_text = (
+            data.get('choices', [{}])[0]
+            .get('message', {})
+            .get('content', str(data))
+        )
         result_queue.put({'text': result_text})
     except requests.exceptions.ConnectionError:
         result_queue.put({'error': 'Connection error'})
@@ -47,7 +110,7 @@ def _vlm_request_worker(result_queue, server, model, caption, frame):
     except requests.exceptions.HTTPError as e:
         result_queue.put({'error': f'HTTP {e.response.status_code}'})
     except Exception as e:
-        result_queue.put({'error': f'Error: {str(e)[:40]}'})
+        result_queue.put({'error': f'Error: {str(e)[:60]}'})
 
 
 class FactoryNode:
@@ -58,10 +121,14 @@ class FactoryNode:
         pass
 
     def add_node(self, parent, node_id, pos=[0, 0], callback=None, opencv_setting_dict=None):
-        """Adds a VLM (Vision Language Model) node to the processing graph."""
+        """Adds a VLM (Vision Language Model) node using OpenRouter free models."""
+
+        # Fetch available free vision models at node creation time
+        available_models = fetch_free_vision_models()
 
         node = VLMNode()
         node.tag_node_name = f"{node_id}:{node.node_tag}"
+        node._available_models = available_models
 
         tag_node_name = node.tag_node_name
 
@@ -73,7 +140,7 @@ class FactoryNode:
         node.tag_node_input_image_name = tag_node_name + ':' + node.TYPE_IMAGE + ':InputImage'
         node.tag_node_input_image_value_name = tag_node_name + ':' + node.TYPE_IMAGE + ':InputImageValue'
 
-        # Image Output
+        # Image Output (text canvas)
         node.tag_node_output_image_name = tag_node_name + ':' + node.TYPE_IMAGE + ':OutputImage'
         node.tag_node_output_image_value_name = tag_node_name + ':' + node.TYPE_IMAGE + ':OutputImageValue'
 
@@ -88,11 +155,11 @@ class FactoryNode:
         tag_node_model_name = tag_node_name + ':Model'
         tag_node_model_value_name = tag_node_name + ':ModelValue'
 
-        tag_node_caption_name = tag_node_name + ':Caption'
-        tag_node_caption_value_name = tag_node_name + ':CaptionValue'
+        tag_node_apikey_name = tag_node_name + ':ApiKey'
+        tag_node_apikey_value_name = tag_node_name + ':ApiKeyValue'
 
-        tag_node_server_name = tag_node_name + ':Server'
-        tag_node_server_value_name = tag_node_name + ':ServerValue'
+        tag_node_prompt_name = tag_node_name + ':Prompt'
+        tag_node_prompt_value_name = tag_node_name + ':PromptValue'
 
         tag_node_delay_name = tag_node_name + ':Delay'
         tag_node_delay_value_name = tag_node_name + ':DelayValue'
@@ -103,27 +170,26 @@ class FactoryNode:
         # Set opencv settings
         node._opencv_setting_dict = opencv_setting_dict or {}
         small_window_w = node._opencv_setting_dict.get('process_width', 240)
-        small_window_h = node._opencv_setting_dict.get('process_height', 135)
 
-        black_image = np.zeros((small_window_h, small_window_w, 3))
-        black_texture = node.convert_cv_to_dpg(black_image, small_window_w, small_window_h)
-
-        # Text canvas for the output: same width as the input image (bounding box)
+        # Text canvas for the output
         canvas_w = small_window_w
-        node.TEXT_CANVAS_W = small_window_w
-        # Ensure the minimum display height is at least as large as the canvas width
-        # so the text area is never wider than tall (portrait orientation).
+        node.TEXT_CANVAS_W = canvas_w
         canvas_min_h = canvas_w
         node.TEXT_CANVAS_MIN_H = canvas_min_h
         canvas_h = VLMNode.TEXT_CANVAS_H
         black_canvas = np.zeros((canvas_h, canvas_w, 3))
         canvas_texture = node.convert_cv_to_dpg(black_canvas, canvas_w, canvas_h)
 
+        # Dummy texture for the (unused) input slot – kept so connection logic works
+        small_window_h = node._opencv_setting_dict.get('process_height', 135)
+        black_image = np.zeros((small_window_h, small_window_w, 3))
+        dummy_texture = node.convert_cv_to_dpg(black_image, small_window_w, small_window_h)
+
         with dpg.texture_registry(show=False):
             dpg.add_raw_texture(
                 small_window_w,
                 small_window_h,
-                black_texture,
+                dummy_texture,
                 tag=node.tag_node_input_image_value_name,
                 format=dpg.mvFormat_Float_rgb,
             )
@@ -146,46 +212,49 @@ class FactoryNode:
                     default_value='Trigger JSON (bool)',
                 )
 
-            # Image input
+            # Image input (hidden preview – connector still available)
             with dpg.node_attribute(
                 tag=node.tag_node_input_image_name,
                 attribute_type=dpg.mvNode_Attr_Input,
             ):
-                dpg.add_image(node.tag_node_input_image_value_name)
+                dpg.add_text(default_value='Image input')
 
-            # Model combobox
+            # OpenRouter API key field
+            with dpg.node_attribute(
+                tag=tag_node_apikey_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_input_text(
+                    tag=tag_node_apikey_value_name,
+                    hint='OpenRouter API key (sk-or-...)',
+                    default_value=VLMNode.DEFAULT_API_KEY,
+                    width=240,
+                )
+
+            # Model combobox (populated with free vision models fetched at startup)
             with dpg.node_attribute(
                 tag=tag_node_model_name,
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
+                default_model = available_models[0] if available_models else ''
                 dpg.add_combo(
                     tag=tag_node_model_value_name,
-                    items=VLMNode.MODELS,
-                    default_value=VLMNode.MODELS[0],
+                    items=available_models,
+                    default_value=default_model,
                     width=240,
                 )
 
-            # Caption type combobox (Florence2 task tokens)
+            # Prompt / question field
             with dpg.node_attribute(
-                tag=tag_node_caption_name,
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_combo(
-                    tag=tag_node_caption_value_name,
-                    items=VLMNode.FLORENCE2_CAPTION_TYPES,
-                    default_value=VLMNode.DEFAULT_CAPTION,
-                    width=240,
-                )
-
-            # Server address field
-            with dpg.node_attribute(
-                tag=tag_node_server_name,
+                tag=tag_node_prompt_name,
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_input_text(
-                    tag=tag_node_server_value_name,
-                    default_value=VLMNode.DEFAULT_SERVER,
+                    tag=tag_node_prompt_value_name,
+                    default_value=VLMNode.DEFAULT_PROMPT,
                     width=240,
+                    multiline=True,
+                    height=60,
                 )
 
             # Insensitivity delay slider
@@ -211,7 +280,7 @@ class FactoryNode:
                     default_value='Ready',
                 )
 
-            # Image output
+            # Text-canvas output (image connector carrying the rendered text)
             with dpg.node_attribute(
                 tag=node.tag_node_output_image_name,
                 attribute_type=dpg.mvNode_Attr_Output,
@@ -238,21 +307,10 @@ class FactoryNode:
 
 
 class VLMNode(BaseNode):
-    _ver = '0.0.1'
+    _ver = '0.0.2'
 
-    MODELS = ['florence-base', 'moondream']
-    FLORENCE2_CAPTION_TYPES = [
-        '<CAPTION>',
-        '<DETAILED_CAPTION>',
-        '<MORE_DETAILED_CAPTION>',
-        '<OD>',
-        '<DENSE_REGION_CAPTION>',
-        '<REGION_PROPOSAL>',
-        '<OCR>',
-        '<OCR_WITH_REGION>',
-    ]
-    DEFAULT_CAPTION = '<CAPTION>'
-    DEFAULT_SERVER = 'http://10.217.172.75:8000'
+    DEFAULT_API_KEY = ''
+    DEFAULT_PROMPT = 'Describe this image in detail.'
     DEFAULT_INSENSITIVITY_DELAY = 0.0
 
     MAX_LINES = 20
@@ -268,8 +326,9 @@ class VLMNode(BaseNode):
         super().__init__()
         self.node_label = 'VLM'
         self.node_tag = 'VLM'
+        self._available_models = []
         self._last_result_text = ''
-        self._last_caption_type = ''
+        self._last_prompt = ''
         self._text_lines = deque(maxlen=self.MAX_LINES)  # rolling 20-line buffer
         self._new_lines_count = 0  # number of lines from the latest API response
         self._is_requesting = False
@@ -379,16 +438,12 @@ class VLMNode(BaseNode):
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
         tag_node_name = f"{node_id}:{self.node_tag}"
         tag_node_model_value_name = f"{tag_node_name}:ModelValue"
-        tag_node_caption_value_name = f"{tag_node_name}:CaptionValue"
-        tag_node_server_value_name = f"{tag_node_name}:ServerValue"
+        tag_node_apikey_value_name = f"{tag_node_name}:ApiKeyValue"
+        tag_node_prompt_value_name = f"{tag_node_name}:PromptValue"
         tag_node_delay_value_name = f"{tag_node_name}:DelayValue"
         tag_node_status_value_name = f"{tag_node_name}:StatusValue"
-        tag_node_input_image_value_name = f"{tag_node_name}:{self.TYPE_IMAGE}:InputImageValue"
         tag_node_output_image_value_name = f"{tag_node_name}:{self.TYPE_IMAGE}:OutputImageValue"
         tag_node_output_canvas_image_name = f"{tag_node_name}:CanvasImage"
-
-        small_window_w = self._opencv_setting_dict.get('process_width', 240) if self._opencv_setting_dict else 240
-        small_window_h = self._opencv_setting_dict.get('process_height', 135) if self._opencv_setting_dict else 135
 
         # Find connected JSON trigger and image sources
         connection_info_trigger = None
@@ -418,14 +473,6 @@ class VLMNode(BaseNode):
             src_key = ':'.join(connection_info_image.split(':')[:2])
             frame = node_image_dict.get(src_key, None)
 
-        # Update input image preview
-        if frame is not None:
-            texture = self.convert_cv_to_dpg(frame, small_window_w, small_window_h)
-            try:
-                dpg_set_value(tag_node_input_image_value_name, texture)
-            except (SystemError, AttributeError):
-                pass
-
         # Determine if action is triggered
         should_act = False
         if trigger_json and isinstance(trigger_json, dict):
@@ -438,9 +485,9 @@ class VLMNode(BaseNode):
                         break
 
         # Get configuration values
-        model = dpg_get_value(tag_node_model_value_name) or self.MODELS[0]
-        caption = dpg_get_value(tag_node_caption_value_name) or self.DEFAULT_CAPTION
-        server = dpg_get_value(tag_node_server_value_name) or self.DEFAULT_SERVER
+        api_key = dpg_get_value(tag_node_apikey_value_name) or self.DEFAULT_API_KEY
+        model = dpg_get_value(tag_node_model_value_name) or (self._available_models[0] if self._available_models else '')
+        prompt = dpg_get_value(tag_node_prompt_value_name) or self.DEFAULT_PROMPT
         try:
             insensitivity_delay = float(dpg_get_value(tag_node_delay_value_name))
         except (ValueError, TypeError):
@@ -487,24 +534,29 @@ class VLMNode(BaseNode):
         if current_time < self._insensitivity_end_time:
             remaining = self._insensitivity_end_time - current_time
             dpg_set_value(tag_node_status_value_name, f'Next API call in {remaining:.1f}s')
-            json_out = {"TEXT": self._last_result_text, "type": self._last_caption_type} if self._last_result_text else None
+            json_out = {"TEXT": self._last_result_text, "prompt": self._last_prompt} if self._last_result_text else None
             return {"image": self._pending_frame, "json": json_out, "audio": None}
 
         # Launch request in a subprocess when action fires and not already busy
         if should_act and frame is not None and not self._is_requesting:
-            self._is_requesting = True
-            self._last_caption_type = caption
-            self._insensitivity_end_time = current_time + insensitivity_delay
-            dpg_set_value(tag_node_status_value_name, 'Requesting...')
-            self._result_queue = multiprocessing.Queue()
-            self._request_process = multiprocessing.Process(
-                target=_vlm_request_worker,
-                args=(self._result_queue, server, model, caption, frame.copy()),
-                daemon=True,
-            )
-            self._request_process.start()
+            if not api_key:
+                dpg_set_value(tag_node_status_value_name, 'No API key set')
+            elif not model:
+                dpg_set_value(tag_node_status_value_name, 'No model selected')
+            else:
+                self._is_requesting = True
+                self._last_prompt = prompt
+                self._insensitivity_end_time = current_time + insensitivity_delay
+                dpg_set_value(tag_node_status_value_name, 'Requesting...')
+                self._result_queue = multiprocessing.Queue()
+                self._request_process = multiprocessing.Process(
+                    target=_vlm_request_worker,
+                    args=(self._result_queue, api_key, model, prompt, frame.copy()),
+                    daemon=True,
+                )
+                self._request_process.start()
 
-        json_out = {"TEXT": self._last_result_text, "type": self._last_caption_type} if self._last_result_text else None
+        json_out = {"TEXT": self._last_result_text, "prompt": self._last_prompt} if self._last_result_text else None
         return {"image": self._pending_frame, "json": json_out, "audio": None}
 
     def close(self, node_id):
@@ -517,8 +569,8 @@ class VLMNode(BaseNode):
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_model_value_name = tag_node_name + ':ModelValue'
-        tag_node_caption_value_name = tag_node_name + ':CaptionValue'
-        tag_node_server_value_name = tag_node_name + ':ServerValue'
+        tag_node_apikey_value_name = tag_node_name + ':ApiKeyValue'
+        tag_node_prompt_value_name = tag_node_name + ':PromptValue'
         tag_node_delay_value_name = tag_node_name + ':DelayValue'
 
         pos = dpg.get_item_pos(tag_node_name)
@@ -527,24 +579,25 @@ class VLMNode(BaseNode):
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
         setting_dict[tag_node_model_value_name] = dpg_get_value(tag_node_model_value_name)
-        setting_dict[tag_node_caption_value_name] = dpg_get_value(tag_node_caption_value_name)
-        setting_dict[tag_node_server_value_name] = dpg_get_value(tag_node_server_value_name)
+        setting_dict[tag_node_apikey_value_name] = dpg_get_value(tag_node_apikey_value_name)
+        setting_dict[tag_node_prompt_value_name] = dpg_get_value(tag_node_prompt_value_name)
         setting_dict[tag_node_delay_value_name] = float(dpg_get_value(tag_node_delay_value_name))
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = str(node_id) + ':' + self.node_tag
         tag_node_model_value_name = tag_node_name + ':ModelValue'
-        tag_node_caption_value_name = tag_node_name + ':CaptionValue'
-        tag_node_server_value_name = tag_node_name + ':ServerValue'
+        tag_node_apikey_value_name = tag_node_name + ':ApiKeyValue'
+        tag_node_prompt_value_name = tag_node_name + ':PromptValue'
         tag_node_delay_value_name = tag_node_name + ':DelayValue'
 
+        default_model = self._available_models[0] if self._available_models else ''
         dpg_set_value(tag_node_model_value_name,
-                      setting_dict.get(tag_node_model_value_name, self.MODELS[0]))
-        dpg_set_value(tag_node_caption_value_name,
-                      setting_dict.get(tag_node_caption_value_name, self.DEFAULT_CAPTION))
-        dpg_set_value(tag_node_server_value_name,
-                      setting_dict.get(tag_node_server_value_name, self.DEFAULT_SERVER))
+                      setting_dict.get(tag_node_model_value_name, default_model))
+        dpg_set_value(tag_node_apikey_value_name,
+                      setting_dict.get(tag_node_apikey_value_name, self.DEFAULT_API_KEY))
+        dpg_set_value(tag_node_prompt_value_name,
+                      setting_dict.get(tag_node_prompt_value_name, self.DEFAULT_PROMPT))
         dpg_set_value(tag_node_delay_value_name,
                       float(setting_dict.get(tag_node_delay_value_name, self.DEFAULT_INSENSITIVITY_DELAY)))
 
