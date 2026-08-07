@@ -20,5 +20,6 @@
     "use_multiprocessing_rtsp":true,
     "use_multiprocessing_hls":true,
     "audio_chunk_duration": 5.0,
-    "audio_chunk_step": 1.0
+    "audio_chunk_step": 1.0,
+    "youtube_cookies_browser": null
 }
