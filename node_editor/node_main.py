@@ -957,8 +957,8 @@ class DpgNodeEditor(object):
         for node_id_name in self._node_list:
             try:
                 dpg.select_node(self._node_editor_tag, node_id_name)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("select_node failed for %s: %s", node_id_name, exc)
         logger.debug("Select all: %d node(s) selected.", len(self._node_list))
 
     # ------------------------------------------------------------------
