@@ -42,8 +42,8 @@ def update_uptime_display():
 
 
 # Constants for node selection color enhancement
-_SELECTION_SATURATION_BOOST = 1.15  # 15% increase in color saturation
-_SELECTION_BRIGHTNESS_BOOST = 1.2   # 20% increase in brightness
+_SELECTION_SATURATION_BOOST = 2.0   # 100% increase in color saturation
+_SELECTION_BRIGHTNESS_BOOST = 1.6   # 60% increase in brightness
 
 # Legacy node name migration for backward-compatible project file loading
 _LEGACY_NODE_NAMES = {
@@ -111,6 +111,17 @@ def node_style(module_name):
             # Enhanced color for selected state to make it more prominent
             dpg.add_theme_color(
                 dpg.mvNodeCol_TitleBarSelected,
+                tuple_style_selected,
+                category=dpg.mvThemeCat_Nodes,
+            )
+            # Node body highlight when selected — bright outline + tinted background
+            dpg.add_theme_color(
+                dpg.mvNodeCol_NodeOutline,
+                tuple_style_selected,
+                category=dpg.mvThemeCat_Nodes,
+            )
+            dpg.add_theme_color(
+                dpg.mvNodeCol_NodeBackgroundSelected,
                 tuple_style_selected,
                 category=dpg.mvThemeCat_Nodes,
             )
@@ -280,6 +291,11 @@ class DpgNodeEditor(object):
         self._opencv_setting_dict = opencv_setting_dict
         self.window = None
 
+        # Undo stack: stores up to 3 deleted-node snapshots for Ctrl+Z
+        self._undo_stack = []
+        # Clipboard: stores one node snapshot for Ctrl+C / Ctrl+V
+        self._clipboard = None
+
         if menu_dict is None:
             menu_dict = OrderedDict(
                 {
@@ -434,6 +450,18 @@ class DpgNodeEditor(object):
                 dpg.add_key_press_handler(
                     dpg.mvKey_Delete,
                     callback=self._callback_mv_key_del,
+                )
+                dpg.add_key_press_handler(
+                    dpg.mvKey_Z,
+                    callback=self._callback_undo,
+                )
+                dpg.add_key_press_handler(
+                    dpg.mvKey_C,
+                    callback=self._callback_copy_node,
+                )
+                dpg.add_key_press_handler(
+                    dpg.mvKey_V,
+                    callback=self._callback_paste_node,
                 )
             
             self.window = window
@@ -663,13 +691,13 @@ class DpgNodeEditor(object):
         dpg.show_item("file_export")
 
     def _callback_file_import_menu(self):
-        if self._node_id == 0:
-            dpg.show_item("file_import")
-        else:
-            dpg.configure_item("modal_file_import", show=True)
+        dpg.show_item("file_import")
 
     def _callback_file_import(self, sender, data):
         if data["file_name"] != ".":
+            # Clear the current graph before loading a new one
+            self._clear_all_nodes()
+
             setting_dict = None
             with open(data["file_path_name"]) as fp:
                 setting_dict = json.load(fp)
@@ -769,6 +797,27 @@ class DpgNodeEditor(object):
                     return
 
                 node_instance = self.get_node_instances(node_id_name)
+
+                # Snapshot for undo: save settings and involved links before deletion
+                try:
+                    snapshot_settings = node_instance.get_setting_dict(node_id) if node_instance is not None else {}
+                    snapshot_links = [
+                        lnk for lnk in self._node_link_list
+                        if ":".join(lnk[0].split(":")[:2]) == node_id_name
+                        or ":".join(lnk[1].split(":")[:2]) == node_id_name
+                    ]
+                    self._undo_stack.append({
+                        'node_id_name': node_id_name,
+                        'node_id': int(node_id),
+                        'node_name': node_name,
+                        'settings': copy.deepcopy(snapshot_settings),
+                        'links': copy.deepcopy(snapshot_links),
+                    })
+                    if len(self._undo_stack) > 3:
+                        self._undo_stack.pop(0)
+                except Exception as exc:
+                    logger.warning(f"Undo snapshot failed for {node_id_name}: {exc}")
+
                 if node_instance is not None:
                     node_instance.close(node_id)
 
@@ -825,3 +874,161 @@ class DpgNodeEditor(object):
             logger.debug(
                 f"    self._node_connection_dict : {self._node_connection_dict}"
             )
+
+    # ------------------------------------------------------------------
+    # Clear all nodes and links (used before loading a new JSON file)
+    # ------------------------------------------------------------------
+    def _clear_all_nodes(self):
+        """Remove every node and link from the editor, resetting internal state."""
+        with _dpg_lock:
+            for node_id_name in list(self._node_list):
+                node_id, _ = node_id_name.split(":")
+                node_instance = self._node_instances_list.get(node_id_name)
+                if node_instance is not None:
+                    try:
+                        node_instance.close(node_id)
+                    except Exception as exc:
+                        logger.warning(f"Error closing node {node_id_name}: {exc}")
+                try:
+                    item_id = dpg.get_alias_id(node_id_name)
+                    if dpg.does_item_exist(item_id):
+                        dpg.delete_item(item_id)
+                except Exception:
+                    pass
+
+            self._node_list.clear()
+            self._node_link_list.clear()
+            self._node_instances_list.clear()
+            self._node_connection_dict.clear()
+            self._node_id = 0
+            self._undo_stack.clear()
+            self._clipboard = None
+            logger.info("All nodes cleared.")
+
+    # ------------------------------------------------------------------
+    # Undo (Ctrl+Z): restore the last deleted node (up to 3 levels)
+    # ------------------------------------------------------------------
+    def _callback_undo(self):
+        if not dpg.is_key_down(dpg.mvKey_Control):
+            return
+        if not self._undo_stack:
+            logger.debug("Undo: nothing to undo.")
+            return
+        entry = self._undo_stack.pop()
+        node_id_name = entry['node_id_name']
+        node_id = entry['node_id']
+        node_name = entry['node_name']
+        settings = entry['settings']
+        links = entry['links']
+
+        factorynode = self._node_factory_list.get(node_name)
+        if factorynode is None:
+            logger.warning(f"Undo: factory not found for {node_name}.")
+            return
+
+        try:
+            pos = settings.get('pos', [0, 0])
+            node = factorynode.add_node(
+                self._node_editor_tag,
+                node_id,
+                pos=pos,
+                opencv_setting_dict=self._opencv_setting_dict,
+            )
+            dpg.bind_item_theme(node.tag_node_name, factorynode.style)
+            self._node_instances_list[node.tag_node_name] = node
+            node.set_setting_dict(node_id, settings)
+            self._node_list.append(node_id_name)
+
+            # Restore associated links (only if both endpoints still exist)
+            for link_info in links:
+                src_node = ":".join(link_info[0].split(":")[:2])
+                dst_node = ":".join(link_info[1].split(":")[:2])
+                if src_node in self._node_list and dst_node in self._node_list:
+                    try:
+                        dpg.add_node_link(
+                            link_info[0], link_info[1],
+                            parent=self._node_editor_tag,
+                        )
+                        self._node_link_list.append(link_info)
+                    except Exception as exc:
+                        logger.warning(f"Undo: could not restore link {link_info}: {exc}")
+
+            self._node_connection_dict = self._sort_node_graph(
+                self._node_list, self._node_link_list
+            )
+            logger.info(f"Undo: restored node {node_id_name}.")
+        except Exception as exc:
+            logger.error(f"Undo failed for {node_id_name}: {exc}")
+
+    # ------------------------------------------------------------------
+    # Copy (Ctrl+C): snapshot the selected node into the clipboard
+    # ------------------------------------------------------------------
+    def _callback_copy_node(self):
+        if not dpg.is_key_down(dpg.mvKey_Control):
+            return
+        selected = dpg.get_selected_nodes(self._node_editor_tag)
+        if not selected:
+            return
+        item_id = selected[0]
+        node_id_name = dpg.get_item_alias(item_id)
+        node_id, node_name = node_id_name.split(":")
+
+        if node_id_name not in self._node_list:
+            return
+
+        node_instance = self._node_instances_list.get(node_id_name)
+        if node_instance is None:
+            return
+
+        try:
+            settings = node_instance.get_setting_dict(node_id)
+            self._clipboard = {
+                'node_name': node_name,
+                'settings': copy.deepcopy(settings),
+            }
+            logger.info(f"Copied node {node_id_name} to clipboard.")
+        except Exception as exc:
+            logger.warning(f"Copy failed for {node_id_name}: {exc}")
+
+    # ------------------------------------------------------------------
+    # Paste (Ctrl+V): create a new node from the clipboard snapshot
+    # ------------------------------------------------------------------
+    def _callback_paste_node(self):
+        if not dpg.is_key_down(dpg.mvKey_Control):
+            return
+        if self._clipboard is None:
+            return
+
+        node_name = self._clipboard['node_name']
+        settings = copy.deepcopy(self._clipboard['settings'])
+
+        factorynode = self._node_factory_list.get(node_name)
+        if factorynode is None:
+            logger.warning(f"Paste: factory not found for {node_name}.")
+            return
+
+        # Offset position so the pasted node doesn't overlap the original
+        original_pos = settings.get('pos', [0, 0])
+        paste_pos = [original_pos[0] + 40, original_pos[1] + 40]
+        settings['pos'] = paste_pos
+
+        try:
+            with _dpg_lock:
+                self._node_id += 1
+                new_node_id = self._node_id
+                node = factorynode.add_node(
+                    self._node_editor_tag,
+                    new_node_id,
+                    pos=paste_pos,
+                    opencv_setting_dict=self._opencv_setting_dict,
+                )
+                dpg.bind_item_theme(node.tag_node_name, factorynode.style)
+                self._node_instances_list[node.tag_node_name] = node
+                node.set_setting_dict(new_node_id, settings)
+                self._node_list.append(node.tag_node_name)
+                self._node_connection_dict = self._sort_node_graph(
+                    self._node_list, self._node_link_list
+                )
+                logger.info(f"Pasted new node {node.tag_node_name} from clipboard.")
+        except Exception as exc:
+            logger.error(f"Paste failed: {exc}")
