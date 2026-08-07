@@ -295,6 +295,8 @@ class DpgNodeEditor(object):
         self._undo_stack = []
         # Clipboard: stores one node snapshot for Ctrl+C / Ctrl+V
         self._clipboard = None
+        # Select-all flag: set by Ctrl+A, consumed by Delete
+        self._select_all_flag = False
 
         if menu_dict is None:
             menu_dict = OrderedDict(
@@ -462,6 +464,10 @@ class DpgNodeEditor(object):
                 dpg.add_key_press_handler(
                     dpg.mvKey_V,
                     callback=self._callback_paste_node,
+                )
+                dpg.add_key_press_handler(
+                    dpg.mvKey_A,
+                    callback=self._callback_select_all,
                 )
             
             self.window = window
@@ -695,26 +701,49 @@ class DpgNodeEditor(object):
 
     def _callback_file_import(self, sender, data):
         if data["file_name"] != ".":
-            # Clear the current graph before loading a new one
-            self._clear_all_nodes()
+            # Do NOT clear existing nodes — JSON import is an additive operation.
+            # Node IDs from the file are offset by the current _node_id to avoid
+            # collisions with nodes already on the canvas.
 
             setting_dict = None
             with open(data["file_path_name"]) as fp:
                 setting_dict = json.load(fp)
 
+            # Build an ID remap: "old_id:NodeName" -> "new_id:NodeName"
+            id_offset = self._node_id
+            id_remap = {}
+            max_file_id = 0
             for node_id_name in setting_dict["node_list"]:
-                node_id, node_name = node_id_name.split(":")
-                node_id = int(node_id)
+                node_id_str, node_name = node_id_name.split(":", 1)
+                old_id = int(node_id_str)
+                if old_id > max_file_id:
+                    max_file_id = old_id
+                new_id = old_id + id_offset
+                new_id_name = f"{new_id}:{node_name}"
+                id_remap[node_id_name] = new_id_name
 
-                if node_id > self._node_id:
-                    self._node_id = node_id
+            def _remap_alias(alias):
+                """Remap 'old_id:NodeName:attr' -> 'new_id:NodeName:attr'."""
+                parts = alias.split(":", 2)
+                if len(parts) >= 2:
+                    old_key = parts[0] + ":" + parts[1]
+                    if old_key in id_remap:
+                        new_key = id_remap[old_key]
+                        new_parts = new_key.split(":", 1) + (parts[2:] or [])
+                        return ":".join(new_parts)
+                return alias
+
+            for node_id_name in setting_dict["node_list"]:
+                new_id_name = id_remap[node_id_name]
+                new_id_str, node_name = new_id_name.split(":", 1)
+                new_id = int(new_id_str)
 
                 # Legacy name migration for saved files
                 node_name = _LEGACY_NODE_NAMES.get(node_name, node_name)
 
                 # Get the factory for this node type
                 factorynode = self._node_factory_list[node_name]
-                
+
                 # Check version before creating node
                 if "setting" in setting_dict[node_id_name] and "ver" in setting_dict[node_id_name]["setting"]:
                     saved_ver = setting_dict[node_id_name]["setting"]["ver"]
@@ -729,7 +758,7 @@ class DpgNodeEditor(object):
                 pos = setting_dict[node_id_name]["setting"]["pos"]
                 node = factorynode.add_node(
                     self._node_editor_tag,
-                    node_id,
+                    new_id,
                     pos=pos,
                     opencv_setting_dict=self._opencv_setting_dict,
                 )
@@ -740,19 +769,25 @@ class DpgNodeEditor(object):
 
                 # Apply the saved settings to the node
                 node.set_setting_dict(
-                    node_id,
+                    new_id,
                     setting_dict[node_id_name]["setting"],
                 )
 
-            self._node_list = setting_dict["node_list"]
-            self._node_link_list = setting_dict["link_list"]
+                self._node_list.append(node.tag_node_name)
 
-            for node_link in self._node_link_list:
+            # Advance _node_id past all newly imported nodes
+            self._node_id += max_file_id
+
+            # Remap and add links from the imported file
+            for link in setting_dict["link_list"]:
+                new_src = _remap_alias(link[0])
+                new_dst = _remap_alias(link[1])
                 dpg.add_node_link(
-                    node_link[0],
-                    node_link[1],
+                    new_src,
+                    new_dst,
                     parent=self._node_editor_tag,
                 )
+                self._node_link_list.append([new_src, new_dst])
 
             self._node_connection_dict = self._sort_node_graph(
                 self._node_list,
@@ -763,9 +798,9 @@ class DpgNodeEditor(object):
             logger.debug("_callback_file_import details:")
             logger.debug(f"    sender          : {sender}")
             logger.debug(f"    data            : {data}")
-            logger.debug(f"    setting_dict    : {setting_dict}")
 
     def _callback_save_last_pos(self):
+        self._select_all_flag = False
         if len(dpg.get_selected_nodes(self._node_editor_tag)) > 0:
             self._last_pos = dpg.get_item_pos(
                 dpg.get_selected_nodes(self._node_editor_tag)[0]
@@ -786,63 +821,70 @@ class DpgNodeEditor(object):
             pass
 
     def _callback_mv_key_del(self):
-        if len(dpg.get_selected_nodes(self._node_editor_tag)) > 0:
-            item_id = dpg.get_selected_nodes(self._node_editor_tag)[0]
+        # If Ctrl+A was used, delete ALL nodes as a single batch (undoable)
+        if self._select_all_flag:
+            self._select_all_flag = False
+            self._delete_all_nodes_with_undo()
+            return
 
+        selected_nodes = list(dpg.get_selected_nodes(self._node_editor_tag))
+        for item_id in selected_nodes:
             node_id_name = dpg.get_item_alias(item_id)
+            if not node_id_name:
+                continue
             node_id, node_name = node_id_name.split(":")
 
-            if node_name != "ExecPythonCode":
-                if node_id_name not in self._node_list:
-                    return
+            if node_name == "ExecPythonCode":
+                continue
+            if node_id_name not in self._node_list:
+                continue
 
-                node_instance = self.get_node_instances(node_id_name)
+            node_instance = self.get_node_instances(node_id_name)
 
-                # Snapshot for undo: save settings and involved links before deletion
-                try:
-                    snapshot_settings = node_instance.get_setting_dict(node_id) if node_instance is not None else {}
-                    snapshot_links = [
-                        lnk for lnk in self._node_link_list
-                        if ":".join(lnk[0].split(":")[:2]) == node_id_name
-                        or ":".join(lnk[1].split(":")[:2]) == node_id_name
-                    ]
-                    self._undo_stack.append({
-                        'node_id_name': node_id_name,
-                        'node_id': int(node_id),
-                        'node_name': node_name,
-                        'settings': copy.deepcopy(snapshot_settings),
-                        'links': copy.deepcopy(snapshot_links),
-                    })
-                    if len(self._undo_stack) > 3:
-                        self._undo_stack.pop(0)
-                except Exception as exc:
-                    logger.warning(f"Undo snapshot failed for {node_id_name}: {exc}")
+            # Snapshot for undo: save settings and involved links before deletion
+            try:
+                snapshot_settings = node_instance.get_setting_dict(node_id) if node_instance is not None else {}
+                snapshot_links = [
+                    lnk for lnk in self._node_link_list
+                    if ":".join(lnk[0].split(":")[:2]) == node_id_name
+                    or ":".join(lnk[1].split(":")[:2]) == node_id_name
+                ]
+                self._undo_stack.append({
+                    'node_id_name': node_id_name,
+                    'node_id': int(node_id),
+                    'node_name': node_name,
+                    'settings': copy.deepcopy(snapshot_settings),
+                    'links': copy.deepcopy(snapshot_links),
+                })
+                if len(self._undo_stack) > 3:
+                    self._undo_stack.pop(0)
+            except Exception as exc:
+                logger.warning(f"Undo snapshot failed for {node_id_name}: {exc}")
 
-                if node_instance is not None:
-                    node_instance.close(node_id)
+            if node_instance is not None:
+                node_instance.close(node_id)
 
-                self._node_list.remove(node_id_name)
+            self._node_list.remove(node_id_name)
 
-                # Remove links associated with the deleted node and
-                # delete the corresponding visual dpg link items.
-                copy_node_link_list = copy.deepcopy(self._node_link_list)
-                for link_info in copy_node_link_list:
-                    source_node = link_info[0].split(":")[:2]
-                    source_node = ":".join(source_node)
-                    destination_node = link_info[1].split(":")[:2]
-                    destination_node = ":".join(destination_node)
+            # Remove links associated with the deleted node and
+            # delete the corresponding visual dpg link items.
+            copy_node_link_list = copy.deepcopy(self._node_link_list)
+            for link_info in copy_node_link_list:
+                source_node = ":".join(link_info[0].split(":")[:2])
+                destination_node = ":".join(link_info[1].split(":")[:2])
 
-                    if source_node == node_id_name or destination_node == node_id_name:
-                        self._node_link_list.remove(link_info)
-                        # Delete the visual link from the node editor
-                        self._delete_dpg_link(link_info)
+                if source_node == node_id_name or destination_node == node_id_name:
+                    self._node_link_list.remove(link_info)
+                    # Delete the visual link from the node editor
+                    self._delete_dpg_link(link_info)
 
-                self._node_connection_dict = self._sort_node_graph(
-                    self._node_list,
-                    self._node_link_list,
-                )
+            dpg.delete_item(item_id)
 
-                dpg.delete_item(item_id)
+        if selected_nodes:
+            self._node_connection_dict = self._sort_node_graph(
+                self._node_list,
+                self._node_link_list,
+            )
 
         if len(dpg.get_selected_links(self._node_editor_tag)) > 0:
             self._node_link_list.remove(
@@ -874,6 +916,52 @@ class DpgNodeEditor(object):
             logger.debug(
                 f"    self._node_connection_dict : {self._node_connection_dict}"
             )
+
+    # ------------------------------------------------------------------
+    # Select all (Ctrl+A): mark all nodes as "selected" for next Delete
+    # ------------------------------------------------------------------
+    def _callback_select_all(self):
+        if not dpg.is_key_down(dpg.mvKey_Control):
+            return
+        self._select_all_flag = True
+        logger.debug("Select all: %d node(s) will be deleted on next Delete key.", len(self._node_list))
+
+    # ------------------------------------------------------------------
+    # Batch delete with undo (used when Ctrl+A + Delete is pressed)
+    # ------------------------------------------------------------------
+    def _delete_all_nodes_with_undo(self):
+        """Delete all nodes, storing the entire graph in the undo stack."""
+        if not self._node_list:
+            return
+
+        # Snapshot every node and the full link list
+        batch_entries = []
+        for node_id_name in list(self._node_list):
+            node_id_str, node_name = node_id_name.split(":", 1)
+            node_id = int(node_id_str)
+            node_instance = self._node_instances_list.get(node_id_name)
+            try:
+                settings = node_instance.get_setting_dict(node_id_str) if node_instance is not None else {}
+            except Exception:
+                settings = {}
+            batch_entries.append({
+                'node_id_name': node_id_name,
+                'node_id': node_id,
+                'node_name': node_name,
+                'settings': copy.deepcopy(settings),
+            })
+
+        batch_entry = {
+            'type': 'batch',
+            'entries': batch_entries,
+            'links': copy.deepcopy(self._node_link_list),
+            'node_id': self._node_id,
+        }
+
+        # _clear_all_nodes also clears _undo_stack, so we restore the entry after.
+        self._clear_all_nodes()
+        self._undo_stack.append(batch_entry)
+        logger.info("Batch delete: %d node(s) removed (undoable with Ctrl+Z).", len(batch_entries))
 
     # ------------------------------------------------------------------
     # Clear all nodes and links (used before loading a new JSON file)
@@ -915,6 +1003,58 @@ class DpgNodeEditor(object):
             logger.debug("Undo: nothing to undo.")
             return
         entry = self._undo_stack.pop()
+
+        # Batch undo: restore multiple nodes at once (from Ctrl+A + Delete)
+        if entry.get('type') == 'batch':
+            restored_node_id = entry.get('node_id', self._node_id)
+            for node_entry in entry['entries']:
+                node_id_name = node_entry['node_id_name']
+                node_id = node_entry['node_id']
+                node_name = node_entry['node_name']
+                settings = node_entry['settings']
+
+                factorynode = self._node_factory_list.get(node_name)
+                if factorynode is None:
+                    logger.warning(f"Undo batch: factory not found for {node_name}.")
+                    continue
+                try:
+                    pos = settings.get('pos', [0, 0])
+                    node = factorynode.add_node(
+                        self._node_editor_tag,
+                        node_id,
+                        pos=pos,
+                        opencv_setting_dict=self._opencv_setting_dict,
+                    )
+                    dpg.bind_item_theme(node.tag_node_name, factorynode.style)
+                    self._node_instances_list[node.tag_node_name] = node
+                    node.set_setting_dict(node_id, settings)
+                    self._node_list.append(node_id_name)
+                    if node_id > self._node_id:
+                        self._node_id = node_id
+                except Exception as exc:
+                    logger.error(f"Undo batch failed for {node_id_name}: {exc}")
+
+            # Restore all links
+            for link_info in entry.get('links', []):
+                src_node = ":".join(link_info[0].split(":")[:2])
+                dst_node = ":".join(link_info[1].split(":")[:2])
+                if src_node in self._node_list and dst_node in self._node_list:
+                    try:
+                        dpg.add_node_link(
+                            link_info[0], link_info[1],
+                            parent=self._node_editor_tag,
+                        )
+                        self._node_link_list.append(link_info)
+                    except Exception as exc:
+                        logger.warning(f"Undo batch: could not restore link {link_info}: {exc}")
+
+            self._node_id = max(self._node_id, restored_node_id)
+            self._node_connection_dict = self._sort_node_graph(
+                self._node_list, self._node_link_list
+            )
+            logger.info(f"Undo batch: restored {len(entry['entries'])} node(s).")
+            return
+
         node_id_name = entry['node_id_name']
         node_id = entry['node_id']
         node_name = entry['node_name']
