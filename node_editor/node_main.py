@@ -709,7 +709,9 @@ class DpgNodeEditor(object):
             with open(data["file_path_name"]) as fp:
                 setting_dict = json.load(fp)
 
-            # Build an ID remap: "old_id:NodeName" -> "new_id:NodeName"
+            # Build an ID remap: "old_id:OldName" -> "new_id:NewName"
+            # The new name already incorporates legacy name migration so that
+            # _remap_alias can rewrite both IDs and node names in one pass.
             id_offset = self._node_id
             id_remap = {}
             max_file_id = 0
@@ -719,11 +721,12 @@ class DpgNodeEditor(object):
                 if old_id > max_file_id:
                     max_file_id = old_id
                 new_id = old_id + id_offset
-                new_id_name = f"{new_id}:{node_name}"
+                migrated_name = _LEGACY_NODE_NAMES.get(node_name, node_name)
+                new_id_name = f"{new_id}:{migrated_name}"
                 id_remap[node_id_name] = new_id_name
 
             def _remap_alias(alias):
-                """Remap 'old_id:NodeName:attr' -> 'new_id:NodeName:attr'."""
+                """Remap 'old_id:OldName:attr' -> 'new_id:NewName:attr'."""
                 parts = alias.split(":", 2)
                 if len(parts) >= 2:
                     old_key = parts[0] + ":" + parts[1]
@@ -738,11 +741,11 @@ class DpgNodeEditor(object):
                 new_id_str, node_name = new_id_name.split(":", 1)
                 new_id = int(new_id_str)
 
-                # Legacy name migration for saved files
-                node_name = _LEGACY_NODE_NAMES.get(node_name, node_name)
-
-                # Get the factory for this node type
-                factorynode = self._node_factory_list[node_name]
+                # Get the factory for this node type (name already migrated above)
+                factorynode = self._node_factory_list.get(node_name)
+                if factorynode is None:
+                    logger.warning(f"Import: unknown node type '{node_name}', skipping.")
+                    continue
 
                 # Check version before creating node
                 if "setting" in setting_dict[node_id_name] and "ver" in setting_dict[node_id_name]["setting"]:
@@ -756,22 +759,36 @@ class DpgNodeEditor(object):
 
                 # Create the node instance using the factory
                 pos = setting_dict[node_id_name]["setting"].get("pos", [0, 0])
-                node = factorynode.add_node(
-                    self._node_editor_tag,
-                    new_id,
-                    pos=pos,
-                    opencv_setting_dict=self._opencv_setting_dict,
-                )
+                try:
+                    node = factorynode.add_node(
+                        self._node_editor_tag,
+                        new_id,
+                        pos=pos,
+                        opencv_setting_dict=self._opencv_setting_dict,
+                    )
+                except Exception as exc:
+                    logger.error(f"Import: failed to create node '{node_name}' (id={new_id}): {exc}")
+                    continue
 
                 # Store the node instance
                 dpg.bind_item_theme(node.tag_node_name, factorynode.style)
                 self._node_instances_list[node.tag_node_name] = node
 
-                # Apply the saved settings to the node
-                node.set_setting_dict(
-                    new_id,
-                    setting_dict[node_id_name]["setting"],
-                )
+                # Remap settings keys: saved keys use old_id/old_name prefixes;
+                # set_setting_dict expects keys with the current new_id/new_name.
+                raw_settings = setting_dict[node_id_name]["setting"]
+                remapped_settings = {
+                    (_remap_alias(k) if isinstance(k, str) else k): v
+                    for k, v in raw_settings.items()
+                }
+
+                try:
+                    node.set_setting_dict(new_id, remapped_settings)
+                except Exception as exc:
+                    logger.warning(f"Import: set_setting_dict failed for '{node_name}' (id={new_id}): {exc}")
+                    # Settings could not be restored; node appears with defaults.
+                    # We still register it in _node_list so it remains manageable
+                    # (selectable, deletable) rather than becoming an orphan.
 
                 self._node_list.append(node.tag_node_name)
 
