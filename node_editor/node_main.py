@@ -1167,6 +1167,7 @@ class DpgNodeEditor(object):
                 settings = node_instance.get_setting_dict(node_id)
                 entries.append({
                     'node_name': node_name,
+                    'node_id': node_id,
                     'settings': copy.deepcopy(settings),
                 })
             except Exception as exc:
@@ -1196,6 +1197,7 @@ class DpgNodeEditor(object):
 
         for entry in self._clipboard:
             node_name = entry['node_name']
+            original_node_id = entry.get('node_id')
             settings = copy.deepcopy(entry['settings'])
 
             factorynode = self._node_factory_list.get(node_name)
@@ -1219,6 +1221,18 @@ class DpgNodeEditor(object):
                     )
                     dpg.bind_item_theme(node.tag_node_name, factorynode.style)
                     self._node_instances_list[node.tag_node_name] = node
+                    # Remap settings keys from the original node_id prefix to the
+                    # new node_id prefix so that set_setting_dict can find them.
+                    if original_node_id is not None:
+                        old_prefix = str(original_node_id) + ':'
+                        new_prefix = str(new_node_id) + ':'
+                        remapped_settings = {}
+                        for k, v in settings.items():
+                            if isinstance(k, str) and k.startswith(old_prefix):
+                                remapped_settings[new_prefix + k[len(old_prefix):]] = v
+                            else:
+                                remapped_settings[k] = v
+                        settings = remapped_settings
                     node.set_setting_dict(new_node_id, settings)
                     self._node_list.append(node.tag_node_name)
                     logger.info(f"Pasted new node {node.tag_node_name} from clipboard.")
