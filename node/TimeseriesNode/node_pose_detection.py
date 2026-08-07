@@ -83,14 +83,13 @@ DEFAULT_COLOR = (200, 200, 200)
 # Font for UTF-8 text rendering (supports accented French characters)
 # ---------------------------------------------------------------------------
 
-_FONT_PATHS = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-]
-
-
 def _load_font(size):
-    for path in _FONT_PATHS:
+    """Load a TrueType font that supports accented characters, with fallback."""
+    _font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ]
+    for path in _font_paths:
         try:
             return ImageFont.truetype(path, size)
         except OSError:
@@ -98,26 +97,23 @@ def _load_font(size):
     return ImageFont.load_default()
 
 
-def _put_text_utf8(img_bgr, text, origin, font, color_bgr, bg_color=None):
-    """Draw *text* with UTF-8 support on an OpenCV BGR image using PIL.
+# Pre-load fonts once at module level to avoid per-frame disk reads.
+_FONT_HEADER = _load_font(16)
+_FONT_LABEL = _load_font(20)
+
+
+def _draw_text_on_pil(draw, text, origin, font, color_bgr, bg_color=None):
+    """Draw *text* on a PIL ImageDraw with optional background rectangle.
 
     Parameters
     ----------
-    img_bgr   : numpy array (H, W, 3)
+    draw      : PIL ImageDraw instance
     text      : str - may contain accented characters
     origin    : (x, y) - bottom-left of the text (matches cv2.putText convention)
     font      : PIL ImageFont
     color_bgr : (B, G, R) text colour
     bg_color  : optional (B, G, R) background rectangle colour
-
-    Returns
-    -------
-    Modified numpy array (H, W, 3) in BGR.
     """
-    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-    pil_img = Image.fromarray(img_rgb)
-    draw = ImageDraw.Draw(pil_img)
-
     x, y_bottom = origin
     bbox = font.getbbox(text)          # (left, top, right, bottom) relative to origin
     text_w = bbox[2] - bbox[0]
@@ -133,8 +129,6 @@ def _put_text_utf8(img_bgr, text, origin, font, color_bgr, bg_color=None):
 
     r, g, b = color_bgr[2], color_bgr[1], color_bgr[0]
     draw.text((x, y_top), text, font=font, fill=(r, g, b))
-
-    return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
 
 # ---------------------------------------------------------------------------
@@ -458,28 +452,25 @@ def _classify_hands(results_list, image_h, image_w):
 def _draw_labels(image, labels, detection_type):
     """Overlay detected labels on the image with UTF-8 support (accented French)."""
     debug = copy.deepcopy(image)
-    h, w = debug.shape[:2]
+    h = debug.shape[0]
 
-    font_header = _load_font(16)
-    font_label = _load_font(20)
+    # Convert once to PIL for all text drawing, then back to BGR.
+    pil_img = Image.fromarray(cv2.cvtColor(debug, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(pil_img)
 
-    debug = _put_text_utf8(debug, detection_type, (10, 25), font_header, (255, 255, 255))
+    _draw_text_on_pil(draw, detection_type, (10, 25), _FONT_HEADER, (255, 255, 255))
 
-    for i, label in enumerate(labels):
-        color = LABEL_COLORS.get(label, DEFAULT_COLOR)
-        y_pos = 55 + i * 35
-        if y_pos + 10 > h:
-            break
-        debug = _put_text_utf8(
-            debug, label, (12, y_pos), font_label, color, bg_color=(0, 0, 0),
-        )
+    if labels:
+        for i, label in enumerate(labels):
+            color = LABEL_COLORS.get(label, DEFAULT_COLOR)
+            y_pos = 55 + i * 35
+            if y_pos + 10 > h:
+                break
+            _draw_text_on_pil(draw, label, (12, y_pos), _FONT_LABEL, color, bg_color=(0, 0, 0))
+    else:
+        _draw_text_on_pil(draw, "Aucune détection", (10, 55), _FONT_LABEL, (120, 120, 120))
 
-    if not labels:
-        debug = _put_text_utf8(
-            debug, "Aucune détection", (10, 55), font_label, (120, 120, 120),
-        )
-
-    return debug
+    return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
 
 # ---------------------------------------------------------------------------
