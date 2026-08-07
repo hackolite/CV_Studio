@@ -34,7 +34,7 @@ def _get_ffmpeg_exe():
 
 def _is_bot_detection_error(error_str):
     """Return True if the error looks like a YouTube bot/auth detection."""
-    keywords = ["sign in", "bot", "cookies", "confirm you're not"]
+    keywords = ["sign in", "confirm you're not a bot", "use --cookies"]
     error_lower = str(error_str).lower()
     return any(kw in error_lower for kw in keywords)
 
@@ -42,10 +42,12 @@ def _is_bot_detection_error(error_str):
 def _try_yt_dlp_stream(url, ydl_opts):
     """Try to extract a usable video URL via yt-dlp and open a VideoCapture.
 
-    Returns an opened cv2.VideoCapture on success, or None.
+    Exceptions from extract_info (including auth/bot errors) are propagated to
+    the caller so they can be classified correctly.  Returns an opened
+    cv2.VideoCapture on success, or None when no usable format is found.
     """
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+        info = ydl.extract_info(url, download=False)  # may raise — intentional
 
         formats = info.get("formats", [])
         usable_formats = [
@@ -161,7 +163,7 @@ def get_light_live_stream_url(url, cookies_browser=None):
                 print(f"Erreur avec format {format_spec}: {e}")
 
     # Option 3: réessayer avec les cookies du navigateur
-    if bot_detected or (last_error and _is_bot_detection_error(last_error)):
+    if bot_detected:
         browsers_to_try = [cookies_browser] if cookies_browser else ['chrome', 'firefox', 'chromium', 'safari', 'edge']
         print("🔑 Tentative avec les cookies du navigateur...")
 
