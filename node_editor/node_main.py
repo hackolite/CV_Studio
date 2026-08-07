@@ -306,8 +306,10 @@ class DpgNodeEditor(object):
 
         # Undo stack: stores up to 20 deleted-node snapshots for Ctrl+Z
         self._undo_stack = []
-        # Clipboard: stores one node snapshot for Ctrl+C / Ctrl+V
+        # Clipboard: stores a list of node snapshots for Ctrl+C / Ctrl+V
         self._clipboard = None
+        # Accumulated paste offset so repeated Ctrl+V staggers nodes (reset on Ctrl+C)
+        self._clipboard_paste_offset = 0
         # Select-all flag: set by Ctrl+A, consumed by Delete
         self._select_all_flag = False
 
@@ -1026,6 +1028,7 @@ class DpgNodeEditor(object):
             self._node_id = 0
             self._undo_stack.clear()
             self._clipboard = None
+            self._clipboard_paste_offset = 0
             logger.info("All nodes cleared.")
 
     # ------------------------------------------------------------------
@@ -1139,7 +1142,7 @@ class DpgNodeEditor(object):
             logger.error(f"Undo failed for {node_id_name}: {exc}")
 
     # ------------------------------------------------------------------
-    # Copy (Ctrl+C): snapshot the selected node into the clipboard
+    # Copy (Ctrl+C): snapshot ALL selected nodes into the clipboard
     # ------------------------------------------------------------------
     def _callback_copy_node(self):
         if not _is_ctrl_down():
@@ -1147,66 +1150,81 @@ class DpgNodeEditor(object):
         selected = dpg.get_selected_nodes(self._node_editor_tag)
         if not selected:
             return
-        item_id = selected[0]
-        node_id_name = dpg.get_item_alias(item_id)
-        node_id, node_name = node_id_name.split(":")
 
-        if node_id_name not in self._node_list:
-            return
+        # Clear select-all flag so a subsequent Delete only hits manually selected nodes
+        self._select_all_flag = False
 
-        node_instance = self._node_instances_list.get(node_id_name)
-        if node_instance is None:
-            return
+        entries = []
+        for item_id in selected:
+            node_id_name = dpg.get_item_alias(item_id)
+            if not node_id_name or node_id_name not in self._node_list:
+                continue
+            node_id, node_name = node_id_name.split(":", 1)
+            node_instance = self._node_instances_list.get(node_id_name)
+            if node_instance is None:
+                continue
+            try:
+                settings = node_instance.get_setting_dict(node_id)
+                entries.append({
+                    'node_name': node_name,
+                    'settings': copy.deepcopy(settings),
+                })
+            except Exception as exc:
+                logger.warning(f"Copy failed for {node_id_name}: {exc}")
 
-        try:
-            settings = node_instance.get_setting_dict(node_id)
-            self._clipboard = {
-                'node_name': node_name,
-                'settings': copy.deepcopy(settings),
-            }
-            logger.info(f"Copied node {node_id_name} to clipboard.")
-        except Exception as exc:
-            logger.warning(f"Copy failed for {node_id_name}: {exc}")
+        if entries:
+            # Store as a list; also track the paste offset (reset to 0)
+            self._clipboard = entries
+            self._clipboard_paste_offset = 0
+            logger.info(f"Copied {len(entries)} node(s) to clipboard.")
 
     # ------------------------------------------------------------------
-    # Paste (Ctrl+V): create a new node from the clipboard snapshot
+    # Paste (Ctrl+V): create new nodes from the clipboard snapshot
     # ------------------------------------------------------------------
     def _callback_paste_node(self):
         if not _is_ctrl_down():
             return
-        if self._clipboard is None:
+        if not self._clipboard:
             return
 
-        node_name = self._clipboard['node_name']
-        settings = copy.deepcopy(self._clipboard['settings'])
+        # Clear select-all flag so Delete after paste acts on the new nodes only
+        self._select_all_flag = False
 
-        factorynode = self._node_factory_list.get(node_name)
-        if factorynode is None:
-            logger.warning(f"Paste: factory not found for {node_name}.")
-            return
+        # Accumulate paste offset so repeated pastes stagger instead of stacking
+        self._clipboard_paste_offset += 40
+        offset = self._clipboard_paste_offset
 
-        # Offset position so the pasted node doesn't overlap the original
-        original_pos = settings.get('pos', [0, 0])
-        paste_pos = [original_pos[0] + 40, original_pos[1] + 40]
-        settings['pos'] = paste_pos
+        for entry in self._clipboard:
+            node_name = entry['node_name']
+            settings = copy.deepcopy(entry['settings'])
 
-        try:
-            with _dpg_lock:
-                self._node_id += 1
-                new_node_id = self._node_id
-                node = factorynode.add_node(
-                    self._node_editor_tag,
-                    new_node_id,
-                    pos=paste_pos,
-                    opencv_setting_dict=self._opencv_setting_dict,
-                )
-                dpg.bind_item_theme(node.tag_node_name, factorynode.style)
-                self._node_instances_list[node.tag_node_name] = node
-                node.set_setting_dict(new_node_id, settings)
-                self._node_list.append(node.tag_node_name)
-                self._node_connection_dict = self._sort_node_graph(
-                    self._node_list, self._node_link_list
-                )
-                logger.info(f"Pasted new node {node.tag_node_name} from clipboard.")
-        except Exception as exc:
-            logger.error(f"Paste failed: {exc}")
+            factorynode = self._node_factory_list.get(node_name)
+            if factorynode is None:
+                logger.warning(f"Paste: factory not found for {node_name}.")
+                continue
+
+            original_pos = settings.get('pos', [0, 0])
+            paste_pos = [original_pos[0] + offset, original_pos[1] + offset]
+            settings['pos'] = paste_pos
+
+            try:
+                with _dpg_lock:
+                    self._node_id += 1
+                    new_node_id = self._node_id
+                    node = factorynode.add_node(
+                        self._node_editor_tag,
+                        new_node_id,
+                        pos=paste_pos,
+                        opencv_setting_dict=self._opencv_setting_dict,
+                    )
+                    dpg.bind_item_theme(node.tag_node_name, factorynode.style)
+                    self._node_instances_list[node.tag_node_name] = node
+                    node.set_setting_dict(new_node_id, settings)
+                    self._node_list.append(node.tag_node_name)
+                    logger.info(f"Pasted new node {node.tag_node_name} from clipboard.")
+            except Exception as exc:
+                logger.error(f"Paste failed for {node_name}: {exc}")
+
+        self._node_connection_dict = self._sort_node_graph(
+            self._node_list, self._node_link_list
+        )
