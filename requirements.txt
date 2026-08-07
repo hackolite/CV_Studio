@@ -12,6 +12,8 @@ onnxruntime>=1.16.0
 # for the OnlineTraining student. When absent, the node falls back to the
 # built-in affine correction head. Install with: pip install torch onnx2torch
 onnx>=1.14.0
+torch>=2.0.0
+transformers>=4.30.0
 dearpygui>=2.0.0
 mediapipe>=0.10.0
 protobuf>=3.20.2,<4.0.0
