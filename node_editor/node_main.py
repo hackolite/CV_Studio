@@ -304,7 +304,7 @@ class DpgNodeEditor(object):
         self._opencv_setting_dict = opencv_setting_dict
         self.window = None
 
-        # Undo stack: stores up to 3 deleted-node snapshots for Ctrl+Z
+        # Undo stack: stores up to 20 deleted-node snapshots for Ctrl+Z
         self._undo_stack = []
         # Clipboard: stores one node snapshot for Ctrl+C / Ctrl+V
         self._clipboard = None
@@ -886,7 +886,7 @@ class DpgNodeEditor(object):
                     'settings': copy.deepcopy(snapshot_settings),
                     'links': copy.deepcopy(snapshot_links),
                 })
-                if len(self._undo_stack) > 3:
+                if len(self._undo_stack) > 20:
                     self._undo_stack.pop(0)
             except Exception as exc:
                 logger.warning(f"Undo snapshot failed for {node_id_name}: {exc}")
@@ -948,13 +948,18 @@ class DpgNodeEditor(object):
             )
 
     # ------------------------------------------------------------------
-    # Select all (Ctrl+A): mark all nodes as "selected" for next Delete
+    # Select all (Ctrl+A): visually select all nodes and mark for Delete
     # ------------------------------------------------------------------
     def _callback_select_all(self):
         if not _is_ctrl_down():
             return
         self._select_all_flag = True
-        logger.debug("Select all: %d node(s) will be deleted on next Delete key.", len(self._node_list))
+        for node_id_name in self._node_list:
+            try:
+                dpg.select_node(self._node_editor_tag, node_id_name)
+            except Exception as exc:
+                logger.debug("select_node failed for %s: %s", node_id_name, exc)
+        logger.debug("Select all: %d node(s) selected.", len(self._node_list))
 
     # ------------------------------------------------------------------
     # Batch delete with undo (used when Ctrl+A + Delete is pressed)
