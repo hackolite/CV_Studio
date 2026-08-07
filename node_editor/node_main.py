@@ -938,6 +938,9 @@ class DpgNodeEditor(object):
             self._node_instances_list[node.tag_node_name] = node
             node.set_setting_dict(node_id, settings)
             self._node_list.append(node_id_name)
+            # Ensure _node_id stays ahead of restored node IDs to avoid future conflicts
+            if node_id > self._node_id:
+                self._node_id = node_id
 
             # Restore associated links (only if both endpoints still exist)
             for link_info in links:
