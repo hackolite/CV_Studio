@@ -786,6 +786,9 @@ class DpgNodeEditor(object):
                     node.set_setting_dict(new_id, remapped_settings)
                 except Exception as exc:
                     logger.warning(f"Import: set_setting_dict failed for '{node_name}' (id={new_id}): {exc}")
+                    # Settings could not be restored; node appears with defaults.
+                    # We still register it in _node_list so it remains manageable
+                    # (selectable, deletable) rather than becoming an orphan.
 
                 self._node_list.append(node.tag_node_name)
 
