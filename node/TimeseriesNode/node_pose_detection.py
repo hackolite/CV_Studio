@@ -100,6 +100,20 @@ def _angle_rad(a, b, c):
 # Body posture classifier
 # ---------------------------------------------------------------------------
 
+def _movenet_person_confidence(person):
+    """Return a confidence score for a MoveNet person dict.
+
+    For multipose results the bbox entry holds a detection score at index 4.
+    For single-pose results we fall back to the mean score of all keypoints.
+    """
+    bbox = person.get('bbox')
+    if bbox is not None and len(bbox) >= 5:
+        return float(bbox[4])
+    scores = [kp[2] for kp in person.values()
+              if isinstance(kp, list) and len(kp) >= 3]
+    return float(sum(scores) / len(scores)) if scores else 0.0
+
+
 def _classify_body_movenet(results_list, score_th, image_h, image_w):
     """
     Classify body posture from MoveNet keypoints.
@@ -116,10 +130,12 @@ def _classify_body_movenet(results_list, score_th, image_h, image_w):
     Each keypoint: [x_px, y_px, score]
     """
     labels = []
+    confidences = []
     for person in results_list:
         label = _classify_movenet_person(person, score_th, image_h, image_w)
         labels.append(label)
-    return labels
+        confidences.append(_movenet_person_confidence(person))
+    return labels, confidences
 
 
 def _safe_kp(person, idx, score_th):
@@ -155,6 +171,13 @@ def _classify_movenet_person(person, score_th, image_h, image_w):
     return _classify_from_body_points(shoulder, hip, knee, ankle, wrist, image_h, image_w)
 
 
+def _mediapipe_person_confidence(person):
+    """Return a confidence score for a MediaPipe Pose person dict (mean visibility)."""
+    scores = [kp[3] for kp in person.values()
+              if isinstance(kp, list) and len(kp) >= 4]
+    return float(sum(scores) / len(scores)) if scores else 0.0
+
+
 def _classify_body_mediapipe(results_list, score_th, image_h, image_w):
     """
     Classify body posture from MediaPipe Pose keypoints.
@@ -170,10 +193,12 @@ def _classify_body_mediapipe(results_list, score_th, image_h, image_w):
     Each keypoint: [x_px, y_px, z, visibility]
     """
     labels = []
+    confidences = []
     for person in results_list:
         label = _classify_mediapipe_person(person, score_th, image_h, image_w)
         labels.append(label)
-    return labels
+        confidences.append(_mediapipe_person_confidence(person))
+    return labels, confidences
 
 
 def _safe_mp(person, idx, score_th):
@@ -361,9 +386,11 @@ def _classify_hand(hand, image_h):
 
 def _classify_hands(results_list, image_h, image_w):
     labels = []
+    confidences = []
     for hand in results_list:
         labels.append(_classify_hand(hand, image_h))
-    return labels
+        confidences.append(1.0)
+    return labels, confidences
 
 
 # ---------------------------------------------------------------------------
@@ -607,14 +634,20 @@ class Node(Node):
             h, w = frame.shape[:2]
 
             if detection_type in _BODY_MOVENET_TYPES:
-                labels = _classify_body_movenet(results_list, score_th, h, w)
+                labels, confidences = _classify_body_movenet(results_list, score_th, h, w)
             elif detection_type in _BODY_MEDIAPIPE_TYPES:
-                labels = _classify_body_mediapipe(results_list, score_th, h, w)
+                labels, confidences = _classify_body_mediapipe(results_list, score_th, h, w)
             elif detection_type in _HAND_TYPES:
-                labels = _classify_hands(results_list, h, w)
+                labels, confidences = _classify_hands(results_list, h, w)
+            else:
+                confidences = []
 
             result['detection_type'] = detection_type
             result['labels'] = labels
+            result['detections'] = [
+                {'id': i, 'confidence': round(c, 4), 'label': lbl}
+                for i, (lbl, c) in enumerate(zip(labels, confidences))
+            ]
             result['model_name'] = pose_result.get('model_name', '')
 
         if frame is not None and use_pref_counter:
