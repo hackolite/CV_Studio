@@ -264,3 +264,240 @@ class TestDeleteDpgLink:
 
         # Should not raise
         editor._delete_dpg_link(["1:Video:IMAGE:output", "2:Display:IMAGE:input"])
+
+
+class TestCopyPasteNode:
+    """Tests for multi-node Ctrl+C / Ctrl+V behaviour."""
+
+    def _make_factory(self, tag="1:Video"):
+        """Return a mock factory whose add_node returns a node with tag_node_name."""
+        factory = MagicMock()
+        node_mock = MagicMock()
+        node_mock.tag_node_name = f"{tag}_pasted"
+        factory.add_node.return_value = node_mock
+        return factory, node_mock
+
+    # ------------------------------------------------------------------
+    # Copy tests
+    # ------------------------------------------------------------------
+    def test_copy_single_selected_node(self, editor, reset_dpg_mock):
+        """Ctrl+C with one selected node stores a one-entry clipboard list."""
+        mock_dpg = reset_dpg_mock
+        mock_dpg.is_key_down.return_value = True
+        mock_dpg.get_selected_nodes.return_value = [100]
+        mock_dpg.get_item_alias.side_effect = lambda x: {100: "1:Video"}.get(x, x)
+
+        editor._node_list = ["1:Video"]
+        instance = MagicMock()
+        instance.get_setting_dict.return_value = {'pos': [10, 20]}
+        editor._node_instances_list["1:Video"] = instance
+
+        editor._callback_copy_node()
+
+        assert isinstance(editor._clipboard, list)
+        assert len(editor._clipboard) == 1
+        assert editor._clipboard[0]['node_name'] == "Video"
+        assert editor._clipboard_paste_offset == 0
+
+    def test_copy_multiple_selected_nodes(self, editor, reset_dpg_mock):
+        """Ctrl+C with two selected nodes stores a two-entry clipboard list."""
+        mock_dpg = reset_dpg_mock
+        mock_dpg.is_key_down.return_value = True
+        mock_dpg.get_selected_nodes.return_value = [100, 200]
+        mock_dpg.get_item_alias.side_effect = lambda x: {100: "1:Video", 200: "2:Display"}.get(x, x)
+
+        editor._node_list = ["1:Video", "2:Display"]
+        inst_a = MagicMock()
+        inst_a.get_setting_dict.return_value = {'pos': [10, 20]}
+        inst_b = MagicMock()
+        inst_b.get_setting_dict.return_value = {'pos': [100, 200]}
+        editor._node_instances_list["1:Video"] = inst_a
+        editor._node_instances_list["2:Display"] = inst_b
+
+        editor._callback_copy_node()
+
+        assert len(editor._clipboard) == 2
+        names = {e['node_name'] for e in editor._clipboard}
+        assert names == {"Video", "Display"}
+
+    def test_copy_clears_select_all_flag(self, editor, reset_dpg_mock):
+        """Ctrl+C should clear _select_all_flag."""
+        mock_dpg = reset_dpg_mock
+        mock_dpg.is_key_down.return_value = True
+        mock_dpg.get_selected_nodes.return_value = [100]
+        mock_dpg.get_item_alias.side_effect = lambda x: {100: "1:Video"}.get(x, x)
+
+        editor._node_list = ["1:Video"]
+        inst = MagicMock()
+        inst.get_setting_dict.return_value = {'pos': [0, 0]}
+        editor._node_instances_list["1:Video"] = inst
+        editor._select_all_flag = True
+
+        editor._callback_copy_node()
+
+        assert editor._select_all_flag is False
+
+    def test_copy_requires_ctrl(self, editor, reset_dpg_mock):
+        """Copy should do nothing if Ctrl is not held."""
+        mock_dpg = reset_dpg_mock
+        mock_dpg.is_key_down.return_value = False
+
+        editor._callback_copy_node()
+
+        assert editor._clipboard is None
+
+    # ------------------------------------------------------------------
+    # Paste tests
+    # ------------------------------------------------------------------
+    def _setup_paste(self, editor, mock_dpg, node_name="Video", pos=(10, 20)):
+        """Helper: set up clipboard and factory for a single-node paste."""
+        mock_dpg.is_key_down.return_value = True
+        editor._clipboard = [{'node_name': node_name, 'settings': {'pos': list(pos)}}]
+        editor._clipboard_paste_offset = 0
+
+        factory, pasted = MagicMock(), MagicMock()
+        pasted.tag_node_name = f"99:{node_name}"
+        factory.add_node.return_value = pasted
+        editor._node_factory_list[node_name] = factory
+        editor._node_list = []
+        editor._node_link_list = []
+        return factory, pasted
+
+    def test_paste_creates_node_in_node_list(self, editor, reset_dpg_mock):
+        """Ctrl+V adds the pasted node to _node_list."""
+        mock_dpg = reset_dpg_mock
+        factory, pasted = self._setup_paste(editor, mock_dpg)
+
+        editor._callback_paste_node()
+
+        assert pasted.tag_node_name in editor._node_list
+
+    def test_paste_offsets_position_by_40(self, editor, reset_dpg_mock):
+        """First paste should place node at original pos + 40."""
+        mock_dpg = reset_dpg_mock
+        factory, pasted = self._setup_paste(editor, mock_dpg, pos=(10, 20))
+
+        editor._callback_paste_node()
+
+        call_kwargs = factory.add_node.call_args
+        pos_arg = call_kwargs[1].get('pos') or call_kwargs[0][2]
+        assert pos_arg == [50, 60]
+
+    def test_paste_accumulates_offset_on_repeated_paste(self, editor, reset_dpg_mock):
+        """Repeated Ctrl+V should stagger positions by 40 each time."""
+        mock_dpg = reset_dpg_mock
+
+        call_positions = []
+        node_counter = [0]
+
+        def make_node(*args, **kwargs):
+            node_counter[0] += 1
+            n = MagicMock()
+            n.tag_node_name = f"{node_counter[0]}:Video"
+            call_positions.append(kwargs.get('pos', args[2] if len(args) > 2 else None))
+            return n
+
+        mock_dpg.is_key_down.return_value = True
+        editor._clipboard = [{'node_name': "Video", 'settings': {'pos': [0, 0]}}]
+        editor._clipboard_paste_offset = 0
+
+        factory = MagicMock()
+        factory.add_node.side_effect = make_node
+        editor._node_factory_list["Video"] = factory
+        editor._node_list = []
+        editor._node_link_list = []
+
+        editor._callback_paste_node()
+        editor._callback_paste_node()
+        editor._callback_paste_node()
+
+        # offsets should be 40, 80, 120
+        assert call_positions[0] == [40, 40]
+        assert call_positions[1] == [80, 80]
+        assert call_positions[2] == [120, 120]
+
+    def test_paste_multi_node_clipboard(self, editor, reset_dpg_mock):
+        """Pasting a two-node clipboard creates two nodes."""
+        mock_dpg = reset_dpg_mock
+        mock_dpg.is_key_down.return_value = True
+
+        node_counter = [0]
+        created_tags = []
+
+        def make_node(parent, node_id, pos, **kw):
+            node_counter[0] += 1
+            n = MagicMock()
+            n.tag_node_name = f"{node_id}:Node"
+            created_tags.append(n.tag_node_name)
+            return n
+
+        factory_a = MagicMock()
+        factory_a.add_node.side_effect = make_node
+        factory_b = MagicMock()
+        factory_b.add_node.side_effect = make_node
+
+        editor._clipboard = [
+            {'node_name': "Video", 'settings': {'pos': [0, 0]}},
+            {'node_name': "Display", 'settings': {'pos': [100, 0]}},
+        ]
+        editor._clipboard_paste_offset = 0
+        editor._node_factory_list["Video"] = factory_a
+        editor._node_factory_list["Display"] = factory_b
+        editor._node_list = []
+        editor._node_link_list = []
+
+        editor._callback_paste_node()
+
+        assert len(editor._node_list) == 2
+
+    def test_paste_clears_select_all_flag(self, editor, reset_dpg_mock):
+        """Ctrl+V should clear _select_all_flag."""
+        mock_dpg = reset_dpg_mock
+        factory, pasted = self._setup_paste(editor, mock_dpg)
+        editor._select_all_flag = True
+
+        editor._callback_paste_node()
+
+        assert editor._select_all_flag is False
+
+    def test_paste_requires_ctrl(self, editor, reset_dpg_mock):
+        """Paste should do nothing if Ctrl is not held."""
+        mock_dpg = reset_dpg_mock
+        mock_dpg.is_key_down.return_value = False
+        editor._clipboard = [{'node_name': "Video", 'settings': {'pos': [0, 0]}}]
+        editor._node_list = []
+
+        editor._callback_paste_node()
+
+        assert editor._node_list == []
+
+    def test_pasted_node_can_be_deleted(self, editor, reset_dpg_mock):
+        """A pasted node should be deletable via _callback_mv_key_del."""
+        mock_dpg = reset_dpg_mock
+
+        # 1. Paste a node
+        mock_dpg.is_key_down.return_value = True
+        pasted_node = MagicMock()
+        pasted_node.tag_node_name = "1:Video"
+
+        factory = MagicMock()
+        factory.add_node.return_value = pasted_node
+        editor._node_factory_list["Video"] = factory
+        editor._clipboard = [{'node_name': "Video", 'settings': {'pos': [0, 0]}}]
+        editor._clipboard_paste_offset = 0
+        editor._node_list = []
+        editor._node_link_list = []
+
+        editor._callback_paste_node()
+
+        assert "1:Video" in editor._node_list
+
+        # 2. Select and delete it
+        mock_dpg.get_selected_nodes.return_value = [101]
+        mock_dpg.get_selected_links.return_value = []
+        mock_dpg.get_item_alias.side_effect = lambda x: {101: "1:Video"}.get(x, x)
+        mock_dpg.get_item_children.return_value = []
+
+        editor._callback_mv_key_del()
+
+        assert "1:Video" not in editor._node_list
