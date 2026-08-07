@@ -775,8 +775,8 @@ class DpgNodeEditor(object):
 
                 self._node_list.append(node.tag_node_name)
 
-            # Advance _node_id past all newly imported nodes
-            self._node_id += max_file_id
+            # Advance _node_id past all newly imported nodes (exclusive, so +1)
+            self._node_id += max_file_id + 1
 
             # Remap and add links from the imported file
             for link in setting_dict["link_list"]:
