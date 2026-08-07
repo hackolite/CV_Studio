@@ -25,6 +25,19 @@ dpg.create_context()
 logger = get_logger(__name__)
 
 
+def _is_ctrl_down():
+    """Return True if either Left-Control or Right-Control is currently held.
+
+    DearPyGui 2.x removed the generic ``mvKey_Control`` constant and replaced
+    it with ``mvKey_LControl`` / ``mvKey_RControl``.  We try the new constants
+    first and fall back to the legacy one so the code works across versions.
+    """
+    try:
+        return dpg.is_key_down(dpg.mvKey_LControl) or dpg.is_key_down(dpg.mvKey_RControl)
+    except AttributeError:
+        return dpg.is_key_down(dpg.mvKey_Control)
+
+
 def update_uptime_display():
     """Update the uptime text in the menu bar (far right)."""
     elapsed = int(time.time() - _start_time)
@@ -938,7 +951,7 @@ class DpgNodeEditor(object):
     # Select all (Ctrl+A): mark all nodes as "selected" for next Delete
     # ------------------------------------------------------------------
     def _callback_select_all(self):
-        if not dpg.is_key_down(dpg.mvKey_Control):
+        if not _is_ctrl_down():
             return
         self._select_all_flag = True
         logger.debug("Select all: %d node(s) will be deleted on next Delete key.", len(self._node_list))
@@ -1014,7 +1027,7 @@ class DpgNodeEditor(object):
     # Undo (Ctrl+Z): restore the last deleted node (up to 3 levels)
     # ------------------------------------------------------------------
     def _callback_undo(self):
-        if not dpg.is_key_down(dpg.mvKey_Control):
+        if not _is_ctrl_down():
             return
         if not self._undo_stack:
             logger.debug("Undo: nothing to undo.")
@@ -1124,7 +1137,7 @@ class DpgNodeEditor(object):
     # Copy (Ctrl+C): snapshot the selected node into the clipboard
     # ------------------------------------------------------------------
     def _callback_copy_node(self):
-        if not dpg.is_key_down(dpg.mvKey_Control):
+        if not _is_ctrl_down():
             return
         selected = dpg.get_selected_nodes(self._node_editor_tag)
         if not selected:
@@ -1154,7 +1167,7 @@ class DpgNodeEditor(object):
     # Paste (Ctrl+V): create a new node from the clipboard snapshot
     # ------------------------------------------------------------------
     def _callback_paste_node(self):
-        if not dpg.is_key_down(dpg.mvKey_Control):
+        if not _is_ctrl_down():
             return
         if self._clipboard is None:
             return
