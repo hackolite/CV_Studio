@@ -178,7 +178,7 @@ class FactoryNode:
             ):
                 dpg.add_text(
                     tag=node.tag_status_text,
-                    default_value=f'Waiting: 0/{self._slot_id.get(node.tag_node_name, 2)} players',
+                    default_value=f'Waiting: 0/{node._slot_id.get(node.tag_node_name, 2)} players',
                 )
 
             # Slot name fields (A / B by default)
