@@ -20,6 +20,7 @@ import time
 import cv2
 import numpy as np
 import dearpygui.dearpygui as dpg
+from PIL import Image, ImageDraw, ImageFont
 
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.basenode import Node
@@ -77,6 +78,63 @@ LABEL_COLORS = {
 }
 
 DEFAULT_COLOR = (200, 200, 200)
+
+# ---------------------------------------------------------------------------
+# Font for UTF-8 text rendering (supports accented French characters)
+# ---------------------------------------------------------------------------
+
+_FONT_PATHS = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+]
+
+
+def _load_font(size):
+    for path in _FONT_PATHS:
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            pass
+    return ImageFont.load_default()
+
+
+def _put_text_utf8(img_bgr, text, origin, font, color_bgr, bg_color=None):
+    """Draw *text* with UTF-8 support on an OpenCV BGR image using PIL.
+
+    Parameters
+    ----------
+    img_bgr   : numpy array (H, W, 3)
+    text      : str - may contain accented characters
+    origin    : (x, y) - bottom-left of the text (matches cv2.putText convention)
+    font      : PIL ImageFont
+    color_bgr : (B, G, R) text colour
+    bg_color  : optional (B, G, R) background rectangle colour
+
+    Returns
+    -------
+    Modified numpy array (H, W, 3) in BGR.
+    """
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    pil_img = Image.fromarray(img_rgb)
+    draw = ImageDraw.Draw(pil_img)
+
+    x, y_bottom = origin
+    bbox = font.getbbox(text)          # (left, top, right, bottom) relative to origin
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    y_top = y_bottom - text_h          # convert bottom-left to top-left for PIL
+
+    if bg_color is not None:
+        bg_r, bg_g, bg_b = bg_color[2], bg_color[1], bg_color[0]
+        draw.rectangle(
+            [x - 4, y_top - 4, x + text_w + 4, y_bottom + 4],
+            fill=(bg_r, bg_g, bg_b),
+        )
+
+    r, g, b = color_bgr[2], color_bgr[1], color_bgr[0]
+    draw.text((x, y_top), text, font=font, fill=(r, g, b))
+
+    return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
 
 # ---------------------------------------------------------------------------
@@ -398,45 +456,27 @@ def _classify_hands(results_list, image_h, image_w):
 # ---------------------------------------------------------------------------
 
 def _draw_labels(image, labels, detection_type):
-    """Overlay detected labels on the image."""
+    """Overlay detected labels on the image with UTF-8 support (accented French)."""
     debug = copy.deepcopy(image)
     h, w = debug.shape[:2]
 
-    header = detection_type
-    cv2.putText(
-        debug, header,
-        (10, 25),
-        cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-        (255, 255, 255), 2, cv2.LINE_AA,
-    )
+    font_header = _load_font(16)
+    font_label = _load_font(20)
+
+    debug = _put_text_utf8(debug, detection_type, (10, 25), font_header, (255, 255, 255))
 
     for i, label in enumerate(labels):
         color = LABEL_COLORS.get(label, DEFAULT_COLOR)
         y_pos = 55 + i * 35
         if y_pos + 10 > h:
             break
-        # Background rectangle for readability
-        text_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
-        cv2.rectangle(
-            debug,
-            (8, y_pos - text_size[1] - 4),
-            (8 + text_size[0] + 8, y_pos + 4),
-            (0, 0, 0),
-            -1,
-        )
-        cv2.putText(
-            debug, label,
-            (12, y_pos),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.8,
-            color, 2, cv2.LINE_AA,
+        debug = _put_text_utf8(
+            debug, label, (12, y_pos), font_label, color, bg_color=(0, 0, 0),
         )
 
     if not labels:
-        cv2.putText(
-            debug, "Aucune detection",
-            (10, 55),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-            (120, 120, 120), 2, cv2.LINE_AA,
+        debug = _put_text_utf8(
+            debug, "Aucune détection", (10, 55), font_label, (120, 120, 120),
         )
 
     return debug
