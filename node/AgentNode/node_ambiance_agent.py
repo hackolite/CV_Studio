@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """AmbianceAgent node — LLM-driven ambiance orchestration via OpenRouter or Google AI Studio."""
 
+import hashlib
 import json
 import logging
 import os
@@ -253,9 +254,11 @@ class Node(BaseNode):
         self._state = 'READY'       # READY | RUNNING | COOLDOWN
         self._cooldown_start = None
         self._cooldown_s = 30
+        self._error_cooldown_s = 15  # shorter cooldown after errors
         self._last_output = {}
         self._available_models = []
         self._tag_provider = None
+        self._last_input_hash = None  # hash of last submitted inputs
 
     # ------------------------------------------------------------------
     # GUI construction
@@ -550,8 +553,6 @@ class Node(BaseNode):
         except (SystemError, AttributeError):
             execute = False
 
-        cooldown_s = self._cooldown_s
-
         # ── Poll LLM thread result ────────────────────────────────────────
         if self._state == 'RUNNING':
             try:
@@ -559,7 +560,10 @@ class Node(BaseNode):
                 if 'error' in result:
                     _LOG.error('[AmbianceAgent] LLM error: %s', result['error'])
                     self._set_status(f'[!] ERROR: {result["error"]}')
-                    self._state = 'READY'
+                    # Apply error cooldown to prevent immediate retry floods
+                    self._state = 'COOLDOWN'
+                    self._cooldown_start = time.time()
+                    self._cooldown_s = self._error_cooldown_s
                 else:
                     parsed = self._parse_llm_response(result['text'])
                     if parsed:
@@ -587,6 +591,7 @@ class Node(BaseNode):
                         _LOG.warning('[AmbianceAgent] Failed to parse LLM response as JSON')
                     self._state = 'COOLDOWN'
                     self._cooldown_start = time.time()
+                    self._cooldown_s = 30  # normal cooldown after success
                     self._set_status('[~] COOLDOWN')
             except queue.Empty:
                 self._set_status('[>] RUNNING...')
@@ -594,7 +599,7 @@ class Node(BaseNode):
         # ── Cooldown countdown ────────────────────────────────────────────
         if self._state == 'COOLDOWN':
             elapsed = time.time() - self._cooldown_start
-            remaining = cooldown_s - elapsed
+            remaining = self._cooldown_s - elapsed
             if remaining <= 0:
                 self._state = 'READY'
                 self._set_status('[*] READY')
@@ -625,6 +630,15 @@ class Node(BaseNode):
                         _LOG.info('[AmbianceAgent] Prompt picked up from %s: %r', input_key, prompt)
                         break
 
+            # ── Deduplicate: skip if inputs have not changed since last call ──
+            input_fingerprint = hashlib.md5(
+                json.dumps({'prompt': prompt, 'inputs': aggregated},
+                           sort_keys=True, ensure_ascii=False).encode()
+            ).hexdigest()
+            if input_fingerprint == self._last_input_hash:
+                _LOG.debug('[AmbianceAgent] Inputs unchanged — skipping LLM call')
+                return {'image': None, 'json': self._last_output, 'audio': None}
+
             _LOG.info('[AmbianceAgent] Execute triggered — model=%r  prompt=%r  aggregated_keys=%s',
                       model, prompt, list(aggregated.keys()))
 
@@ -639,8 +653,14 @@ class Node(BaseNode):
                 tools = self._discover_tools(node_result_dict)
 
                 messages = self._build_messages(aggregated, prompt, tools)
+                self._last_input_hash = input_fingerprint
                 self._state = 'RUNNING'
                 self._set_status('[>] RUNNING...')
+                # Uncheck Execute after triggering (one-shot mode)
+                try:
+                    dpg_set_value(self._tag_execute, False)
+                except (SystemError, AttributeError):
+                    pass
                 provider = self._get_current_provider()
                 worker = _google_ai_worker if provider == PROVIDER_GOOGLE_AI else _llm_worker
                 self._llm_thread = threading.Thread(
