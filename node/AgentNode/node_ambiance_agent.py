@@ -3,6 +3,7 @@
 """AmbianceAgent node — LLM-driven ambiance orchestration via OpenRouter."""
 
 import json
+import logging
 import os
 import queue
 import threading
@@ -13,6 +14,8 @@ import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.basenode import Node as BaseNode
+
+_LOG = logging.getLogger(__name__)
 
 OPENROUTER_API_URL = 'https://openrouter.ai/api/v1'
 OPENROUTER_MODELS_URL = f'{OPENROUTER_API_URL}/models'
@@ -87,6 +90,9 @@ def _fetch_free_text_models():
 
 def _llm_worker(result_queue, api_key, model, messages):
     """Call OpenRouter chat completions in a background thread."""
+    _LOG.info('[AmbianceAgent] LLM request → model=%s  messages=%d', model, len(messages))
+    user_msg = next((m['content'] for m in messages if m['role'] == 'user'), '')
+    _LOG.debug('[AmbianceAgent] LLM user payload: %s', user_msg[:500])
     try:
         headers = {
             'Authorization': 'Bearer ' + api_key,
@@ -104,14 +110,19 @@ def _llm_worker(result_queue, api_key, model, messages):
         text = (data.get('choices', [{}])[0]
                 .get('message', {})
                 .get('content', str(data)))
+        _LOG.info('[AmbianceAgent] LLM response received (%d chars): %s…', len(text), text[:200])
         result_queue.put({'text': text})
-    except requests.exceptions.ConnectionError:
+    except requests.exceptions.ConnectionError as e:
+        _LOG.error('[AmbianceAgent] LLM connection error: %s', e)
         result_queue.put({'error': 'Connection error'})
     except requests.exceptions.Timeout:
+        _LOG.error('[AmbianceAgent] LLM request timed out after 60 s')
         result_queue.put({'error': 'Timeout'})
     except requests.exceptions.HTTPError as e:
+        _LOG.error('[AmbianceAgent] LLM HTTP error %s: %s', e.response.status_code, e.response.text[:300])
         result_queue.put({'error': f'HTTP {e.response.status_code}'})
     except Exception as e:
+        _LOG.error('[AmbianceAgent] LLM unexpected error: %s', e, exc_info=True)
         result_queue.put({'error': f'Error: {str(e)[:80]}'})
 
 
@@ -376,8 +387,10 @@ class Node(BaseNode):
                         tmpl = child_inst.get_tool_template()
                         if tmpl:
                             tools.append(tmpl)
-                    except Exception:
-                        pass
+                            _LOG.debug('[AmbianceAgent] Discovered tool: %s', tmpl.get('tool_name', child_node_id))
+                    except Exception as exc:
+                        _LOG.warning('[AmbianceAgent] Could not get tool template from %s: %s', child_node_id, exc)
+        _LOG.info('[AmbianceAgent] Tools discovered: %s', [t.get('tool_name') for t in tools])
         return tools
 
     # ------------------------------------------------------------------
@@ -397,6 +410,9 @@ class Node(BaseNode):
                     src_data = node_result_dict.get(src_key)
                     if isinstance(src_data, dict):
                         aggregated[f'input_{i}'] = src_data
+                        _LOG.debug('[AmbianceAgent] input_%d ← %s : %s', i, src_key, src_data)
+                    else:
+                        _LOG.debug('[AmbianceAgent] input_%d ← %s : no dict data (got %r)', i, src_key, src_data)
                     break
 
         # ── Read controls ────────────────────────────────────────────────
@@ -412,11 +428,13 @@ class Node(BaseNode):
             try:
                 result = self._llm_queue.get_nowait()
                 if 'error' in result:
+                    _LOG.error('[AmbianceAgent] LLM error: %s', result['error'])
                     self._set_status(f'[!] ERROR: {result["error"]}')
                     self._state = 'READY'
                 else:
                     parsed = self._parse_llm_response(result['text'])
                     if parsed:
+                        _LOG.info('[AmbianceAgent] LLM response parsed — actions: %s', list((parsed.get('actions') or {}).keys()))
                         self._last_output = parsed
                         # Propagate description → description widget + Text2Speech text
                         description = parsed.get('description', '')
@@ -436,6 +454,8 @@ class Node(BaseNode):
                                           json.dumps(decision, indent=2, ensure_ascii=False))
                         except (SystemError, AttributeError):
                             pass
+                    else:
+                        _LOG.warning('[AmbianceAgent] Failed to parse LLM response as JSON')
                     self._state = 'COOLDOWN'
                     self._cooldown_start = time.time()
                     self._set_status('[~] COOLDOWN')
@@ -470,14 +490,20 @@ class Node(BaseNode):
             # If no explicit prompt is typed, look for a 'prompt' key in any
             # connected input JSON (e.g. from a Speech2Text node).
             if not prompt:
-                for val in aggregated.values():
+                for input_key, val in aggregated.items():
                     if isinstance(val, dict) and val.get('prompt'):
                         prompt = str(val['prompt'])
+                        _LOG.info('[AmbianceAgent] Prompt picked up from %s: %r', input_key, prompt)
                         break
 
+            _LOG.info('[AmbianceAgent] Execute triggered — model=%r  prompt=%r  aggregated_keys=%s',
+                      model, prompt, list(aggregated.keys()))
+
             if not api_key:
+                _LOG.error('[AmbianceAgent] API key missing — cannot call LLM')
                 self._set_status('[!] ERROR: API key missing')
             elif not model:
+                _LOG.error('[AmbianceAgent] No model selected — cannot call LLM')
                 self._set_status('[!] ERROR: No model selected')
             else:
                 # Discover tools from child node instances

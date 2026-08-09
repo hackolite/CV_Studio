@@ -338,12 +338,19 @@ class Node(BaseNode):
                 data = node_result_dict.get(src_key)
                 if isinstance(data, dict):
                     super_json = data
+                    _LOG.debug('[Text2Speech] Received super_json from %s: actions=%s',
+                               src_key, list((data.get('actions') or {}).keys()))
+                else:
+                    _LOG.debug('[Text2Speech] Source %s returned no dict data (%r)', src_key, data)
                 break
 
         if super_json and isinstance(super_json.get('actions'), dict):
             action_data = super_json['actions'].get('Text2Speech', {})
+            _LOG.info('[Text2Speech] action_data: %s', action_data)
         else:
             action_data = {}
+            if super_json is not None:
+                _LOG.warning('[Text2Speech] super_json has no "actions" dict: %r', super_json)
 
         if action_data and action_data.get('enabled', True):
             self._apply_action(action_data)
