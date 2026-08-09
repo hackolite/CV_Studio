@@ -1,12 +1,31 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Text2Speech node — receives Super JSON from Agent and vocalizes the text action."""
+"""Text2Speech node — receives Super JSON from Agent and vocalizes the text action.
+
+Voice synthesis is handled exclusively by **Piper TTS**, a fast, offline,
+neural text-to-speech engine.  Piper was chosen for its:
+
+  • *Low latency* — each sentence is synthesised and streamed to the speaker
+    immediately, so the first words are heard before the full paragraph is
+    processed.
+  • *High naturalness* — VITS-based neural models produce rich, expressive
+    prosody that far surpasses rule-based engines like eSpeak.
+  • *Privacy* — all synthesis runs locally; no audio data leaves the machine.
+  • *Multilingual reach* — the bundled French model (fr_FR-upmc-medium, a
+    medium-quality VITS voice trained on the UPMC corpus) delivers clear,
+    natural-sounding French speech out of the box.  Alternative voices can
+    be configured via the ``PIPER_MODEL_PATH`` environment variable.
+
+The node accepts the agent's Super JSON and reads the ``actions.Text2Speech``
+block.  When ``enabled`` is ``true`` and a ``text`` field is present, synthesis
+runs in a daemon thread so the UI and the rest of the pipeline remain
+fully responsive.
+"""
 
 import json
 import logging
 import os
 import pathlib
-import subprocess
 import tempfile
 import threading
 import urllib.request
@@ -18,21 +37,19 @@ from node.basenode import Node as BaseNode
 
 _LOG = logging.getLogger(__name__)
 
-_VOCALIZERS = ['piper', 'espeak', 'festival', 'edge-tts', 'coqui']
-
 _TOOL_TEMPLATE = {
     'tool_name': 'Text2Speech',
     'description': (
-        'Converts text to speech using the configured vocalizer. '
+        'Converts text to spoken audio using Piper TTS — a fast, offline neural '
+        'voice synthesis engine.  Piper streams each sentence to the speaker as '
+        'soon as it is synthesised, minimising perceived latency.  The French '
+        'VITS model (fr_FR-upmc-medium) is used by default; override the voice '
+    'via the PIPER_MODEL_PATH environment variable.  '
         'Use to narrate ambiance descriptions, alerts, or guided experiences.'
     ),
     'parameters': {
-        'enabled': 'boolean',
-        'text': 'string  # text to vocalize',
-        'vocalizer': 'string  # one of: piper, espeak, festival, edge-tts, coqui',
-        'speed': 'float  # speech rate multiplier, 0.5 to 2.0',
-        'pitch': 'float  # pitch shift, 0.5 to 2.0',
-        'volume': 'float  # output volume, 0.0 to 1.0',
+        'enabled': 'boolean  # activate or mute vocalization',
+        'text': 'string  # the sentence or paragraph to speak aloud',
     },
 }
 
@@ -109,7 +126,7 @@ def _get_piper_voice():
     return _piper_voice
 
 
-def _speak_piper(text: str, speed: float, pitch: float, volume: float) -> None:
+def _speak_piper(text: str) -> None:
     """Synthesize *text* with piper-tts and stream audio live via sounddevice.
 
     Each sentence is synthesized and played immediately (live streaming), so
@@ -130,22 +147,7 @@ def _speak_piper(text: str, speed: float, pitch: float, volume: float) -> None:
         return
 
     try:
-        from piper.config import SynthesisConfig  # noqa: PLC0415
-
-        # length_scale: < 1 is faster, > 1 is slower — inverse of speed multiplier.
-        # pitch has no direct piper equivalent; it is accepted for API compatibility.
-        length_scale = 1.0 / max(float(speed), 0.1)
-        syn_cfg = SynthesisConfig(volume=float(volume), length_scale=length_scale)
-    except Exception:
-        syn_cfg = None
-
-    try:
-        synth_iter = (
-            voice.synthesize(text, syn_config=syn_cfg)
-            if syn_cfg is not None
-            else voice.synthesize(text)
-        )
-        for chunk in synth_iter:
+        for chunk in voice.synthesize(text):
             audio = chunk.audio_float_array.astype(np.float32)
             if audio.size == 0:
                 continue
@@ -154,28 +156,10 @@ def _speak_piper(text: str, speed: float, pitch: float, volume: float) -> None:
         _LOG.error('Piper synthesis error: %s', exc)
 
 
-def _speak_espeak(text, speed, pitch, volume):
-    try:
-        rate = int(175 * speed)
-        pitch_val = int(50 * pitch)
-        vol = int(100 * volume)
-        subprocess.Popen(
-            ['espeak', '-s', str(rate), '-p', str(pitch_val), '-a', str(vol), text],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except (FileNotFoundError, OSError):
-        pass
-
-
-def _speak(vocalizer, text, speed, pitch, volume):
+def _speak(text):
     if not text:
         return
-    if vocalizer == 'piper':
-        _speak_piper(text, speed, pitch, volume)
-    elif vocalizer == 'espeak':
-        _speak_espeak(text, speed, pitch, volume)
-    # festival, edge-tts, coqui: placeholders — extend as needed
+    _speak_piper(text)
 
 
 # ---------------------------------------------------------------------------
@@ -267,10 +251,6 @@ class Node(BaseNode):
 
         self._tag_enabled    = tag + ':EnabledValue'
         self._tag_text       = tag + ':TextValue'
-        self._tag_vocalizer  = tag + ':VocalizerValue'
-        self._tag_speed      = tag + ':SpeedValue'
-        self._tag_pitch      = tag + ':PitchValue'
-        self._tag_volume     = tag + ':VolumeValue'
         self._tag_received   = tag + ':ReceivedValue'
         self._tag_status     = tag + ':StatusValue'
         self._tag_out_val    = tag_out_val
@@ -287,43 +267,12 @@ class Node(BaseNode):
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_checkbox(tag=self._tag_enabled, label='Enabled', default_value=True)
-                dpg.add_combo(
-                    tag=self._tag_vocalizer,
-                    label='Vocalizer',
-                    items=_VOCALIZERS,
-                    default_value='piper',
-                    width=w,
-                )
                 dpg.add_input_text(
                     tag=self._tag_text,
                     hint='Text to vocalize...',
                     multiline=True,
                     width=w,
                     height=70,
-                )
-                dpg.add_slider_float(
-                    tag=self._tag_speed,
-                    label='Speed',
-                    default_value=1.0,
-                    min_value=0.5,
-                    max_value=2.0,
-                    width=w,
-                )
-                dpg.add_slider_float(
-                    tag=self._tag_pitch,
-                    label='Pitch',
-                    default_value=1.0,
-                    min_value=0.5,
-                    max_value=2.0,
-                    width=w,
-                )
-                dpg.add_slider_float(
-                    tag=self._tag_volume,
-                    label='Volume',
-                    default_value=0.8,
-                    min_value=0.0,
-                    max_value=1.0,
-                    width=w,
                 )
                 dpg.add_text(tag=self._tag_status, default_value='[*] idle')
 
@@ -388,31 +337,18 @@ class Node(BaseNode):
             dpg_set_value(self._tag_enabled, enabled)
             text = str(data.get('text', ''))
             dpg_set_value(self._tag_text, text)
-            vocalizer = str(data.get('vocalizer', 'piper'))
-            if vocalizer in _VOCALIZERS:
-                dpg_set_value(self._tag_vocalizer, vocalizer)
-            if 'speed' in data:
-                dpg_set_value(self._tag_speed, float(data['speed']))
-            if 'pitch' in data:
-                dpg_set_value(self._tag_pitch, float(data['pitch']))
-            if 'volume' in data:
-                dpg_set_value(self._tag_volume, float(data['volume']))
         except (SystemError, AttributeError, TypeError, ValueError):
             pass
 
         # Fire TTS in background if enabled and text is provided
         if data.get('enabled', True) and data.get('text'):
             try:
-                voc = dpg_get_value(self._tag_vocalizer)
-                spd = float(dpg_get_value(self._tag_speed))
-                pit = float(dpg_get_value(self._tag_pitch))
-                vol = float(dpg_get_value(self._tag_volume))
                 txt = str(dpg_get_value(self._tag_text))
             except (SystemError, AttributeError, TypeError, ValueError):
                 return
             if not (self._speak_thread and self._speak_thread.is_alive()):
                 self._speak_thread = threading.Thread(
-                    target=_speak, args=(voc, txt, spd, pit, vol), daemon=True
+                    target=_speak, args=(txt,), daemon=True
                 )
                 self._speak_thread.start()
                 try:
@@ -433,8 +369,7 @@ class Node(BaseNode):
         tag = self.tag_node_name
         pos = dpg.get_item_pos(tag)
         d = {'ver': self._ver, 'pos': pos}
-        for k in [self._tag_enabled, self._tag_text, self._tag_vocalizer,
-                  self._tag_speed, self._tag_pitch, self._tag_volume]:
+        for k in [self._tag_enabled, self._tag_text]:
             try:
                 d[k] = dpg_get_value(k)
             except (SystemError, AttributeError):
@@ -442,8 +377,7 @@ class Node(BaseNode):
         return d
 
     def set_setting_dict(self, node_id, setting_dict):
-        for k in [self._tag_enabled, self._tag_text, self._tag_vocalizer,
-                  self._tag_speed, self._tag_pitch, self._tag_volume]:
+        for k in [self._tag_enabled, self._tag_text]:
             if k in setting_dict:
                 try:
                     dpg_set_value(k, setting_dict[k])

@@ -446,6 +446,14 @@ class Node(BaseNode):
             except (SystemError, AttributeError):
                 prompt = ''
 
+            # If no explicit prompt is typed, look for a 'prompt' key in any
+            # connected input JSON (e.g. from a Speech2Text node).
+            if not prompt:
+                for val in aggregated.values():
+                    if isinstance(val, dict) and val.get('prompt'):
+                        prompt = str(val['prompt'])
+                        break
+
             if not api_key:
                 self._set_status('[!] ERROR: API key missing')
             elif not model:
