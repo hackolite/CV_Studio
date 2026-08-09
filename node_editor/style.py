@@ -20,8 +20,8 @@ AUDIO_PROCESS = [
 AUDIO_MODEL = ["AudioClassification"]
 STATS = []
 TRIGGER = ["Count", "OnOffSwitch"]
-ROUTER = ["SimpleRouter"]
-ACTION = []
+AGENT = ["SimpleRouter", "AmbianceAgent", "ComfortAgent", "SecurityAgent"]
+ACTION = ["AmbientLight", "Soundscape", "Playlist", "FragranceComposition"]
 VIDEO = ["ImageConcat", "VideoWriter", "ScreenCapture", "DynamicPlay"]
 TRACKING = ["MultiObjectTracking", "ReId", "Trajectory"]
 OVERLAY = ["DrawInformation", "PutText"]
@@ -65,8 +65,8 @@ STYLE = {
         "names": TRIGGER,
         "style": [(221, 160, 221, 255)]  # violet clair (plum pastel)
     },
-    "Router": {
-        "names": ROUTER,
+    "Agent": {
+        "names": AGENT,
         "style": [(216, 191, 216, 255)]  # lavande pastel
     },
     "Action": {
