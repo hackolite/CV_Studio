@@ -1,0 +1,22 @@
+{
+  "soundscapes": [
+    {"id": "soft_ocean", "name": "Soft Ocean", "category": "nature", "mood": ["calm", "relaxing"], "file": "audio/ocean_soft.mp3"},
+    {"id": "deep_ocean", "name": "Deep Ocean", "category": "nature", "mood": ["deep", "meditative"], "file": "audio/ocean_deep.mp3"},
+    {"id": "gentle_wind", "name": "Gentle Wind", "category": "nature", "mood": ["calm", "airy"], "file": "audio/wind_gentle.mp3"},
+    {"id": "strong_wind", "name": "Strong Wind", "category": "nature", "mood": ["energizing", "dramatic"], "file": "audio/wind_strong.mp3"},
+    {"id": "light_rain", "name": "Light Rain", "category": "nature", "mood": ["calm", "cozy"], "file": "audio/rain_light.mp3"},
+    {"id": "heavy_rain", "name": "Heavy Rain", "category": "nature", "mood": ["intense", "drowning"], "file": "audio/rain_heavy.mp3"},
+    {"id": "forest", "name": "Forest", "category": "nature", "mood": ["calm", "grounding", "fresh"], "file": "audio/forest.mp3"},
+    {"id": "birds", "name": "Birds", "category": "nature", "mood": ["cheerful", "morning", "light"], "file": "audio/birds.mp3"},
+    {"id": "whales", "name": "Whales", "category": "nature", "mood": ["deep", "mysterious", "calm"], "file": "audio/whales.mp3"},
+    {"id": "river", "name": "River", "category": "nature", "mood": ["flowing", "refreshing", "calm"], "file": "audio/river.mp3"},
+    {"id": "jungle", "name": "Jungle", "category": "nature", "mood": ["exotic", "lush", "vibrant"], "file": "audio/jungle.mp3"},
+    {"id": "fire", "name": "Crackling Fire", "category": "nature", "mood": ["cozy", "warm", "intimate"], "file": "audio/fire.mp3"},
+    {"id": "night_insects", "name": "Night Insects", "category": "nature", "mood": ["nocturnal", "calm", "summery"], "file": "audio/night.mp3"},
+    {"id": "city_hum", "name": "City Hum", "category": "urban", "mood": ["busy", "ambient"], "file": "audio/city.mp3"},
+    {"id": "tropical_wind", "name": "Tropical Wind", "category": "nature", "mood": ["warm", "exotic", "relaxing"], "file": "audio/tropical_wind.mp3"},
+    {"id": "cave_drip", "name": "Cave Drip", "category": "nature", "mood": ["mysterious", "meditative"], "file": "audio/cave_drip.mp3"},
+    {"id": "thunder_far", "name": "Far Thunder", "category": "nature", "mood": ["dramatic", "tense"], "file": "audio/thunder_far.mp3"},
+    {"id": "spring_meadow", "name": "Spring Meadow", "category": "nature", "mood": ["joyful", "fresh", "light"], "file": "audio/spring_meadow.mp3"}
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "playlists": [
+    {
+      "playlist_name": "World Relaxing",
+      "description": "Soft world music for relaxation",
+      "tracks": [
+        {"title": "Okacha", "artist": "Tinariwen", "country": "Mali", "region": "West Africa", "genre": "Desert Blues", "mood": ["calm", "meditative"], "energy": 0.3, "tempo": 75, "youtube_url": "example"},
+        {"title": "Santorini", "artist": "Yanni", "country": "Greece", "region": "Mediterranean", "genre": "New Age", "mood": ["peaceful", "uplifting"], "energy": 0.4, "tempo": 80, "youtube_url": "example"},
+        {"title": "Watermark", "artist": "Enya", "country": "Ireland", "region": "Western Europe", "genre": "New Age", "mood": ["dreamy", "ethereal"], "energy": 0.2, "tempo": 65, "youtube_url": "example"},
+        {"title": "Pure Shores", "artist": "All Saints", "country": "UK", "region": "Western Europe", "genre": "Pop / Ambient", "mood": ["relaxing", "oceanic"], "energy": 0.3, "tempo": 85, "youtube_url": "example"},
+        {"title": "Ballade Pour Adeline", "artist": "Richard Clayderman", "country": "France", "region": "Western Europe", "genre": "Easy Listening", "mood": ["romantic", "gentle"], "energy": 0.2, "tempo": 72, "youtube_url": "example"},
+        {"title": "Gymnopédie No.1", "artist": "Erik Satie", "country": "France", "region": "Western Europe", "genre": "Classical", "mood": ["melancholic", "serene"], "energy": 0.1, "tempo": 60, "youtube_url": "example"},
+        {"title": "Casta Diva", "artist": "Vincenzo Bellini", "country": "Italy", "region": "Mediterranean", "genre": "Opera / Classical", "mood": ["majestic", "tranquil"], "energy": 0.3, "tempo": 68, "youtube_url": "example"},
+        {"title": "Chick Chick", "artist": "Wang Rong Rollin", "country": "China", "region": "East Asia", "genre": "Pop", "mood": ["playful", "fun"], "energy": 0.8, "tempo": 130, "youtube_url": "example"},
+        {"title": "Chan Chan", "artist": "Buena Vista Social Club", "country": "Cuba", "region": "Latin America", "genre": "Son Cubano", "mood": ["nostalgic", "warm"], "energy": 0.5, "tempo": 100, "youtube_url": "example"},
+        {"title": "La Llorona", "artist": "Chavela Vargas", "country": "Mexico", "region": "Latin America", "genre": "Ranchera", "mood": ["emotional", "deep"], "energy": 0.4, "tempo": 85, "youtube_url": "example"},
+        {"title": "Baba Yetu", "artist": "Christopher Tin", "country": "USA", "region": "Global", "genre": "Choral / World", "mood": ["epic", "uplifting"], "energy": 0.6, "tempo": 110, "youtube_url": "example"},
+        {"title": "Nusrat Fateh Ali Khan Medley", "artist": "Nusrat Fateh Ali Khan", "country": "Pakistan", "region": "South Asia", "genre": "Qawwali", "mood": ["spiritual", "ecstatic"], "energy": 0.7, "tempo": 120, "youtube_url": "example"},
+        {"title": "Sakura Sakura", "artist": "Traditional", "country": "Japan", "region": "East Asia", "genre": "Traditional", "mood": ["serene", "delicate"], "energy": 0.1, "tempo": 58, "youtube_url": "example"},
+        {"title": "Tabla Solo", "artist": "Zakir Hussain", "country": "India", "region": "South Asia", "genre": "Classical Indian", "mood": ["meditative", "rhythmic"], "energy": 0.5, "tempo": 100, "youtube_url": "example"},
+        {"title": "Hymn to the Sea", "artist": "James Horner", "country": "USA", "region": "Global", "genre": "Film Score", "mood": ["nostalgic", "oceanic"], "energy": 0.3, "tempo": 70, "youtube_url": "example"},
+        {"title": "Ambient 1 / Music for Airports", "artist": "Brian Eno", "country": "UK", "region": "Western Europe", "genre": "Ambient", "mood": ["spacious", "calm"], "energy": 0.1, "tempo": 50, "youtube_url": "example"},
+        {"title": "Soweto Gospel Choir", "artist": "Soweto Gospel Choir", "country": "South Africa", "region": "Southern Africa", "genre": "Gospel / Choral", "mood": ["joyful", "uplifting"], "energy": 0.7, "tempo": 115, "youtube_url": "example"},
+        {"title": "Tuvan Throat Singing", "artist": "Huun-Huur-Tu", "country": "Russia (Tuva)", "region": "Central Asia", "genre": "Traditional", "mood": ["meditative", "primal"], "energy": 0.3, "tempo": 65, "youtube_url": "example"}
+      ]
+    }
+  ]
+}

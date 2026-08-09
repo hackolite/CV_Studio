@@ -100,6 +100,11 @@ def async_main(node_editor, queue_manager):
     node_image_dict = QueueBackedDict(queue_manager, "image")
     node_result_dict = QueueBackedDict(queue_manager, "json")
     node_audio_dict = QueueBackedDict(queue_manager, "audio")
+
+    # Inject live references so agent nodes can perform tool discovery
+    # (these are dict references; mutations are visible without re-injection)
+    node_result_dict._node_instances = node_editor._node_instances_list
+    node_result_dict._node_link_list = node_editor._node_link_list
     
     logger.info("Async main loop started with timestamped queue system")
     
@@ -364,7 +369,7 @@ def main():
             "DataModel": "TimeseriesNode",
             "NLPModel": "NLPModelNode",
             "Trigger": "TriggerNode",
-            "Router": "RouterNode",
+            "Agent": "AgentNode",
             "Action": "ActionNode",
             "Overlay": "OverlayNode",
             "Tracking": "TrackerNode",
@@ -404,6 +409,9 @@ def main():
         node_image_dict = QueueBackedDict(queue_manager, "image")
         node_result_dict = QueueBackedDict(queue_manager, "json")
         node_audio_dict = QueueBackedDict(queue_manager, "audio")
+        # Inject live references for agent tool discovery
+        node_result_dict._node_instances = node_editor._node_instances_list
+        node_result_dict._node_link_list = node_editor._node_link_list
         
         while dpg.is_dearpygui_running():
             update_node_info(

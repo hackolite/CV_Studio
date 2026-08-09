@@ -1,0 +1,124 @@
+{
+  "fragrances": [
+    {
+      "name": "Citron",
+      "descriptors": ["citrus", "bright", "zesty", "fresh"],
+      "sensory_axes": {"freshness": 1.0, "warmth": 0.1, "woody": 0.0, "floral": 0.0, "earthy": 0.0, "spicy": 0.0, "sweet": 0.2}
+    },
+    {
+      "name": "Orange",
+      "descriptors": ["citrus", "sweet", "juicy", "warm"],
+      "sensory_axes": {"freshness": 0.8, "warmth": 0.4, "woody": 0.0, "floral": 0.1, "earthy": 0.0, "spicy": 0.1, "sweet": 0.7}
+    },
+    {
+      "name": "Bergamote",
+      "descriptors": ["citrus", "floral", "slightly spicy", "fresh"],
+      "sensory_axes": {"freshness": 0.9, "warmth": 0.2, "woody": 0.0, "floral": 0.5, "earthy": 0.0, "spicy": 0.2, "sweet": 0.3}
+    },
+    {
+      "name": "Pamplemousse",
+      "descriptors": ["citrus", "bitter", "fresh", "crisp"],
+      "sensory_axes": {"freshness": 1.0, "warmth": 0.0, "woody": 0.0, "floral": 0.0, "earthy": 0.0, "spicy": 0.0, "sweet": 0.1}
+    },
+    {
+      "name": "Menthe",
+      "descriptors": ["cool", "fresh", "herbal", "crisp"],
+      "sensory_axes": {"freshness": 1.0, "warmth": 0.0, "woody": 0.0, "floral": 0.0, "earthy": 0.1, "spicy": 0.2, "sweet": 0.1}
+    },
+    {
+      "name": "Eucalyptus",
+      "descriptors": ["camphoraceous", "fresh", "clean", "medicinal"],
+      "sensory_axes": {"freshness": 0.9, "warmth": 0.1, "woody": 0.2, "floral": 0.0, "earthy": 0.1, "spicy": 0.0, "sweet": 0.0}
+    },
+    {
+      "name": "Romarin",
+      "descriptors": ["herbal", "woody", "fresh", "camphoraceous"],
+      "sensory_axes": {"freshness": 0.7, "warmth": 0.3, "woody": 0.5, "floral": 0.1, "earthy": 0.3, "spicy": 0.2, "sweet": 0.0}
+    },
+    {
+      "name": "Basilic",
+      "descriptors": ["herbal", "green", "slightly sweet", "anise"],
+      "sensory_axes": {"freshness": 0.6, "warmth": 0.2, "woody": 0.1, "floral": 0.2, "earthy": 0.2, "spicy": 0.3, "sweet": 0.3}
+    },
+    {
+      "name": "Thym",
+      "descriptors": ["herbal", "warm", "slightly medicinal", "earthy"],
+      "sensory_axes": {"freshness": 0.5, "warmth": 0.5, "woody": 0.3, "floral": 0.0, "earthy": 0.5, "spicy": 0.4, "sweet": 0.0}
+    },
+    {
+      "name": "Lavande",
+      "descriptors": ["floral", "herbal", "clean", "calming"],
+      "sensory_axes": {"freshness": 0.7, "warmth": 0.3, "woody": 0.1, "floral": 0.8, "earthy": 0.1, "spicy": 0.0, "sweet": 0.4}
+    },
+    {
+      "name": "Geranium",
+      "descriptors": ["floral", "rosy", "green", "slightly minty"],
+      "sensory_axes": {"freshness": 0.6, "warmth": 0.3, "woody": 0.0, "floral": 0.8, "earthy": 0.2, "spicy": 0.1, "sweet": 0.3}
+    },
+    {
+      "name": "Ylang-Ylang",
+      "descriptors": ["floral", "exotic", "sweet", "heady"],
+      "sensory_axes": {"freshness": 0.2, "warmth": 0.6, "woody": 0.0, "floral": 1.0, "earthy": 0.0, "spicy": 0.2, "sweet": 0.8}
+    },
+    {
+      "name": "Jasmin",
+      "descriptors": ["floral", "rich", "sweet", "sensual"],
+      "sensory_axes": {"freshness": 0.3, "warmth": 0.5, "woody": 0.0, "floral": 0.9, "earthy": 0.0, "spicy": 0.1, "sweet": 0.7}
+    },
+    {
+      "name": "Rose",
+      "descriptors": ["floral", "classic", "sweet", "powdery"],
+      "sensory_axes": {"freshness": 0.4, "warmth": 0.4, "woody": 0.0, "floral": 1.0, "earthy": 0.0, "spicy": 0.0, "sweet": 0.6}
+    },
+    {
+      "name": "Pin",
+      "descriptors": ["woody", "resinous", "fresh", "forest"],
+      "sensory_axes": {"freshness": 0.7, "warmth": 0.3, "woody": 0.8, "floral": 0.0, "earthy": 0.3, "spicy": 0.0, "sweet": 0.0}
+    },
+    {
+      "name": "Sapin",
+      "descriptors": ["woody", "balsamic", "fresh", "green"],
+      "sensory_axes": {"freshness": 0.8, "warmth": 0.2, "woody": 0.7, "floral": 0.0, "earthy": 0.2, "spicy": 0.0, "sweet": 0.1}
+    },
+    {
+      "name": "Cedre",
+      "descriptors": ["woody", "dry", "warm", "clean"],
+      "sensory_axes": {"freshness": 0.3, "warmth": 0.6, "woody": 0.9, "floral": 0.0, "earthy": 0.3, "spicy": 0.0, "sweet": 0.1}
+    },
+    {
+      "name": "Santal",
+      "descriptors": ["woody", "creamy", "soft", "warm"],
+      "sensory_axes": {"freshness": 0.1, "warmth": 0.8, "woody": 0.8, "floral": 0.1, "earthy": 0.2, "spicy": 0.0, "sweet": 0.5}
+    },
+    {
+      "name": "Vetiver",
+      "descriptors": ["earthy", "woody", "dry", "deep"],
+      "sensory_axes": {"freshness": 0.2, "warmth": 0.7, "woody": 0.9, "floral": 0.0, "earthy": 1.0, "spicy": 0.1, "sweet": 0.1}
+    },
+    {
+      "name": "Patchouli",
+      "descriptors": ["earthy", "musky", "sweet", "dark"],
+      "sensory_axes": {"freshness": 0.0, "warmth": 0.7, "woody": 0.5, "floral": 0.1, "earthy": 0.9, "spicy": 0.2, "sweet": 0.5}
+    },
+    {
+      "name": "Gingembre",
+      "descriptors": ["spicy", "warm", "zesty", "energizing"],
+      "sensory_axes": {"freshness": 0.4, "warmth": 0.8, "woody": 0.0, "floral": 0.0, "earthy": 0.2, "spicy": 0.9, "sweet": 0.2}
+    },
+    {
+      "name": "Cardamome",
+      "descriptors": ["spicy", "warm", "slightly sweet", "exotic"],
+      "sensory_axes": {"freshness": 0.4, "warmth": 0.7, "woody": 0.1, "floral": 0.1, "earthy": 0.2, "spicy": 0.8, "sweet": 0.4}
+    },
+    {
+      "name": "Cannelle",
+      "descriptors": ["spicy", "warm", "sweet", "comforting"],
+      "sensory_axes": {"freshness": 0.0, "warmth": 0.9, "woody": 0.3, "floral": 0.0, "earthy": 0.2, "spicy": 0.9, "sweet": 0.7}
+    },
+    {
+      "name": "Vanille",
+      "descriptors": ["sweet", "warm", "creamy", "comforting"],
+      "sensory_axes": {"freshness": 0.0, "warmth": 0.9, "woody": 0.0, "floral": 0.1, "earthy": 0.0, "spicy": 0.1, "sweet": 1.0}
+    }
+  ]
+}
