@@ -28,6 +28,7 @@ import os
 import pathlib
 import tempfile
 import threading
+import time
 import urllib.request
 
 import dearpygui.dearpygui as dpg
@@ -147,11 +148,19 @@ def _speak_piper(text: str) -> None:
         return
 
     try:
+        chunks = []
+        sample_rate = None
         for chunk in voice.synthesize(text):
             audio = chunk.audio_float_array.astype(np.float32)
             if audio.size == 0:
                 continue
-            sd.play(audio, samplerate=chunk.sample_rate, blocking=True)
+            if sample_rate is None:
+                sample_rate = chunk.sample_rate
+            chunks.append(audio)
+        if chunks and sample_rate:
+            full_audio = np.concatenate(chunks)
+            sd.play(full_audio, samplerate=sample_rate)
+            sd.wait()
     except Exception as exc:
         _LOG.error('Piper synthesis error: %s', exc)
 
@@ -231,6 +240,7 @@ class Node(BaseNode):
         self._opencv_setting_dict = {}
         self._last_output = {}
         self._speak_thread = None
+        self._last_spoke_at = 0.0
 
     def get_tool_template(self):
         return _TOOL_TEMPLATE
@@ -251,6 +261,7 @@ class Node(BaseNode):
 
         self._tag_enabled    = tag + ':EnabledValue'
         self._tag_text       = tag + ':TextValue'
+        self._tag_cooldown   = tag + ':CooldownValue'
         self._tag_received   = tag + ':ReceivedValue'
         self._tag_status     = tag + ':StatusValue'
         self._tag_out_val    = tag_out_val
@@ -273,6 +284,14 @@ class Node(BaseNode):
                     multiline=True,
                     width=w,
                     height=70,
+                )
+                dpg.add_slider_float(
+                    tag=self._tag_cooldown,
+                    label='Cooldown (s)',
+                    default_value=10.0,
+                    min_value=1.0,
+                    max_value=60.0,
+                    width=w,
                 )
                 dpg.add_text(tag=self._tag_status, default_value='[*] idle')
 
@@ -344,21 +363,32 @@ class Node(BaseNode):
         if data.get('enabled', True) and data.get('text'):
             try:
                 txt = str(dpg_get_value(self._tag_text))
+                cooldown = float(dpg_get_value(self._tag_cooldown))
             except (SystemError, AttributeError, TypeError, ValueError):
                 return
-            if not (self._speak_thread and self._speak_thread.is_alive()):
+
+            now = time.monotonic()
+            elapsed = now - self._last_spoke_at
+
+            if self._speak_thread and self._speak_thread.is_alive():
+                try:
+                    dpg_set_value(self._tag_status, '[~] busy — request skipped')
+                except (SystemError, AttributeError):
+                    pass
+            elif elapsed < cooldown:
+                remaining = cooldown - elapsed
+                try:
+                    dpg_set_value(self._tag_status, f'[…] cooldown {remaining:.1f}s')
+                except (SystemError, AttributeError):
+                    pass
+            else:
+                self._last_spoke_at = now
                 self._speak_thread = threading.Thread(
                     target=_speak, args=(txt,), daemon=True
                 )
                 self._speak_thread.start()
                 try:
                     dpg_set_value(self._tag_status, '[>] speaking...')
-                except (SystemError, AttributeError):
-                    pass
-            else:
-                # Previous utterance still playing — skip silently but update status
-                try:
-                    dpg_set_value(self._tag_status, '[~] busy — request skipped')
                 except (SystemError, AttributeError):
                     pass
 
@@ -369,7 +399,7 @@ class Node(BaseNode):
         tag = self.tag_node_name
         pos = dpg.get_item_pos(tag)
         d = {'ver': self._ver, 'pos': pos}
-        for k in [self._tag_enabled, self._tag_text]:
+        for k in [self._tag_enabled, self._tag_text, self._tag_cooldown]:
             try:
                 d[k] = dpg_get_value(k)
             except (SystemError, AttributeError):
@@ -377,7 +407,7 @@ class Node(BaseNode):
         return d
 
     def set_setting_dict(self, node_id, setting_dict):
-        for k in [self._tag_enabled, self._tag_text]:
+        for k in [self._tag_enabled, self._tag_text, self._tag_cooldown]:
             if k in setting_dict:
                 try:
                     dpg_set_value(k, setting_dict[k])
