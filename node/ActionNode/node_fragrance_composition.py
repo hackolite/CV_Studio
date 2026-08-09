@@ -3,12 +3,15 @@
 """FragranceComposition node — receives Super JSON from Agent and extracts its action."""
 
 import json
+import logging
 import os
 
 import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.basenode import Node as BaseNode
+
+_LOG = logging.getLogger(__name__)
 
 _TOOL_TEMPLATE = {
     'tool_name': 'FragranceComposition',
@@ -244,12 +247,23 @@ class Node(BaseNode):
                 data = node_result_dict.get(src_key)
                 if isinstance(data, dict):
                     super_json = data
+                    _LOG.debug('[FragranceComposition] Received super_json from %s: actions=%s',
+                               src_key, list((data.get('actions') or {}).keys()))
+                else:
+                    _LOG.debug('[FragranceComposition] Source %s returned no dict data (%r)', src_key, data)
                 break
 
         if super_json and isinstance(super_json.get('actions'), dict):
             action_data = super_json['actions'].get('FragranceComposition', {})
+            if action_data:
+                _LOG.info('[FragranceComposition] action_data received: fragrances=%d',
+                          len(action_data.get('fragrances', [])))
+            else:
+                _LOG.debug('[FragranceComposition] No FragranceComposition action in super_json')
         else:
             action_data = {}
+            if super_json is not None:
+                _LOG.warning('[FragranceComposition] super_json has no "actions" dict: %r', super_json)
 
         if action_data and action_data.get('enabled', True):
             self._apply_action(action_data)
