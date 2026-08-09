@@ -35,7 +35,7 @@ _SYSTEM_PROMPT = (
 
 _RESPONSE_SCHEMA = {
     "agent": {"type": _AGENT_TYPE},
-    "description": "<texte décrivant les choix de paramétrage des actions, utilisé comme source pour Text2Speech>",
+    "description": "<text describing the chosen parameter settings for the action nodes, used directly as the Text2Speech narration>",
     "decision": {
         "atmosphere": "<overall atmosphere description>",
         "sensory_notes": "<detailed sensory experience: lights, scents, sounds, voice>",
@@ -190,7 +190,7 @@ class Node(BaseNode):
             ):
                 dpg.add_input_text(
                     tag=tag_description,
-                    hint='Description (texte pour Text2Speech)…',
+                    hint='Description (text for Text2Speech)…',
                     multiline=True,
                     width=w,
                     height=70,
