@@ -150,7 +150,9 @@ class Node(BaseNode):
         self._tag_out_val  = tag_out_val
         self._node_id      = node_id
 
-        self._available_models = _fetch_free_text_models()
+        self._available_models = []
+        # Fetch models in background so the GUI is not blocked
+        threading.Thread(target=self._bg_fetch_models, daemon=True).start()
 
         with dpg.node(tag=tag, parent=parent, label=self.node_label, pos=pos):
 
@@ -305,6 +307,16 @@ class Node(BaseNode):
             except (SystemError, AttributeError):
                 pass
 
+    def _bg_fetch_models(self):
+        """Fetch free models in a background thread, then update the combo."""
+        models = _fetch_free_text_models()
+        self._available_models = models
+        default = models[0] if models else ''
+        try:
+            dpg.configure_item(self._tag_model, items=models, default_value=default)
+        except (SystemError, AttributeError):
+            pass
+
     def _cb_scan_models(self, sender, app_data, user_data=None):
         models = _fetch_free_text_models()
         self._available_models = models
@@ -326,6 +338,9 @@ class Node(BaseNode):
 
         node_link_list = getattr(node_result_dict, '_node_link_list', [])
         node_instances = getattr(node_result_dict, '_node_instances', {})
+        # Defensive: node_instances must support .get(); if it's not a dict, skip discovery
+        if not hasattr(node_instances, 'get'):
+            return tools
 
         for link in node_link_list:
             src = link[0] if isinstance(link[0], str) else str(link[0])

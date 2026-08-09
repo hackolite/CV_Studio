@@ -174,7 +174,6 @@ class Node(BaseNode):
                               default_value=30, min_value=0, width=w)
             dpg.add_input_int(tag=st['repetitions'], label='Repetitions',
                               default_value=2, min_value=0, width=w)
-        self._num_fragrances = max(self._num_fragrances, idx + 1)
         self._cb_update_total(None, None)
 
     def _cb_add_frag(self, sender, app_data, user_data):
@@ -284,9 +283,10 @@ class Node(BaseNode):
     def _apply_action(self, data):
         fragrances = data.get('fragrances', [])
         tag = self.tag_node_name
-        # Ensure we have enough slots
+        # Ensure we have enough slots, incrementing explicitly to avoid relying on side effects
         while self._num_fragrances < len(fragrances) and self._num_fragrances < _MAX_FRAGRANCES:
             self._create_slot(tag, self._parent, self._num_fragrances)
+            self._num_fragrances += 1
 
         for i, fr in enumerate(fragrances[:_MAX_FRAGRANCES]):
             st = self._slot_tags(i)
@@ -338,6 +338,7 @@ class Node(BaseNode):
         tag = self.tag_node_name
         while self._num_fragrances < saved_n and self._num_fragrances < _MAX_FRAGRANCES:
             self._create_slot(tag, self._parent, self._num_fragrances)
+            self._num_fragrances += 1
         try:
             if self._tag_enabled in setting_dict:
                 dpg_set_value(self._tag_enabled, setting_dict[self._tag_enabled])

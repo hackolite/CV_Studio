@@ -111,15 +111,21 @@ class Node(BaseNode):
         return self
 
     def _cb_upload(self, sender, app_data, user_data=None):
+        dialog_tag = self._tag + ':FileDialog'
+        if dpg.does_item_exist(dialog_tag):
+            dpg.show_item(dialog_tag)
+            return
         dpg.add_file_dialog(
             directory_selector=False,
             show=True,
             modal=True,
             callback=self._cb_file_selected,
-            tag=self._tag + ':FileDialog',
+            tag=dialog_tag,
             height=400,
         )
-        with dpg.file_extension('.json', parent=self._tag + ':FileDialog'):
+        try:
+            dpg.add_file_extension('.json', parent=dialog_tag)
+        except Exception:
             pass
 
     def _cb_file_selected(self, sender, app_data, user_data=None):
