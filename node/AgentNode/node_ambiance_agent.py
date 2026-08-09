@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""AmbianceAgent node — LLM-driven ambiance orchestration via OpenRouter or Google AI Studio."""
+"""AmbianceAgent node — LLM-driven ambiance orchestration via OpenRouter, Google AI Studio, or Groq."""
 
 import json
 import logging
@@ -23,9 +23,22 @@ OPENROUTER_MODELS_URL = f'{OPENROUTER_API_URL}/models'
 GOOGLE_AI_API_URL = 'https://generativelanguage.googleapis.com/v1beta'
 GOOGLE_AI_MODELS_URL = f'{GOOGLE_AI_API_URL}/models'
 
+GROQ_API_URL = 'https://api.groq.com/openai/v1'
+GROQ_MODELS_URL = f'{GROQ_API_URL}/models'
+
 PROVIDER_OPENROUTER = 'OpenRouter'
 PROVIDER_GOOGLE_AI = 'Google AI Studio'
-PROVIDERS = [PROVIDER_OPENROUTER, PROVIDER_GOOGLE_AI]
+PROVIDER_GROQ = 'Groq'
+PROVIDERS = [PROVIDER_OPENROUTER, PROVIDER_GOOGLE_AI, PROVIDER_GROQ]
+
+GROQ_DEFAULT_MODELS = [
+    'llama-3.3-70b-versatile',
+    'llama-3.1-8b-instant',
+    'llama3-70b-8192',
+    'llama3-8b-8192',
+    'mixtral-8x7b-32768',
+    'gemma2-9b-it',
+]
 
 GOOGLE_AI_DEFAULT_MODELS = [
     'gemini-2.0-flash-lite',
@@ -222,6 +235,67 @@ def _google_ai_worker(result_queue, api_key, model, messages):
         result_queue.put({'error': f'Error: {str(e)[:80]}'})
 
 
+def _fetch_groq_models(api_key=''):
+    """Fetch available chat models from Groq."""
+    if api_key:
+        try:
+            resp = requests.get(
+                GROQ_MODELS_URL,
+                headers={'Authorization': 'Bearer ' + api_key},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            models = [
+                m['id'] for m in resp.json().get('data', [])
+                if m.get('id') and m.get('object') == 'model'
+                and not any(exc in m['id'] for exc in ('whisper', 'tts', 'speech'))
+            ]
+            if models:
+                return sorted(models)
+        except Exception:
+            pass
+    return list(GROQ_DEFAULT_MODELS)
+
+
+def _groq_worker(result_queue, api_key, model, messages):
+    """Call Groq chat completions (OpenAI-compatible) in a background thread."""
+    _LOG.info('[AmbianceAgent] Groq request → model=%s  messages=%d', model, len(messages))
+    try:
+        headers = {
+            'Authorization': 'Bearer ' + api_key,
+            'Content-Type': 'application/json',
+        }
+        payload = {'model': model, 'messages': messages}
+        resp = requests.post(
+            f'{GROQ_API_URL}/chat/completions',
+            headers=headers,
+            json=payload,
+            timeout=60,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        text = (data.get('choices', [{}])[0]
+                .get('message', {})
+                .get('content', str(data)))
+        _LOG.info('[AmbianceAgent] Groq response received (%d chars): %s...', len(text), text[:200])
+        result_queue.put({'text': text})
+    except requests.exceptions.ConnectionError as e:
+        _LOG.error('[AmbianceAgent] Groq connection error: %s', e)
+        result_queue.put({'error': 'Connection error'})
+    except requests.exceptions.Timeout:
+        _LOG.error('[AmbianceAgent] Groq request timed out after 60 s')
+        result_queue.put({'error': 'Timeout'})
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code
+        _HTTP_HINTS = {401: 'invalid API key', 429: 'rate limited', 403: 'forbidden'}
+        hint = _HTTP_HINTS.get(status, e.response.text[:80])
+        _LOG.error('[AmbianceAgent] Groq HTTP error %s: %s', status, e.response.text[:300])
+        result_queue.put({'error': f'HTTP {status} – {hint}'})
+    except Exception as e:
+        _LOG.error('[AmbianceAgent] Groq unexpected error: %s', e, exc_info=True)
+        result_queue.put({'error': f'Error: {str(e)[:80]}'})
+
+
 class FactoryNode:
     node_label = _AGENT_TYPE
     node_tag = _AGENT_TYPE
@@ -374,7 +448,7 @@ class Node(BaseNode):
             ):
                 dpg.add_input_text(
                     tag=tag_apikey,
-                    hint='sk-or-... (OpenRouter) / AIza... (Google AI Studio)',
+                    hint='sk-or-... (OpenRouter) / AIza... (Google AI) / gsk_... (Groq)',
                     width=w,
                 )
 
@@ -465,6 +539,13 @@ class Node(BaseNode):
             except (SystemError, AttributeError):
                 pass
             models = _fetch_google_ai_models(api_key)
+        elif provider == PROVIDER_GROQ:
+            api_key = ''
+            try:
+                api_key = dpg_get_value(self._tag_apikey).strip()
+            except (SystemError, AttributeError):
+                pass
+            models = _fetch_groq_models(api_key)
         else:
             models = _fetch_free_text_models()
         self._available_models = models
@@ -642,7 +723,12 @@ class Node(BaseNode):
                 self._state = 'RUNNING'
                 self._set_status('[>] RUNNING...')
                 provider = self._get_current_provider()
-                worker = _google_ai_worker if provider == PROVIDER_GOOGLE_AI else _llm_worker
+                if provider == PROVIDER_GOOGLE_AI:
+                    worker = _google_ai_worker
+                elif provider == PROVIDER_GROQ:
+                    worker = _groq_worker
+                else:
+                    worker = _llm_worker
                 self._llm_thread = threading.Thread(
                     target=worker,
                     args=(self._llm_queue, api_key, model, messages),
