@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""AmbianceAgent node — LLM-driven ambiance orchestration via OpenRouter."""
+"""AmbianceAgent node — LLM-driven ambiance orchestration via OpenRouter or Google AI Studio."""
 
 import json
 import logging
@@ -19,6 +19,21 @@ _LOG = logging.getLogger(__name__)
 
 OPENROUTER_API_URL = 'https://openrouter.ai/api/v1'
 OPENROUTER_MODELS_URL = f'{OPENROUTER_API_URL}/models'
+
+GOOGLE_AI_API_URL = 'https://generativelanguage.googleapis.com/v1beta'
+GOOGLE_AI_MODELS_URL = f'{GOOGLE_AI_API_URL}/models'
+
+PROVIDER_OPENROUTER = 'OpenRouter'
+PROVIDER_GOOGLE_AI = 'Google AI Studio'
+PROVIDERS = [PROVIDER_OPENROUTER, PROVIDER_GOOGLE_AI]
+
+GOOGLE_AI_DEFAULT_MODELS = [
+    'gemini-2.0-flash-lite',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash-8b',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro',
+]
 
 _AGENT_TYPE = 'AmbianceAgent'
 
@@ -88,6 +103,29 @@ def _fetch_free_text_models():
         return fallback
 
 
+def _fetch_google_ai_models(api_key=''):
+    """Fetch available Gemini text models from Google AI Studio."""
+    if api_key:
+        try:
+            resp = requests.get(
+                GOOGLE_AI_MODELS_URL,
+                params={'key': api_key},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            models = [
+                m['name'].replace('models/', '')
+                for m in resp.json().get('models', [])
+                if 'generateContent' in m.get('supportedGenerationMethods', [])
+                and 'gemini' in m.get('name', '').lower()
+            ]
+            if models:
+                return models
+        except Exception:
+            pass
+    return list(GOOGLE_AI_DEFAULT_MODELS)
+
+
 def _llm_worker(result_queue, api_key, model, messages):
     """Call OpenRouter chat completions in a background thread."""
     _LOG.info('[AmbianceAgent] LLM request → model=%s  messages=%d', model, len(messages))
@@ -126,6 +164,64 @@ def _llm_worker(result_queue, api_key, model, messages):
         result_queue.put({'error': f'Error: {str(e)[:80]}'})
 
 
+def _google_ai_worker(result_queue, api_key, model, messages):
+    """Call Google AI Studio (Gemini) generateContent in a background thread."""
+    _LOG.info('[AmbianceAgent] Google AI request → model=%s  messages=%d', model, len(messages))
+    try:
+        # Convert OpenAI-style messages to Gemini format
+        contents = []
+        system_text = None
+        has_user_message = False
+        for m in messages:
+            role = m.get('role', 'user')
+            content = m.get('content', '')
+            if role == 'system':
+                system_text = content
+            elif role == 'user':
+                contents.append({'role': 'user', 'parts': [{'text': content}]})
+                has_user_message = True
+            elif role == 'assistant':
+                contents.append({'role': 'model', 'parts': [{'text': content}]})
+
+        # If only a system message exists with no user messages, treat it as user
+        if not has_user_message and system_text:
+            contents = [{'role': 'user', 'parts': [{'text': system_text}]}]
+            system_text = None  # already used as the sole user turn; don't duplicate
+
+        payload = {'contents': contents}
+        if system_text and has_user_message:
+            payload['systemInstruction'] = {'parts': [{'text': system_text}]}
+
+        url = f'{GOOGLE_AI_API_URL}/models/{model}:generateContent'
+        resp = requests.post(
+            url,
+            params={'key': api_key},
+            json=payload,
+            headers={'Content-Type': 'application/json'},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        text = (data.get('candidates', [{}])[0]
+                .get('content', {})
+                .get('parts', [{}])[0]
+                .get('text', str(data)))
+        _LOG.info('[AmbianceAgent] Google AI response received (%d chars): %s...', len(text), text[:200])
+        result_queue.put({'text': text})
+    except requests.exceptions.ConnectionError as e:
+        _LOG.error('[AmbianceAgent] Google AI connection error: %s', e)
+        result_queue.put({'error': 'Connection error'})
+    except requests.exceptions.Timeout:
+        _LOG.error('[AmbianceAgent] Google AI request timed out after 60 s')
+        result_queue.put({'error': 'Timeout'})
+    except requests.exceptions.HTTPError as e:
+        _LOG.error('[AmbianceAgent] Google AI HTTP error %s: %s', e.response.status_code, e.response.text[:300])
+        result_queue.put({'error': f'HTTP {e.response.status_code}'})
+    except Exception as e:
+        _LOG.error('[AmbianceAgent] Google AI unexpected error: %s', e, exc_info=True)
+        result_queue.put({'error': f'Error: {str(e)[:80]}'})
+
+
 class FactoryNode:
     node_label = _AGENT_TYPE
     node_tag = _AGENT_TYPE
@@ -159,6 +255,7 @@ class Node(BaseNode):
         self._cooldown_s = 30
         self._last_output = {}
         self._available_models = []
+        self._tag_provider = None
 
     # ------------------------------------------------------------------
     # GUI construction
@@ -176,6 +273,7 @@ class Node(BaseNode):
         # ---- static controls ----
         tag_apikey   = tag + ':ApiKeyValue'
         tag_model    = tag + ':ModelValue'
+        tag_provider = tag + ':ProviderValue'
         tag_prompt   = tag + ':PromptValue'
         tag_execute  = tag + ':ExecuteValue'
         tag_status   = tag + ':StatusValue'
@@ -188,6 +286,7 @@ class Node(BaseNode):
         # store refs
         self._tag_apikey      = tag_apikey
         self._tag_model       = tag_model
+        self._tag_provider    = tag_provider
         self._tag_prompt      = tag_prompt
         self._tag_execute     = tag_execute
         self._tag_status      = tag_status
@@ -254,6 +353,20 @@ class Node(BaseNode):
                     default_value=False,
                 )
 
+            # ── Provider dropdown ────────────────────────────────────────
+            with dpg.node_attribute(
+                tag=tag + ':ProviderAttr',
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=tag_provider,
+                    label='Provider',
+                    items=PROVIDERS,
+                    default_value=PROVIDER_OPENROUTER,
+                    width=w,
+                    callback=self._cb_provider_changed,
+                )
+
             # ── API Key ──────────────────────────────────────────────────
             with dpg.node_attribute(
                 tag=tag + ':ApiKeyAttr',
@@ -261,7 +374,7 @@ class Node(BaseNode):
             ):
                 dpg.add_input_text(
                     tag=tag_apikey,
-                    hint='OpenRouter API key (sk-or-...)',
+                    hint='sk-or-... (OpenRouter) / AIza... (Google AI Studio)',
                     width=w,
                 )
 
@@ -343,8 +456,17 @@ class Node(BaseNode):
                 pass
 
     def _bg_fetch_models(self):
-        """Fetch free models in a background thread, then update the combo."""
-        models = _fetch_free_text_models()
+        """Fetch models in a background thread based on current provider, then update the combo."""
+        provider = self._get_current_provider()
+        if provider == PROVIDER_GOOGLE_AI:
+            api_key = ''
+            try:
+                api_key = dpg_get_value(self._tag_apikey).strip()
+            except (SystemError, AttributeError):
+                pass
+            models = _fetch_google_ai_models(api_key)
+        else:
+            models = _fetch_free_text_models()
         self._available_models = models
         default = models[0] if models else ''
         try:
@@ -352,14 +474,21 @@ class Node(BaseNode):
         except (SystemError, AttributeError):
             pass
 
+    def _cb_provider_changed(self, sender, app_data, user_data=None):
+        """Called when the provider dropdown changes — refresh model list."""
+        threading.Thread(target=self._bg_fetch_models, daemon=True).start()
+
     def _cb_scan_models(self, sender, app_data, user_data=None):
-        models = _fetch_free_text_models()
-        self._available_models = models
-        default = models[0] if models else ''
+        threading.Thread(target=self._bg_fetch_models, daemon=True).start()
+
+    def _get_current_provider(self):
+        """Return the currently selected provider string."""
         try:
-            dpg.configure_item(self._tag_model, items=models, default_value=default)
+            if self._tag_provider:
+                return dpg_get_value(self._tag_provider)
         except (SystemError, AttributeError):
             pass
+        return PROVIDER_OPENROUTER
 
     def _discover_tools(self, node_result_dict):
         """Return list of tool-template dicts from connected child nodes."""
@@ -512,8 +641,10 @@ class Node(BaseNode):
                 messages = self._build_messages(aggregated, prompt, tools)
                 self._state = 'RUNNING'
                 self._set_status('[>] RUNNING...')
+                provider = self._get_current_provider()
+                worker = _google_ai_worker if provider == PROVIDER_GOOGLE_AI else _llm_worker
                 self._llm_thread = threading.Thread(
-                    target=_llm_worker,
+                    target=worker,
                     args=(self._llm_queue, api_key, model, messages),
                     daemon=True,
                 )
@@ -591,8 +722,8 @@ class Node(BaseNode):
             'pos': pos,
             'num_inputs': self.num_inputs,
         }
-        for k in [self._tag_apikey, self._tag_model, self._tag_prompt,
-                  self._tag_execute, self._tag_description]:
+        for k in [self._tag_apikey, self._tag_model, self._tag_provider,
+                  self._tag_prompt, self._tag_execute, self._tag_description]:
             try:
                 d[k] = dpg_get_value(k)
             except (SystemError, AttributeError):
@@ -601,8 +732,8 @@ class Node(BaseNode):
 
     def set_setting_dict(self, node_id, setting_dict):
         self.num_inputs = setting_dict.get('num_inputs', self._NUM_INPUTS_DEFAULT)
-        for k in [self._tag_apikey, self._tag_model, self._tag_prompt,
-                  self._tag_execute, self._tag_description]:
+        for k in [self._tag_apikey, self._tag_model, self._tag_provider,
+                  self._tag_prompt, self._tag_execute, self._tag_description]:
             if k in setting_dict:
                 try:
                     dpg_set_value(k, setting_dict[k])
