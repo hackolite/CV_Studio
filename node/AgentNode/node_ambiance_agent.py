@@ -23,13 +23,22 @@ _SYSTEM_PROMPT = (
     "You are an expert ambiance designer. "
     "Analyse the provided sensor data and user prompt, then select and configure "
     "the available tools to create the requested atmosphere. "
+    "All descriptive text fields in the JSON response (atmosphere, sensory_notes, mood, "
+    "poetic_note, rationale, and any text passed to actions such as Text2Speech) MUST be "
+    "written in the same language as the user_prompt. "
     "Return ONLY a single valid JSON object matching the required schema — "
     "no markdown fences, no commentary, no chain-of-thought text."
 )
 
 _RESPONSE_SCHEMA = {
     "agent": {"type": _AGENT_TYPE},
-    "decision": {"summary": "<concise human-readable description>"},
+    "decision": {
+        "atmosphere": "<overall atmosphere description>",
+        "sensory_notes": "<detailed sensory experience: lights, scents, sounds, voice>",
+        "mood": "<emotional quality of the ambiance>",
+        "poetic_note": "<evocative, poetic description in 2-3 sentences>",
+        "rationale": "<technical rationale for the chosen parameters>",
+    },
     "actions": {}
 }
 
@@ -111,6 +120,7 @@ class Node(BaseNode):
         self._llm_thread = None
         self._state = 'READY'       # READY | RUNNING | COOLDOWN
         self._cooldown_start = None
+        self._cooldown_s = 30
         self._last_output = {}
         self._available_models = []
 
@@ -130,10 +140,8 @@ class Node(BaseNode):
         # ---- static controls ----
         tag_apikey   = tag + ':ApiKeyValue'
         tag_model    = tag + ':ModelValue'
-        tag_scan_btn = tag + ':ScanBtn'
         tag_prompt   = tag + ':PromptValue'
         tag_execute  = tag + ':ExecuteValue'
-        tag_cooldown = tag + ':CooldownValue'
         tag_status   = tag + ':StatusValue'
         tag_summary  = tag + ':SummaryValue'
         tag_out      = tag + ':' + self.TYPE_JSON + ':Output01'
@@ -144,7 +152,6 @@ class Node(BaseNode):
         self._tag_model    = tag_model
         self._tag_prompt   = tag_prompt
         self._tag_execute  = tag_execute
-        self._tag_cooldown = tag_cooldown
         self._tag_status   = tag_status
         self._tag_summary  = tag_summary
         self._tag_out_val  = tag_out_val
@@ -156,35 +163,34 @@ class Node(BaseNode):
 
         with dpg.node(tag=tag, parent=parent, label=self.node_label, pos=pos):
 
-            # ── Dynamic JSON inputs ───────────────────────────────────────
-            with dpg.node_attribute(
-                tag=tag + ':InputMgmt',
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                with dpg.group(horizontal=True):
-                    dpg.add_button(label='+ Add Input', width=120,
-                                   callback=self._cb_add_input,
-                                   user_data=(node_id, parent))
-                    dpg.add_button(label='- Remove Input', width=130,
-                                   callback=self._cb_remove_input,
-                                   user_data=(node_id, parent))
-
-            for i in range(self.num_inputs):
-                self._create_input_slot(tag, parent, i)
-
-            # ── Prompt ───────────────────────────────────────────────────
+            # ── Prompt (top) ──────────────────────────────────────────────
             with dpg.node_attribute(
                 tag=tag + ':PromptAttr',
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_input_text(
                     tag=tag_prompt,
-                    label='Prompt',
-                    hint='Describe the ambiance…',
+                    hint='Prompt',
                     multiline=True,
                     width=w,
                     height=70,
                 )
+
+            # ── Dynamic JSON inputs ───────────────────────────────────────
+            with dpg.node_attribute(
+                tag=tag + ':InputMgmt',
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                with dpg.group(horizontal=True):
+                    dpg.add_button(label='+ Add Input', width=w // 2,
+                                   callback=self._cb_add_input,
+                                   user_data=(node_id, parent))
+                    dpg.add_button(label='- Remove Input', width=w // 2,
+                                   callback=self._cb_remove_input,
+                                   user_data=(node_id, parent))
+
+            for i in range(self.num_inputs):
+                self._create_input_slot(tag, parent, i)
 
             # ── Execute toggle ───────────────────────────────────────────
             with dpg.node_attribute(
@@ -197,20 +203,6 @@ class Node(BaseNode):
                     default_value=False,
                 )
 
-            # ── Cooldown slider ──────────────────────────────────────────
-            with dpg.node_attribute(
-                tag=tag + ':CooldownAttr',
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_slider_int(
-                    tag=tag_cooldown,
-                    label='Agent Cooldown (s)',
-                    default_value=30,
-                    min_value=0,
-                    max_value=3600,
-                    width=w,
-                )
-
             # ── API Key ──────────────────────────────────────────────────
             with dpg.node_attribute(
                 tag=tag + ':ApiKeyAttr',
@@ -218,27 +210,20 @@ class Node(BaseNode):
             ):
                 dpg.add_input_text(
                     tag=tag_apikey,
-                    hint='OpenRouter API key (sk-or-…)',
+                    hint='OpenRouter API key (sk-or-...)',
                     width=w,
                 )
 
-            # ── Scan models button + dropdown ────────────────────────────
+            # ── Model dropdown (no label, auto-populated) ─────────────────
             with dpg.node_attribute(
                 tag=tag + ':ModelAttr',
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
-                dpg.add_button(
-                    tag=tag_scan_btn,
-                    label='Scan Free Models',
-                    width=160,
-                    callback=self._cb_scan_models,
-                )
                 default_model = self._available_models[0] if self._available_models else ''
                 dpg.add_combo(
                     tag=tag_model,
                     items=self._available_models,
                     default_value=default_model,
-                    label='LLM Model',
                     width=w,
                 )
 
@@ -247,20 +232,19 @@ class Node(BaseNode):
                 tag=tag + ':StatusAttr',
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
-                dpg.add_text(tag=tag_status, default_value='● READY')
+                dpg.add_text(tag=tag_status, default_value='[*] READY')
 
-            # ── Decision Summary ─────────────────────────────────────────
+            # ── Decision Summary (JSON) ───────────────────────────────────
             with dpg.node_attribute(
                 tag=tag + ':SummaryAttr',
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_input_text(
                     tag=tag_summary,
-                    label='Decision Summary',
                     default_value='',
                     multiline=True,
                     width=w,
-                    height=90,
+                    height=130,
                     readonly=True,
                 )
 
@@ -326,10 +310,6 @@ class Node(BaseNode):
         except (SystemError, AttributeError):
             pass
 
-    # ------------------------------------------------------------------
-    # Tool discovery
-    # ------------------------------------------------------------------
-
     def _discover_tools(self, node_result_dict):
         """Return list of tool-template dicts from connected child nodes."""
         tools = []
@@ -385,32 +365,30 @@ class Node(BaseNode):
         except (SystemError, AttributeError):
             execute = False
 
-        try:
-            cooldown_s = int(dpg_get_value(self._tag_cooldown))
-        except (SystemError, AttributeError, ValueError):
-            cooldown_s = 30
+        cooldown_s = self._cooldown_s
 
         # ── Poll LLM thread result ────────────────────────────────────────
         if self._state == 'RUNNING':
             try:
                 result = self._llm_queue.get_nowait()
                 if 'error' in result:
-                    self._set_status(f'● ERROR: {result["error"]}')
+                    self._set_status(f'[!] ERROR: {result["error"]}')
                     self._state = 'READY'
                 else:
                     parsed = self._parse_llm_response(result['text'])
                     if parsed:
                         self._last_output = parsed
-                        summary = parsed.get('decision', {}).get('summary', '')
+                        decision = parsed.get('decision', {})
                         try:
-                            dpg_set_value(self._tag_summary, summary)
+                            dpg_set_value(self._tag_summary,
+                                          json.dumps(decision, indent=2, ensure_ascii=False))
                         except (SystemError, AttributeError):
                             pass
                     self._state = 'COOLDOWN'
                     self._cooldown_start = time.time()
-                    self._set_status('⏳ COOLDOWN')
+                    self._set_status('[~] COOLDOWN')
             except queue.Empty:
-                self._set_status('⚡ RUNNING…')
+                self._set_status('[>] RUNNING...')
 
         # ── Cooldown countdown ────────────────────────────────────────────
         if self._state == 'COOLDOWN':
@@ -418,9 +396,9 @@ class Node(BaseNode):
             remaining = cooldown_s - elapsed
             if remaining <= 0:
                 self._state = 'READY'
-                self._set_status('● READY')
+                self._set_status('[*] READY')
             else:
-                self._set_status(f'⏳ COOLDOWN — {int(remaining)} s remaining')
+                self._set_status(f'[~] COOLDOWN — {int(remaining)} s remaining')
 
         # ── Trigger new execution ─────────────────────────────────────────
         if execute and self._state == 'READY':
@@ -438,16 +416,16 @@ class Node(BaseNode):
                 prompt = ''
 
             if not api_key:
-                self._set_status('● ERROR: API key missing')
+                self._set_status('[!] ERROR: API key missing')
             elif not model:
-                self._set_status('● ERROR: No model selected')
+                self._set_status('[!] ERROR: No model selected')
             else:
                 # Discover tools from child node instances
                 tools = self._discover_tools(node_result_dict)
 
                 messages = self._build_messages(aggregated, prompt, tools)
                 self._state = 'RUNNING'
-                self._set_status('⚡ RUNNING…')
+                self._set_status('[>] RUNNING...')
                 self._llm_thread = threading.Thread(
                     target=_llm_worker,
                     args=(self._llm_queue, api_key, model, messages),
@@ -521,7 +499,7 @@ class Node(BaseNode):
             'num_inputs': self.num_inputs,
         }
         for k in [self._tag_apikey, self._tag_model, self._tag_prompt,
-                  self._tag_execute, self._tag_cooldown]:
+                  self._tag_execute]:
             try:
                 d[k] = dpg_get_value(k)
             except (SystemError, AttributeError):
@@ -531,7 +509,7 @@ class Node(BaseNode):
     def set_setting_dict(self, node_id, setting_dict):
         self.num_inputs = setting_dict.get('num_inputs', self._NUM_INPUTS_DEFAULT)
         for k in [self._tag_apikey, self._tag_model, self._tag_prompt,
-                  self._tag_execute, self._tag_cooldown]:
+                  self._tag_execute]:
             if k in setting_dict:
                 try:
                     dpg_set_value(k, setting_dict[k])
