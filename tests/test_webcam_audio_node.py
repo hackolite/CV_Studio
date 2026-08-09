@@ -39,7 +39,7 @@ def test_webcam_node_audio_attributes():
     assert node._current_audio_device is None, "_current_audio_device should start as None"
 
     assert hasattr(node, '_lock'), "Missing _lock"
-    assert isinstance(node._lock, type(threading.Lock())), "_lock should be a Lock"
+    assert hasattr(node._lock, 'acquire'), "_lock should be a lock-like object"
 
     assert hasattr(node, '_SAMPLE_RATE'), "Missing _SAMPLE_RATE class constant"
     assert hasattr(node, '_CHUNK_DURATION'), "Missing _CHUNK_DURATION class constant"

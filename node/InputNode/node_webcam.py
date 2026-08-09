@@ -330,15 +330,16 @@ class WebcamNode(Node):
                     audio_device_idx = None
 
                 if audio_device_idx is not None:
-                    # Start or restart stream if device changed
+                    # Start or restart stream if device changed (check and update under lock)
                     with self._lock:
                         stream_needs_restart = (
                             self._audio_stream is None or
                             not self._audio_stream.active or
                             self._current_audio_device != audio_device_idx
                         )
+                        if stream_needs_restart:
+                            self._current_audio_device = audio_device_idx
                     if stream_needs_restart:
-                        self._current_audio_device = audio_device_idx
                         self._start_audio_stream(audio_device_idx, self._SAMPLE_RATE)
 
                     # Get audio data (non-blocking)
