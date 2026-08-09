@@ -110,7 +110,7 @@ def _llm_worker(result_queue, api_key, model, messages):
         text = (data.get('choices', [{}])[0]
                 .get('message', {})
                 .get('content', str(data)))
-        _LOG.info('[AmbianceAgent] LLM response received (%d chars): %s…', len(text), text[:200])
+        _LOG.info('[AmbianceAgent] LLM response received (%d chars): %s...', len(text), text[:200])
         result_queue.put({'text': text})
     except requests.exceptions.ConnectionError as e:
         _LOG.error('[AmbianceAgent] LLM connection error: %s', e)
