@@ -20,14 +20,19 @@ OPENROUTER_MODELS_URL = f'{OPENROUTER_API_URL}/models'
 _AGENT_TYPE = 'AmbianceAgent'
 
 _SYSTEM_PROMPT = (
-    "You are an expert ambiance designer. "
+    "You are an expert ambiance designer and poet. "
     "Analyse the provided sensor data and user prompt, then select and configure "
     "the available tools to create the requested atmosphere. "
     "All descriptive text fields in the JSON response (atmosphere, sensory_notes, mood, "
     "poetic_note, rationale, description, and any text passed to actions such as Text2Speech) MUST be "
     "written in the same language as the user_prompt. "
-    "The top-level 'description' field MUST contain a rich, evocative text summarising the ambiance "
-    "and the chosen parameter settings; this text is used directly as the Text2Speech narration. "
+    "The top-level 'description' field AND the 'actions.Text2Speech.text' field MUST contain "
+    "a rich, lyrical, poetic narration that explains WHY each fragrance or parameter was chosen — "
+    "the emotions, memories, or sensations they evoke — written as a flowing poem or prose, "
+    "NOT as a list of ingredients or numeric values. "
+    "NEVER recite numeric intensities, percentages, or durations. "
+    "NEVER produce a welcome menu or enumerate fragrance options to the user. "
+    "The Text2Speech narration is heard by the user as a sensory journey, not a configuration report. "
     "Ensure all text fields are valid UTF-8. "
     "Return ONLY a single valid JSON object matching the required schema — "
     "no markdown fences, no commentary, no chain-of-thought text."
@@ -35,15 +40,27 @@ _SYSTEM_PROMPT = (
 
 _RESPONSE_SCHEMA = {
     "agent": {"type": _AGENT_TYPE},
-    "description": "<text describing the chosen parameter settings for the action nodes, used directly as the Text2Speech narration>",
+    "description": (
+        "<rich, lyrical, poetic narration explaining WHY the chosen fragrances and parameters "
+        "were selected — the emotions, memories, or sensations they evoke. "
+        "Written as flowing prose or poetry. NO numeric values. NO enumeration of options.>"
+    ),
     "decision": {
         "atmosphere": "<overall atmosphere description>",
         "sensory_notes": "<detailed sensory experience: lights, scents, sounds, voice>",
         "mood": "<emotional quality of the ambiance>",
         "poetic_note": "<evocative, poetic description in 2-3 sentences>",
-        "rationale": "<technical rationale for the chosen parameters>",
+        "rationale": "<why these specific ingredients create the desired effect>",
     },
-    "actions": {}
+    "actions": {
+        "Text2Speech": {
+            "enabled": True,
+            "text": (
+                "<same lyrical narration as 'description' — a sensory journey explaining WHY "
+                "each fragrance was chosen, what it evokes, never a list of parameters or numbers>"
+            ),
+        }
+    },
 }
 
 
@@ -493,7 +510,13 @@ class Node(BaseNode):
             'instruction': (
                 'Based on the sensor data and user prompt, decide which tools to use '
                 'and with which parameters. Only use tools listed in available_tools. '
-                'Return a single JSON object matching response_schema exactly.'
+                'Return a single JSON object matching response_schema exactly. '
+                'The "description" field and "actions.Text2Speech.text" field MUST be '
+                'a lyrical, poetic narration that explains WHY each chosen fragrance or setting '
+                'was selected — what emotion, memory, or sensation it evokes — '
+                'written as flowing prose or a short poem. '
+                'Do NOT list fragrance options, do NOT recite numeric values, '
+                'do NOT produce a welcome message or configuration menu.'
             ),
         }
         return [
