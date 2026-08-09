@@ -245,7 +245,11 @@ def _fetch_groq_models(api_key=''):
                 timeout=10,
             )
             resp.raise_for_status()
-            models = [m.get('id', '') for m in resp.json().get('data', []) if m.get('id')]
+            models = [
+                m['id'] for m in resp.json().get('data', [])
+                if m.get('id') and m.get('object') == 'model'
+                and not any(exc in m['id'] for exc in ('whisper', 'tts', 'speech'))
+            ]
             if models:
                 return sorted(models)
         except Exception:
@@ -282,8 +286,11 @@ def _groq_worker(result_queue, api_key, model, messages):
         _LOG.error('[AmbianceAgent] Groq request timed out after 60 s')
         result_queue.put({'error': 'Timeout'})
     except requests.exceptions.HTTPError as e:
-        _LOG.error('[AmbianceAgent] Groq HTTP error %s: %s', e.response.status_code, e.response.text[:300])
-        result_queue.put({'error': f'HTTP {e.response.status_code}'})
+        status = e.response.status_code
+        _HTTP_HINTS = {401: 'invalid API key', 429: 'rate limited', 403: 'forbidden'}
+        hint = _HTTP_HINTS.get(status, e.response.text[:80])
+        _LOG.error('[AmbianceAgent] Groq HTTP error %s: %s', status, e.response.text[:300])
+        result_queue.put({'error': f'HTTP {status} – {hint}'})
     except Exception as e:
         _LOG.error('[AmbianceAgent] Groq unexpected error: %s', e, exc_info=True)
         result_queue.put({'error': f'Error: {str(e)[:80]}'})
