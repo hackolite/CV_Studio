@@ -171,6 +171,7 @@ def _google_ai_worker(result_queue, api_key, model, messages):
         # Convert OpenAI-style messages to Gemini format
         contents = []
         system_text = None
+        has_user_message = False
         for m in messages:
             role = m.get('role', 'user')
             content = m.get('content', '')
@@ -178,15 +179,17 @@ def _google_ai_worker(result_queue, api_key, model, messages):
                 system_text = content
             elif role == 'user':
                 contents.append({'role': 'user', 'parts': [{'text': content}]})
+                has_user_message = True
             elif role == 'assistant':
                 contents.append({'role': 'model', 'parts': [{'text': content}]})
 
         # If only a system message exists with no user messages, treat it as user
-        if not contents and system_text:
+        if not has_user_message and system_text:
             contents = [{'role': 'user', 'parts': [{'text': system_text}]}]
+            system_text = None  # already used as the sole user turn; don't duplicate
 
         payload = {'contents': contents}
-        if system_text and contents:
+        if system_text and has_user_message:
             payload['systemInstruction'] = {'parts': [{'text': system_text}]}
 
         url = f'{GOOGLE_AI_API_URL}/models/{model}:generateContent'
@@ -371,7 +374,7 @@ class Node(BaseNode):
             ):
                 dpg.add_input_text(
                     tag=tag_apikey,
-                    hint='API key',
+                    hint='sk-or-... (OpenRouter) / AIza... (Google AI Studio)',
                     width=w,
                 )
 
