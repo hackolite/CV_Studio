@@ -31,16 +31,24 @@ _TOOL_TEMPLATE = {
 
 
 def _speak_piper(text, speed, pitch, volume):
-    """Invoke piper TTS via subprocess (non-blocking)."""
+    """Invoke piper TTS and pipe raw audio to aplay for playback."""
     try:
-        cmd = ['piper', '--output-raw']
-        proc = subprocess.Popen(
-            cmd,
+        piper = subprocess.Popen(
+            ['piper', '--output-raw'],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
         )
-        proc.communicate(input=text.encode('utf-8'), timeout=30)
+        aplay = subprocess.Popen(
+            ['aplay', '-r', '22050', '-f', 'S16_LE', '-t', 'raw', '-'],
+            stdin=piper.stdout,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        piper.stdin.write(text.encode('utf-8'))
+        piper.stdin.close()
+        piper.wait(timeout=30)
+        aplay.wait(timeout=30)
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         pass
 
@@ -117,6 +125,7 @@ class Node(BaseNode):
         self._tag_pitch      = tag + ':PitchValue'
         self._tag_volume     = tag + ':VolumeValue'
         self._tag_received   = tag + ':ReceivedValue'
+        self._tag_status     = tag + ':StatusValue'
         self._tag_out_val    = tag_out_val
 
         with dpg.node(tag=tag, parent=parent, label=self.node_label, pos=pos):
@@ -169,6 +178,7 @@ class Node(BaseNode):
                     max_value=1.0,
                     width=w,
                 )
+                dpg.add_text(tag=self._tag_status, default_value='[*] idle')
 
             # ── Received JSON display ─────────────────────────────────────
             with dpg.node_attribute(
@@ -258,6 +268,16 @@ class Node(BaseNode):
                     target=_speak, args=(voc, txt, spd, pit, vol), daemon=True
                 )
                 self._speak_thread.start()
+                try:
+                    dpg_set_value(self._tag_status, '[>] speaking...')
+                except (SystemError, AttributeError):
+                    pass
+            else:
+                # Previous utterance still playing — skip silently but update status
+                try:
+                    dpg_set_value(self._tag_status, '[~] busy — request skipped')
+                except (SystemError, AttributeError):
+                    pass
 
     def close(self, node_id):
         pass
