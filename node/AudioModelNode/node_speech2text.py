@@ -49,7 +49,10 @@ _LOG = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Vosk model — small French model bundled by default.
-# Override with env var VOSK_MODEL_PATH pointing to an extracted model dir.
+# Override model directory/name/URL with env vars:
+#   VOSK_MODEL_PATH — path to an already-extracted model directory (highest priority)
+#   VOSK_MODEL_NAME — model archive name without .zip (default: vosk-model-small-fr-0.22)
+#   VOSK_MODEL_URL  — full URL to the model zip archive (overrides VOSK_MODEL_NAME)
 # ---------------------------------------------------------------------------
 _VOSK_MODELS_DIR = pathlib.Path(
     os.environ.get(
@@ -57,11 +60,11 @@ _VOSK_MODELS_DIR = pathlib.Path(
         pathlib.Path.home() / '.local' / 'share' / 'vosk' / 'models',
     )
 )
-_FR_MODEL_NAME = 'vosk-model-small-fr-0.22'
+_DEFAULT_MODEL_NAME = 'vosk-model-small-fr-0.22'
+_FR_MODEL_NAME = os.environ.get('VOSK_MODEL_NAME', _DEFAULT_MODEL_NAME)
 _FR_MODEL_DIR  = _VOSK_MODELS_DIR / _FR_MODEL_NAME
-_FR_MODEL_URL  = (
-    f'https://alphacephei.com/vosk/models/{_FR_MODEL_NAME}.zip'
-)
+_DEFAULT_MODEL_URL = f'https://alphacephei.com/vosk/models/{_FR_MODEL_NAME}.zip'
+_FR_MODEL_URL  = os.environ.get('VOSK_MODEL_URL', _DEFAULT_MODEL_URL)
 
 # Audio parameters — Vosk expects 16 kHz mono int16.
 _SAMPLE_RATE = 16000
@@ -281,7 +284,14 @@ class Node(BaseNode):
 
     def set_setting_dict(self, node_id, setting_dict):
         if self._tag_enabled in setting_dict:
+            val = setting_dict[self._tag_enabled]
             try:
-                dpg_set_value(self._tag_enabled, setting_dict[self._tag_enabled])
+                dpg_set_value(self._tag_enabled, val)
             except (SystemError, AttributeError):
                 pass
+            if val:
+                self._worker.start()
+                try:
+                    dpg_set_value(self._tag_status, '[>] listening…')
+                except (SystemError, AttributeError):
+                    pass

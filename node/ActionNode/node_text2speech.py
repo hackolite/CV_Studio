@@ -44,7 +44,7 @@ _TOOL_TEMPLATE = {
         'voice synthesis engine.  Piper streams each sentence to the speaker as '
         'soon as it is synthesised, minimising perceived latency.  The French '
         'VITS model (fr_FR-upmc-medium) is used by default; override the voice '
-        'via the PIPER_MODEL_PATH environment variable.'
+    'via the PIPER_MODEL_PATH environment variable.  '
         'Use to narrate ambiance descriptions, alerts, or guided experiences.'
     ),
     'parameters': {
