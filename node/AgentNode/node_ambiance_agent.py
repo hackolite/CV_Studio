@@ -253,8 +253,9 @@ class Node(BaseNode):
         self._llm_thread = None
         self._state = 'READY'       # READY | RUNNING | COOLDOWN
         self._cooldown_start = None
-        self._cooldown_s = 30
+        self._success_cooldown_s = 30
         self._error_cooldown_s = 15  # shorter cooldown after errors
+        self._cooldown_s = self._success_cooldown_s  # active cooldown duration
         self._last_output = {}
         self._available_models = []
         self._tag_provider = None
@@ -591,7 +592,7 @@ class Node(BaseNode):
                         _LOG.warning('[AmbianceAgent] Failed to parse LLM response as JSON')
                     self._state = 'COOLDOWN'
                     self._cooldown_start = time.time()
-                    self._cooldown_s = 30  # normal cooldown after success
+                    self._cooldown_s = self._success_cooldown_s
                     self._set_status('[~] COOLDOWN')
             except queue.Empty:
                 self._set_status('[>] RUNNING...')
@@ -602,6 +603,7 @@ class Node(BaseNode):
             remaining = self._cooldown_s - elapsed
             if remaining <= 0:
                 self._state = 'READY'
+                self._cooldown_s = self._success_cooldown_s  # reset for next run
                 self._set_status('[*] READY')
             else:
                 self._set_status(f'[~] COOLDOWN — {int(remaining)} s remaining')
