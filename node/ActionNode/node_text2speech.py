@@ -349,7 +349,7 @@ class Node(BaseNode):
             _LOG.info('[Text2Speech] action_data: %s', action_data)
         else:
             action_data = {}
-            if super_json is not None:
+            if super_json:
                 _LOG.warning('[Text2Speech] super_json has no "actions" dict: %r', super_json)
 
         if action_data and action_data.get('enabled', True):
