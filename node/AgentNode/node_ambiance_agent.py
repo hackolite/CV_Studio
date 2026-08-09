@@ -54,7 +54,7 @@ _RESPONSE_SCHEMA = {
     },
     "actions": {
         "Text2Speech": {
-            "enabled": True,
+            "enabled": "<boolean — true to activate vocalization, false to mute>",
             "text": (
                 "<same lyrical narration as 'description' — a sensory journey explaining WHY "
                 "each fragrance was chosen, what it evokes, never a list of parameters or numbers>"
