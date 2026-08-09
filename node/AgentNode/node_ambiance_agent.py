@@ -24,14 +24,18 @@ _SYSTEM_PROMPT = (
     "Analyse the provided sensor data and user prompt, then select and configure "
     "the available tools to create the requested atmosphere. "
     "All descriptive text fields in the JSON response (atmosphere, sensory_notes, mood, "
-    "poetic_note, rationale, and any text passed to actions such as Text2Speech) MUST be "
+    "poetic_note, rationale, description, and any text passed to actions such as Text2Speech) MUST be "
     "written in the same language as the user_prompt. "
+    "The top-level 'description' field MUST contain a rich, evocative text summarising the ambiance "
+    "and the chosen parameter settings; this text is used directly as the Text2Speech narration. "
+    "Ensure all text fields are valid UTF-8. "
     "Return ONLY a single valid JSON object matching the required schema — "
     "no markdown fences, no commentary, no chain-of-thought text."
 )
 
 _RESPONSE_SCHEMA = {
     "agent": {"type": _AGENT_TYPE},
+    "description": "<text describing the chosen parameter settings for the action nodes, used directly as the Text2Speech narration>",
     "decision": {
         "atmosphere": "<overall atmosphere description>",
         "sensory_notes": "<detailed sensory experience: lights, scents, sounds, voice>",
@@ -147,15 +151,18 @@ class Node(BaseNode):
         tag_out      = tag + ':' + self.TYPE_JSON + ':Output01'
         tag_out_val  = tag + ':' + self.TYPE_JSON + ':Output01Value'
 
+        tag_description = tag + ':DescriptionValue'
+
         # store refs
-        self._tag_apikey   = tag_apikey
-        self._tag_model    = tag_model
-        self._tag_prompt   = tag_prompt
-        self._tag_execute  = tag_execute
-        self._tag_status   = tag_status
-        self._tag_summary  = tag_summary
-        self._tag_out_val  = tag_out_val
-        self._node_id      = node_id
+        self._tag_apikey      = tag_apikey
+        self._tag_model       = tag_model
+        self._tag_prompt      = tag_prompt
+        self._tag_execute     = tag_execute
+        self._tag_status      = tag_status
+        self._tag_summary     = tag_summary
+        self._tag_out_val     = tag_out_val
+        self._tag_description = tag_description
+        self._node_id         = node_id
 
         self._available_models = []
         # Fetch models in background so the GUI is not blocked
@@ -176,18 +183,30 @@ class Node(BaseNode):
                     height=70,
                 )
 
+            # ── Description (ambiance text / Text2Speech source) ──────────
+            with dpg.node_attribute(
+                tag=tag + ':DescriptionAttr',
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_input_text(
+                    tag=tag_description,
+                    hint='Description (text for Text2Speech)…',
+                    multiline=True,
+                    width=w,
+                    height=70,
+                )
+
             # ── Dynamic JSON inputs ───────────────────────────────────────
             with dpg.node_attribute(
                 tag=tag + ':InputMgmt',
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
-                with dpg.group(horizontal=True):
-                    dpg.add_button(label='+ Add Input', width=w // 2,
-                                   callback=self._cb_add_input,
-                                   user_data=(node_id, parent))
-                    dpg.add_button(label='- Remove Input', width=w // 2,
-                                   callback=self._cb_remove_input,
-                                   user_data=(node_id, parent))
+                dpg.add_button(label='+ Add Input', width=w,
+                               callback=self._cb_add_input,
+                               user_data=(node_id, parent))
+                dpg.add_button(label='- Remove Input', width=w,
+                               callback=self._cb_remove_input,
+                               user_data=(node_id, parent))
 
             for i in range(self.num_inputs):
                 self._create_input_slot(tag, parent, i)
@@ -378,6 +397,18 @@ class Node(BaseNode):
                     parsed = self._parse_llm_response(result['text'])
                     if parsed:
                         self._last_output = parsed
+                        # Propagate description → description widget + Text2Speech text
+                        description = parsed.get('description', '')
+                        if description:
+                            try:
+                                dpg_set_value(self._tag_description, description)
+                            except (SystemError, AttributeError):
+                                pass
+                            # Inject description as text for Text2Speech action
+                            if isinstance(parsed.get('actions'), dict):
+                                t2s = parsed['actions'].setdefault('Text2Speech', {})
+                                if not t2s.get('text'):
+                                    t2s['text'] = description
                         decision = parsed.get('decision', {})
                         try:
                             dpg_set_value(self._tag_summary,
@@ -499,7 +530,7 @@ class Node(BaseNode):
             'num_inputs': self.num_inputs,
         }
         for k in [self._tag_apikey, self._tag_model, self._tag_prompt,
-                  self._tag_execute]:
+                  self._tag_execute, self._tag_description]:
             try:
                 d[k] = dpg_get_value(k)
             except (SystemError, AttributeError):
@@ -509,7 +540,7 @@ class Node(BaseNode):
     def set_setting_dict(self, node_id, setting_dict):
         self.num_inputs = setting_dict.get('num_inputs', self._NUM_INPUTS_DEFAULT)
         for k in [self._tag_apikey, self._tag_model, self._tag_prompt,
-                  self._tag_execute]:
+                  self._tag_execute, self._tag_description]:
             if k in setting_dict:
                 try:
                     dpg_set_value(k, setting_dict[k])
