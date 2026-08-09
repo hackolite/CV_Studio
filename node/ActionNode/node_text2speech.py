@@ -47,18 +47,20 @@ _TOOL_TEMPLATE = {
         'VITS model (fr_FR-upmc-medium) is used by default; override the voice '
         'via the PIPER_MODEL_PATH environment variable.  '
         'The "text" field MUST be a lyrical, poetic narration that explains WHY '
-        'each chosen fragrance or ambiance parameter was selected — the emotions, '
-        'memories, or sensations it evokes — written as flowing prose or poetry. '
-        'NEVER recite numeric values, percentages, or durations. '
-        'NEVER list fragrance options or produce a configuration menu. '
+        'each parameter across ALL configured action nodes was selected — the emotion, '
+        'memory, or sensation each setting evokes — written as flowing prose or poetry. '
+        'Cover every configured parameter (fragrances, lighting, sound, temperature, etc.) '
+        'by explaining its sensory or emotional role. '
+        'NEVER recite numeric values, percentages, durations, or raw parameter names. '
+        'NEVER list available options or produce a configuration menu. '
         'Use this to narrate the sensory journey created by the ambiance.'
     ),
     'parameters': {
         'enabled': 'boolean  # activate or mute vocalization',
         'text': (
-            'string  # lyrical poetic narration explaining WHY the chosen fragrances '
-            'and settings were selected — the emotions/sensations they evoke. '
-            'No numbers, no lists, no menus.'
+            'string  # lyrical poetic narration explaining WHY each parameter across all '
+            'configured action nodes was selected — the emotion/sensation each setting evokes. '
+            'No numbers, no raw parameter names, no lists, no menus.'
         ),
     },
 }

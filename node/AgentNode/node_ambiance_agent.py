@@ -27,11 +27,13 @@ _SYSTEM_PROMPT = (
     "poetic_note, rationale, description, and any text passed to actions such as Text2Speech) MUST be "
     "written in the same language as the user_prompt. "
     "The top-level 'description' field AND the 'actions.Text2Speech.text' field MUST contain "
-    "a rich, lyrical, poetic narration that explains WHY each fragrance or parameter was chosen — "
-    "the emotions, memories, or sensations they evoke — written as a flowing poem or prose, "
-    "NOT as a list of ingredients or numeric values. "
-    "NEVER recite numeric intensities, percentages, or durations. "
-    "NEVER produce a welcome menu or enumerate fragrance options to the user. "
+    "a rich, lyrical, poetic narration that explains WHY each parameter across ALL configured action nodes "
+    "was chosen — what emotion, memory, or sensation each setting evokes — "
+    "written as a flowing poem or prose. "
+    "Cover every configured parameter (fragrances, lighting, sound, temperature, etc.) "
+    "by explaining its sensory or emotional role, not by restating its numeric value. "
+    "NEVER recite numeric intensities, percentages, durations, or raw parameter values. "
+    "NEVER produce a welcome menu or enumerate available options to the user. "
     "The Text2Speech narration is heard by the user as a sensory journey, not a configuration report. "
     "Ensure all text fields are valid UTF-8. "
     "Return ONLY a single valid JSON object matching the required schema — "
@@ -41,9 +43,10 @@ _SYSTEM_PROMPT = (
 _RESPONSE_SCHEMA = {
     "agent": {"type": _AGENT_TYPE},
     "description": (
-        "<rich, lyrical, poetic narration explaining WHY the chosen fragrances and parameters "
-        "were selected — the emotions, memories, or sensations they evoke. "
-        "Written as flowing prose or poetry. NO numeric values. NO enumeration of options.>"
+        "<rich, lyrical, poetic narration explaining WHY each parameter across all configured "
+        "action nodes was chosen — the emotion, memory, or sensation each setting evokes. "
+        "Cover every parameter (fragrances, lighting, sound, temperature, etc.) poetically. "
+        "NO numeric values. NO enumeration of available options.>"
     ),
     "decision": {
         "atmosphere": "<overall atmosphere description>",
@@ -57,7 +60,8 @@ _RESPONSE_SCHEMA = {
             "enabled": "<boolean — true to activate vocalization, false to mute>",
             "text": (
                 "<same lyrical narration as 'description' — a sensory journey explaining WHY "
-                "each fragrance was chosen, what it evokes, never a list of parameters or numbers>"
+                "each parameter across all configured action nodes was chosen, "
+                "what emotion or sensation it evokes. Never list parameters by value or number.>"
             ),
         }
     },
@@ -512,11 +516,12 @@ class Node(BaseNode):
                 'and with which parameters. Only use tools listed in available_tools. '
                 'Return a single JSON object matching response_schema exactly. '
                 'The "description" field and "actions.Text2Speech.text" field MUST be '
-                'a lyrical, poetic narration that explains WHY each chosen fragrance or setting '
-                'was selected — what emotion, memory, or sensation it evokes — '
-                'written as flowing prose or a short poem. '
-                'Do NOT list fragrance options, do NOT recite numeric values, '
-                'do NOT produce a welcome message or configuration menu.'
+                'a lyrical, poetic narration that explains WHY each parameter across ALL '
+                'configured action nodes was selected — what emotion, memory, or sensation '
+                'each setting evokes — written as flowing prose or a short poem. '
+                'Cover every parameter poetically (fragrances, lighting, sound, temperature, etc.). '
+                'Do NOT recite numeric values or raw parameter names, '
+                'do NOT produce a welcome message, option list, or configuration menu.'
             ),
         }
         return [
