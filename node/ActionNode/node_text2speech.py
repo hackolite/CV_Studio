@@ -3,13 +3,20 @@
 """Text2Speech node — receives Super JSON from Agent and vocalizes the text action."""
 
 import json
+import logging
+import os
+import pathlib
 import subprocess
+import tempfile
 import threading
+import urllib.request
 
 import dearpygui.dearpygui as dpg
 
 from node_editor.util import dpg_get_value, dpg_set_value
 from node.basenode import Node as BaseNode
+
+_LOG = logging.getLogger(__name__)
 
 _VOCALIZERS = ['piper', 'espeak', 'festival', 'edge-tts', 'coqui']
 
@@ -29,28 +36,122 @@ _TOOL_TEMPLATE = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# Piper — Python-package based implementation with live streaming
+# ---------------------------------------------------------------------------
 
-def _speak_piper(text, speed, pitch, volume):
-    """Invoke piper TTS and pipe raw audio to aplay for playback."""
+# Default French voice model (fr_FR-upmc-medium, ~60 MB).
+# Override via environment variable PIPER_MODEL_PATH.
+_PIPER_VOICES_DIR = pathlib.Path(
+    os.environ.get(
+        'PIPER_VOICES_DIR',
+        pathlib.Path.home() / '.local' / 'share' / 'piper' / 'voices',
+    )
+)
+_FR_MODEL_NAME = 'fr_FR-upmc-medium'
+_FR_ONNX = _PIPER_VOICES_DIR / f'{_FR_MODEL_NAME}.onnx'
+_FR_JSON  = _PIPER_VOICES_DIR / f'{_FR_MODEL_NAME}.onnx.json'
+
+_HF_BASE = (
+    'https://huggingface.co/rhasspy/piper-voices/resolve/main'
+    '/fr/fr_FR/upmc/medium'
+)
+_FR_ONNX_URL = f'{_HF_BASE}/{_FR_MODEL_NAME}.onnx'
+_FR_JSON_URL  = f'{_HF_BASE}/{_FR_MODEL_NAME}.onnx.json'
+
+# Cached voice object — loaded once, reused across calls.
+_piper_voice = None
+_piper_lock  = threading.Lock()
+
+
+def _ensure_piper_model() -> pathlib.Path:
+    """Return path to the French ONNX model, downloading it if necessary.
+
+    Files are downloaded to a temporary path first and only moved to their
+    final destination upon success, preventing partial/corrupt files from
+    being reused on subsequent calls.
+    """
+    _PIPER_VOICES_DIR.mkdir(parents=True, exist_ok=True)
+
+    for url, dest in ((_FR_ONNX_URL, _FR_ONNX), (_FR_JSON_URL, _FR_JSON)):
+        if dest.exists():
+            continue
+        _LOG.info('Downloading piper model file: %s -> %s', url, dest)
+        try:
+            tmp_fd, tmp_path = tempfile.mkstemp(dir=_PIPER_VOICES_DIR)
+            os.close(tmp_fd)
+            urllib.request.urlretrieve(url, tmp_path)
+            pathlib.Path(tmp_path).replace(dest)
+        except Exception as exc:
+            pathlib.Path(tmp_path).unlink(missing_ok=True)
+            _LOG.error('Failed to download %s: %s', url, exc)
+            raise RuntimeError(f'Cannot download piper model: {exc}') from exc
+
+    return _FR_ONNX
+
+
+def _get_piper_voice():
+    """Return a cached PiperVoice, loading and downloading it on first call."""
+    global _piper_voice  # noqa: PLW0603
+    with _piper_lock:
+        if _piper_voice is not None:
+            return _piper_voice
+
+        from piper.voice import PiperVoice  # lazy import
+
+        model_path = pathlib.Path(
+            os.environ.get('PIPER_MODEL_PATH', str(_ensure_piper_model()))
+        )
+        config_path = pathlib.Path(str(model_path) + '.json')
+        _LOG.info('Loading piper voice from %s', model_path)
+        _piper_voice = PiperVoice.load(model_path, config_path=config_path)
+
+    return _piper_voice
+
+
+def _speak_piper(text: str, speed: float, pitch: float, volume: float) -> None:
+    """Synthesize *text* with piper-tts and stream audio live via sounddevice.
+
+    Each sentence is synthesized and played immediately (live streaming), so
+    the first words are heard before the full text is processed.  Falls back
+    silently on any import / runtime error.
+    """
     try:
-        piper = subprocess.Popen(
-            ['piper', '--output-raw'],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+        import numpy as np
+        import sounddevice as sd
+    except (ImportError, OSError) as exc:
+        _LOG.warning('sounddevice/numpy not available for piper TTS: %s', exc)
+        return
+
+    try:
+        voice = _get_piper_voice()
+    except Exception as exc:
+        _LOG.error('Piper voice unavailable: %s', exc)
+        return
+
+    try:
+        from piper.config import SynthesisConfig  # noqa: PLC0415
+
+        # length_scale: < 1 is faster, > 1 is slower — inverse of speed multiplier.
+        # pitch has no direct piper equivalent; it is accepted for API compatibility.
+        length_scale = 1.0 / max(float(speed), 0.1)
+        syn_cfg = SynthesisConfig(volume=float(volume), length_scale=length_scale)
+    except Exception:
+        syn_cfg = None
+
+    try:
+        synth_iter = (
+            voice.synthesize(text, syn_config=syn_cfg)
+            if syn_cfg is not None
+            else voice.synthesize(text)
         )
-        aplay = subprocess.Popen(
-            ['aplay', '-r', '22050', '-f', 'S16_LE', '-t', 'raw', '-'],
-            stdin=piper.stdout,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        piper.stdin.write(text.encode('utf-8'))
-        piper.stdin.close()
-        piper.wait(timeout=30)
-        aplay.wait(timeout=30)
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        pass
+        for chunk in synth_iter:
+            audio = chunk.audio_float_array.astype(np.float32)
+            if audio.size == 0:
+                continue
+            sd.play(audio, samplerate=chunk.sample_rate, blocking=True)
+    except Exception as exc:
+        _LOG.error('Piper synthesis error: %s', exc)
 
 
 def _speak_espeak(text, speed, pitch, volume):
@@ -75,6 +176,52 @@ def _speak(vocalizer, text, speed, pitch, volume):
     elif vocalizer == 'espeak':
         _speak_espeak(text, speed, pitch, volume)
     # festival, edge-tts, coqui: placeholders — extend as needed
+
+
+# ---------------------------------------------------------------------------
+# Public verification helper
+# ---------------------------------------------------------------------------
+
+def verify_piper() -> dict:
+    """Check piper-tts installation, ONNX model presence and sounddevice.
+
+    Returns a dict with keys ``piper_installed``, ``onnx_model_ok``,
+    ``sounddevice_ok``, ``model_path``, and ``errors`` (list of strings).
+    Call this from a startup check or CLI to validate the TTS pipeline.
+    """
+    result: dict = {
+        'piper_installed': False,
+        'onnx_model_ok': False,
+        'sounddevice_ok': False,
+        'model_path': str(_FR_ONNX),
+        'errors': [],
+    }
+
+    # 1. piper-tts Python package
+    try:
+        from piper.voice import PiperVoice  # noqa: F401
+        result['piper_installed'] = True
+    except ImportError as exc:
+        result['errors'].append(f'piper-tts not importable: {exc}')
+
+    # 2. ONNX model (download if missing)
+    try:
+        _ensure_piper_model()
+        result['onnx_model_ok'] = _FR_ONNX.exists() and _FR_JSON.exists()
+        if not result['onnx_model_ok']:
+            result['errors'].append('ONNX model or config file missing after download attempt')
+    except Exception as exc:
+        result['errors'].append(f'ONNX model check/download failed: {exc}')
+
+    # 3. sounddevice + numpy
+    try:
+        import numpy as np  # noqa: F401
+        import sounddevice as sd  # noqa: F401
+        result['sounddevice_ok'] = True
+    except (ImportError, OSError) as exc:
+        result['errors'].append(f'sounddevice/numpy not importable: {exc}')
+
+    return result
 
 
 class FactoryNode:
