@@ -570,11 +570,17 @@ class DpgNodeEditor(object):
         node_id_list = list(node_id_dict.items())
         node_connection_list = list(node_connection_dict.items())
 
+        # Topological sort via bubble-sort style swaps.
+        # A cycle in the graph would cause infinite swapping: guard with a
+        # maximum swap budget of n² (guaranteed to suffice for any DAG).
+        n = len(node_id_list)
+        max_swaps = n * n
+        total_swaps = 0
         index = 0
-        while index < len(node_id_list):
+        while index < n:
             swap_flag = False
             for check_id in node_id_list[index][1]:
-                for check_index in range(index + 1, len(node_id_list)):
+                for check_index in range(index + 1, n):
                     if node_id_list[check_index][0] == check_id:
                         node_id_list[check_index], node_id_list[index] = (
                             node_id_list[index],
@@ -589,9 +595,21 @@ class DpgNodeEditor(object):
                         )
 
                         swap_flag = True
+                        total_swaps += 1
                         break
             if not swap_flag:
                 index += 1
+            elif total_swaps > max_swaps:
+                # Cycle detected — abort the sort to avoid an infinite loop.
+                # The partial order is still usable; nodes in the cycle will
+                # execute in insertion order which is safe enough at runtime.
+                logger.warning(
+                    "Cycle detected in node graph (total_swaps=%d > max %d). "
+                    "Topological sort aborted — cyclic connections are allowed "
+                    "but execution order in the cycle is not guaranteed.",
+                    total_swaps, max_swaps,
+                )
+                break
 
         index = 0
         unfinded_id_dict = {}
