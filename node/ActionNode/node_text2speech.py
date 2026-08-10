@@ -171,8 +171,26 @@ def _speak_piper(text: str) -> None:
             chunks.append(audio)
         if chunks and sample_rate:
             full_audio = np.concatenate(chunks)
-            sd.play(full_audio, samplerate=sample_rate)
-            sd.wait()
+            # Use an explicit OutputStream + write() instead of sd.play() +
+            # sd.wait().  sd.play()/sd.wait() operates on sounddevice's global
+            # default-stream state and, on Windows WASAPI/WDM backends, can
+            # deadlock when a RawInputStream (Speech2Text) is open concurrently
+            # because PortAudio's internal mutex is held by the blocking wait.
+            # A dedicated OutputStream avoids that global state entirely.
+            if full_audio.ndim == 1:
+                full_audio = full_audio.reshape(-1, 1)
+            channels = full_audio.shape[1]
+            chunk_size = 4096
+            with sd.OutputStream(
+                samplerate=sample_rate,
+                channels=channels,
+                dtype='float32',
+            ) as out_stream:
+                offset = 0
+                while offset < len(full_audio):
+                    end = min(offset + chunk_size, len(full_audio))
+                    out_stream.write(full_audio[offset:end])
+                    offset = end
     except Exception as exc:
         _LOG.error('Piper synthesis error: %s', exc)
 
