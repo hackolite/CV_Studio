@@ -29,7 +29,6 @@ import os
 import pathlib
 import tempfile
 import threading
-import time
 import urllib.request
 
 import dearpygui.dearpygui as dpg
@@ -252,7 +251,6 @@ class Node(BaseNode):
         self._opencv_setting_dict = {}
         self._last_output = {}
         self._speak_thread = None
-        self._last_spoke_at = 0.0
         self._last_text_hash = None
         self._speaking = False
 
@@ -277,7 +275,6 @@ class Node(BaseNode):
 
         self._tag_enabled    = tag + ':EnabledValue'
         self._tag_text       = tag + ':TextValue'
-        self._tag_cooldown   = tag + ':CooldownValue'
         self._tag_received   = tag + ':ReceivedValue'
         self._tag_status     = tag + ':StatusValue'
         self._tag_out_val    = tag_out_val
@@ -301,14 +298,6 @@ class Node(BaseNode):
                     multiline=True,
                     width=w,
                     height=70,
-                )
-                dpg.add_slider_float(
-                    tag=self._tag_cooldown,
-                    default_value=60.0,
-                    min_value=1.0,
-                    max_value=60.0,
-                    width=w,
-                    format='cooldown %.1fs',
                 )
                 dpg.add_text(tag=self._tag_status, default_value='[*] idle')
 
@@ -394,29 +383,13 @@ class Node(BaseNode):
             except (SystemError, AttributeError, TypeError, ValueError):
                 txt = ''
 
-            try:
-                cooldown = float(dpg_get_value(self._tag_cooldown))
-            except (SystemError, AttributeError, TypeError, ValueError):
-                cooldown = 60.0
-
             if not txt:
                 return
 
-            # ── Cooldown check — always evaluated so the slider is respected ──
-            now = time.monotonic()
-            elapsed = now - self._last_spoke_at
-
+            # ── Busy check ────────────────────────────────────────────────────
             if self._speak_thread and self._speak_thread.is_alive():
                 try:
-                    dpg_set_value(self._tag_status, f'[~] busy — cooldown {cooldown:.0f}s')
-                except (SystemError, AttributeError):
-                    pass
-                return
-
-            if elapsed < cooldown:
-                remaining = cooldown - elapsed
-                try:
-                    dpg_set_value(self._tag_status, f'[…] cooldown {remaining:.1f}s / {cooldown:.0f}s')
+                    dpg_set_value(self._tag_status, '[~] busy')
                 except (SystemError, AttributeError):
                     pass
                 return
@@ -431,7 +404,6 @@ class Node(BaseNode):
                 return
 
             self._last_text_hash = text_hash
-            self._last_spoke_at = now
             self._speaking = True
             self._speak_thread = threading.Thread(
                 target=self._speak_tracked, args=(txt,), daemon=True
@@ -456,7 +428,7 @@ class Node(BaseNode):
         tag = self.tag_node_name
         pos = dpg.get_item_pos(tag)
         d = {'ver': self._ver, 'pos': pos}
-        for k in [self._tag_enabled, self._tag_text, self._tag_cooldown]:
+        for k in [self._tag_enabled, self._tag_text]:
             try:
                 d[k] = dpg_get_value(k)
             except (SystemError, AttributeError):
@@ -464,7 +436,7 @@ class Node(BaseNode):
         return d
 
     def set_setting_dict(self, node_id, setting_dict):
-        for k in [self._tag_enabled, self._tag_text, self._tag_cooldown]:
+        for k in [self._tag_enabled, self._tag_text]:
             if k in setting_dict:
                 try:
                     dpg_set_value(k, setting_dict[k])
