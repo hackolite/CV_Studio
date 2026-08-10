@@ -111,6 +111,7 @@ class Node(BaseNode):
         self._tag_total     = tag + ':TotalValue'
         self._tag_received  = tag + ':ReceivedValue'
         self._tag_out_val   = tag_out_val
+        self._tag_show_frags = tag + ':ShowFragsValue'
 
         with dpg.node(tag=tag, parent=parent, label=self.node_label, pos=pos):
 
@@ -119,6 +120,8 @@ class Node(BaseNode):
 
             with dpg.node_attribute(tag=tag + ':CtrlAttr', attribute_type=dpg.mvNode_Attr_Static):
                 dpg.add_checkbox(tag=self._tag_enabled, label='Enabled', default_value=True)
+                dpg.add_checkbox(tag=self._tag_show_frags, label='Show fragrances',
+                                 default_value=True, callback=self._cb_toggle_frags)
                 dpg.add_text(tag=self._tag_total, default_value='Total: 0 %')
                 dpg.add_button(label='+ Add Fragrance', width=w,
                                callback=self._cb_add_frag,
@@ -155,11 +158,18 @@ class Node(BaseNode):
         if dpg.does_item_exist(st['attr']):
             return
         w = self._w
+        # Determine current visibility
+        show = True
+        try:
+            show = bool(dpg_get_value(self._tag_show_frags))
+        except (SystemError, AttributeError):
+            pass
         default_frag = self._catalog[idx % len(self._catalog)] if self._catalog else ''
         with dpg.node_attribute(
             tag=st['attr'],
             attribute_type=dpg.mvNode_Attr_Static,
             parent=tag,
+            show=show,
         ):
             dpg.add_text(default_value=f'— Fragrance {idx + 1} —')
             dpg.add_combo(tag=st['name'], items=self._catalog,
@@ -170,6 +180,16 @@ class Node(BaseNode):
                                  min_value=0.0, max_value=100.0, width=w,
                                  callback=self._cb_update_total)
         self._cb_update_total(None, None)
+
+    def _cb_toggle_frags(self, sender, app_data, user_data=None):
+        show = bool(app_data)
+        for i in range(self._num_fragrances):
+            st = self._slot_tags(i)
+            try:
+                if dpg.does_item_exist(st['attr']):
+                    dpg.configure_item(st['attr'], show=show)
+            except (SystemError, AttributeError):
+                pass
 
     def _cb_add_frag(self, sender, app_data, user_data):
         node_id, parent = user_data
@@ -341,6 +361,10 @@ class Node(BaseNode):
             d[self._tag_enabled] = dpg_get_value(self._tag_enabled)
         except (SystemError, AttributeError):
             pass
+        try:
+            d[self._tag_show_frags] = dpg_get_value(self._tag_show_frags)
+        except (SystemError, AttributeError):
+            pass
         for i in range(self._num_fragrances):
             for k in self._slot_tags(i).values():
                 try:
@@ -362,6 +386,13 @@ class Node(BaseNode):
         try:
             if self._tag_enabled in setting_dict:
                 dpg_set_value(self._tag_enabled, setting_dict[self._tag_enabled])
+        except (SystemError, AttributeError):
+            pass
+        try:
+            if self._tag_show_frags in setting_dict:
+                show = bool(setting_dict[self._tag_show_frags])
+                dpg_set_value(self._tag_show_frags, show)
+                self._cb_toggle_frags(None, show)
         except (SystemError, AttributeError):
             pass
         for i in range(self._num_fragrances):
