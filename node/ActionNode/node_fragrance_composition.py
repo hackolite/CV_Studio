@@ -18,14 +18,14 @@ _TOOL_TEMPLATE = {
     'description': 'Creates a multi-fragrance olfactory composition.',
     'parameters': {
         'enabled': 'boolean',
+        'duration': 'integer  # seconds — applies to the whole composition',
+        'pause': 'integer  # seconds between repetitions — applies to the whole composition',
+        'repetitions': 'integer  # number of repetitions — applies to the whole composition',
+        'intensity': 'float  # 0.0 to 1.0 — applies to the whole composition',
         'fragrances': [
             {
                 'name': 'string  # fragrance name from catalog',
                 'composition_percent': 'float  # must sum to 100 across all fragrances',
-                'intensity': 'float  # 0.0 to 1.0',
-                'duration': 'integer  # seconds',
-                'pause': 'integer  # seconds',
-                'repetitions': 'integer',
             }
         ],
     },
@@ -78,6 +78,11 @@ class Node(BaseNode):
         self._catalog = []
         self._num_fragrances = 1
         self._frag_slots = []   # list of dicts with widget tags per slot
+        # Composition-level params (set from JSON, not displayed)
+        self._comp_duration = 120
+        self._comp_pause = 30
+        self._comp_repetitions = 2
+        self._comp_intensity = 0.5
 
     def get_tool_template(self):
         tmpl = dict(_TOOL_TEMPLATE)
@@ -144,10 +149,6 @@ class Node(BaseNode):
             'attr':        tag + f':FragAttr{idx}',
             'name':        tag + f':FragName{idx}',
             'composition': tag + f':FragComp{idx}',
-            'intensity':   tag + f':FragInt{idx}',
-            'duration':    tag + f':FragDur{idx}',
-            'pause':       tag + f':FragPause{idx}',
-            'repetitions': tag + f':FragReps{idx}',
         }
 
     def _create_slot(self, tag, parent, idx):
@@ -169,14 +170,6 @@ class Node(BaseNode):
                                  default_value=100.0 / max(self._num_fragrances, 1),
                                  min_value=0.0, max_value=100.0, width=w,
                                  callback=self._cb_update_total)
-            dpg.add_slider_float(tag=st['intensity'], label='Intensity',
-                                 default_value=0.5, min_value=0.0, max_value=1.0, width=w)
-            dpg.add_input_int(tag=st['duration'], label='Duration (s)',
-                              default_value=120, min_value=0, width=w)
-            dpg.add_input_int(tag=st['pause'], label='Pause (s)',
-                              default_value=30, min_value=0, width=w)
-            dpg.add_input_int(tag=st['repetitions'], label='Repetitions',
-                              default_value=2, min_value=0, width=w)
         self._cb_update_total(None, None)
 
     def _cb_add_frag(self, sender, app_data, user_data):
@@ -225,10 +218,6 @@ class Node(BaseNode):
                 result.append({
                     'name': dpg_get_value(st['name']),
                     'composition_percent': float(dpg_get_value(st['composition'])),
-                    'intensity': float(dpg_get_value(st['intensity'])),
-                    'duration': int(dpg_get_value(st['duration'])),
-                    'pause': int(dpg_get_value(st['pause'])),
-                    'repetitions': int(dpg_get_value(st['repetitions'])),
                 })
             except (SystemError, AttributeError, TypeError, ValueError):
                 pass
@@ -289,12 +278,26 @@ class Node(BaseNode):
         if not action_data:
             self._last_output = {
                 'enabled': enabled,
+                'duration': self._comp_duration,
+                'pause': self._comp_pause,
+                'repetitions': self._comp_repetitions,
+                'intensity': self._comp_intensity,
                 'fragrances': fragrances,
             }
 
         return {'image': None, 'json': self._last_output, 'audio': None}
 
     def _apply_action(self, data):
+        # Store composition-level params (hidden — not displayed in UI)
+        if 'duration' in data:
+            self._comp_duration = int(data['duration'])
+        if 'pause' in data:
+            self._comp_pause = int(data['pause'])
+        if 'repetitions' in data:
+            self._comp_repetitions = int(data['repetitions'])
+        if 'intensity' in data:
+            self._comp_intensity = float(data['intensity'])
+
         fragrances = data.get('fragrances', [])
         tag = self.tag_node_name
         # Ensure we have enough slots, incrementing explicitly to avoid relying on side effects
@@ -310,14 +313,6 @@ class Node(BaseNode):
                     dpg_set_value(st['name'], name)
                 if 'composition_percent' in fr and dpg.does_item_exist(st['composition']):
                     dpg_set_value(st['composition'], float(fr['composition_percent']))
-                if 'intensity' in fr and dpg.does_item_exist(st['intensity']):
-                    dpg_set_value(st['intensity'], float(fr['intensity']))
-                if 'duration' in fr and dpg.does_item_exist(st['duration']):
-                    dpg_set_value(st['duration'], int(fr['duration']))
-                if 'pause' in fr and dpg.does_item_exist(st['pause']):
-                    dpg_set_value(st['pause'], int(fr['pause']))
-                if 'repetitions' in fr and dpg.does_item_exist(st['repetitions']):
-                    dpg_set_value(st['repetitions'], int(fr['repetitions']))
             except (SystemError, AttributeError, TypeError, ValueError):
                 pass
         try:
@@ -334,7 +329,15 @@ class Node(BaseNode):
     def get_setting_dict(self, node_id):
         tag = self.tag_node_name
         pos = dpg.get_item_pos(tag)
-        d = {'ver': self._ver, 'pos': pos, 'num_fragrances': self._num_fragrances}
+        d = {
+            'ver': self._ver,
+            'pos': pos,
+            'num_fragrances': self._num_fragrances,
+            'comp_duration': self._comp_duration,
+            'comp_pause': self._comp_pause,
+            'comp_repetitions': self._comp_repetitions,
+            'comp_intensity': self._comp_intensity,
+        }
         try:
             d[self._tag_enabled] = dpg_get_value(self._tag_enabled)
         except (SystemError, AttributeError):
@@ -348,6 +351,10 @@ class Node(BaseNode):
         return d
 
     def set_setting_dict(self, node_id, setting_dict):
+        self._comp_duration = int(setting_dict.get('comp_duration', self._comp_duration))
+        self._comp_pause = int(setting_dict.get('comp_pause', self._comp_pause))
+        self._comp_repetitions = int(setting_dict.get('comp_repetitions', self._comp_repetitions))
+        self._comp_intensity = float(setting_dict.get('comp_intensity', self._comp_intensity))
         saved_n = setting_dict.get('num_fragrances', 1)
         tag = self.tag_node_name
         while self._num_fragrances < saved_n and self._num_fragrances < _MAX_FRAGRANCES:
