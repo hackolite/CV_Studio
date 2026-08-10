@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """AmbianceAgent node — LLM-driven ambiance orchestration via OpenRouter, Google AI Studio, or Groq."""
 
+import hashlib
 import json
 import logging
 import os
@@ -327,9 +328,11 @@ class Node(BaseNode):
         self._state = 'READY'       # READY | RUNNING | COOLDOWN
         self._cooldown_start = None
         self._cooldown_s = 30
+        self._error_cooldown_s = 15
         self._last_output = {}
         self._available_models = []
         self._tag_provider = None
+        self._last_input_hash = None
 
     # ------------------------------------------------------------------
     # GUI construction
@@ -434,7 +437,6 @@ class Node(BaseNode):
             ):
                 dpg.add_combo(
                     tag=tag_provider,
-                    label='Provider',
                     items=PROVIDERS,
                     default_value=PROVIDER_OPENROUTER,
                     width=w,
@@ -645,7 +647,9 @@ class Node(BaseNode):
                 if 'error' in result:
                     _LOG.error('[AmbianceAgent] LLM error: %s', result['error'])
                     self._set_status(f'[!] ERROR: {result["error"]}')
-                    self._state = 'READY'
+                    self._state = 'COOLDOWN'
+                    self._cooldown_start = time.time()
+                    self._cooldown_current_s = self._error_cooldown_s
                 else:
                     parsed = self._parse_llm_response(result['text'])
                     if parsed:
@@ -673,6 +677,7 @@ class Node(BaseNode):
                         _LOG.warning('[AmbianceAgent] Failed to parse LLM response as JSON')
                     self._state = 'COOLDOWN'
                     self._cooldown_start = time.time()
+                    self._cooldown_current_s = cooldown_s
                     self._set_status('[~] COOLDOWN')
             except queue.Empty:
                 self._set_status('[>] RUNNING...')
@@ -680,7 +685,7 @@ class Node(BaseNode):
         # ── Cooldown countdown ────────────────────────────────────────────
         if self._state == 'COOLDOWN':
             elapsed = time.time() - self._cooldown_start
-            remaining = cooldown_s - elapsed
+            remaining = getattr(self, '_cooldown_current_s', cooldown_s) - elapsed
             if remaining <= 0:
                 self._state = 'READY'
                 self._set_status('[*] READY')
@@ -721,6 +726,16 @@ class Node(BaseNode):
                 _LOG.error('[AmbianceAgent] No model selected — cannot call LLM')
                 self._set_status('[!] ERROR: No model selected')
             else:
+                # ── MD5 deduplication — skip if inputs unchanged ──────────
+                input_hash = hashlib.md5(
+                    json.dumps({'prompt': prompt, 'inputs': aggregated},
+                               sort_keys=True, ensure_ascii=False).encode()
+                ).hexdigest()
+                if input_hash == self._last_input_hash:
+                    _LOG.debug('[AmbianceAgent] Inputs unchanged (hash=%s) — skipping LLM call', input_hash)
+                    return {'image': None, 'json': self._last_output, 'audio': None}
+                self._last_input_hash = input_hash
+
                 # Discover tools from child node instances
                 tools = self._discover_tools(node_result_dict)
 
