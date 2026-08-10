@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """AmbianceAgent node — LLM-driven ambiance orchestration via OpenRouter, Google AI Studio, or Groq."""
 
+import copy
 import hashlib
 import json
 import logging
@@ -326,6 +327,7 @@ class Node(BaseNode):
         self._llm_queue = queue.Queue()
         self._llm_thread = None
         self._state = 'READY'       # READY | RUNNING | COOLDOWN
+        self._state_lock = threading.Lock()
         self._cooldown_start = None
         self._cooldown_s = 30
         self._error_cooldown_s = 15
@@ -333,6 +335,10 @@ class Node(BaseNode):
         self._available_models = []
         self._tag_provider = None
         self._last_input_hash = None
+        # Start/Stop button state
+        self._execute_active = False   # True when user pressed Start
+        self._tag_startstop = None
+        self._cancel_flag = threading.Event()  # set to request cancellation
 
     # ------------------------------------------------------------------
     # GUI construction
@@ -352,7 +358,7 @@ class Node(BaseNode):
         tag_model    = tag + ':ModelValue'
         tag_provider = tag + ':ProviderValue'
         tag_prompt   = tag + ':PromptValue'
-        tag_execute  = tag + ':ExecuteValue'
+        tag_startstop = tag + ':StartStopBtn'
         tag_status   = tag + ':StatusValue'
         tag_summary  = tag + ':SummaryValue'
         tag_out      = tag + ':' + self.TYPE_JSON + ':Output01'
@@ -365,7 +371,7 @@ class Node(BaseNode):
         self._tag_model       = tag_model
         self._tag_provider    = tag_provider
         self._tag_prompt      = tag_prompt
-        self._tag_execute     = tag_execute
+        self._tag_startstop   = tag_startstop
         self._tag_status      = tag_status
         self._tag_summary     = tag_summary
         self._tag_out_val     = tag_out_val
@@ -377,19 +383,6 @@ class Node(BaseNode):
         threading.Thread(target=self._bg_fetch_models, daemon=True).start()
 
         with dpg.node(tag=tag, parent=parent, label=self.node_label, pos=pos):
-
-            # ── Prompt (top) ──────────────────────────────────────────────
-            with dpg.node_attribute(
-                tag=tag + ':PromptAttr',
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_input_text(
-                    tag=tag_prompt,
-                    hint='Prompt',
-                    multiline=True,
-                    width=w,
-                    height=70,
-                )
 
             # ── Description (ambiance text / Text2Speech source) ──────────
             with dpg.node_attribute(
@@ -419,16 +412,19 @@ class Node(BaseNode):
             for i in range(self.num_inputs):
                 self._create_input_slot(tag, parent, i)
 
-            # ── Execute toggle ───────────────────────────────────────────
+            # ── Start / Stop button ──────────────────────────────────────
             with dpg.node_attribute(
                 tag=tag + ':ExecuteAttr',
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
-                dpg.add_checkbox(
-                    tag=tag_execute,
-                    label='Execute Agent',
-                    default_value=False,
+                dpg.add_button(
+                    tag=tag_startstop,
+                    label='▶ Start',
+                    width=w,
+                    callback=self._cb_startstop,
                 )
+                # Reflect any pre-restored state (set_setting_dict called before add_node)
+                self._update_startstop_ui()
 
             # ── Provider dropdown ────────────────────────────────────────
             with dpg.node_attribute(
@@ -465,11 +461,6 @@ class Node(BaseNode):
                     items=self._available_models,
                     default_value=default_model,
                     width=w,
-                )
-                dpg.add_button(
-                    label='Scan Models',
-                    width=w,
-                    callback=self._cb_scan_models,
                 )
 
             # ── Status ───────────────────────────────────────────────────
@@ -569,6 +560,41 @@ class Node(BaseNode):
     def _cb_scan_models(self, sender, app_data, user_data=None):
         threading.Thread(target=self._bg_fetch_models, daemon=True).start()
 
+    def _cb_startstop(self, sender, app_data, user_data=None):
+        """Toggle Start/Stop state. Start also triggers a model scan."""
+        if not self._execute_active:
+            # Switch to active (Start)
+            self._execute_active = True
+            self._cancel_flag.clear()
+            self._update_startstop_ui()
+            # Auto-scan models when starting
+            threading.Thread(target=self._bg_fetch_models, daemon=True).start()
+        else:
+            # Switch to stopped (Stop) — cancel any hanging request
+            self._execute_active = False
+            self._cancel_flag.set()
+            with self._state_lock:
+                if self._state == 'RUNNING':
+                    # Put a sentinel so update() sees the cancellation immediately
+                    try:
+                        self._llm_queue.put_nowait({'error': 'Cancelled by user'})
+                    except Exception:
+                        pass
+                    self._state = 'READY'
+                    self._set_status('[*] READY')
+            self._update_startstop_ui()
+
+    def _update_startstop_ui(self):
+        """Update the Start/Stop button label to reflect current state."""
+        try:
+            if self._tag_startstop and dpg.does_item_exist(self._tag_startstop):
+                if self._execute_active:
+                    dpg.configure_item(self._tag_startstop, label='■ Stop')
+                else:
+                    dpg.configure_item(self._tag_startstop, label='▶ Start')
+        except (SystemError, AttributeError):
+            pass
+
     def _get_current_provider(self):
         """Return the currently selected provider string."""
         try:
@@ -633,10 +659,7 @@ class Node(BaseNode):
                     break
 
         # ── Read controls ────────────────────────────────────────────────
-        try:
-            execute = dpg_get_value(self._tag_execute)
-        except (SystemError, AttributeError):
-            execute = False
+        execute = self._execute_active
 
         cooldown_s = self._cooldown_s
 
@@ -651,9 +674,13 @@ class Node(BaseNode):
                     self._cooldown_start = time.time()
                     self._cooldown_current_s = self._error_cooldown_s
                 else:
+                    _LOG.info('[AmbianceAgent] LLM response received — parsing JSON...')
                     parsed = self._parse_llm_response(result['text'])
                     if parsed:
-                        _LOG.info('[AmbianceAgent] LLM response parsed — actions: %s', list((parsed.get('actions') or {}).keys()))
+                        actions = list((parsed.get('actions') or {}).keys())
+                        _LOG.info('[AmbianceAgent] LLM response parsed OK — actions: %s', actions)
+                        _LOG.debug('[AmbianceAgent] LLM full parsed output: %s',
+                                   json.dumps(parsed, ensure_ascii=False)[:500])
                         self._last_output = parsed
                         # Propagate description → description widget + Text2Speech text
                         description = parsed.get('description', '')
@@ -674,7 +701,8 @@ class Node(BaseNode):
                         except (SystemError, AttributeError):
                             pass
                     else:
-                        _LOG.warning('[AmbianceAgent] Failed to parse LLM response as JSON')
+                        _LOG.warning('[AmbianceAgent] Failed to parse LLM response as JSON — raw: %s',
+                                     result['text'][:300])
                     self._state = 'COOLDOWN'
                     self._cooldown_start = time.time()
                     self._cooldown_current_s = cooldown_s
@@ -774,15 +802,26 @@ class Node(BaseNode):
             pass
 
     def _build_messages(self, data, prompt, tools):
+        # Build a dynamic response_schema that includes an entry in 'actions' for each discovered tool
+        schema = copy.deepcopy(_RESPONSE_SCHEMA)
+        for tool in tools:
+            tool_name = tool.get('tool_name')
+            if tool_name and tool_name not in schema['actions']:
+                # Provide the tool's parameter structure as a hint to the LLM
+                schema['actions'][tool_name] = tool.get('parameters', {})
+        _LOG.info('[AmbianceAgent] Building messages — tools=%s  prompt=%r',
+                  [t.get('tool_name') for t in tools], prompt[:120] if prompt else '')
         user_content = {
             'sensor_data': data,
             'user_prompt': prompt,
             'available_tools': tools,
-            'response_schema': _RESPONSE_SCHEMA,
+            'response_schema': schema,
             'instruction': (
                 'Based on the sensor data and user prompt, decide which tools to use '
                 'and with which parameters. Only use tools listed in available_tools. '
                 'Return a single JSON object matching response_schema exactly. '
+                'For each tool you use, add an entry under "actions" keyed by the tool_name '
+                'and fill in all required parameters as described by the tool template. '
                 'The "description" field and "actions.Text2Speech.text" field MUST be '
                 'a lyrical, poetic narration that explains WHY each parameter across ALL '
                 'configured action nodes was selected — what emotion, memory, or sensation '
@@ -832,9 +871,10 @@ class Node(BaseNode):
             'ver': self._ver,
             'pos': pos,
             'num_inputs': self.num_inputs,
+            'execute_active': self._execute_active,
         }
         for k in [self._tag_apikey, self._tag_model, self._tag_provider,
-                  self._tag_prompt, self._tag_execute, self._tag_description]:
+                  self._tag_prompt, self._tag_description]:
             try:
                 d[k] = dpg_get_value(k)
             except (SystemError, AttributeError):
@@ -843,8 +883,10 @@ class Node(BaseNode):
 
     def set_setting_dict(self, node_id, setting_dict):
         self.num_inputs = setting_dict.get('num_inputs', self._NUM_INPUTS_DEFAULT)
+        self._execute_active = setting_dict.get('execute_active', False)
+        self._update_startstop_ui()
         for k in [self._tag_apikey, self._tag_model, self._tag_provider,
-                  self._tag_prompt, self._tag_execute, self._tag_description]:
+                  self._tag_prompt, self._tag_description]:
             if k in setting_dict:
                 try:
                     dpg_set_value(k, setting_dict[k])
