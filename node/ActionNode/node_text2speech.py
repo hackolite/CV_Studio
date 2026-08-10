@@ -22,6 +22,7 @@ runs in a daemon thread so the UI and the rest of the pipeline remain
 fully responsive.
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -252,6 +253,7 @@ class Node(BaseNode):
         self._last_output = {}
         self._speak_thread = None
         self._last_spoke_at = 0.0
+        self._last_text_hash = None
 
     def get_tool_template(self):
         return _TOOL_TEMPLATE
@@ -385,6 +387,15 @@ class Node(BaseNode):
             except (SystemError, AttributeError, TypeError, ValueError):
                 return
 
+            # ── Hash deduplication — skip if text already said ────────────
+            text_hash = hashlib.md5(txt.encode('utf-8', errors='replace')).hexdigest()
+            if text_hash == self._last_text_hash:
+                try:
+                    dpg_set_value(self._tag_status, '[=] already said — skipped')
+                except (SystemError, AttributeError):
+                    pass
+                return
+
             now = time.monotonic()
             elapsed = now - self._last_spoke_at
 
@@ -400,6 +411,7 @@ class Node(BaseNode):
                 except (SystemError, AttributeError):
                     pass
             else:
+                self._last_text_hash = text_hash
                 self._last_spoke_at = now
                 self._speak_thread = threading.Thread(
                     target=_speak, args=(txt,), daemon=True
