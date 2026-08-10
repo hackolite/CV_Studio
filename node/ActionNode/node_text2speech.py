@@ -300,7 +300,7 @@ class Node(BaseNode):
                 )
                 dpg.add_slider_float(
                     tag=self._tag_cooldown,
-                    default_value=10.0,
+                    default_value=60.0,
                     min_value=1.0,
                     max_value=60.0,
                     width=w,
