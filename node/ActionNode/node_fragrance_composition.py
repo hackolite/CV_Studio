@@ -351,10 +351,10 @@ class Node(BaseNode):
         return d
 
     def set_setting_dict(self, node_id, setting_dict):
-        self._comp_duration = setting_dict.get('comp_duration', self._comp_duration)
-        self._comp_pause = setting_dict.get('comp_pause', self._comp_pause)
-        self._comp_repetitions = setting_dict.get('comp_repetitions', self._comp_repetitions)
-        self._comp_intensity = setting_dict.get('comp_intensity', self._comp_intensity)
+        self._comp_duration = int(setting_dict.get('comp_duration', self._comp_duration))
+        self._comp_pause = int(setting_dict.get('comp_pause', self._comp_pause))
+        self._comp_repetitions = int(setting_dict.get('comp_repetitions', self._comp_repetitions))
+        self._comp_intensity = float(setting_dict.get('comp_intensity', self._comp_intensity))
         saved_n = setting_dict.get('num_fragrances', 1)
         tag = self.tag_node_name
         while self._num_fragrances < saved_n and self._num_fragrances < _MAX_FRAGRANCES:
