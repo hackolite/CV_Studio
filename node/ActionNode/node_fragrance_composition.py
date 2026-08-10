@@ -83,6 +83,8 @@ class Node(BaseNode):
         self._comp_pause = 30
         self._comp_repetitions = 2
         self._comp_intensity = 0.5
+        self._settings_collapsed = False
+        self._tag_settings_btn = ''
 
     def get_tool_template(self):
         tmpl = dict(_TOOL_TEMPLATE)
@@ -107,11 +109,32 @@ class Node(BaseNode):
         tag_out     = tag + ':' + self.TYPE_JSON + ':Output01'
         tag_out_val = tag + ':' + self.TYPE_JSON + ':Output01Value'
 
-        self._tag_enabled   = tag + ':EnabledValue'
-        self._tag_total     = tag + ':TotalValue'
-        self._tag_received  = tag + ':ReceivedValue'
-        self._tag_out_val   = tag_out_val
-        self._tag_show_frags = tag + ':ShowFragsValue'
+        self._tag_enabled        = tag + ':EnabledValue'
+        self._tag_total          = tag + ':TotalValue'
+        self._tag_received       = tag + ':ReceivedValue'
+        self._tag_out_val        = tag_out_val
+        self._tag_settings_btn   = tag + ':SettingsBtn'
+        self._settings_collapsed = False
+
+        node = self  # closure reference for the callback below
+
+        def _on_settings_toggle(sender, app_data, user_data):
+            node._settings_collapsed = not node._settings_collapsed
+            for i in range(node._num_fragrances):
+                st = node._slot_tags(i)
+                try:
+                    if dpg.does_item_exist(st['attr']):
+                        dpg.configure_item(st['attr'], show=not node._settings_collapsed)
+                except Exception:
+                    pass
+            try:
+                dpg.configure_item(
+                    node._tag_settings_btn,
+                    label=(u'\u25B6 Settings' if node._settings_collapsed
+                           else u'\u25BC Settings'),
+                )
+            except Exception:
+                pass
 
         with dpg.node(tag=tag, parent=parent, label=self.node_label, pos=pos):
 
@@ -120,8 +143,6 @@ class Node(BaseNode):
 
             with dpg.node_attribute(tag=tag + ':CtrlAttr', attribute_type=dpg.mvNode_Attr_Static):
                 dpg.add_checkbox(tag=self._tag_enabled, label='Enabled', default_value=True)
-                dpg.add_checkbox(tag=self._tag_show_frags, label='Show fragrances',
-                                 default_value=True, callback=self._cb_toggle_frags)
                 dpg.add_text(tag=self._tag_total, default_value='Total: 0 %')
                 dpg.add_button(label='+ Add Fragrance', width=w,
                                callback=self._cb_add_frag,
@@ -134,6 +155,12 @@ class Node(BaseNode):
                 dpg.add_text(default_value='Received JSON')
                 dpg.add_input_text(tag=self._tag_received, default_value='',
                                    multiline=True, width=w, height=90, readonly=True)
+                dpg.add_button(
+                    label=u'\u25BC Settings',
+                    tag=self._tag_settings_btn,
+                    width=w,
+                    callback=_on_settings_toggle,
+                )
 
             # Create first slot
             self._create_slot(tag, parent, 0)
@@ -158,12 +185,8 @@ class Node(BaseNode):
         if dpg.does_item_exist(st['attr']):
             return
         w = self._w
-        # Determine current visibility
-        show = True
-        try:
-            show = bool(dpg_get_value(self._tag_show_frags))
-        except (SystemError, AttributeError):
-            pass
+        # Determine current visibility from collapsed state
+        show = not getattr(self, '_settings_collapsed', False)
         default_frag = self._catalog[idx % len(self._catalog)] if self._catalog else ''
         with dpg.node_attribute(
             tag=st['attr'],
@@ -182,14 +205,8 @@ class Node(BaseNode):
         self._cb_update_total(None, None)
 
     def _cb_toggle_frags(self, sender, app_data, user_data=None):
-        show = bool(app_data)
-        for i in range(self._num_fragrances):
-            st = self._slot_tags(i)
-            try:
-                if dpg.does_item_exist(st['attr']):
-                    dpg.configure_item(st['attr'], show=show)
-            except (SystemError, AttributeError):
-                pass
+        # kept for backward compat but no longer wired to a widget
+        pass
 
     def _cb_add_frag(self, sender, app_data, user_data):
         node_id, parent = user_data
@@ -361,10 +378,7 @@ class Node(BaseNode):
             d[self._tag_enabled] = dpg_get_value(self._tag_enabled)
         except (SystemError, AttributeError):
             pass
-        try:
-            d[self._tag_show_frags] = dpg_get_value(self._tag_show_frags)
-        except (SystemError, AttributeError):
-            pass
+        d['settings_collapsed'] = self._settings_collapsed
         for i in range(self._num_fragrances):
             for k in self._slot_tags(i).values():
                 try:
@@ -388,13 +402,20 @@ class Node(BaseNode):
                 dpg_set_value(self._tag_enabled, setting_dict[self._tag_enabled])
         except (SystemError, AttributeError):
             pass
-        try:
-            if self._tag_show_frags in setting_dict:
-                show = bool(setting_dict[self._tag_show_frags])
-                dpg_set_value(self._tag_show_frags, show)
-                self._cb_toggle_frags(None, show)
-        except (SystemError, AttributeError):
-            pass
+        # Restore collapsed state
+        if setting_dict.get('settings_collapsed', False):
+            self._settings_collapsed = True
+            for i in range(self._num_fragrances):
+                st = self._slot_tags(i)
+                try:
+                    if dpg.does_item_exist(st['attr']):
+                        dpg.configure_item(st['attr'], show=False)
+                except Exception:
+                    pass
+            try:
+                dpg.configure_item(self._tag_settings_btn, label=u'\u25B6 Settings')
+            except Exception:
+                pass
         for i in range(self._num_fragrances):
             for k in self._slot_tags(i).values():
                 if k in setting_dict:
