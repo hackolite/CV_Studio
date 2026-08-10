@@ -945,7 +945,7 @@ class Node(BaseNode):
                     return json.loads(candidate)
                 except json.JSONDecodeError:
                     # Try repairing a truncated JSON fragment
-                    repaired = AmbianceAgent._repair_truncated_json(candidate)
+                    repaired = Node._repair_truncated_json(candidate)
                     if repaired is not None:
                         _LOG.warning('[AmbianceAgent] JSON was truncated — repaired successfully')
                         return repaired
