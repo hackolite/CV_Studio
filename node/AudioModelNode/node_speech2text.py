@@ -42,7 +42,7 @@ import tempfile
 
 import dearpygui.dearpygui as dpg
 
-from node_editor.util import dpg_set_value
+from node_editor.util import dpg_get_value, dpg_set_value
 from node.basenode import Node as BaseNode
 
 _LOG = logging.getLogger(__name__)
@@ -200,6 +200,7 @@ class Node(BaseNode):
         tag_in_bool      = tag + ':' + self.TYPE_JSON + ':InputEnable'
         tag_in_bool_val  = tag + ':' + self.TYPE_JSON + ':InputEnableValue'
 
+        self._tag_enabled    = tag + ':EnabledValue'
         self._tag_transcript = tag + ':TranscriptValue'
         self._tag_status     = tag + ':StatusValue'
         self._tag_out_val    = tag_out_val
@@ -207,7 +208,7 @@ class Node(BaseNode):
 
         with dpg.node(tag=tag, parent=parent, label=self.node_label, pos=pos):
 
-            # ── Boolean enable input ──────────────────────────────────────
+            # ── Boolean enable input (from Text2Speech or other source) ───
             with dpg.node_attribute(
                 tag=tag_in_bool,
                 attribute_type=dpg.mvNode_Attr_Input,
@@ -219,6 +220,11 @@ class Node(BaseNode):
                 tag=tag + ':ControlAttr',
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
+                dpg.add_checkbox(
+                    tag=self._tag_enabled,
+                    label='Listen',
+                    default_value=False,
+                )
                 dpg.add_text(tag=self._tag_status, default_value='[*] idle')
                 dpg.add_text(default_value='Transcript')
                 dpg.add_input_text(
@@ -237,16 +243,28 @@ class Node(BaseNode):
         return self
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
-        # Read boolean enable input from connected source (e.g., Text2Speech idle output).
-        # Default to True (listen) when no boolean input is connected.
-        enable_listen = True
+        # When a boolean JSON input is connected (e.g., Text2Speech idle output), use
+        # its 'enabled' value to gate listening.  When nothing is connected, fall back
+        # to the manual 'Listen' checkbox so the worker is OFF by default and only
+        # starts when the user explicitly enables it.  This prevents the worker from
+        # auto-starting and causing sounddevice/vosk initialisation issues on Windows.
+        bool_input_connected = False
+        enable_listen = False
         for conn in connection_list:
             if conn[1] == self._tag_in_bool:
+                bool_input_connected = True
                 src_key = ':'.join(conn[0].split(':')[:2])
                 json_data = node_result_dict.get(src_key)
                 if isinstance(json_data, dict):
-                    enable_listen = bool(json_data.get('enabled', True))
+                    enable_listen = bool(json_data.get('enabled', False))
                 break
+
+        if not bool_input_connected:
+            # No boolean source connected — honour the manual checkbox.
+            try:
+                enable_listen = bool(dpg_get_value(self._tag_enabled))
+            except Exception:
+                enable_listen = False
 
         if enable_listen:
             self._worker.start()
@@ -257,7 +275,8 @@ class Node(BaseNode):
         else:
             self._worker.stop()
             try:
-                dpg_set_value(self._tag_status, '[~] muted (TTS speaking)')
+                status = '[~] muted (TTS speaking)' if bool_input_connected else '[*] idle'
+                dpg_set_value(self._tag_status, status)
             except (SystemError, AttributeError):
                 pass
 
@@ -286,7 +305,16 @@ class Node(BaseNode):
         tag = self.tag_node_name
         pos = dpg.get_item_pos(tag)
         d = {'ver': self._ver, 'pos': pos}
+        try:
+            d[self._tag_enabled] = dpg_get_value(self._tag_enabled)
+        except (SystemError, AttributeError):
+            pass
         return d
 
     def set_setting_dict(self, node_id, setting_dict):
-        pass
+        if self._tag_enabled in setting_dict:
+            val = setting_dict[self._tag_enabled]
+            try:
+                dpg_set_value(self._tag_enabled, bool(val))
+            except (SystemError, AttributeError):
+                pass
