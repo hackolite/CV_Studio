@@ -737,6 +737,11 @@ class Node(BaseNode):
                         except (SystemError, AttributeError):
                             pass
                         self._set_status('[!] JSON parse error')
+                        # Don't enter COOLDOWN on parse failure — return to READY so the
+                        # agent can retry on the next cycle instead of blocking.
+                        self._state = 'READY'
+                        self._last_input_hash = None
+                        return {'image': None, 'json': self._last_output, 'audio': None}
                     self._state = 'COOLDOWN'
                     self._cooldown_start = time.time()
                     self._cooldown_current_s = cooldown_s
