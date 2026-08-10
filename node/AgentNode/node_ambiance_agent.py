@@ -326,6 +326,7 @@ class Node(BaseNode):
         self._llm_queue = queue.Queue()
         self._llm_thread = None
         self._state = 'READY'       # READY | RUNNING | COOLDOWN
+        self._state_lock = threading.Lock()
         self._cooldown_start = None
         self._cooldown_s = 30
         self._error_cooldown_s = 15
@@ -434,6 +435,8 @@ class Node(BaseNode):
                     width=w,
                     callback=self._cb_startstop,
                 )
+                # Reflect any pre-restored state (set_setting_dict called before add_node)
+                self._update_startstop_ui()
 
             # ── Provider dropdown ────────────────────────────────────────
             with dpg.node_attribute(
@@ -587,14 +590,15 @@ class Node(BaseNode):
             # Switch to stopped (Stop) — cancel any hanging request
             self._execute_active = False
             self._cancel_flag.set()
-            if self._state == 'RUNNING':
-                # Put a sentinel so update() sees the cancellation immediately
-                try:
-                    self._llm_queue.put_nowait({'error': 'Cancelled by user'})
-                except Exception:
-                    pass
-                self._state = 'READY'
-                self._set_status('[*] READY')
+            with self._state_lock:
+                if self._state == 'RUNNING':
+                    # Put a sentinel so update() sees the cancellation immediately
+                    try:
+                        self._llm_queue.put_nowait({'error': 'Cancelled by user'})
+                    except Exception:
+                        pass
+                    self._state = 'READY'
+                    self._set_status('[*] READY')
             self._update_startstop_ui()
 
     def _update_startstop_ui(self):
