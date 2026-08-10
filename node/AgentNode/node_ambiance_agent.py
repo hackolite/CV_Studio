@@ -383,19 +383,6 @@ class Node(BaseNode):
 
         with dpg.node(tag=tag, parent=parent, label=self.node_label, pos=pos):
 
-            # ── Prompt (top) ──────────────────────────────────────────────
-            with dpg.node_attribute(
-                tag=tag + ':PromptAttr',
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_input_text(
-                    tag=tag_prompt,
-                    hint='Prompt',
-                    multiline=True,
-                    width=w,
-                    height=70,
-                )
-
             # ── Description (ambiance text / Text2Speech source) ──────────
             with dpg.node_attribute(
                 tag=tag + ':DescriptionAttr',
@@ -473,11 +460,6 @@ class Node(BaseNode):
                     items=self._available_models,
                     default_value=default_model,
                     width=w,
-                )
-                dpg.add_button(
-                    label='Scan Models',
-                    width=w,
-                    callback=self._cb_scan_models,
                 )
 
             # ── Status ───────────────────────────────────────────────────
@@ -691,9 +673,13 @@ class Node(BaseNode):
                     self._cooldown_start = time.time()
                     self._cooldown_current_s = self._error_cooldown_s
                 else:
+                    _LOG.info('[AmbianceAgent] LLM response received — parsing JSON...')
                     parsed = self._parse_llm_response(result['text'])
                     if parsed:
-                        _LOG.info('[AmbianceAgent] LLM response parsed — actions: %s', list((parsed.get('actions') or {}).keys()))
+                        actions = list((parsed.get('actions') or {}).keys())
+                        _LOG.info('[AmbianceAgent] LLM response parsed OK — actions: %s', actions)
+                        _LOG.debug('[AmbianceAgent] LLM full parsed output: %s',
+                                   json.dumps(parsed, ensure_ascii=False)[:500])
                         self._last_output = parsed
                         # Propagate description → description widget + Text2Speech text
                         description = parsed.get('description', '')
@@ -714,7 +700,8 @@ class Node(BaseNode):
                         except (SystemError, AttributeError):
                             pass
                     else:
-                        _LOG.warning('[AmbianceAgent] Failed to parse LLM response as JSON')
+                        _LOG.warning('[AmbianceAgent] Failed to parse LLM response as JSON — raw: %s',
+                                     result['text'][:300])
                     self._state = 'COOLDOWN'
                     self._cooldown_start = time.time()
                     self._cooldown_current_s = cooldown_s
@@ -814,15 +801,29 @@ class Node(BaseNode):
             pass
 
     def _build_messages(self, data, prompt, tools):
+        # Build a dynamic response_schema that includes an entry in 'actions' for each discovered tool
+        schema = dict(_RESPONSE_SCHEMA)
+        actions_schema = dict(schema.get('actions', {}))
+        for tool in tools:
+            tool_name = tool.get('tool_name')
+            if tool_name and tool_name not in actions_schema:
+                # Provide the tool's parameter structure as a hint to the LLM
+                actions_schema[tool_name] = tool.get('parameters', {})
+        schema = dict(schema)
+        schema['actions'] = actions_schema
+        _LOG.info('[AmbianceAgent] Building messages — tools=%s  prompt=%r',
+                  [t.get('tool_name') for t in tools], prompt[:120] if prompt else '')
         user_content = {
             'sensor_data': data,
             'user_prompt': prompt,
             'available_tools': tools,
-            'response_schema': _RESPONSE_SCHEMA,
+            'response_schema': schema,
             'instruction': (
                 'Based on the sensor data and user prompt, decide which tools to use '
                 'and with which parameters. Only use tools listed in available_tools. '
                 'Return a single JSON object matching response_schema exactly. '
+                'For each tool you use, add an entry under "actions" keyed by the tool_name '
+                'and fill in all required parameters as described by the tool template. '
                 'The "description" field and "actions.Text2Speech.text" field MUST be '
                 'a lyrical, poetic narration that explains WHY each parameter across ALL '
                 'configured action nodes was selected — what emotion, memory, or sensation '
