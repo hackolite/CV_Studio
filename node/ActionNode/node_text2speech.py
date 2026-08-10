@@ -383,17 +383,24 @@ class Node(BaseNode):
         if data.get('enabled', True) and data.get('text'):
             try:
                 txt = str(dpg_get_value(self._tag_text))
+            except (SystemError, AttributeError, TypeError, ValueError):
+                txt = ''
+
+            try:
                 cooldown = float(dpg_get_value(self._tag_cooldown))
             except (SystemError, AttributeError, TypeError, ValueError):
+                cooldown = 60.0
+
+            if not txt:
                 return
 
-            # ── Cooldown check — always evaluated first so the slider is respected ──
+            # ── Cooldown check — always evaluated so the slider is respected ──
             now = time.monotonic()
             elapsed = now - self._last_spoke_at
 
             if self._speak_thread and self._speak_thread.is_alive():
                 try:
-                    dpg_set_value(self._tag_status, '[~] busy — request skipped')
+                    dpg_set_value(self._tag_status, f'[~] busy — cooldown {cooldown:.0f}s')
                 except (SystemError, AttributeError):
                     pass
                 return
@@ -401,7 +408,7 @@ class Node(BaseNode):
             if elapsed < cooldown:
                 remaining = cooldown - elapsed
                 try:
-                    dpg_set_value(self._tag_status, f'[…] cooldown {remaining:.1f}s')
+                    dpg_set_value(self._tag_status, f'[…] cooldown {remaining:.1f}s / {cooldown:.0f}s')
                 except (SystemError, AttributeError):
                     pass
                 return
