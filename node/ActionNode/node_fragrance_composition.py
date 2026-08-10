@@ -120,21 +120,20 @@ class Node(BaseNode):
             with dpg.node_attribute(tag=tag + ':CtrlAttr', attribute_type=dpg.mvNode_Attr_Static):
                 dpg.add_checkbox(tag=self._tag_enabled, label='Enabled', default_value=True)
                 dpg.add_text(tag=self._tag_total, default_value='Total: 0 %')
-                with dpg.group(horizontal=True):
-                    dpg.add_button(label='+ Add Fragrance', width=140,
-                                   callback=self._cb_add_frag,
-                                   user_data=(node_id, parent))
-                    dpg.add_button(label='- Remove', width=80,
-                                   callback=self._cb_remove_frag,
-                                   user_data=(node_id, parent))
-
-            # Create first slot
-            self._create_slot(tag, parent, 0)
+                dpg.add_button(label='+ Add Fragrance', width=w,
+                               callback=self._cb_add_frag,
+                               user_data=(node_id, parent))
+                dpg.add_button(label='- Remove', width=w,
+                               callback=self._cb_remove_frag,
+                               user_data=(node_id, parent))
 
             with dpg.node_attribute(tag=tag + ':ReceivedAttr', attribute_type=dpg.mvNode_Attr_Static):
                 dpg.add_text(default_value='Received JSON')
                 dpg.add_input_text(tag=self._tag_received, default_value='',
                                    multiline=True, width=w, height=90, readonly=True)
+
+            # Create first slot
+            self._create_slot(tag, parent, 0)
 
             with dpg.node_attribute(tag=tag_out, attribute_type=dpg.mvNode_Attr_Output):
                 dpg.add_text(tag=tag_out_val, default_value='JSON Output')
@@ -164,9 +163,9 @@ class Node(BaseNode):
         ):
             dpg.add_text(default_value=f'— Fragrance {idx + 1} —')
             dpg.add_combo(tag=st['name'], items=self._catalog,
-                          default_value=default_frag, label='Fragrance', width=w,
+                          default_value=default_frag, width=w,
                           callback=self._cb_update_total)
-            dpg.add_slider_float(tag=st['composition'], label='Composition %',
+            dpg.add_slider_float(tag=st['composition'],
                                  default_value=100.0 / max(self._num_fragrances, 1),
                                  min_value=0.0, max_value=100.0, width=w,
                                  callback=self._cb_update_total)
