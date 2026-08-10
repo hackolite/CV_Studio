@@ -254,6 +254,7 @@ class Node(BaseNode):
         self._speak_thread = None
         self._last_spoke_at = 0.0
         self._last_text_hash = None
+        self._speaking = False
 
     def get_tool_template(self):
         return _TOOL_TEMPLATE
@@ -271,6 +272,8 @@ class Node(BaseNode):
         tag_in_val  = tag + ':' + self.TYPE_JSON + ':Input01Value'
         tag_out     = tag + ':' + self.TYPE_JSON + ':Output01'
         tag_out_val = tag + ':' + self.TYPE_JSON + ':Output01Value'
+        tag_out_bool     = tag + ':' + self.TYPE_JSON + ':Output02'
+        tag_out_bool_val = tag + ':' + self.TYPE_JSON + ':Output02Value'
 
         self._tag_enabled    = tag + ':EnabledValue'
         self._tag_text       = tag + ':TextValue'
@@ -278,6 +281,7 @@ class Node(BaseNode):
         self._tag_received   = tag + ':ReceivedValue'
         self._tag_status     = tag + ':StatusValue'
         self._tag_out_val    = tag_out_val
+        self._tag_out_bool_val = tag_out_bool_val
 
         with dpg.node(tag=tag, parent=parent, label=self.node_label, pos=pos):
 
@@ -327,6 +331,10 @@ class Node(BaseNode):
             with dpg.node_attribute(tag=tag_out, attribute_type=dpg.mvNode_Attr_Output):
                 dpg.add_text(tag=tag_out_val, default_value='JSON Output')
 
+            # ── Boolean output (True = idle, False = speaking) ─────────────
+            with dpg.node_attribute(tag=tag_out_bool, attribute_type=dpg.mvNode_Attr_Output):
+                dpg.add_text(tag=tag_out_bool_val, default_value='Boolean (idle?)')
+
         return self
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
@@ -368,7 +376,7 @@ class Node(BaseNode):
             except (SystemError, AttributeError):
                 pass
 
-        return {'image': None, 'json': self._last_output, 'audio': None}
+        return {'image': None, 'json': {'enabled': not self._speaking}, 'audio': None}
 
     def _apply_action(self, data):
         try:
@@ -424,14 +432,22 @@ class Node(BaseNode):
 
             self._last_text_hash = text_hash
             self._last_spoke_at = now
+            self._speaking = True
             self._speak_thread = threading.Thread(
-                target=_speak, args=(txt,), daemon=True
+                target=self._speak_tracked, args=(txt,), daemon=True
             )
             self._speak_thread.start()
             try:
                 dpg_set_value(self._tag_status, '[>] speaking...')
             except (SystemError, AttributeError):
                 pass
+
+    def _speak_tracked(self, txt: str) -> None:
+        """Wrap _speak so that _speaking is reset to False when synthesis ends."""
+        try:
+            _speak(txt)
+        finally:
+            self._speaking = False
 
     def close(self, node_id):
         pass
