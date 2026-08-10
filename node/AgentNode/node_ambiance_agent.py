@@ -719,6 +719,11 @@ class Node(BaseNode):
             _LOG.info('[AmbianceAgent] Execute triggered — model=%r  prompt=%r  aggregated_keys=%s',
                       model, prompt, list(aggregated.keys()))
 
+            # Skip LLM call if all connected inputs are empty JSON objects
+            if aggregated and all(v == {} for v in aggregated.values()):
+                _LOG.debug('[AmbianceAgent] All inputs are empty JSON — skipping LLM call')
+                return {'image': None, 'json': self._last_output, 'audio': None}
+
             if not api_key:
                 _LOG.error('[AmbianceAgent] API key missing — cannot call LLM')
                 self._set_status('[!] ERROR: API key missing')
