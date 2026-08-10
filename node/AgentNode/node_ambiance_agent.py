@@ -339,6 +339,7 @@ class Node(BaseNode):
         # Start/Stop button state
         self._execute_active = False   # True when user pressed Start
         self._tag_startstop = None
+        self._tag_cooldown = None
         self._cancel_flag = threading.Event()  # set to request cancellation
 
     # ------------------------------------------------------------------
@@ -366,6 +367,7 @@ class Node(BaseNode):
         tag_out_val  = tag + ':' + self.TYPE_JSON + ':Output01Value'
 
         tag_description = tag + ':DescriptionValue'
+        tag_cooldown    = tag + ':CooldownValue'
 
         # store refs
         self._tag_apikey      = tag_apikey
@@ -377,6 +379,7 @@ class Node(BaseNode):
         self._tag_summary     = tag_summary
         self._tag_out_val     = tag_out_val
         self._tag_description = tag_description
+        self._tag_cooldown    = tag_cooldown
         self._node_id         = node_id
 
         self._available_models = []
@@ -426,6 +429,20 @@ class Node(BaseNode):
                 )
                 # Reflect any pre-restored state (set_setting_dict called before add_node)
                 self._update_startstop_ui()
+
+            # ── Cooldown slider ──────────────────────────────────────────
+            with dpg.node_attribute(
+                tag=tag + ':CooldownAttr',
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_int(
+                    tag=tag_cooldown,
+                    label='Cooldown (s)',
+                    default_value=self._cooldown_s,
+                    min_value=5,
+                    max_value=300,
+                    width=w,
+                )
 
             # ── Provider dropdown ────────────────────────────────────────
             with dpg.node_attribute(
@@ -682,6 +699,10 @@ class Node(BaseNode):
         execute = self._execute_active
 
         cooldown_s = self._cooldown_s
+        try:
+            cooldown_s = int(dpg_get_value(self._tag_cooldown))
+        except (SystemError, AttributeError, TypeError, ValueError):
+            pass
 
         # ── Poll LLM thread result ────────────────────────────────────────
         if self._state == 'RUNNING':
@@ -968,7 +989,7 @@ class Node(BaseNode):
             'execute_active': self._execute_active,
         }
         for k in [self._tag_apikey, self._tag_model, self._tag_provider,
-                  self._tag_prompt, self._tag_description]:
+                  self._tag_prompt, self._tag_description, self._tag_cooldown]:
             try:
                 d[k] = dpg_get_value(k)
             except (SystemError, AttributeError):
@@ -980,7 +1001,7 @@ class Node(BaseNode):
         self._execute_active = setting_dict.get('execute_active', False)
         self._update_startstop_ui()
         for k in [self._tag_apikey, self._tag_model, self._tag_provider,
-                  self._tag_prompt, self._tag_description]:
+                  self._tag_prompt, self._tag_description, self._tag_cooldown]:
             if k in setting_dict:
                 try:
                     dpg_set_value(k, setting_dict[k])
