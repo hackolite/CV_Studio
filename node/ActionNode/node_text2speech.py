@@ -298,11 +298,11 @@ class Node(BaseNode):
                 )
                 dpg.add_slider_float(
                     tag=self._tag_cooldown,
-                    label='Cooldown (s)',
                     default_value=10.0,
                     min_value=1.0,
                     max_value=60.0,
                     width=w,
+                    format='cooldown %.1fs',
                 )
                 dpg.add_text(tag=self._tag_status, default_value='[*] idle')
 
