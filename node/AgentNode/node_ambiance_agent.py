@@ -464,6 +464,11 @@ class Node(BaseNode):
                     default_value=default_model,
                     width=w,
                 )
+                dpg.add_button(
+                    label='Scan Models',
+                    width=w,
+                    callback=self._cb_scan_models,
+                )
 
             # ── Status ───────────────────────────────────────────────────
             with dpg.node_attribute(
