@@ -156,7 +156,7 @@ def _llm_worker(result_queue, api_key, model, messages):
             f'{OPENROUTER_API_URL}/chat/completions',
             headers=headers,
             json=payload,
-            timeout=60,
+            timeout=120,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -169,7 +169,7 @@ def _llm_worker(result_queue, api_key, model, messages):
         _LOG.error('[AmbianceAgent] LLM connection error: %s', e)
         result_queue.put({'error': 'Connection error'})
     except requests.exceptions.Timeout:
-        _LOG.error('[AmbianceAgent] LLM request timed out after 60 s')
+        _LOG.error('[AmbianceAgent] LLM request timed out after 120 s')
         result_queue.put({'error': 'Timeout'})
     except requests.exceptions.HTTPError as e:
         _LOG.error('[AmbianceAgent] LLM HTTP error %s: %s', e.response.status_code, e.response.text[:300])
@@ -213,7 +213,7 @@ def _google_ai_worker(result_queue, api_key, model, messages):
             params={'key': api_key},
             json=payload,
             headers={'Content-Type': 'application/json'},
-            timeout=60,
+            timeout=120,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -227,7 +227,7 @@ def _google_ai_worker(result_queue, api_key, model, messages):
         _LOG.error('[AmbianceAgent] Google AI connection error: %s', e)
         result_queue.put({'error': 'Connection error'})
     except requests.exceptions.Timeout:
-        _LOG.error('[AmbianceAgent] Google AI request timed out after 60 s')
+        _LOG.error('[AmbianceAgent] Google AI request timed out after 120 s')
         result_queue.put({'error': 'Timeout'})
     except requests.exceptions.HTTPError as e:
         _LOG.error('[AmbianceAgent] Google AI HTTP error %s: %s', e.response.status_code, e.response.text[:300])
@@ -272,7 +272,7 @@ def _groq_worker(result_queue, api_key, model, messages):
             f'{GROQ_API_URL}/chat/completions',
             headers=headers,
             json=payload,
-            timeout=60,
+            timeout=120,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -285,7 +285,7 @@ def _groq_worker(result_queue, api_key, model, messages):
         _LOG.error('[AmbianceAgent] Groq connection error: %s', e)
         result_queue.put({'error': 'Connection error'})
     except requests.exceptions.Timeout:
-        _LOG.error('[AmbianceAgent] Groq request timed out after 60 s')
+        _LOG.error('[AmbianceAgent] Groq request timed out after 120 s')
         result_queue.put({'error': 'Timeout'})
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code
@@ -737,6 +737,11 @@ class Node(BaseNode):
                         except (SystemError, AttributeError):
                             pass
                         self._set_status('[!] JSON parse error')
+                        # Don't enter COOLDOWN on parse failure — return to READY so the
+                        # agent can retry on the next cycle instead of blocking.
+                        self._state = 'READY'
+                        self._last_input_hash = None
+                        return {'image': None, 'json': self._last_output, 'audio': None}
                     self._state = 'COOLDOWN'
                     self._cooldown_start = time.time()
                     self._cooldown_current_s = cooldown_s
@@ -808,6 +813,13 @@ class Node(BaseNode):
                 tools = self._discover_tools(node_result_dict)
 
                 messages = self._build_messages(aggregated, prompt, tools)
+                # Drain any stale result left in the queue from a previous cycle
+                # to prevent an instant COOLDOWN on the very first poll.
+                while not self._llm_queue.empty():
+                    try:
+                        self._llm_queue.get_nowait()
+                    except queue.Empty:
+                        break
                 self._state = 'RUNNING'
                 self._running_start = time.time()
                 self._set_status('[>] RUNNING... (0 s)')
@@ -873,6 +885,47 @@ class Node(BaseNode):
         ]
 
     @staticmethod
+    def _repair_truncated_json(text):
+        """Attempt to repair a truncated JSON object by closing unclosed braces/brackets."""
+        # Count unclosed braces and brackets (naively, ignoring strings)
+        depth_brace = 0
+        depth_bracket = 0
+        in_string = False
+        escape_next = False
+        for ch in text:
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == '\\' and in_string:
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == '{':
+                depth_brace += 1
+            elif ch == '}':
+                depth_brace -= 1
+            elif ch == '[':
+                depth_bracket += 1
+            elif ch == ']':
+                depth_bracket -= 1
+        # If it looks truncated mid-string, close the string first
+        suffix = ''
+        if in_string:
+            suffix += '"'
+        suffix += ']' * max(depth_bracket, 0)
+        suffix += '}' * max(depth_brace, 0)
+        if not suffix:
+            return None
+        try:
+            return json.loads(text + suffix)
+        except json.JSONDecodeError:
+            return None
+
+    @staticmethod
     def _parse_llm_response(text):
         """Extract JSON from LLM response, stripping markdown fences if present."""
         text = text.strip()
@@ -883,14 +936,19 @@ class Node(BaseNode):
         try:
             return json.loads(text)
         except json.JSONDecodeError:
-            # Try to find JSON object within the text
+            # Try to find JSON object within the text (handles "response_schema:\n{...}" prefix)
             start = text.find('{')
             end = text.rfind('}')
-            if start != -1 and end != -1:
+            if start != -1:
+                candidate = text[start:end + 1] if end > start else text[start:]
                 try:
-                    return json.loads(text[start:end + 1])
+                    return json.loads(candidate)
                 except json.JSONDecodeError:
-                    pass
+                    # Try repairing a truncated JSON fragment
+                    repaired = AmbianceAgent._repair_truncated_json(candidate)
+                    if repaired is not None:
+                        _LOG.warning('[AmbianceAgent] JSON was truncated — repaired successfully')
+                        return repaired
         return None
 
     # ------------------------------------------------------------------
