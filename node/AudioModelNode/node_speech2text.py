@@ -36,7 +36,6 @@ import os
 import pathlib
 import queue
 import threading
-import time
 import urllib.request
 import zipfile
 import tempfile
@@ -122,11 +121,6 @@ class _RecognitionWorker:
 
     def stop(self):
         self._stop.set()
-        # Join with a short timeout so PortAudio has time to close the stream
-        # before another stream (e.g. Text2Speech) tries to open.  We do NOT
-        # block indefinitely — the timeout keeps the pipeline moving.
-        if self._thread is not None and self._thread.is_alive():
-            self._thread.join(timeout=0.6)
 
     def _run(self):
         try:
@@ -146,36 +140,19 @@ class _RecognitionWorker:
 
         _LOG.info('[Speech2Text] Listening on default microphone (16 kHz mono)…')
         try:
-            # Use a callback-based RawInputStream instead of the blocking
-            # stream.read() loop.  With a callback the PortAudio stream can be
-            # stopped almost immediately when self._stop is set (the callback
-            # raises CallbackAbort on the next invocation, which is at most
-            # one block ≈ 500 ms away).  The old blocking read held the stream
-            # open for up to 500 ms after stop() was called, creating a window
-            # where Text2Speech's OutputStream and this RawInputStream were
-            # both active — causing PortAudio to deadlock on Windows
-            # WASAPI/WDM backends and freezing the whole process.
-            def _callback(indata, frames, time_info, status):
-                if self._stop.is_set():
-                    raise sd.CallbackAbort
-                try:
-                    if rec.AcceptWaveform(bytes(indata)):
-                        result = json.loads(rec.Result())
-                        text = result.get('text', '').strip()
-                        if text:
-                            self._q.put(text)
-                except Exception as cb_exc:
-                    _LOG.error('[Speech2Text] Callback error: %s', cb_exc)
-
             with sd.RawInputStream(
                 samplerate=_SAMPLE_RATE,
                 blocksize=_BLOCK_SIZE,
                 dtype='int16',
                 channels=1,
-                callback=_callback,
-            ):
+            ) as stream:
                 while not self._stop.is_set():
-                    time.sleep(0.05)
+                    data, _ = stream.read(_BLOCK_SIZE)
+                    if rec.AcceptWaveform(bytes(data)):
+                        result = json.loads(rec.Result())
+                        text = result.get('text', '').strip()
+                        if text:
+                            self._q.put(text)
         except Exception as exc:
             _LOG.error('[Speech2Text] Recording error: %s', exc)
 
