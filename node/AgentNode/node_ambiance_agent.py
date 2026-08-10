@@ -329,6 +329,7 @@ class Node(BaseNode):
         self._state = 'READY'       # READY | RUNNING | COOLDOWN
         self._state_lock = threading.Lock()
         self._cooldown_start = None
+        self._running_start = None   # timestamp when RUNNING state began
         self._cooldown_s = 30
         self._error_cooldown_s = 15
         self._last_output = {}
@@ -527,6 +528,13 @@ class Node(BaseNode):
             except (SystemError, AttributeError):
                 pass
 
+    # Hint text shown in the API key field for each provider
+    _APIKEY_HINTS = {
+        PROVIDER_OPENROUTER: 'sk-or-... (OpenRouter)',
+        PROVIDER_GOOGLE_AI:  'AIza... (Google AI Studio)',
+        PROVIDER_GROQ:       'gsk_... (Groq)',
+    }
+
     def _bg_fetch_models(self):
         """Fetch models in a background thread based on current provider, then update the combo."""
         provider = self._get_current_provider()
@@ -550,11 +558,23 @@ class Node(BaseNode):
         default = models[0] if models else ''
         try:
             dpg.configure_item(self._tag_model, items=models, default_value=default)
+            # Reset the displayed value so the old provider's model name is not kept
+            dpg_set_value(self._tag_model, default)
         except (SystemError, AttributeError):
             pass
 
     def _cb_provider_changed(self, sender, app_data, user_data=None):
-        """Called when the provider dropdown changes — refresh model list."""
+        """Called when the provider dropdown changes — refresh model list and reset API key field."""
+        provider = self._get_current_provider()
+        # Clear the API key field and update its hint so the user knows which key format to enter
+        try:
+            dpg_set_value(self._tag_apikey, '')
+            hint = self._APIKEY_HINTS.get(provider, '')
+            dpg.configure_item(self._tag_apikey, hint=hint)
+        except (SystemError, AttributeError):
+            pass
+        # Reset input hash so changed provider/model triggers a new LLM call
+        self._last_input_hash = None
         threading.Thread(target=self._bg_fetch_models, daemon=True).start()
 
     def _cb_scan_models(self, sender, app_data, user_data=None):
@@ -668,11 +688,18 @@ class Node(BaseNode):
             try:
                 result = self._llm_queue.get_nowait()
                 if 'error' in result:
-                    _LOG.error('[AmbianceAgent] LLM error: %s', result['error'])
-                    self._set_status(f'[!] ERROR: {result["error"]}')
-                    self._state = 'COOLDOWN'
-                    self._cooldown_start = time.time()
-                    self._cooldown_current_s = self._error_cooldown_s
+                    err_msg = result['error']
+                    _LOG.error('[AmbianceAgent] LLM error: %s', err_msg)
+                    status_text = f'[!] ERROR: {err_msg}'
+                    self._set_status(status_text)
+                    # Show error in summary area so it is visible on the node
+                    try:
+                        dpg_set_value(self._tag_summary, status_text)
+                    except (SystemError, AttributeError):
+                        pass
+                    # No cooldown on error/no-response — return immediately to READY
+                    self._state = 'READY'
+                    self._last_input_hash = None  # allow retry on next cycle
                 else:
                     _LOG.info('[AmbianceAgent] LLM response received — parsing JSON...')
                     parsed = self._parse_llm_response(result['text'])
@@ -701,14 +728,22 @@ class Node(BaseNode):
                         except (SystemError, AttributeError):
                             pass
                     else:
+                        raw_preview = result['text'][:300]
                         _LOG.warning('[AmbianceAgent] Failed to parse LLM response as JSON — raw: %s',
-                                     result['text'][:300])
+                                     raw_preview)
+                        err_text = f'[!] JSON parse error\n{raw_preview}'
+                        try:
+                            dpg_set_value(self._tag_summary, err_text)
+                        except (SystemError, AttributeError):
+                            pass
+                        self._set_status('[!] JSON parse error')
                     self._state = 'COOLDOWN'
                     self._cooldown_start = time.time()
                     self._cooldown_current_s = cooldown_s
                     self._set_status('[~] COOLDOWN')
             except queue.Empty:
-                self._set_status('[>] RUNNING...')
+                elapsed = int(time.time() - (self._running_start or time.time()))
+                self._set_status(f'[>] RUNNING... ({elapsed} s)')
 
         # ── Cooldown countdown ────────────────────────────────────────────
         if self._state == 'COOLDOWN':
@@ -774,7 +809,8 @@ class Node(BaseNode):
 
                 messages = self._build_messages(aggregated, prompt, tools)
                 self._state = 'RUNNING'
-                self._set_status('[>] RUNNING...')
+                self._running_start = time.time()
+                self._set_status('[>] RUNNING... (0 s)')
                 provider = self._get_current_provider()
                 if provider == PROVIDER_GOOGLE_AI:
                     worker = _google_ai_worker
