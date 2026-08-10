@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """AmbianceAgent node — LLM-driven ambiance orchestration via OpenRouter, Google AI Studio, or Groq."""
 
+import copy
 import hashlib
 import json
 import logging
@@ -802,15 +803,12 @@ class Node(BaseNode):
 
     def _build_messages(self, data, prompt, tools):
         # Build a dynamic response_schema that includes an entry in 'actions' for each discovered tool
-        schema = dict(_RESPONSE_SCHEMA)
-        actions_schema = dict(schema.get('actions', {}))
+        schema = copy.deepcopy(_RESPONSE_SCHEMA)
         for tool in tools:
             tool_name = tool.get('tool_name')
-            if tool_name and tool_name not in actions_schema:
+            if tool_name and tool_name not in schema['actions']:
                 # Provide the tool's parameter structure as a hint to the LLM
-                actions_schema[tool_name] = tool.get('parameters', {})
-        schema = dict(schema)
-        schema['actions'] = actions_schema
+                schema['actions'][tool_name] = tool.get('parameters', {})
         _LOG.info('[AmbianceAgent] Building messages — tools=%s  prompt=%r',
                   [t.get('tool_name') for t in tools], prompt[:120] if prompt else '')
         user_content = {
