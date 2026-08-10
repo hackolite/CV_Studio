@@ -387,15 +387,7 @@ class Node(BaseNode):
             except (SystemError, AttributeError, TypeError, ValueError):
                 return
 
-            # ── Hash deduplication — skip if text already said ────────────
-            text_hash = hashlib.md5(txt.encode('utf-8', errors='replace')).hexdigest()
-            if text_hash == self._last_text_hash:
-                try:
-                    dpg_set_value(self._tag_status, '[=] already said — skipped')
-                except (SystemError, AttributeError):
-                    pass
-                return
-
+            # ── Cooldown check — always evaluated first so the slider is respected ──
             now = time.monotonic()
             elapsed = now - self._last_spoke_at
 
@@ -404,23 +396,35 @@ class Node(BaseNode):
                     dpg_set_value(self._tag_status, '[~] busy — request skipped')
                 except (SystemError, AttributeError):
                     pass
-            elif elapsed < cooldown:
+                return
+
+            if elapsed < cooldown:
                 remaining = cooldown - elapsed
                 try:
                     dpg_set_value(self._tag_status, f'[…] cooldown {remaining:.1f}s')
                 except (SystemError, AttributeError):
                     pass
-            else:
-                self._last_text_hash = text_hash
-                self._last_spoke_at = now
-                self._speak_thread = threading.Thread(
-                    target=_speak, args=(txt,), daemon=True
-                )
-                self._speak_thread.start()
+                return
+
+            # ── Hash deduplication — skip if same text was the last thing spoken ──
+            text_hash = hashlib.md5(txt.encode('utf-8', errors='replace')).hexdigest()
+            if text_hash == self._last_text_hash:
                 try:
-                    dpg_set_value(self._tag_status, '[>] speaking...')
+                    dpg_set_value(self._tag_status, '[=] already said — skipped')
                 except (SystemError, AttributeError):
                     pass
+                return
+
+            self._last_text_hash = text_hash
+            self._last_spoke_at = now
+            self._speak_thread = threading.Thread(
+                target=_speak, args=(txt,), daemon=True
+            )
+            self._speak_thread.start()
+            try:
+                dpg_set_value(self._tag_status, '[>] speaking...')
+            except (SystemError, AttributeError):
+                pass
 
     def close(self, node_id):
         pass
