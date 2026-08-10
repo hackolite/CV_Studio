@@ -813,6 +813,13 @@ class Node(BaseNode):
                 tools = self._discover_tools(node_result_dict)
 
                 messages = self._build_messages(aggregated, prompt, tools)
+                # Drain any stale result left in the queue from a previous cycle
+                # to prevent an instant COOLDOWN on the very first poll.
+                while not self._llm_queue.empty():
+                    try:
+                        self._llm_queue.get_nowait()
+                    except queue.Empty:
+                        break
                 self._state = 'RUNNING'
                 self._running_start = time.time()
                 self._set_status('[>] RUNNING... (0 s)')
