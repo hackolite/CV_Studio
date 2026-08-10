@@ -333,6 +333,10 @@ class Node(BaseNode):
         self._available_models = []
         self._tag_provider = None
         self._last_input_hash = None
+        # Start/Stop button state
+        self._execute_active = False   # True when user pressed Start
+        self._tag_startstop = None
+        self._cancel_flag = threading.Event()  # set to request cancellation
 
     # ------------------------------------------------------------------
     # GUI construction
@@ -352,7 +356,7 @@ class Node(BaseNode):
         tag_model    = tag + ':ModelValue'
         tag_provider = tag + ':ProviderValue'
         tag_prompt   = tag + ':PromptValue'
-        tag_execute  = tag + ':ExecuteValue'
+        tag_startstop = tag + ':StartStopBtn'
         tag_status   = tag + ':StatusValue'
         tag_summary  = tag + ':SummaryValue'
         tag_out      = tag + ':' + self.TYPE_JSON + ':Output01'
@@ -365,7 +369,7 @@ class Node(BaseNode):
         self._tag_model       = tag_model
         self._tag_provider    = tag_provider
         self._tag_prompt      = tag_prompt
-        self._tag_execute     = tag_execute
+        self._tag_startstop   = tag_startstop
         self._tag_status      = tag_status
         self._tag_summary     = tag_summary
         self._tag_out_val     = tag_out_val
@@ -419,15 +423,16 @@ class Node(BaseNode):
             for i in range(self.num_inputs):
                 self._create_input_slot(tag, parent, i)
 
-            # ── Execute toggle ───────────────────────────────────────────
+            # ── Start / Stop button ──────────────────────────────────────
             with dpg.node_attribute(
                 tag=tag + ':ExecuteAttr',
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
-                dpg.add_checkbox(
-                    tag=tag_execute,
-                    label='Execute Agent',
-                    default_value=False,
+                dpg.add_button(
+                    tag=tag_startstop,
+                    label='▶ Start',
+                    width=w,
+                    callback=self._cb_startstop,
                 )
 
             # ── Provider dropdown ────────────────────────────────────────
@@ -569,6 +574,40 @@ class Node(BaseNode):
     def _cb_scan_models(self, sender, app_data, user_data=None):
         threading.Thread(target=self._bg_fetch_models, daemon=True).start()
 
+    def _cb_startstop(self, sender, app_data, user_data=None):
+        """Toggle Start/Stop state. Start also triggers a model scan."""
+        if not self._execute_active:
+            # Switch to active (Start)
+            self._execute_active = True
+            self._cancel_flag.clear()
+            self._update_startstop_ui()
+            # Auto-scan models when starting
+            threading.Thread(target=self._bg_fetch_models, daemon=True).start()
+        else:
+            # Switch to stopped (Stop) — cancel any hanging request
+            self._execute_active = False
+            self._cancel_flag.set()
+            if self._state == 'RUNNING':
+                # Put a sentinel so update() sees the cancellation immediately
+                try:
+                    self._llm_queue.put_nowait({'error': 'Cancelled by user'})
+                except Exception:
+                    pass
+                self._state = 'READY'
+                self._set_status('[*] READY')
+            self._update_startstop_ui()
+
+    def _update_startstop_ui(self):
+        """Update the Start/Stop button label to reflect current state."""
+        try:
+            if self._tag_startstop and dpg.does_item_exist(self._tag_startstop):
+                if self._execute_active:
+                    dpg.configure_item(self._tag_startstop, label='■ Stop')
+                else:
+                    dpg.configure_item(self._tag_startstop, label='▶ Start')
+        except (SystemError, AttributeError):
+            pass
+
     def _get_current_provider(self):
         """Return the currently selected provider string."""
         try:
@@ -633,10 +672,7 @@ class Node(BaseNode):
                     break
 
         # ── Read controls ────────────────────────────────────────────────
-        try:
-            execute = dpg_get_value(self._tag_execute)
-        except (SystemError, AttributeError):
-            execute = False
+        execute = self._execute_active
 
         cooldown_s = self._cooldown_s
 
@@ -832,9 +868,10 @@ class Node(BaseNode):
             'ver': self._ver,
             'pos': pos,
             'num_inputs': self.num_inputs,
+            'execute_active': self._execute_active,
         }
         for k in [self._tag_apikey, self._tag_model, self._tag_provider,
-                  self._tag_prompt, self._tag_execute, self._tag_description]:
+                  self._tag_prompt, self._tag_description]:
             try:
                 d[k] = dpg_get_value(k)
             except (SystemError, AttributeError):
@@ -843,8 +880,10 @@ class Node(BaseNode):
 
     def set_setting_dict(self, node_id, setting_dict):
         self.num_inputs = setting_dict.get('num_inputs', self._NUM_INPUTS_DEFAULT)
+        self._execute_active = setting_dict.get('execute_active', False)
+        self._update_startstop_ui()
         for k in [self._tag_apikey, self._tag_model, self._tag_provider,
-                  self._tag_prompt, self._tag_execute, self._tag_description]:
+                  self._tag_prompt, self._tag_description]:
             if k in setting_dict:
                 try:
                     dpg_set_value(k, setting_dict[k])
