@@ -17,6 +17,7 @@ from node.node_abc import DpgNodeABC
 from node.DLNode.classification.MobileNetV3.mobilenet_v3 import MobileNetV3
 from node.DLNode.classification.EfficientNetB0.efficientnet import EfficientNetB0
 from node.DLNode.classification.ResNet50.resnet50 import ResNet50
+from node.DLNode.classification.GenderRecognition.gender_recognition import GenderRecognition
 
 # Import YoloCls using importlib.util due to hyphenated directory name
 import importlib.util
@@ -33,6 +34,8 @@ YoloCls = _yolo_cls_module.YoloCls
 
 from node.DLNode.classification.imagenet_class_names import imagenet_class_names
 from node.DLNode.classification.esc50_class_names import esc50_class_names
+
+gender_class_names = GenderRecognition.CLASS_NAMES
 from node.DLNode.classification.CustomONNX.custom_onnx import CustomONNX as CustomONNXClassification
 from node.DLNode.classification import custom_models_registry as _cls_registry
 from node.DLNode.object_detection import onnx_inspector
@@ -285,6 +288,7 @@ class Node(Node):
         'EfficientNet B0': EfficientNetB0,
         'ResNet50': ResNet50,
         'Yolo-cls': YoloCls,
+        'Gender Recognition': GenderRecognition,
     }
     _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/classification/'
     _model_path_setting = {
@@ -298,6 +302,8 @@ class Node(Node):
         _model_base_path + 'ResNet50/model/ResNet50.onnx',
         'Yolo-cls':
         _model_base_path + 'Yolo-cls/model/son.onnx',
+        'Gender Recognition':
+        _model_base_path + 'GenderRecognition/model/GenderRecognition.onnx',
     }
     _model_class_name_dict = {
         'MobileNetV3 Small': imagenet_class_names,
@@ -305,6 +311,7 @@ class Node(Node):
         'EfficientNet B0': imagenet_class_names,
         'ResNet50': imagenet_class_names,
         'Yolo-cls': esc50_class_names,
+        'Gender Recognition': gender_class_names,
     }
 
     _model_instance = {}
