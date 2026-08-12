@@ -18,11 +18,10 @@ class GenderRecognition(object):
         self,
         model_path,
         input_size=(224, 224),
-        providers=[
-            'CUDAExecutionProvider',
-            'CPUExecutionProvider',
-        ],
+        providers=None,
     ):
+        if providers is None:
+            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
         self.onnx_session = onnxruntime.InferenceSession(
             model_path,
             providers=providers,
@@ -72,11 +71,11 @@ if __name__ == '__main__':
         score = float(class_scores[0])
         cv.putText(frame, f'{label}: {score:.2f}', (10, 30),
                    cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+        cv.imshow('GenderRecognition', frame)
 
         key = cv.waitKey(1)
         if key == 27:
             break
-        cv.imshow('GenderRecognition', frame)
 
     cap.release()
     cv.destroyAllWindows()
