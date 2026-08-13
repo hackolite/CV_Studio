@@ -814,6 +814,33 @@ class DpgNodeEditor(object):
                 dpg.get_selected_nodes(self._node_editor_tag)[0]
             )
 
+    def _purge_node_textures(self, node_id_name):
+        """Delete any DPG texture items registered under this node's namespace.
+
+        Textures are stored in a global texture_registry – they are NOT children
+        of the node widget, so ``dpg.delete_item(node_widget)`` does not remove
+        them.  If they are not removed explicitly before a node is re-created by
+        undo, DearPyGui raises an error because the tag already exists, causing
+        undo to fail silently for every node type that outputs an image.
+        """
+        prefix = node_id_name + ':'
+        for alias in list(dpg.get_aliases()):
+            if not alias.startswith(prefix):
+                continue
+            try:
+                item_id = dpg.get_alias_id(alias)
+                if not dpg.does_item_exist(item_id):
+                    continue
+                item_type = str(dpg.get_item_type(item_id))
+                if 'texture' in item_type.lower():
+                    dpg.delete_item(item_id)
+                    try:
+                        dpg.remove_alias(alias)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
     def _delete_dpg_link(self, link_info):
         """Delete the visual dpg node_link item matching link_info [source, dest]."""
         try:
@@ -871,6 +898,7 @@ class DpgNodeEditor(object):
 
             if node_instance is not None:
                 node_instance.close(node_id)
+            self._purge_node_textures(node_id_name)
 
             self._node_list.remove(node_id_name)
 
@@ -990,6 +1018,7 @@ class DpgNodeEditor(object):
                         node_instance.close(node_id)
                     except Exception as exc:
                         logger.warning(f"Error closing node {node_id_name}: {exc}")
+                self._purge_node_textures(node_id_name)
                 try:
                     item_id = dpg.get_alias_id(node_id_name)
                     if dpg.does_item_exist(item_id):
@@ -1033,6 +1062,7 @@ class DpgNodeEditor(object):
                     continue
                 try:
                     pos = settings.get('pos', [0, 0])
+                    self._purge_node_textures(node_id_name)
                     node = factorynode.add_node(
                         self._node_editor_tag,
                         node_id,
@@ -1082,6 +1112,7 @@ class DpgNodeEditor(object):
 
         try:
             pos = settings.get('pos', [0, 0])
+            self._purge_node_textures(node_id_name)
             node = factorynode.add_node(
                 self._node_editor_tag,
                 node_id,
