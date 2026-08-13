@@ -276,7 +276,10 @@ class Node(Node):
         return {"image":frame, "json":None, "audio":None}
 
     def close(self, node_id):
-        pass
+        tag_node_name = str(node_id) + ':' + self.node_tag
+        output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
+        if dpg.does_item_exist(output_value01_tag):
+            dpg.delete_item(output_value01_tag)
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
