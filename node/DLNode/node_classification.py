@@ -700,10 +700,7 @@ class Node(Node):
                 # Update dropdown with OD class names so user can filter by OD class
                 try:
                     if isinstance(od_class_names, dict) and od_class_names:
-                        od_filter_items = ['All'] + [
-                            f"{idx}: {label}"
-                            for idx, label in sorted(od_class_names.items(), key=lambda x: x[0])
-                        ]
+                        od_filter_items = self._build_class_filter_items(od_class_names)
                         current_items = dpg.get_item_configuration(tag_class_filter_value).get('items', [])
                         if current_items != od_filter_items:
                             dpg.configure_item(tag_class_filter_value, items=od_filter_items)
