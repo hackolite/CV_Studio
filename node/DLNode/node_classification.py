@@ -474,6 +474,24 @@ class Node(Node):
             num_classes = int(entry.get('num_classes', 0))
             raw_class_names = entry.get('class_names', {})
             class_names = {int(k): str(v) for k, v in raw_class_names.items()} if raw_class_names else {}
+            if not class_names and num_classes == 0 and os.path.isfile(path):
+                # Legacy registry entry with no class info: re-inspect the ONNX to deduce
+                try:
+                    meta = onnx_inspector.inspect_onnx_model(path)
+                    num_classes = meta.get('num_classes', 0)
+                    class_names = meta.get('class_names', {})
+                    if not class_names and num_classes > 0:
+                        class_names = {i: f"class_{i}" for i in range(num_classes)}
+                    if num_classes > 0:
+                        updated_entry = dict(entry)
+                        updated_entry['num_classes'] = num_classes
+                        updated_entry['class_names'] = {str(k): v for k, v in class_names.items()}
+                        try:
+                            _cls_registry.save_entry(updated_entry)
+                        except Exception:
+                            pass
+                except Exception as exc:
+                    logger.warning(f"[Classification] Could not re-inspect {path} for class names: {exc}")
             if not class_names and num_classes > 0:
                 class_names = {i: f"class_{i}" for i in range(num_classes)}
             cls._register_custom_model(name, path, in_w, in_h, class_names)

@@ -37,6 +37,24 @@ def _shape_from_type_proto(type_proto) -> list:
     return [_dim_value(d) for d in tensor_type.shape.dim]
 
 
+def _detect_classify_format(output_shape: list) -> tuple:
+    """Return ``(output_format, num_classes)`` for classification model outputs.
+
+    Classification models produce rank-1 ``[num_classes]`` or rank-2
+    ``[batch, num_classes]`` output tensors.  Returns ``("classify", N)``
+    when the shape matches, or ``("unknown", 0)`` otherwise.
+    """
+    if len(output_shape) == 2:
+        last_dim = output_shape[-1]
+        if isinstance(last_dim, int) and last_dim > 1:
+            return "classify", last_dim
+    if len(output_shape) == 1:
+        last_dim = output_shape[0]
+        if isinstance(last_dim, int) and last_dim > 1:
+            return "classify", last_dim
+    return "unknown", 0
+
+
 def _inspect_onnx_static(model_path: str) -> dict:
     """Inspect ONNX model metadata using the ``onnx`` package only (no runtime session).
 
@@ -133,6 +151,10 @@ def _inspect_onnx_static(model_path: str) -> dict:
             elif dim2 < dim1 and dim2 > 5:
                 output_format = "yolox"
                 num_classes = dim2 - 5
+
+    # ---- Classification model: rank-1/rank-2 output -------------------------
+    if output_format == "unknown":
+        output_format, num_classes = _detect_classify_format(output_shape)
 
     # ---- Embedded class names ----------------------------------------------
     class_names: dict = {}
@@ -382,10 +404,17 @@ def inspect_onnx_model(model_path: str) -> dict:
             )
     else:
         if output_format == "unknown":
-            logger.warning(
-                f"[ONNX Inspector] Unexpected output rank {len(output_shape)} "
-                f"(expected 3); format detection skipped."
-            )
+            output_format, num_classes = _detect_classify_format(output_shape)
+            if output_format == "classify":
+                logger.info(
+                    f"[ONNX Inspector] Detected classification model "
+                    f"(rank-{len(output_shape)} output): num_classes={num_classes}"
+                )
+            else:
+                logger.warning(
+                    f"[ONNX Inspector] Unexpected output rank {len(output_shape)} "
+                    f"(expected 3); format detection skipped."
+                )
 
     if output_format != "unknown":
         logger.info(
