@@ -840,7 +840,7 @@ class Node(Node):
             # Classification label only (no OD Detection label)
             score_text = '%.2f' % score
             class_name = self.get_class_name(class_id, class_name_dict)
-            text = '%s:%s(%s)' % (int(class_id), str(class_name), score_text)
+            text = f'{int(class_id)}:{class_name}({score_text})'
             debug_image = cv2.putText(
                 debug_image,
                 text,
@@ -848,7 +848,7 @@ class Node(Node):
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.7,
                 color,
-                thickness=thickness,
+                thickness=2,
             )
 
         return debug_image
