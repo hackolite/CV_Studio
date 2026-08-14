@@ -94,8 +94,8 @@ class FactoryNode:
         tag_class_filter_name = tag_node_name + ':' + node.TYPE_TEXT + ':ClassFilter'
         tag_class_filter_value_name = tag_node_name + ':' + node.TYPE_TEXT + ':ClassFilterValue'
 
-        tag_batch_mode_name = tag_node_name + ':' + node.TYPE_INT + ':BatchMode'
-        tag_batch_mode_value_name = tag_node_name + ':' + node.TYPE_INT + ':BatchModeValue'
+        tag_batch_mode_name = tag_node_name + ':' + node.TYPE_BOOLEAN + ':BatchMode'
+        tag_batch_mode_value_name = tag_node_name + ':' + node.TYPE_BOOLEAN + ':BatchModeValue'
 
         # OpenCV向け設定
         node._opencv_setting_dict = opencv_setting_dict
@@ -614,7 +614,7 @@ class Node(Node):
         tag_score_threshold_value = tag_node_name + ':' + self.TYPE_FLOAT + ':ScoreThresholdValue'
         tag_bbox_thickness_value = tag_node_name + ':' + self.TYPE_INT + ':BboxThicknessValue'
         tag_class_filter_value = tag_node_name + ':' + self.TYPE_TEXT + ':ClassFilterValue'
-        tag_batch_mode_value = tag_node_name + ':' + self.TYPE_INT + ':BatchModeValue'
+        tag_batch_mode_value = tag_node_name + ':' + self.TYPE_BOOLEAN + ':BatchModeValue'
 
         tag_provider_select_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
 
@@ -1000,8 +1000,9 @@ class Node(Node):
         try:
             outputs = session.run(None, {input_name: batch})
             results = np.array(outputs[0])  # [N, num_classes]
-        except Exception:
+        except Exception as exc:
             # Fallback on batch-unsupported models
+            logger.warning(f"[Classification] Batch inference failed, falling back to sequential: {exc}")
             top_scores, top_ids = [], []
             for f in frame_list:
                 scores, ids = model_instance(f)
@@ -1026,7 +1027,7 @@ class Node(Node):
         score_threshold = dpg_get_value(tag_score_threshold_value)
         tag_bbox_thickness_value = tag_node_name + ':' + self.TYPE_INT + ':BboxThicknessValue'
         bbox_thickness = dpg_get_value(tag_bbox_thickness_value)
-        tag_batch_mode_value = tag_node_name + ':' + self.TYPE_INT + ':BatchModeValue'
+        tag_batch_mode_value = tag_node_name + ':' + self.TYPE_BOOLEAN + ':BatchModeValue'
         batch_mode = False
         try:
             batch_mode = bool(dpg_get_value(tag_batch_mode_value))
@@ -1050,7 +1051,7 @@ class Node(Node):
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         tag_score_threshold_value = tag_node_name + ':' + self.TYPE_FLOAT + ':ScoreThresholdValue'
         tag_bbox_thickness_value = tag_node_name + ':' + self.TYPE_INT + ':BboxThicknessValue'
-        tag_batch_mode_value = tag_node_name + ':' + self.TYPE_INT + ':BatchModeValue'
+        tag_batch_mode_value = tag_node_name + ':' + self.TYPE_BOOLEAN + ':BatchModeValue'
 
         model_name = setting_dict[input_value02_tag]
         dpg_set_value(input_value02_tag, model_name)
