@@ -878,7 +878,12 @@ class Node(Node):
                         od_filter_items = self._build_class_filter_items(od_class_names)
                         current_items = dpg.get_item_configuration(tag_class_filter_value).get('items', [])
                         if current_items != od_filter_items:
-                            dpg.configure_item(tag_class_filter_value, items=od_filter_items)
+                            previous_value = dpg_get_value(tag_class_filter_value) or 'All'
+                            dpg.configure_item(tag_class_filter_value, items=od_filter_items, default_value='All')
+                            if previous_value in od_filter_items:
+                                dpg_set_value(tag_class_filter_value, previous_value)
+                            else:
+                                dpg_set_value(tag_class_filter_value, 'All')
                 except Exception:
                     pass
 
