@@ -871,6 +871,9 @@ class Node(Node):
                 od_class_ids = node_result.get('class_ids', [])
                 od_class_names = node_result.get('class_names', [])
                 od_score_th = node_result.get('score_th', [])
+                # Use the clean (pre-annotation) frame from the OD node for cropping
+                # and as the drawing base, so OD boxes/labels don't leak into the output.
+                od_raw_frame = node_result.get('raw_frame', None)
 
                 # Update dropdown with OD class names so user can filter by OD class
                 try:
@@ -883,6 +886,8 @@ class Node(Node):
                     pass
 
                 # バウンディングボックスで切り抜き (selected OD class only)
+                # Crop from the clean raw frame when available to avoid including OD annotations.
+                crop_source = od_raw_frame if od_raw_frame is not None else frame
                 for od_bbox, od_score, od_class_id in zip(
                         od_bboxes, od_scores, od_class_ids):
                     x1, y1 = int(od_bbox[0]), int(od_bbox[1])
@@ -895,7 +900,7 @@ class Node(Node):
                     if selected_od_class_id is not None and int(od_class_id) != selected_od_class_id:
                         continue
 
-                    frame_list.append(copy.deepcopy(frame[y1:y2, x1:x2]))
+                    frame_list.append(copy.deepcopy(crop_source[y1:y2, x1:x2]))
                     od_target_bboxes.append([x1, y1, x2, y2])
                     od_target_scores.append(od_score)
                     od_target_class_ids.append(od_class_id)
@@ -923,6 +928,7 @@ class Node(Node):
                 result['od_class_ids'] = od_target_class_ids
                 result['od_class_names'] = od_class_names
                 result['od_score_th'] = od_score_th
+                result['od_raw_frame'] = od_raw_frame
             else:
                 class_scores, class_ids = self._model_instance[
                     model_name_with_provider](frame)
@@ -957,8 +963,13 @@ class Node(Node):
         # 描画
         output_frame = frame
         if frame is not None:
-            # Create debug_frame with original dimensions for output
-            debug_frame = copy.deepcopy(frame)
+            # When connected to OD, use the clean (pre-annotation) frame as the drawing
+            # base so OD boxes/labels do not appear in the classification output texture.
+            base_frame = frame
+            if result.get('use_object_detection') and result.get('od_raw_frame') is not None:
+                base_frame = result['od_raw_frame']
+
+            debug_frame = copy.deepcopy(base_frame)
             
             # Draw labels on the original frame
             if result['use_object_detection']:
