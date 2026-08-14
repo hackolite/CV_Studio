@@ -55,6 +55,16 @@ else:
         os.path.dirname(os.path.abspath(__file__)), 'classification', 'CustomONNX', 'models'
     )
 
+_BUILTIN_CLS_MODEL_NAMES = {
+    'MobileNetV3 Small',
+    'MobileNetV3 Large',
+    'EfficientNet B0',
+    'ResNet50',
+    'Yolo-cls',
+    'Gender Recognition',
+    'Pedestrian Gender',
+}
+
 
 class FactoryNode:
     node_label = 'Classification'
@@ -224,6 +234,11 @@ class FactoryNode:
                         dpg_set_value(tag_class_filter_value_name, 'All')
                     except Exception:
                         pass
+                    try:
+                        is_builtin = app_data in _BUILTIN_CLS_MODEL_NAMES
+                        dpg.configure_item(node.tag_delete_btn, enabled=not is_builtin)
+                    except Exception:
+                        pass
 
                 initial_model = list(node._model_class.keys())[0]
                 dpg.add_combo(
@@ -342,6 +357,36 @@ class FactoryNode:
                 )
                 dpg.bind_item_theme(add_model_btn, add_model_btn_theme)
 
+            # ---- Delete model button (removes the selected model) -----------
+            node.tag_delete_btn = tag_node_name + ':DeleteONNX'
+
+            def _on_delete_clicked(sender, app_data, user_data):
+                model_combo_tag = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input02Value'
+                selected = dpg_get_value(model_combo_tag)
+                node._delete_selected_model(selected)
+
+            with dpg.node_attribute(
+                    tag=tag_node_name + ':DeleteAttr',
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                with dpg.theme() as delete_model_btn_theme:
+                    with dpg.theme_component(dpg.mvButton):
+                        dpg.add_theme_color(dpg.mvThemeCol_Button, (200, 60, 60, 255))
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (230, 90, 90, 255))
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (170, 40, 40, 255))
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255, 255))
+
+                delete_btn = dpg.add_button(
+                    label=u"Delete Model",
+                    tag=node.tag_delete_btn,
+                    width=small_window_w,
+                    callback=_on_delete_clicked,
+                )
+                dpg.bind_item_theme(delete_btn, delete_model_btn_theme)
+                # Disable for the initially-selected model if it is built-in
+                if initial_model in _BUILTIN_CLS_MODEL_NAMES:
+                    dpg.configure_item(delete_btn, enabled=False)
+
         node.tag_node_name = tag_node_name
         return node
 
@@ -452,6 +497,90 @@ class Node(Node):
         cls._model_class[name] = _make_factory(path, in_w, in_h)
         cls._model_path_setting[name] = path
         cls._model_class_name_dict[name] = class_names if class_names else {0: 'class_0'}
+
+    # ------------------------------------------------------------------
+    # Delete model
+    # ------------------------------------------------------------------
+    @classmethod
+    def _delete_custom_model(cls, name: str) -> bool:
+        """Remove a custom model from the persistent registry and runtime dicts.
+
+        Built-in models cannot be deleted.
+        Returns True when the model was found and removed.
+        """
+        if not name:
+            return False
+        if name in _BUILTIN_CLS_MODEL_NAMES:
+            logger.warning(f"[Delete] '{name}' is a built-in model and cannot be deleted.")
+            return False
+        found = name in cls._model_class or name in cls._model_path_setting
+        # Delete the ONNX file from disk if it lives in the uploads directory
+        onnx_path = cls._model_path_setting.get(name)
+        if onnx_path:
+            try:
+                onnx_abs = os.path.abspath(onnx_path)
+                uploads_abs = os.path.abspath(_CLS_UPLOADS_DIR)
+                if (os.path.commonpath([onnx_abs, uploads_abs]) == uploads_abs
+                        and onnx_abs != uploads_abs
+                        and os.path.isfile(onnx_abs)):
+                    os.remove(onnx_abs)
+                    logger.info(f"[Delete] ONNX file deleted: {onnx_abs}")
+            except Exception as exc:
+                logger.warning(f"[Delete] Could not delete ONNX file for '{name}': {exc}")
+        try:
+            _cls_registry.remove_entry(name)
+            logger.info(f"[Delete] Registry entry removed for '{name}'.")
+        except Exception as exc:
+            logger.warning(f"[Delete] Could not remove registry entry for '{name}': {exc}")
+        cls._model_class.pop(name, None)
+        cls._model_path_setting.pop(name, None)
+        cls._model_class_name_dict.pop(name, None)
+        # Drop any cached inference instances for this model
+        for key in [k for k in cls._model_instance if k == name or k.startswith(name + '_')]:
+            cls._model_instance.pop(key, None)
+        return found
+
+    def _delete_selected_model(self, name: str):
+        """Delete the currently-selected model and refresh the node dropdowns."""
+        if not name:
+            logger.warning("[Delete] No model selected — nothing to delete.")
+            return
+        if name in _BUILTIN_CLS_MODEL_NAMES:
+            logger.warning(f"[Delete] '{name}' is a built-in model and cannot be deleted.")
+            return
+        Node._delete_custom_model(name)
+
+        # Update the model combobox with the remaining models
+        model_combo_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
+        remaining = list(Node._model_class.keys())
+        new_default = remaining[0] if remaining else ""
+        try:
+            dpg.configure_item(model_combo_tag, items=remaining, default_value=new_default)
+            dpg_set_value(model_combo_tag, new_default)
+            logger.info(f"[Delete] Model '{name}' deleted — '{new_default}' now selected.")
+        except Exception as exc:
+            logger.warning(f"[Delete] Could not update model dropdown: {exc}")
+
+        # Refresh the class filter dropdown for the new selection
+        try:
+            if new_default and new_default in Node._model_class_name_dict:
+                class_items = Node._build_class_filter_items(
+                    Node._model_class_name_dict[new_default]
+                )
+            else:
+                class_items = ['All']
+            class_filter_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':ClassFilterValue'
+            dpg.configure_item(class_filter_tag, items=class_items, default_value='All')
+            dpg_set_value(class_filter_tag, 'All')
+        except Exception as exc:
+            logger.warning(f"[Delete] Could not update class filter dropdown: {exc}")
+
+        # Update delete button state for the new selection
+        try:
+            is_builtin = new_default in _BUILTIN_CLS_MODEL_NAMES
+            dpg.configure_item(self.tag_delete_btn, enabled=not is_builtin)
+        except Exception as exc:
+            logger.warning(f"[Delete] Could not update delete button state: {exc}")
 
     # ------------------------------------------------------------------
     # Upload callbacks
@@ -599,6 +728,12 @@ class Node(Node):
         except Exception as exc:
             logger.warning(f"[Classification Upload] Could not update class filter dropdown: {exc}")
 
+        # Enable delete button — newly uploaded model is always custom (not built-in)
+        try:
+            dpg.configure_item(node.tag_delete_btn, enabled=True)
+        except Exception as exc:
+            logger.warning(f"[Classification Upload] Could not enable delete button: {exc}")
+
     def update(
         self,
         node_id,
@@ -715,6 +850,9 @@ class Node(Node):
                 od_class_ids = node_result.get('class_ids', [])
                 od_class_names = node_result.get('class_names', [])
                 od_score_th = node_result.get('score_th', [])
+                # Use the clean (pre-annotation) frame from the OD node for cropping
+                # and as the drawing base, so OD boxes/labels don't leak into the output.
+                od_raw_frame = node_result.get('raw_frame', None)
 
                 # Update dropdown with OD class names so user can filter by OD class
                 try:
@@ -727,6 +865,8 @@ class Node(Node):
                     pass
 
                 # バウンディングボックスで切り抜き (selected OD class only)
+                # Crop from the clean raw frame when available to avoid including OD annotations.
+                crop_source = od_raw_frame if od_raw_frame is not None else frame
                 for od_bbox, od_score, od_class_id in zip(
                         od_bboxes, od_scores, od_class_ids):
                     x1, y1 = int(od_bbox[0]), int(od_bbox[1])
@@ -739,7 +879,7 @@ class Node(Node):
                     if selected_od_class_id is not None and int(od_class_id) != selected_od_class_id:
                         continue
 
-                    frame_list.append(copy.deepcopy(frame[y1:y2, x1:x2]))
+                    frame_list.append(copy.deepcopy(crop_source[y1:y2, x1:x2]))
                     od_target_bboxes.append([x1, y1, x2, y2])
                     od_target_scores.append(od_score)
                     od_target_class_ids.append(od_class_id)
@@ -767,6 +907,7 @@ class Node(Node):
                 result['od_class_ids'] = od_target_class_ids
                 result['od_class_names'] = od_class_names
                 result['od_score_th'] = od_score_th
+                result['od_raw_frame'] = od_raw_frame
             else:
                 class_scores, class_ids = self._model_instance[
                     model_name_with_provider](frame)
@@ -801,8 +942,13 @@ class Node(Node):
         # 描画
         output_frame = frame
         if frame is not None:
-            # Create debug_frame with original dimensions for output
-            debug_frame = copy.deepcopy(frame)
+            # When connected to OD, use the clean (pre-annotation) frame as the drawing
+            # base so OD boxes/labels do not appear in the classification output texture.
+            base_frame = frame
+            if result.get('use_object_detection') and result.get('od_raw_frame') is not None:
+                base_frame = result['od_raw_frame']
+
+            debug_frame = copy.deepcopy(base_frame)
             
             # Draw labels on the original frame
             if result['use_object_detection']:
