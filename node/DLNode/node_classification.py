@@ -582,27 +582,6 @@ class Node(Node):
         except Exception as exc:
             logger.warning(f"[Delete] Could not update delete button state: {exc}")
 
-        # Refresh the class filter dropdown for the new selection
-        try:
-            if new_default and new_default in Node._model_class_name_dict:
-                class_items = Node._build_class_filter_items(
-                    Node._model_class_name_dict[new_default]
-                )
-            else:
-                class_items = ['All']
-            class_filter_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':ClassFilterValue'
-            dpg.configure_item(class_filter_tag, items=class_items, default_value='All')
-            dpg_set_value(class_filter_tag, 'All')
-        except Exception as exc:
-            logger.warning(f"[Delete] Could not update class filter dropdown: {exc}")
-
-        # Update delete button state for the new selection
-        try:
-            is_builtin = new_default in _BUILTIN_CLS_MODEL_NAMES
-            dpg.configure_item(self.tag_delete_btn, enabled=not is_builtin)
-        except Exception as exc:
-            logger.warning(f"[Delete] Could not update delete button state: {exc}")
-
     # ------------------------------------------------------------------
     # Upload callbacks
     # ------------------------------------------------------------------
