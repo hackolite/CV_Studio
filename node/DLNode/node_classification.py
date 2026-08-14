@@ -243,7 +243,7 @@ class FactoryNode:
                     default_value='All',
                     width=small_window_w,
                     tag=tag_class_filter_value_name,
-                    label='Class Filter',
+                    label='OD Class Filter',
                 )
             # Confidence threshold slider
             with dpg.node_attribute(
@@ -668,6 +668,19 @@ class Node(Node):
         if frame is not None and use_pref_counter:
             start_time = time.monotonic()
 
+        # OD class filter: read before the crop loop so only matching bboxes are inferred
+        od_class_filter_value = 'All'
+        try:
+            od_class_filter_value = dpg_get_value(tag_class_filter_value) or 'All'
+        except Exception:
+            pass
+        selected_od_class_id = None
+        if od_class_filter_value != 'All' and ':' in od_class_filter_value:
+            try:
+                selected_od_class_id = int(od_class_filter_value.split(':')[0].strip())
+            except Exception:
+                selected_od_class_id = None
+
         # 接続元がObjectDetectionノードの場合、各バウンディングボックスに対して推論
         result = {}
         frame_list, class_id_list, score_list = [], [], []
@@ -684,13 +697,30 @@ class Node(Node):
                 od_class_names = node_result.get('class_names', [])
                 od_score_th = node_result.get('score_th', [])
 
-                # バウンディングボックスで切り抜き
+                # Update dropdown with OD class names so user can filter by OD class
+                try:
+                    if isinstance(od_class_names, dict) and od_class_names:
+                        od_filter_items = ['All'] + [
+                            f"{idx}: {label}"
+                            for idx, label in sorted(od_class_names.items(), key=lambda x: x[0])
+                        ]
+                        current_items = dpg.get_item_configuration(tag_class_filter_value).get('items', [])
+                        if current_items != od_filter_items:
+                            dpg.configure_item(tag_class_filter_value, items=od_filter_items)
+                except Exception:
+                    pass
+
+                # バウンディングボックスで切り抜き (selected OD class only)
                 for od_bbox, od_score, od_class_id in zip(
                         od_bboxes, od_scores, od_class_ids):
                     x1, y1 = int(od_bbox[0]), int(od_bbox[1])
                     x2, y2 = int(od_bbox[2]), int(od_bbox[3])
 
                     if od_score_th > od_score:
+                        continue
+
+                    # Skip bboxes that don't match the selected OD class
+                    if selected_od_class_id is not None and int(od_class_id) != selected_od_class_id:
                         continue
 
                     frame_list.append(copy.deepcopy(frame[y1:y2, x1:x2]))
@@ -721,7 +751,7 @@ class Node(Node):
                 result['class_scores'] = class_scores.tolist()
                 result['class_names'] = class_name_dict
 
-        # 信頼度しきい値取得
+        # 信頼度しきい値取得 (classification confidence threshold)
         score_threshold = 0.0
         try:
             score_threshold = float(dpg_get_value(tag_score_threshold_value))
@@ -729,51 +759,6 @@ class Node(Node):
             pass
         if frame is not None:
             result['score_th'] = score_threshold
-
-        # クラスフィルタ取得
-        class_filter_value = 'All'
-        try:
-            class_filter_value = dpg_get_value(tag_class_filter_value) or 'All'
-        except Exception:
-            pass
-        selected_class_id = None
-        if class_filter_value != 'All' and ':' in class_filter_value:
-            try:
-                selected_class_id = int(class_filter_value.split(':')[0].strip())
-            except Exception:
-                selected_class_id = None
-
-        # クラスフィルタ適用
-        if frame is not None and selected_class_id is not None and result:
-            if result.get('use_object_detection'):
-                filtered_ids, filtered_scores = [], []
-                filtered_od_bboxes, filtered_od_scores, filtered_od_class_ids = [], [], []
-                for i, (cid, cscore) in enumerate(zip(result.get('class_ids', []), result.get('class_scores', []))):
-                    if int(cid) == selected_class_id:
-                        filtered_ids.append(cid)
-                        filtered_scores.append(cscore)
-                        od_bboxes = result.get('od_bboxes', [])
-                        od_scores = result.get('od_scores', [])
-                        od_class_ids = result.get('od_class_ids', [])
-                        if i < len(od_bboxes):
-                            filtered_od_bboxes.append(od_bboxes[i])
-                        if i < len(od_scores):
-                            filtered_od_scores.append(od_scores[i])
-                        if i < len(od_class_ids):
-                            filtered_od_class_ids.append(od_class_ids[i])
-                result['class_ids'] = filtered_ids
-                result['class_scores'] = filtered_scores
-                result['od_bboxes'] = filtered_od_bboxes
-                result['od_scores'] = filtered_od_scores
-                result['od_class_ids'] = filtered_od_class_ids
-            else:
-                filtered_ids, filtered_scores = [], []
-                for cid, cscore in zip(result.get('class_ids', []), result.get('class_scores', [])):
-                    if int(cid) == selected_class_id:
-                        filtered_ids.append(cid)
-                        filtered_scores.append(cscore)
-                result['class_ids'] = filtered_ids
-                result['class_scores'] = filtered_scores
 
         # バウンディングボックス線幅取得
         bbox_thickness = 2
