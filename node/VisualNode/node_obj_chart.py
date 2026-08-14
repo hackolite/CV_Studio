@@ -13,6 +13,8 @@ from node_editor.util import dpg_get_value, dpg_set_value
 from node.node_abc import DpgNodeABC
 from node.basenode import Node as Chart
 from node.DLNode.object_detection.coco_class_names import coco_class_names
+from node.DLNode.object_detection import custom_models_registry as _od_registry
+from node.DLNode.classification import custom_models_registry as _cls_registry
 
 import matplotlib
 matplotlib.use('Agg')  # force backend non-GUI
@@ -27,6 +29,32 @@ def get_class_dropdown_items():
     for class_id, class_name in coco_class_names.items():
         items.append(f"{class_id}: {class_name}")
     return items
+
+
+def _lookup_class_names_from_registries(num_classes: int) -> dict:
+    """Try to find class names from OD or classification registries.
+
+    When the incoming JSON has no class names embedded, search both registries
+    for an entry whose ``num_classes`` matches the observed count.  Returns the
+    first match found, or an empty dict when nothing is found or ``num_classes``
+    is 0.
+    """
+    if num_classes <= 0:
+        return {}
+    for registry in (_od_registry, _cls_registry):
+        try:
+            for entry in registry.load_registry():
+                if not isinstance(entry, dict):
+                    continue
+                raw = entry.get('class_names', {})
+                if not raw:
+                    continue
+                names = {int(k): str(v) for k, v in raw.items()}
+                if len(names) == num_classes:
+                    return names
+        except Exception:
+            pass
+    return {}
 
 
 def get_dict_dropdown_items(data_dict):
@@ -864,6 +892,12 @@ class Node(Chart):
                 # Extract detection data (original behavior)
                 class_ids = node_result.get('class_ids', [])
                 class_names = node_result.get('class_names', {})
+
+                # When class_names is missing or empty, try to deduce from registry
+                # (mirrors how object detection deduces class names from the ONNX).
+                if not class_names:
+                    observed_count = len({int(c) for c in class_ids if c is not None}) if class_ids else 0
+                    class_names = _lookup_class_names_from_registries(observed_count)
 
                 # Dynamically build combobox items from input JSON classes
                 dynamic_items = self._build_dynamic_class_items(class_ids, class_names)
