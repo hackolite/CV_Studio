@@ -1198,6 +1198,13 @@ class Node(Node):
         except Exception:
             pass
 
+        tag_class_filter_value = tag_node_name + ':' + self.TYPE_TEXT + ':ClassFilterValue'
+        class_filter = 'All'
+        try:
+            class_filter = dpg_get_value(tag_class_filter_value) or 'All'
+        except Exception:
+            pass
+
         pos = dpg.get_item_pos(tag_node_name)
 
         setting_dict = {}
@@ -1207,6 +1214,7 @@ class Node(Node):
         setting_dict[tag_score_threshold_value] = score_threshold
         setting_dict[tag_bbox_thickness_value] = bbox_thickness
         setting_dict[tag_batch_mode_value] = batch_mode
+        setting_dict[tag_class_filter_value] = class_filter
 
         return setting_dict
 
@@ -1216,9 +1224,41 @@ class Node(Node):
         tag_score_threshold_value = tag_node_name + ':' + self.TYPE_FLOAT + ':ScoreThresholdValue'
         tag_bbox_thickness_value = tag_node_name + ':' + self.TYPE_INT + ':BboxThicknessValue'
         tag_batch_mode_value = tag_node_name + ':' + self.TYPE_BOOLEAN + ':BatchModeValue'
+        tag_class_filter_value = tag_node_name + ':' + self.TYPE_TEXT + ':ClassFilterValue'
 
         model_name = setting_dict[input_value02_tag]
         dpg_set_value(input_value02_tag, model_name)
+
+        # Rebuild the class filter dropdown items to match the restored model,
+        # since the DPG callback only fires on user interaction, not on
+        # programmatic dpg_set_value calls.
+        try:
+            class_name_dict = Node._model_class_name_dict.get(model_name, {})
+            class_items = Node._build_class_filter_items(class_name_dict)
+            dpg.configure_item(tag_class_filter_value, items=class_items)
+        except Exception:
+            pass
+
+        # Restore the previously-selected class filter value (saved in newer versions).
+        # Fall back to 'All' for sessions saved before this field existed.
+        if tag_class_filter_value in setting_dict:
+            saved_filter = setting_dict[tag_class_filter_value]
+            try:
+                dpg_set_value(tag_class_filter_value, saved_filter)
+            except Exception:
+                pass
+        else:
+            try:
+                dpg_set_value(tag_class_filter_value, 'All')
+            except Exception:
+                pass
+
+        # Update the delete button state for the restored model
+        try:
+            is_builtin = model_name in _BUILTIN_CLS_MODEL_NAMES
+            dpg.configure_item(self.tag_delete_btn, enabled=not is_builtin)
+        except Exception:
+            pass
 
         if tag_score_threshold_value in setting_dict:
             dpg_set_value(tag_score_threshold_value, float(setting_dict[tag_score_threshold_value]))
