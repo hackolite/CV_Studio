@@ -396,7 +396,9 @@ class YoutubeNode(Node):
         self._audio_chunk_duration = 5.0  # seconds per chunk
         self._audio_url = None
         self._audio_stop_event = threading.Event()
-        
+        self._loading = False
+        self._loading_thread = None
+
     def convert_cv_to_dpg(self, cv_img, w, h):
         """Converts OpenCV image to DearPyGui format"""
         if cv_img is None:
@@ -558,73 +560,85 @@ class YoutubeNode(Node):
         tag_parts = user_data.split(':')
         tag_node_name = ':'.join(tag_parts[:2])
         tag_node_button_value_name = tag_node_name + ':' + self.TYPE_TEXT + ':ButtonValue'
-        
+
         label = dpg.get_item_label(tag_node_button_value_name)
         youtube_url = dpg.get_value(user_data)
-        
+
         if label == self._start_label:
             if not youtube_url or not isinstance(youtube_url, str) or not youtube_url.strip():
                 print("❌ Erreur: Veuillez entrer une URL YouTube valide")
                 return
-            
-            try:
-                if self.cap is not None:
-                    self.cap.release()
-                    self.cap = None
-                
-                print(f"🔄 Ouverture du stream YouTube: {youtube_url}")
-                dpg.set_item_label(tag_node_button_value_name, self._loading_label)
-                
-                self.cap = get_light_live_stream_url(
-                    youtube_url,
-                    cookies_browser=(self._opencv_setting_dict or {}).get("youtube_cookies_browser"),
-                )
-                
-                if self.cap is None or not self.cap.isOpened():
-                    print("❌ Erreur: Impossible d'ouvrir le stream")
-                    self.cap = None
-                    dpg.set_item_label(tag_node_button_value_name, self._start_label)
-                    return
-                
-                print(f"✅ Stream YouTube démarré avec succès!")
-                self.is_streaming = True
-                self._frame_skip_counter = 0
-                self._frame_count = 0
-                self._audio_chunk_counter = 0
-                self._stream_start_time = time.monotonic()
-                
-                dpg.set_item_label(tag_node_button_value_name, self._stop_label)
-                
-                if self.blue_button_theme is not None:
-                    dpg.bind_item_theme(tag_node_button_value_name, self.blue_button_theme)
 
-                # Resolve audio URL and start audio capture if enabled
-                self._audio_url = self._get_audio_stream_url(youtube_url)
-                if self._audio_enabled and self._audio_url:
-                    self._start_audio_capture()
-                    
-            except ValueError as e:
-                print(f"❌ Erreur: {e}")
+            if self._loading:
+                return
+
+            self._loading = True
+            if self.cap is not None:
+                self.cap.release()
                 self.cap = None
-                self.is_streaming = False
-                dpg.set_item_label(tag_node_button_value_name, self._start_label)
-            except Exception as e:
-                print(f"❌ Erreur inattendue: {e}")
-                self.cap = None
-                self.is_streaming = False
-                dpg.set_item_label(tag_node_button_value_name, self._start_label)
-        
+
+            print(f"🔄 Ouverture du stream YouTube: {youtube_url}")
+            dpg.set_item_label(tag_node_button_value_name, self._loading_label)
+
+            def _open_stream():
+                try:
+                    cap = get_light_live_stream_url(
+                        youtube_url,
+                        cookies_browser=(self._opencv_setting_dict or {}).get("youtube_cookies_browser"),
+                    )
+
+                    if cap is None or not cap.isOpened():
+                        print("❌ Erreur: Impossible d'ouvrir le stream")
+                        if dpg.does_item_exist(tag_node_button_value_name):
+                            dpg.set_item_label(tag_node_button_value_name, self._start_label)
+                        return
+
+                    self.cap = cap
+                    print("✅ Stream YouTube démarré avec succès!")
+                    self.is_streaming = True
+                    self._frame_skip_counter = 0
+                    self._frame_count = 0
+                    self._audio_chunk_counter = 0
+                    self._stream_start_time = time.monotonic()
+
+                    if dpg.does_item_exist(tag_node_button_value_name):
+                        dpg.set_item_label(tag_node_button_value_name, self._stop_label)
+                        if self.blue_button_theme is not None:
+                            dpg.bind_item_theme(tag_node_button_value_name, self.blue_button_theme)
+
+                    self._audio_url = self._get_audio_stream_url(youtube_url)
+                    if self._audio_enabled and self._audio_url:
+                        self._start_audio_capture()
+
+                except ValueError as e:
+                    print(f"❌ Erreur: {e}")
+                    self.cap = None
+                    self.is_streaming = False
+                    if dpg.does_item_exist(tag_node_button_value_name):
+                        dpg.set_item_label(tag_node_button_value_name, self._start_label)
+                except Exception as e:
+                    print(f"❌ Erreur inattendue: {e}")
+                    self.cap = None
+                    self.is_streaming = False
+                    if dpg.does_item_exist(tag_node_button_value_name):
+                        dpg.set_item_label(tag_node_button_value_name, self._start_label)
+                finally:
+                    self._loading = False
+
+            self._loading_thread = threading.Thread(target=_open_stream, daemon=True)
+            self._loading_thread.start()
+
         elif label == self._stop_label:
             if self.cap is not None:
                 self.cap.release()
                 self.cap = None
                 print("⏹️ Stream YouTube arrêté")
-            
+
             self.is_streaming = False
             self._stop_audio_capture()
             self._audio_url = None
             dpg.set_item_label(tag_node_button_value_name, self._start_label)
-            
+
             if self.yellow_button_theme is not None:
                 dpg.bind_item_theme(tag_node_button_value_name, self.yellow_button_theme)
 
@@ -714,6 +728,9 @@ class YoutubeNode(Node):
     
     def close(self, node_id):
         """Clean up resources when node is closed."""
+        if self._loading_thread and self._loading_thread.is_alive():
+            self._loading = False
+            self._loading_thread.join(timeout=2.0)
         self._stop_audio_capture()
         if self.cap is not None:
             self.cap.release()
