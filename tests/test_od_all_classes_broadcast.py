@@ -255,16 +255,45 @@ class TestChartAllClassesDropdown:
         assert '1: bicycle' in items
 
     def test_class_with_accumulated_count_present(self):
-        """Classes with accumulated time_counts are still listed."""
+        """Accumulated class IDs that belong to the *current* model are still listed.
+        Class IDs from old models (not in class_names) should NOT appear so that
+        switching models clears stale options from the dropdown."""
         module, _ = _load_chart_module()
         node = self._make_node(module)
-        node.time_counts[5][0] = 3  # class 5 seen in a past bucket
+        node.time_counts[0][0] = 3  # class 0 seen in a past bucket – same model
 
         class_names = {0: 'person'}
         items = node._build_dynamic_class_items([], class_names)
 
-        # Class 5 not in class_names dict but in time_counts – coco fallback or class_N
-        assert any('5:' in item for item in items)
+        # Class 0 is in class_names → must appear
+        assert '0: person' in items
+
+    def test_stale_class_from_old_model_not_shown(self):
+        """Class IDs accumulated from an old model (not in current class_names) must
+        NOT appear in the dropdown after the model is switched."""
+        module, _ = _load_chart_module()
+        node = self._make_node(module)
+        node.time_counts[5][0] = 3  # class 5 was seen with the old model
+
+        # New model only knows class 0
+        class_names = {0: 'person'}
+        items = node._build_dynamic_class_items([], class_names)
+
+        # Class 5 is not in the new model's class_names – must NOT appear
+        assert not any(item.startswith('5:') for item in items)
+        assert '0: person' in items
+
+    def test_stale_class_shown_when_no_class_names(self):
+        """When class_names is empty (generic numeric dict source), accumulated
+        class IDs from time_counts are still shown for backward compatibility."""
+        module, _ = _load_chart_module()
+        node = self._make_node(module)
+        node.time_counts[5][0] = 3  # class 5 accumulated
+
+        items = node._build_dynamic_class_items([], {})
+
+        # With no class_names constraint all accumulated IDs appear
+        assert any(item.startswith('5:') for item in items)
 
     def test_all_first_item(self):
         """'All' is always the first item."""
@@ -284,3 +313,82 @@ class TestChartAllClassesDropdown:
         non_all = [i for i in items if i != 'All']
         ids = [int(i.split(':')[0].strip()) for i in non_all]
         assert ids == sorted(ids)
+
+
+class TestModelChangeUpdatesDropdown:
+    """Integration tests: switching the model must refresh the Chart dropdown."""
+
+    def _make_node(self, module):
+        node = module.Node()
+        node.time_counts = defaultdict(lambda: defaultdict(int))
+        return node
+
+    def test_switch_from_coco_to_small_model(self):
+        """After switching from an 80-class COCO model to a 3-class model,
+        only the 3 new classes should appear in the dropdown."""
+        module, _ = _load_chart_module()
+        node = self._make_node(module)
+
+        # Simulate detections accumulated under the old COCO model (80 classes)
+        for cid in range(80):
+            node.time_counts[cid][0] = 1
+
+        # New model has only 3 classes
+        new_class_names = {0: 'player1', 1: 'player2', 2: 'ball'}
+        items = node._build_dynamic_class_items([], new_class_names)
+
+        assert items[0] == 'All'
+        assert '0: player1' in items
+        assert '1: player2' in items
+        assert '2: ball' in items
+        # Old COCO-only class IDs must not appear
+        assert not any(item.startswith('3:') for item in items)
+        assert len(items) == 4  # "All" + 3 classes
+
+    def test_switch_from_small_model_to_coco(self):
+        """Switching from a 3-class model to an 80-class COCO model populates
+        all 80 COCO classes in the dropdown."""
+        module, _ = _load_chart_module()
+        node = self._make_node(module)
+
+        # Simulate detections from 3-class model
+        for cid in (0, 1, 2):
+            node.time_counts[cid][0] = 1
+
+        # Load coco_class_names the same lightweight way the chart module loader does
+        import importlib.util as _ilu
+        _coco_path = os.path.join(
+            REPO_ROOT, 'node', 'DLNode', 'object_detection', 'coco_class_names.py'
+        )
+        _coco_spec = _ilu.spec_from_file_location('_coco_cn_test', _coco_path)
+        _coco_mod = _ilu.module_from_spec(_coco_spec)
+        _coco_spec.loader.exec_module(_coco_mod)
+        coco_class_names = _coco_mod.coco_class_names
+
+        items = node._build_dynamic_class_items([], coco_class_names)
+
+        assert '0: person' in items
+        # Classes previously unknown to the 3-class model must now appear
+        assert any(item.startswith('3:') for item in items)
+        assert len(items) == 81  # "All" + 80 COCO classes
+
+    def test_classification_model_change(self):
+        """Same behaviour for a classification model switch:
+        only the new model's classes appear after the switch."""
+        module, _ = _load_chart_module()
+        node = self._make_node(module)
+
+        # Old classification model: 1000 ImageNet classes accumulated
+        for cid in range(1000):
+            node.time_counts[cid][0] = 1
+
+        # New classification model: 2 gender classes
+        gender_classes = {0: 'Male', 1: 'Female'}
+        items = node._build_dynamic_class_items([], gender_classes)
+
+        assert '0: Male' in items
+        assert '1: Female' in items
+        # ImageNet-only class IDs must not appear
+        assert not any(item.startswith('2:') for item in items)
+        assert len(items) == 3  # "All" + 2 classes
+

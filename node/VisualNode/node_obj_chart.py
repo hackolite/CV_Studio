@@ -460,10 +460,17 @@ class Node(Chart):
             except (ValueError, TypeError):
                 pass
 
-        # Also include class ids that already have accumulated data
+        # Also include class ids that already have accumulated data.
+        # When class_names is provided (i.e. a model is connected), only keep
+        # accumulated IDs that belong to the *current* model so that switching
+        # from one model to another (e.g. COCO → 3-class tennis model) does not
+        # leave stale class options from the old model in the dropdown.
+        # When class_names is empty (generic numeric dict source), include all
+        # accumulated IDs for backward compatibility.
         for key in self.time_counts.keys():
             if isinstance(key, int):
-                seen_ids.add(key)
+                if not class_names or key in seen_ids:
+                    seen_ids.add(key)
 
         # Build items with names; class_names may have int or str keys
         for cid in sorted(seen_ids):
