@@ -94,6 +94,9 @@ class FactoryNode:
         tag_class_filter_name = tag_node_name + ':' + node.TYPE_TEXT + ':ClassFilter'
         tag_class_filter_value_name = tag_node_name + ':' + node.TYPE_TEXT + ':ClassFilterValue'
 
+        tag_batch_mode_name = tag_node_name + ':' + node.TYPE_INT + ':BatchMode'
+        tag_batch_mode_value_name = tag_node_name + ':' + node.TYPE_INT + ':BatchModeValue'
+
         # OpenCV向け設定
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict['process_width']
@@ -243,7 +246,6 @@ class FactoryNode:
                     default_value='All',
                     width=small_window_w,
                     tag=tag_class_filter_value_name,
-                    label='OD Class Filter',
                 )
             # Confidence threshold slider
             with dpg.node_attribute(
@@ -251,7 +253,6 @@ class FactoryNode:
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_slider_float(
-                    label='Threshold',
                     tag=tag_score_threshold_value_name,
                     default_value=0.5,
                     min_value=0.0,
@@ -264,7 +265,6 @@ class FactoryNode:
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_slider_int(
-                    label='Box Thickness',
                     tag=tag_bbox_thickness_value_name,
                     default_value=2,
                     min_value=1,
@@ -282,6 +282,16 @@ class FactoryNode:
                         tag=tag_provider_select_value_name,
                         default_value='CPU',
                         horizontal=True,
+                    )
+                # Batch mode checkbox (GPU only)
+                with dpg.node_attribute(
+                        tag=tag_batch_mode_name,
+                        attribute_type=dpg.mvNode_Attr_Static,
+                ):
+                    dpg.add_checkbox(
+                        label='Batch mode',
+                        tag=tag_batch_mode_value_name,
+                        default_value=False,
                     )
             # 処理時間
             if use_pref_counter:
@@ -604,6 +614,7 @@ class Node(Node):
         tag_score_threshold_value = tag_node_name + ':' + self.TYPE_FLOAT + ':ScoreThresholdValue'
         tag_bbox_thickness_value = tag_node_name + ':' + self.TYPE_INT + ':BboxThicknessValue'
         tag_class_filter_value = tag_node_name + ':' + self.TYPE_TEXT + ':ClassFilterValue'
+        tag_batch_mode_value = tag_node_name + ':' + self.TYPE_INT + ':BatchModeValue'
 
         tag_provider_select_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
 
@@ -640,6 +651,14 @@ class Node(Node):
         provider = 'CPU'
         if use_gpu:
             provider = dpg_get_value(tag_provider_select_value_name)
+
+        # Batch mode (GPU only)
+        batch_mode = False
+        if use_gpu and provider == 'GPU':
+            try:
+                batch_mode = bool(dpg_get_value(tag_batch_mode_value))
+            except Exception:
+                batch_mode = False
 
         # モデル情報取得
         model_name = dpg_get_value(input_value02_tag)
@@ -726,11 +745,19 @@ class Node(Node):
                     od_target_class_ids.append(od_class_id)
 
                 # 各バウンディングボックスに対しClassification推論
-                for temp_frame in frame_list:
-                    class_scores, class_ids = self._model_instance[
-                        model_name_with_provider](temp_frame)
-                    score_list.append(class_scores[0])
-                    class_id_list.append(class_ids[0])
+                if batch_mode and len(frame_list) > 0:
+                    batch_scores, batch_ids = self._run_batch_inference(
+                        self._model_instance[model_name_with_provider],
+                        frame_list,
+                    )
+                    score_list = list(batch_scores)
+                    class_id_list = list(batch_ids)
+                else:
+                    for temp_frame in frame_list:
+                        class_scores, class_ids = self._model_instance[
+                            model_name_with_provider](temp_frame)
+                        score_list.append(class_scores[0])
+                        class_id_list.append(class_ids[0])
                 result['use_object_detection'] = True
                 result['class_ids'] = class_id_list
                 result['class_scores'] = score_list
@@ -790,6 +817,7 @@ class Node(Node):
                     result['od_class_names'],
                     result['od_score_th'],
                     thickness=bbox_thickness,
+                    score_threshold=score_threshold,
                 )
             else:
                 debug_frame = self.draw_classification_info(
@@ -883,8 +911,13 @@ class Node(Node):
         od_class_names,
         od_score_th,
         thickness=2,
+        score_threshold=0.0,
     ):
-        """Draw bounding boxes colored by classification class; no OD label."""
+        """Draw bounding boxes colored by classification class; no OD label.
+
+        Only bboxes whose classification score meets ``score_threshold`` are
+        drawn on the image.
+        """
         debug_image = copy.deepcopy(image)
 
         for class_id, score, od_bbox, od_score, od_class_id in zip(
@@ -898,6 +931,10 @@ class Node(Node):
             x2, y2 = int(od_bbox[2]), int(od_bbox[3])
 
             if od_score_th > od_score:
+                continue
+
+            # Skip boxes whose classification score is below threshold
+            if float(score) < score_threshold:
                 continue
 
             # Color box by classification class, not OD class
@@ -927,6 +964,58 @@ class Node(Node):
 
         return debug_image
 
+    @staticmethod
+    def _run_batch_inference(model_instance, frame_list, top_k=5):
+        """Run classification inference on a batch of frames in a single ONNX call.
+
+        Falls back to sequential inference if the model does not expose
+        ``onnx_session`` or ``input_shape``.
+
+        Returns:
+            top_scores: list of top-1 score per frame
+            top_ids:    list of top-1 class-id per frame
+        """
+        session = getattr(model_instance, 'onnx_session', None)
+        input_shape = getattr(model_instance, 'input_shape', None)
+
+        if session is None or input_shape is None or len(frame_list) == 0:
+            # Fallback: sequential
+            top_scores, top_ids = [], []
+            for f in frame_list:
+                scores, ids = model_instance(f)
+                top_scores.append(scores[0])
+                top_ids.append(ids[0])
+            return top_scores, top_ids
+
+        h, w = int(input_shape[0]), int(input_shape[1])
+        preprocessed = []
+        for f in frame_list:
+            img = cv2.resize(f, (w, h))
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            preprocessed.append(img.astype('float32'))
+
+        batch = np.stack(preprocessed, axis=0)  # [N, H, W, C]
+
+        input_name = session.get_inputs()[0].name
+        try:
+            outputs = session.run(None, {input_name: batch})
+            results = np.array(outputs[0])  # [N, num_classes]
+        except Exception:
+            # Fallback on batch-unsupported models
+            top_scores, top_ids = [], []
+            for f in frame_list:
+                scores, ids = model_instance(f)
+                top_scores.append(scores[0])
+                top_ids.append(ids[0])
+            return top_scores, top_ids
+
+        top_scores, top_ids = [], []
+        for row in results:
+            sorted_idx = np.argsort(row)[::-1][:top_k]
+            top_scores.append(float(row[sorted_idx[0]]))
+            top_ids.append(int(sorted_idx[0]))
+        return top_scores, top_ids
+
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
@@ -937,6 +1026,12 @@ class Node(Node):
         score_threshold = dpg_get_value(tag_score_threshold_value)
         tag_bbox_thickness_value = tag_node_name + ':' + self.TYPE_INT + ':BboxThicknessValue'
         bbox_thickness = dpg_get_value(tag_bbox_thickness_value)
+        tag_batch_mode_value = tag_node_name + ':' + self.TYPE_INT + ':BatchModeValue'
+        batch_mode = False
+        try:
+            batch_mode = bool(dpg_get_value(tag_batch_mode_value))
+        except Exception:
+            pass
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -946,6 +1041,7 @@ class Node(Node):
         setting_dict[input_value02_tag] = model_name
         setting_dict[tag_score_threshold_value] = score_threshold
         setting_dict[tag_bbox_thickness_value] = bbox_thickness
+        setting_dict[tag_batch_mode_value] = batch_mode
 
         return setting_dict
 
@@ -954,6 +1050,7 @@ class Node(Node):
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         tag_score_threshold_value = tag_node_name + ':' + self.TYPE_FLOAT + ':ScoreThresholdValue'
         tag_bbox_thickness_value = tag_node_name + ':' + self.TYPE_INT + ':BboxThicknessValue'
+        tag_batch_mode_value = tag_node_name + ':' + self.TYPE_INT + ':BatchModeValue'
 
         model_name = setting_dict[input_value02_tag]
         dpg_set_value(input_value02_tag, model_name)
@@ -963,6 +1060,12 @@ class Node(Node):
 
         if tag_bbox_thickness_value in setting_dict:
             dpg_set_value(tag_bbox_thickness_value, int(setting_dict[tag_bbox_thickness_value]))
+
+        if tag_batch_mode_value in setting_dict:
+            try:
+                dpg_set_value(tag_batch_mode_value, bool(setting_dict[tag_batch_mode_value]))
+            except Exception:
+                pass
 
 
 # Load user-uploaded custom models from registry at import time
