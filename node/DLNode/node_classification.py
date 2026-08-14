@@ -212,16 +212,10 @@ class FactoryNode:
                     tag=tag_node_input02_name,
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
-                def _build_class_items(model_name):
-                    cnames = node._model_class_name_dict.get(model_name, {})
-                    items = ['All'] + [
-                        f"{idx}: {label}"
-                        for idx, label in sorted(cnames.items(), key=lambda x: x[0])
-                    ]
-                    return items
-
                 def _on_model_changed(sender, app_data, user_data):
-                    items = _build_class_items(app_data)
+                    items = node._build_class_filter_items(
+                        node._model_class_name_dict.get(app_data, {})
+                    )
                     try:
                         dpg.configure_item(tag_class_filter_value_name, items=items, default_value='All')
                         dpg_set_value(tag_class_filter_value_name, 'All')
@@ -241,7 +235,9 @@ class FactoryNode:
                     tag=tag_class_filter_name,
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
-                initial_class_items = _build_class_items(initial_model)
+                initial_class_items = node._build_class_filter_items(
+                    node._model_class_name_dict.get(initial_model, {})
+                )
                 dpg.add_combo(
                     initial_class_items,
                     default_value='All',
@@ -394,6 +390,14 @@ class Node(Node):
 
     def __init__(self):
         pass
+
+    @staticmethod
+    def _build_class_filter_items(class_name_dict):
+        """Build the list of items for the class filter combo."""
+        return ['All'] + [
+            f"{idx}: {label}"
+            for idx, label in sorted(class_name_dict.items(), key=lambda x: x[0])
+        ]
 
     @classmethod
     def _load_custom_models_from_registry(cls):
@@ -579,10 +583,7 @@ class Node(Node):
 
         class_filter_tag = node.tag_node_name + ':' + node.TYPE_TEXT + ':ClassFilterValue'
         try:
-            new_class_items = ['All'] + [
-                f"{idx}: {label}"
-                for idx, label in sorted(class_names.items(), key=lambda x: x[0])
-            ]
+            new_class_items = Node._build_class_filter_items(class_names)
             dpg.configure_item(class_filter_tag, items=new_class_items, default_value='All')
             dpg_set_value(class_filter_tag, 'All')
         except Exception as exc:
@@ -746,15 +747,25 @@ class Node(Node):
         if frame is not None and selected_class_id is not None and result:
             if result.get('use_object_detection'):
                 filtered_ids, filtered_scores = [], []
-                for cid, cscore in zip(result.get('class_ids', []), result.get('class_scores', [])):
+                filtered_od_bboxes, filtered_od_scores, filtered_od_class_ids = [], [], []
+                for i, (cid, cscore) in enumerate(zip(result.get('class_ids', []), result.get('class_scores', []))):
                     if int(cid) == selected_class_id:
                         filtered_ids.append(cid)
                         filtered_scores.append(cscore)
-                    else:
-                        filtered_ids.append(cid)
-                        filtered_scores.append(0.0)
+                        od_bboxes = result.get('od_bboxes', [])
+                        od_scores = result.get('od_scores', [])
+                        od_class_ids = result.get('od_class_ids', [])
+                        if i < len(od_bboxes):
+                            filtered_od_bboxes.append(od_bboxes[i])
+                        if i < len(od_scores):
+                            filtered_od_scores.append(od_scores[i])
+                        if i < len(od_class_ids):
+                            filtered_od_class_ids.append(od_class_ids[i])
                 result['class_ids'] = filtered_ids
                 result['class_scores'] = filtered_scores
+                result['od_bboxes'] = filtered_od_bboxes
+                result['od_scores'] = filtered_od_scores
+                result['od_class_ids'] = filtered_od_class_ids
             else:
                 filtered_ids, filtered_scores = [], []
                 for cid, cscore in zip(result.get('class_ids', []), result.get('class_scores', [])):
