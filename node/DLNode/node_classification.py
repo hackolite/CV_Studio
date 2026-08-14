@@ -18,6 +18,7 @@ from node.DLNode.classification.MobileNetV3.mobilenet_v3 import MobileNetV3
 from node.DLNode.classification.EfficientNetB0.efficientnet import EfficientNetB0
 from node.DLNode.classification.ResNet50.resnet50 import ResNet50
 from node.DLNode.classification.GenderRecognition.gender_recognition import GenderRecognition
+from node.DLNode.classification.PedestrianGender.pedestrian_gender import PedestrianGender
 
 # Import YoloCls using importlib.util due to hyphenated directory name
 import importlib.util
@@ -36,6 +37,7 @@ from node.DLNode.classification.imagenet_class_names import imagenet_class_names
 from node.DLNode.classification.esc50_class_names import esc50_class_names
 
 gender_class_names = GenderRecognition.CLASS_NAMES
+pedestrian_gender_class_names = PedestrianGender.CLASS_NAMES
 from node.DLNode.classification.CustomONNX.custom_onnx import CustomONNX as CustomONNXClassification
 from node.DLNode.classification import custom_models_registry as _cls_registry
 from node.DLNode.object_detection import onnx_inspector
@@ -79,6 +81,9 @@ class FactoryNode:
         tag_node_output02_value_name = tag_node_name + ':' + node.TYPE_TIME_MS + ':Output02Value'
         tag_node_output_json_name = tag_node_name + ':' + node.TYPE_JSON + ':OutputJson'
         tag_node_output_json_value_name = tag_node_name + ':' + node.TYPE_JSON + ':OutputJsonValue'
+
+        tag_score_threshold_name = tag_node_name + ':' + node.TYPE_FLOAT + ':ScoreThreshold'
+        tag_score_threshold_value_name = tag_node_name + ':' + node.TYPE_FLOAT + ':ScoreThresholdValue'
 
         tag_provider_select_name = tag_node_name + ':' + node.TYPE_TEXT + ':Provider'
         tag_provider_select_value_name = tag_node_name + ':' + node.TYPE_IMAGE + ':ProviderValue'
@@ -207,6 +212,19 @@ class FactoryNode:
                     width=small_window_w,
                     tag=tag_node_input02_value_name,
                 )
+            # Confidence threshold slider
+            with dpg.node_attribute(
+                    tag=tag_score_threshold_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_float(
+                    label='Threshold',
+                    tag=tag_score_threshold_value_name,
+                    default_value=0.5,
+                    min_value=0.0,
+                    max_value=1.0,
+                    width=small_window_w,
+                )
             if use_gpu:
                 # CPU/GPU切り替え
                 with dpg.node_attribute(
@@ -289,8 +307,12 @@ class Node(Node):
         'ResNet50': ResNet50,
         'Yolo-cls': YoloCls,
         'Gender Recognition': GenderRecognition,
+        'Pedestrian Gender': PedestrianGender,
     }
     _model_base_path = os.path.dirname(os.path.abspath(__file__)) + '/classification/'
+    # pedestrian_gender.onnx lives at the repository root
+    _repo_root = os.path.normpath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
     _model_path_setting = {
         'MobileNetV3 Small':
         _model_base_path + 'MobileNetV3/model/MobileNetV3Small.onnx',
@@ -304,6 +326,8 @@ class Node(Node):
         _model_base_path + 'Yolo-cls/model/son.onnx',
         'Gender Recognition':
         _model_base_path + 'GenderRecognition/model/GenderRecognition.onnx',
+        'Pedestrian Gender':
+        os.path.join(_repo_root, 'pedestrian_gender.onnx'),
     }
     _model_class_name_dict = {
         'MobileNetV3 Small': imagenet_class_names,
@@ -312,6 +336,7 @@ class Node(Node):
         'ResNet50': imagenet_class_names,
         'Yolo-cls': esc50_class_names,
         'Gender Recognition': gender_class_names,
+        'Pedestrian Gender': pedestrian_gender_class_names,
     }
 
     _model_instance = {}
@@ -514,6 +539,7 @@ class Node(Node):
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
+        tag_score_threshold_value = tag_node_name + ':' + self.TYPE_FLOAT + ':ScoreThresholdValue'
 
         tag_provider_select_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
 
@@ -631,6 +657,15 @@ class Node(Node):
                 result['class_scores'] = class_scores.tolist()
                 result['class_names'] = class_name_dict
 
+        # 信頼度しきい値取得
+        score_threshold = 0.0
+        try:
+            score_threshold = float(dpg_get_value(tag_score_threshold_value))
+        except Exception:
+            pass
+        if frame is not None:
+            result['score_th'] = score_threshold
+
         # 計測終了
         if frame is not None and use_pref_counter:
             elapsed_time = time.monotonic() - start_time
@@ -663,6 +698,7 @@ class Node(Node):
                     result['class_ids'],
                     result['class_scores'],
                     result['class_names'],
+                    score_threshold=score_threshold,
                 )
             
             output_frame = debug_frame
@@ -685,6 +721,7 @@ class Node(Node):
         class_ids,
         class_scores,
         class_names,
+        score_threshold=0.0,
     ):
         """
         Override base class method to add color differentiation based on ranking.
@@ -693,6 +730,10 @@ class Node(Node):
         Position 3 (index 2): Blue
         Position 4 (index 3): Violet
         Position 5 (index 4): Magenta
+
+        Labels whose score is below ``score_threshold`` are not drawn on the
+        texture, but all predictions are still forwarded in the JSON output so
+        that downstream chart nodes receive complete data.
         """
         debug_image = copy.deepcopy(image)
         
@@ -705,26 +746,29 @@ class Node(Node):
             (255, 0, 255),    # Position 5 (index 4): Magenta
         ]
         
-        for index, (class_score, class_id) in enumerate(zip(class_scores, class_ids)):
+        draw_index = 0
+        for class_score, class_id in zip(class_scores, class_ids):
+            if float(class_score) < score_threshold:
+                continue
+
             score = "%.2f" % class_score
             text = "%s:%s(%s)" % (str(class_id), str(class_names[int(class_id)]), score)
             
-            # Select color based on position (1, 2, 3, 4, 5)
-            # Use default green for positions beyond 5
-            if index < len(rank_colors):
-                color = rank_colors[index]
+            if draw_index < len(rank_colors):
+                color = rank_colors[draw_index]
             else:
                 color = (0, 255, 0)  # Default green for lower rankings
             
             debug_image = cv2.putText(
                 debug_image,
                 text,
-                (15, 25 + (index * 20)),
+                (15, 25 + (draw_index * 20)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
                 color,
                 thickness=2,
             )
+            draw_index += 1
 
         return debug_image
 
@@ -734,6 +778,8 @@ class Node(Node):
 
         # 選択モデル
         model_name = dpg_get_value(input_value02_tag)
+        tag_score_threshold_value = tag_node_name + ':' + self.TYPE_FLOAT + ':ScoreThresholdValue'
+        score_threshold = dpg_get_value(tag_score_threshold_value)
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -741,16 +787,20 @@ class Node(Node):
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
         setting_dict[input_value02_tag] = model_name
+        setting_dict[tag_score_threshold_value] = score_threshold
 
         return setting_dict
 
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
+        tag_score_threshold_value = tag_node_name + ':' + self.TYPE_FLOAT + ':ScoreThresholdValue'
 
         model_name = setting_dict[input_value02_tag]
-
         dpg_set_value(input_value02_tag, model_name)
+
+        if tag_score_threshold_value in setting_dict:
+            dpg_set_value(tag_score_threshold_value, float(setting_dict[tag_score_threshold_value]))
 
 
 # Load user-uploaded custom models from registry at import time
