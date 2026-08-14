@@ -85,6 +85,9 @@ class FactoryNode:
         tag_score_threshold_name = tag_node_name + ':' + node.TYPE_FLOAT + ':ScoreThreshold'
         tag_score_threshold_value_name = tag_node_name + ':' + node.TYPE_FLOAT + ':ScoreThresholdValue'
 
+        tag_bbox_thickness_name = tag_node_name + ':' + node.TYPE_INT + ':BboxThickness'
+        tag_bbox_thickness_value_name = tag_node_name + ':' + node.TYPE_INT + ':BboxThicknessValue'
+
         tag_provider_select_name = tag_node_name + ':' + node.TYPE_TEXT + ':Provider'
         tag_provider_select_value_name = tag_node_name + ':' + node.TYPE_IMAGE + ':ProviderValue'
 
@@ -223,6 +226,19 @@ class FactoryNode:
                     default_value=0.5,
                     min_value=0.0,
                     max_value=1.0,
+                    width=small_window_w,
+                )
+            # Bounding box thickness slider
+            with dpg.node_attribute(
+                    tag=tag_bbox_thickness_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_int(
+                    label='Box Thickness',
+                    tag=tag_bbox_thickness_value_name,
+                    default_value=2,
+                    min_value=1,
+                    max_value=10,
                     width=small_window_w,
                 )
             if use_gpu:
@@ -540,6 +556,7 @@ class Node(Node):
         output_value01_tag = tag_node_name + ':' + self.TYPE_IMAGE + ':Output01Value'
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
         tag_score_threshold_value = tag_node_name + ':' + self.TYPE_FLOAT + ':ScoreThresholdValue'
+        tag_bbox_thickness_value = tag_node_name + ':' + self.TYPE_INT + ':BboxThicknessValue'
 
         tag_provider_select_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
 
@@ -666,6 +683,13 @@ class Node(Node):
         if frame is not None:
             result['score_th'] = score_threshold
 
+        # バウンディングボックス線幅取得
+        bbox_thickness = 2
+        try:
+            bbox_thickness = int(dpg_get_value(tag_bbox_thickness_value))
+        except Exception:
+            pass
+
         # 計測終了
         if frame is not None and use_pref_counter:
             elapsed_time = time.monotonic() - start_time
@@ -691,6 +715,7 @@ class Node(Node):
                     result['od_class_ids'],
                     result['od_class_names'],
                     result['od_score_th'],
+                    thickness=bbox_thickness,
                 )
             else:
                 debug_frame = self.draw_classification_info(
@@ -772,6 +797,62 @@ class Node(Node):
 
         return debug_image
 
+    def draw_classification_with_od_info(
+        self,
+        image,
+        class_id_list,
+        score_list,
+        class_name_dict,
+        od_bboxes,
+        od_scores,
+        od_class_ids,
+        od_class_names,
+        od_score_th,
+        thickness=2,
+    ):
+        """Draw bounding boxes colored by classification class; no OD label."""
+        debug_image = copy.deepcopy(image)
+
+        for class_id, score, od_bbox, od_score, od_class_id in zip(
+            class_id_list,
+            score_list,
+            od_bboxes,
+            od_scores,
+            od_class_ids,
+        ):
+            x1, y1 = int(od_bbox[0]), int(od_bbox[1])
+            x2, y2 = int(od_bbox[2]), int(od_bbox[3])
+
+            if od_score_th > od_score:
+                continue
+
+            # Color box by classification class, not OD class
+            color = self.get_color(class_id)
+
+            debug_image = cv2.rectangle(
+                debug_image,
+                (x1, y1),
+                (x2, y2),
+                color,
+                thickness=thickness,
+            )
+
+            # Classification label only (no OD Detection label)
+            score_text = '%.2f' % score
+            class_name = self.get_class_name(class_id, class_name_dict)
+            text = f'{int(class_id)}:{class_name}({score_text})'
+            debug_image = cv2.putText(
+                debug_image,
+                text,
+                (x1, y1 - 8),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                color,
+                thickness=2,
+            )
+
+        return debug_image
+
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
@@ -780,6 +861,8 @@ class Node(Node):
         model_name = dpg_get_value(input_value02_tag)
         tag_score_threshold_value = tag_node_name + ':' + self.TYPE_FLOAT + ':ScoreThresholdValue'
         score_threshold = dpg_get_value(tag_score_threshold_value)
+        tag_bbox_thickness_value = tag_node_name + ':' + self.TYPE_INT + ':BboxThicknessValue'
+        bbox_thickness = dpg_get_value(tag_bbox_thickness_value)
 
         pos = dpg.get_item_pos(tag_node_name)
 
@@ -788,6 +871,7 @@ class Node(Node):
         setting_dict['pos'] = pos
         setting_dict[input_value02_tag] = model_name
         setting_dict[tag_score_threshold_value] = score_threshold
+        setting_dict[tag_bbox_thickness_value] = bbox_thickness
 
         return setting_dict
 
@@ -795,12 +879,16 @@ class Node(Node):
         tag_node_name = str(node_id) + ':' + self.node_tag
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         tag_score_threshold_value = tag_node_name + ':' + self.TYPE_FLOAT + ':ScoreThresholdValue'
+        tag_bbox_thickness_value = tag_node_name + ':' + self.TYPE_INT + ':BboxThicknessValue'
 
         model_name = setting_dict[input_value02_tag]
         dpg_set_value(input_value02_tag, model_name)
 
         if tag_score_threshold_value in setting_dict:
             dpg_set_value(tag_score_threshold_value, float(setting_dict[tag_score_threshold_value]))
+
+        if tag_bbox_thickness_value in setting_dict:
+            dpg_set_value(tag_bbox_thickness_value, int(setting_dict[tag_bbox_thickness_value]))
 
 
 # Load user-uploaded custom models from registry at import time
