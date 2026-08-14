@@ -548,9 +548,7 @@ class Node(Node):
         if name in _BUILTIN_CLS_MODEL_NAMES:
             logger.warning(f"[Delete] '{name}' is a built-in model and cannot be deleted.")
             return
-        removed = Node._delete_custom_model(name)
-        if not removed:
-            logger.warning(f"[Delete] Model '{name}' not found in registry.")
+        Node._delete_custom_model(name)
 
         # Update the model combobox with the remaining models
         model_combo_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
@@ -558,9 +556,31 @@ class Node(Node):
         new_default = remaining[0] if remaining else ""
         try:
             dpg.configure_item(model_combo_tag, items=remaining, default_value=new_default)
+            dpg_set_value(model_combo_tag, new_default)
             logger.info(f"[Delete] Model '{name}' deleted — '{new_default}' now selected.")
         except Exception as exc:
             logger.warning(f"[Delete] Could not update model dropdown: {exc}")
+
+        # Refresh the class filter dropdown for the new selection
+        try:
+            if new_default and new_default in Node._model_class_name_dict:
+                class_items = Node._build_class_filter_items(
+                    Node._model_class_name_dict[new_default]
+                )
+            else:
+                class_items = ['All']
+            class_filter_tag = self.tag_node_name + ':' + self.TYPE_TEXT + ':ClassFilterValue'
+            dpg.configure_item(class_filter_tag, items=class_items, default_value='All')
+            dpg_set_value(class_filter_tag, 'All')
+        except Exception as exc:
+            logger.warning(f"[Delete] Could not update class filter dropdown: {exc}")
+
+        # Update delete button state for the new selection
+        try:
+            is_builtin = new_default in _BUILTIN_CLS_MODEL_NAMES
+            dpg.configure_item(self.tag_delete_btn, enabled=not is_builtin)
+        except Exception as exc:
+            logger.warning(f"[Delete] Could not update delete button state: {exc}")
 
         # Refresh the class filter dropdown for the new selection
         try:
