@@ -91,6 +91,9 @@ class FactoryNode:
         tag_provider_select_name = tag_node_name + ':' + node.TYPE_TEXT + ':Provider'
         tag_provider_select_value_name = tag_node_name + ':' + node.TYPE_IMAGE + ':ProviderValue'
 
+        tag_class_filter_name = tag_node_name + ':' + node.TYPE_TEXT + ':ClassFilter'
+        tag_class_filter_value_name = tag_node_name + ':' + node.TYPE_TEXT + ':ClassFilterValue'
+
         # OpenCV向け設定
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict['process_width']
@@ -209,11 +212,38 @@ class FactoryNode:
                     tag=tag_node_input02_name,
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
+                def _on_model_changed(sender, app_data, user_data):
+                    items = node._build_class_filter_items(
+                        node._model_class_name_dict.get(app_data, {})
+                    )
+                    try:
+                        dpg.configure_item(tag_class_filter_value_name, items=items, default_value='All')
+                        dpg_set_value(tag_class_filter_value_name, 'All')
+                    except Exception:
+                        pass
+
+                initial_model = list(node._model_class.keys())[0]
                 dpg.add_combo(
                     list(node._model_class.keys()),
-                    default_value=list(node._model_class.keys())[0],
+                    default_value=initial_model,
                     width=small_window_w,
                     tag=tag_node_input02_value_name,
+                    callback=_on_model_changed,
+                )
+            # Class filter dropdown
+            with dpg.node_attribute(
+                    tag=tag_class_filter_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                initial_class_items = node._build_class_filter_items(
+                    node._model_class_name_dict.get(initial_model, {})
+                )
+                dpg.add_combo(
+                    initial_class_items,
+                    default_value='All',
+                    width=small_window_w,
+                    tag=tag_class_filter_value_name,
+                    label='OD Class Filter',
                 )
             # Confidence threshold slider
             with dpg.node_attribute(
@@ -360,6 +390,14 @@ class Node(Node):
 
     def __init__(self):
         pass
+
+    @staticmethod
+    def _build_class_filter_items(class_name_dict):
+        """Build the list of items for the class filter combo."""
+        return ['All'] + [
+            f"{idx}: {label}"
+            for idx, label in sorted(class_name_dict.items(), key=lambda x: x[0])
+        ]
 
     @classmethod
     def _load_custom_models_from_registry(cls):
@@ -543,6 +581,14 @@ class Node(Node):
         except Exception as exc:
             logger.warning(f"[Classification Upload] Could not update model dropdown: {exc}")
 
+        class_filter_tag = node.tag_node_name + ':' + node.TYPE_TEXT + ':ClassFilterValue'
+        try:
+            new_class_items = Node._build_class_filter_items(class_names)
+            dpg.configure_item(class_filter_tag, items=new_class_items, default_value='All')
+            dpg_set_value(class_filter_tag, 'All')
+        except Exception as exc:
+            logger.warning(f"[Classification Upload] Could not update class filter dropdown: {exc}")
+
     def update(
         self,
         node_id,
@@ -557,6 +603,7 @@ class Node(Node):
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
         tag_score_threshold_value = tag_node_name + ':' + self.TYPE_FLOAT + ':ScoreThresholdValue'
         tag_bbox_thickness_value = tag_node_name + ':' + self.TYPE_INT + ':BboxThicknessValue'
+        tag_class_filter_value = tag_node_name + ':' + self.TYPE_TEXT + ':ClassFilterValue'
 
         tag_provider_select_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
 
@@ -621,6 +668,19 @@ class Node(Node):
         if frame is not None and use_pref_counter:
             start_time = time.monotonic()
 
+        # OD class filter: read before the crop loop so only matching bboxes are inferred
+        od_class_filter_value = 'All'
+        try:
+            od_class_filter_value = dpg_get_value(tag_class_filter_value) or 'All'
+        except Exception:
+            pass
+        selected_od_class_id = None
+        if od_class_filter_value != 'All' and ':' in od_class_filter_value:
+            try:
+                selected_od_class_id = int(od_class_filter_value.split(':')[0].strip())
+            except Exception:
+                selected_od_class_id = None
+
         # 接続元がObjectDetectionノードの場合、各バウンディングボックスに対して推論
         result = {}
         frame_list, class_id_list, score_list = [], [], []
@@ -637,13 +697,27 @@ class Node(Node):
                 od_class_names = node_result.get('class_names', [])
                 od_score_th = node_result.get('score_th', [])
 
-                # バウンディングボックスで切り抜き
+                # Update dropdown with OD class names so user can filter by OD class
+                try:
+                    if isinstance(od_class_names, dict) and od_class_names:
+                        od_filter_items = self._build_class_filter_items(od_class_names)
+                        current_items = dpg.get_item_configuration(tag_class_filter_value).get('items', [])
+                        if current_items != od_filter_items:
+                            dpg.configure_item(tag_class_filter_value, items=od_filter_items)
+                except Exception:
+                    pass
+
+                # バウンディングボックスで切り抜き (selected OD class only)
                 for od_bbox, od_score, od_class_id in zip(
                         od_bboxes, od_scores, od_class_ids):
                     x1, y1 = int(od_bbox[0]), int(od_bbox[1])
                     x2, y2 = int(od_bbox[2]), int(od_bbox[3])
 
                     if od_score_th > od_score:
+                        continue
+
+                    # Skip bboxes that don't match the selected OD class
+                    if selected_od_class_id is not None and int(od_class_id) != selected_od_class_id:
                         continue
 
                     frame_list.append(copy.deepcopy(frame[y1:y2, x1:x2]))
@@ -674,7 +748,7 @@ class Node(Node):
                 result['class_scores'] = class_scores.tolist()
                 result['class_names'] = class_name_dict
 
-        # 信頼度しきい値取得
+        # 信頼度しきい値取得 (classification confidence threshold)
         score_threshold = 0.0
         try:
             score_threshold = float(dpg_get_value(tag_score_threshold_value))
