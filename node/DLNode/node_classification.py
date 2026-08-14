@@ -91,6 +91,9 @@ class FactoryNode:
         tag_provider_select_name = tag_node_name + ':' + node.TYPE_TEXT + ':Provider'
         tag_provider_select_value_name = tag_node_name + ':' + node.TYPE_IMAGE + ':ProviderValue'
 
+        tag_class_filter_name = tag_node_name + ':' + node.TYPE_TEXT + ':ClassFilter'
+        tag_class_filter_value_name = tag_node_name + ':' + node.TYPE_TEXT + ':ClassFilterValue'
+
         # OpenCV向け設定
         node._opencv_setting_dict = opencv_setting_dict
         small_window_w = node._opencv_setting_dict['process_width']
@@ -209,11 +212,42 @@ class FactoryNode:
                     tag=tag_node_input02_name,
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
+                def _build_class_items(model_name):
+                    cnames = node._model_class_name_dict.get(model_name, {})
+                    items = ['All'] + [
+                        f"{idx}: {label}"
+                        for idx, label in sorted(cnames.items(), key=lambda x: x[0])
+                    ]
+                    return items
+
+                def _on_model_changed(sender, app_data, user_data):
+                    items = _build_class_items(app_data)
+                    try:
+                        dpg.configure_item(tag_class_filter_value_name, items=items, default_value='All')
+                        dpg_set_value(tag_class_filter_value_name, 'All')
+                    except Exception:
+                        pass
+
+                initial_model = list(node._model_class.keys())[0]
                 dpg.add_combo(
                     list(node._model_class.keys()),
-                    default_value=list(node._model_class.keys())[0],
+                    default_value=initial_model,
                     width=small_window_w,
                     tag=tag_node_input02_value_name,
+                    callback=_on_model_changed,
+                )
+            # Class filter dropdown
+            with dpg.node_attribute(
+                    tag=tag_class_filter_name,
+                    attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                initial_class_items = _build_class_items(initial_model)
+                dpg.add_combo(
+                    initial_class_items,
+                    default_value='All',
+                    width=small_window_w,
+                    tag=tag_class_filter_value_name,
+                    label='Class Filter',
                 )
             # Confidence threshold slider
             with dpg.node_attribute(
@@ -543,6 +577,17 @@ class Node(Node):
         except Exception as exc:
             logger.warning(f"[Classification Upload] Could not update model dropdown: {exc}")
 
+        class_filter_tag = node.tag_node_name + ':' + node.TYPE_TEXT + ':ClassFilterValue'
+        try:
+            new_class_items = ['All'] + [
+                f"{idx}: {label}"
+                for idx, label in sorted(class_names.items(), key=lambda x: x[0])
+            ]
+            dpg.configure_item(class_filter_tag, items=new_class_items, default_value='All')
+            dpg_set_value(class_filter_tag, 'All')
+        except Exception as exc:
+            logger.warning(f"[Classification Upload] Could not update class filter dropdown: {exc}")
+
     def update(
         self,
         node_id,
@@ -557,6 +602,7 @@ class Node(Node):
         output_value02_tag = tag_node_name + ':' + self.TYPE_TIME_MS + ':Output02Value'
         tag_score_threshold_value = tag_node_name + ':' + self.TYPE_FLOAT + ':ScoreThresholdValue'
         tag_bbox_thickness_value = tag_node_name + ':' + self.TYPE_INT + ':BboxThicknessValue'
+        tag_class_filter_value = tag_node_name + ':' + self.TYPE_TEXT + ':ClassFilterValue'
 
         tag_provider_select_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
 
@@ -682,6 +728,41 @@ class Node(Node):
             pass
         if frame is not None:
             result['score_th'] = score_threshold
+
+        # クラスフィルタ取得
+        class_filter_value = 'All'
+        try:
+            class_filter_value = dpg_get_value(tag_class_filter_value) or 'All'
+        except Exception:
+            pass
+        selected_class_id = None
+        if class_filter_value != 'All' and ':' in class_filter_value:
+            try:
+                selected_class_id = int(class_filter_value.split(':')[0].strip())
+            except Exception:
+                selected_class_id = None
+
+        # クラスフィルタ適用
+        if frame is not None and selected_class_id is not None and result:
+            if result.get('use_object_detection'):
+                filtered_ids, filtered_scores = [], []
+                for cid, cscore in zip(result.get('class_ids', []), result.get('class_scores', [])):
+                    if int(cid) == selected_class_id:
+                        filtered_ids.append(cid)
+                        filtered_scores.append(cscore)
+                    else:
+                        filtered_ids.append(cid)
+                        filtered_scores.append(0.0)
+                result['class_ids'] = filtered_ids
+                result['class_scores'] = filtered_scores
+            else:
+                filtered_ids, filtered_scores = [], []
+                for cid, cscore in zip(result.get('class_ids', []), result.get('class_scores', [])):
+                    if int(cid) == selected_class_id:
+                        filtered_ids.append(cid)
+                        filtered_scores.append(cscore)
+                result['class_ids'] = filtered_ids
+                result['class_scores'] = filtered_scores
 
         # バウンディングボックス線幅取得
         bbox_thickness = 2
