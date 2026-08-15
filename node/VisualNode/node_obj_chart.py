@@ -582,7 +582,7 @@ class Node(Chart):
             time_unit: "minute" or "hour"
             selected_classes: list of class IDs to display
             class_names_dict: mapping of class ID to class name from detection JSON
-            chart_type: "bar", "line", or "area" for visualization type
+            chart_type: "bar", "line", "area", "stackbar", or "donut" for visualization type
         """
         # Merge class_names_dict with COCO class names (COCO as fallback)
         # Only add names for selected classes to improve performance
@@ -598,7 +598,19 @@ class Node(Chart):
                     merged_class_names[class_id_str] = name
                 elif class_id in coco_class_names:
                     merged_class_names[class_id_str] = coco_class_names[class_id]
-        
+
+        def _get_label(class_id):
+            if class_id == "All":
+                return "All Classes"
+            elif class_id == "dB":
+                return "Decibel Intensity (dB)"
+            elif isinstance(class_id, str) and class_id in merged_class_names:
+                return merged_class_names[class_id]
+            elif str(class_id) in merged_class_names:
+                return f"{class_id}: {merged_class_names[str(class_id)]}"
+            else:
+                return f"Class {class_id}"
+
         # Donut chart: aggregate totals across all time buckets, no time axis needed
         if chart_type == "donut":
             fig, ax = plt.subplots(figsize=(6, 5), dpi=100)
@@ -608,17 +620,7 @@ class Node(Chart):
             for class_id in selected_classes:
                 total = sum(self.time_counts[class_id].values())
                 if total > 0:
-                    if class_id == "All":
-                        label = "All Classes"
-                    elif class_id == "dB":
-                        label = "Decibel Intensity (dB)"
-                    elif isinstance(class_id, str) and class_id in merged_class_names:
-                        label = merged_class_names[class_id]
-                    elif str(class_id) in merged_class_names:
-                        label = f"{class_id}: {merged_class_names[str(class_id)]}"
-                    else:
-                        label = f"Class {class_id}"
-                    donut_labels.append(label)
+                    donut_labels.append(_get_label(class_id))
                     donut_values.append(total)
 
             if donut_values:
@@ -685,18 +687,6 @@ class Node(Chart):
             # Check if we're dealing with dB data (special case)
             is_db_data = "dB" in selected_classes
 
-            def _get_label(class_id):
-                if class_id == "All":
-                    return "All Classes"
-                elif class_id == "dB":
-                    return "Decibel Intensity (dB)"
-                elif isinstance(class_id, str) and class_id in merged_class_names:
-                    return merged_class_names[class_id]
-                elif str(class_id) in merged_class_names:
-                    return f"{class_id}: {merged_class_names[str(class_id)]}"
-                else:
-                    return f"Class {class_id}"
-            
             # Plot based on chart type
             if chart_type == "bar":
                 # Plot bars for each selected class
