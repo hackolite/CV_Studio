@@ -209,7 +209,7 @@ class FactoryNode:
                 dpg.add_combo(
                     tag=node.tag_node_chart_type_value_name,
                     label="Chart Type",
-                    items=["bar", "line", "area"],
+                    items=["bar", "line", "area", "stackbar", "donut"],
                     default_value="bar",
                     width=small_window_w - 100,
                 )
@@ -599,6 +599,52 @@ class Node(Chart):
                 elif class_id in coco_class_names:
                     merged_class_names[class_id_str] = coco_class_names[class_id]
         
+        # Donut chart: aggregate totals across all time buckets, no time axis needed
+        if chart_type == "donut":
+            fig, ax = plt.subplots(figsize=(6, 5), dpi=100)
+            # Compute total counts per selected class
+            donut_labels = []
+            donut_values = []
+            for class_id in selected_classes:
+                total = sum(self.time_counts[class_id].values())
+                if total > 0:
+                    if class_id == "All":
+                        label = "All Classes"
+                    elif class_id == "dB":
+                        label = "Decibel Intensity (dB)"
+                    elif isinstance(class_id, str) and class_id in merged_class_names:
+                        label = merged_class_names[class_id]
+                    elif str(class_id) in merged_class_names:
+                        label = f"{class_id}: {merged_class_names[str(class_id)]}"
+                    else:
+                        label = f"Class {class_id}"
+                    donut_labels.append(label)
+                    donut_values.append(total)
+
+            if donut_values:
+                wedges, texts, autotexts = ax.pie(
+                    donut_values,
+                    labels=donut_labels,
+                    autopct='%1.1f%%',
+                    startangle=90,
+                    wedgeprops=dict(width=0.5),  # creates the donut hole
+                )
+                for autotext in autotexts:
+                    autotext.set_fontsize(8)
+                ax.set_title('Global Class Representation (%)')
+            else:
+                ax.text(0.5, 0.5, 'Waiting for detection data...',
+                        ha='center', va='center', transform=ax.transAxes)
+                ax.set_title('Global Class Representation (%)')
+
+            plt.tight_layout()
+            canvas = FigureCanvasAgg(fig)
+            canvas.draw()
+            image = np.asarray(canvas.buffer_rgba())[:, :, :3]
+            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+            plt.close(fig)
+            return image
+
         fig, ax = plt.subplots(figsize=(8, 4), dpi=100)
         
         # Calculate max_buckets based on time unit to show full 24h round-robin
@@ -638,6 +684,18 @@ class Node(Chart):
             
             # Check if we're dealing with dB data (special case)
             is_db_data = "dB" in selected_classes
+
+            def _get_label(class_id):
+                if class_id == "All":
+                    return "All Classes"
+                elif class_id == "dB":
+                    return "Decibel Intensity (dB)"
+                elif isinstance(class_id, str) and class_id in merged_class_names:
+                    return merged_class_names[class_id]
+                elif str(class_id) in merged_class_names:
+                    return f"{class_id}: {merged_class_names[str(class_id)]}"
+                else:
+                    return f"Class {class_id}"
             
             # Plot based on chart type
             if chart_type == "bar":
@@ -647,63 +705,31 @@ class Node(Chart):
                 for idx, class_id in enumerate(selected_classes):
                     counts = [self.time_counts[class_id].get(bucket, 0) for bucket in sorted_buckets]
                     offset = (idx - len(selected_classes)/2 + 0.5) * bar_width
-                    
-                    # Get class name for legend
-                    if class_id == "All":
-                        label = "All Classes"
-                    elif class_id == "dB":
-                        label = "Decibel Intensity (dB)"
-                    elif isinstance(class_id, str) and class_id in merged_class_names:
-                        label = merged_class_names[class_id]
-                    elif str(class_id) in merged_class_names:
-                        label = f"{class_id}: {merged_class_names[str(class_id)]}"
-                    else:
-                        label = f"Class {class_id}"
-                    
-                    ax.bar(x_pos + offset, counts, bar_width, label=label)
+                    ax.bar(x_pos + offset, counts, bar_width, label=_get_label(class_id))
             
             elif chart_type == "line":
                 # Plot lines for each selected class
                 for class_id in selected_classes:
                     counts = [self.time_counts[class_id].get(bucket, 0) for bucket in sorted_buckets]
-                    
-                    # Get class name for legend
-                    if class_id == "All":
-                        label = "All Classes"
-                    elif class_id == "dB":
-                        label = "Decibel Intensity (dB)"
-                    elif isinstance(class_id, str) and class_id in merged_class_names:
-                        label = merged_class_names[class_id]
-                    elif str(class_id) in merged_class_names:
-                        label = f"{class_id}: {merged_class_names[str(class_id)]}"
-                    else:
-                        label = f"Class {class_id}"
-                    
-                    ax.plot(x_pos, counts, marker='o', label=label, linewidth=2)
+                    ax.plot(x_pos, counts, marker='o', label=_get_label(class_id), linewidth=2)
             
             elif chart_type == "area":
-                # Plot area chart (stacked) for each selected class
+                # Plot area chart (stacked fill) for each selected class
                 counts_by_class = []
                 labels = []
-                
                 for class_id in selected_classes:
                     counts = [self.time_counts[class_id].get(bucket, 0) for bucket in sorted_buckets]
                     counts_by_class.append(counts)
-                    
-                    # Get class name for legend
-                    if class_id == "All":
-                        label = "All Classes"
-                    elif class_id == "dB":
-                        label = "Decibel Intensity (dB)"
-                    elif isinstance(class_id, str) and class_id in merged_class_names:
-                        label = merged_class_names[class_id]
-                    elif str(class_id) in merged_class_names:
-                        label = f"{class_id}: {merged_class_names[str(class_id)]}"
-                    else:
-                        label = f"Class {class_id}"
-                    labels.append(label)
-                
+                    labels.append(_get_label(class_id))
                 ax.stackplot(x_pos, *counts_by_class, labels=labels, alpha=0.7)
+
+            elif chart_type == "stackbar":
+                # Stacked bar chart: each time bucket is one bar, classes are stacked segments
+                bottoms = np.zeros(len(sorted_buckets))
+                for class_id in selected_classes:
+                    counts = np.array([self.time_counts[class_id].get(bucket, 0) for bucket in sorted_buckets], dtype=float)
+                    ax.bar(x_pos, counts, bottom=bottoms, label=_get_label(class_id), alpha=0.85)
+                    bottoms += counts
             
             # Detect if this is numeric metric data (e.g. SystemResource)
             is_metric_data = any(
