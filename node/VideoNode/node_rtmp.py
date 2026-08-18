@@ -8,17 +8,13 @@ that OBS Studio (or any RTMP client) can connect to as a media source.
 
 How it works
 ------------
-An FFmpeg subprocess reads raw BGR frames from a stdin pipe and muxes them
-into an RTMP stream that is pushed to a local relay URL.  By default the node
-also tries to start a lightweight RTMP relay so that OBS can consume the
-stream at:
+FFmpeg reads raw BGR frames from a stdin pipe, encodes them as H.264/AAC and
+serves the result as an RTMP stream using its built-in ``-listen 1`` server
+mode.  No external relay (mediamtx, nginx-rtmp …) is required.
 
-    rtmp://localhost:<port>/live/cv_studio
+OBS connects to the URL *after* clicking "▶ Start RTMP":
 
-If ``mediamtx`` is found on the PATH the node delegates relay duties to it
-(zero-latency, handles multiple consumers).  Otherwise the stream is pushed
-directly and OBS can capture it with the *Custom Streaming Server* or
-*Media Source* options pointing to the same URL.
+    rtmp://localhost:1935/live/cv_studio
 
 OBS configuration (Media Source)
 ---------------------------------
@@ -35,9 +31,7 @@ import queue
 import shutil
 import socket
 import subprocess
-import tempfile
 import threading
-import time
 
 import cv2
 import numpy as np
@@ -70,11 +64,6 @@ def _find_ffmpeg() -> str:
         pass
     found = shutil.which("ffmpeg")
     return found if found is not None else "ffmpeg"
-
-
-def _find_mediamtx() -> str | None:
-    """Return mediamtx binary path if available, else None."""
-    return shutil.which("mediamtx") or shutil.which("rtsp-simple-server")
 
 
 def _is_port_free(port: int) -> bool:
@@ -237,8 +226,6 @@ class RTMPOutputNode(Node):
 
     def __init__(self):
         self._ffmpeg_proc: dict = {}
-        self._mediamtx_proc: dict = {}
-        self._mediamtx_cfg_files: dict = {}
         self._frame_queues: dict = {}
         self._writer_threads: dict = {}
         self._streaming: dict = {}
@@ -275,23 +262,17 @@ class RTMPOutputNode(Node):
         except Exception:
             out_w, out_h = 1280, 720
 
-        rtmp_url = f"rtmp://localhost:{port}/live/{key}"
+        rtmp_url = f"rtmp://0.0.0.0:{port}/live/{key}"
+        obs_url = f"rtmp://localhost:{port}/live/{key}"
 
-        # Update URL label
+        if not _is_port_free(port):
+            self._set_status(tag, f"⚠ Port {port} already in use", (255, 80, 80, 255))
+            logger.error("RTMPOutputNode[%s]: port %d is already in use.", tag, port)
+            return
+
+        # Update URL label (show the URL OBS should use)
         if dpg.does_item_exist(tag + ":URLLabel"):
-            dpg.set_value(tag + ":URLLabel", f"OBS URL: {rtmp_url}")
-
-        # Optionally start mediamtx relay
-        mediamtx = _find_mediamtx()
-        if mediamtx and _is_port_free(port):
-            self._start_mediamtx(tag, mediamtx, port)
-            time.sleep(0.8)  # Give mediamtx a moment to bind
-        else:
-            logger.info(
-                "RTMPOutputNode[%s]: mediamtx not found or port %d in use. "
-                "Pushing directly (OBS must connect before FFmpeg starts).",
-                tag, port,
-            )
+            dpg.set_value(tag + ":URLLabel", f"OBS URL: {obs_url}")
 
         ffmpeg_exe = _find_ffmpeg()
         cmd = [
@@ -322,8 +303,9 @@ class RTMPOutputNode(Node):
             # Map streams
             "-map", "0:v:0",
             "-map", "1:a:0",
-            # RTMP output
+            # RTMP server mode: FFmpeg listens, OBS connects
             "-f", "flv",
+            "-listen", "1",
             rtmp_url,
         ]
 
@@ -357,10 +339,10 @@ class RTMPOutputNode(Node):
             daemon=True,
         ).start()
 
-        self._set_status(tag, f"● Live  →  {rtmp_url}", (80, 255, 80, 255))
+        self._set_status(tag, f"⏳ Waiting for OBS…  →  {obs_url}", (255, 200, 0, 255))
         if dpg.does_item_exist(tag + ":Button"):
             dpg.configure_item(tag + ":Button", label="■ Stop RTMP")
-        logger.info("RTMPOutputNode[%s]: RTMP server started at %s", tag, rtmp_url)
+        logger.info("RTMPOutputNode[%s]: FFmpeg RTMP server listening at %s", tag, obs_url)
 
     def _stop(self, tag: str):
         self._streaming[tag] = False
@@ -376,25 +358,6 @@ class RTMPOutputNode(Node):
             except subprocess.TimeoutExpired:
                 proc.kill()
 
-        mproc = self._mediamtx_proc.pop(tag, None)
-        if mproc:
-            try:
-                mproc.terminate()
-                mproc.wait(timeout=5)
-            except Exception:
-                try:
-                    mproc.kill()
-                except Exception:
-                    pass
-
-        # Clean up mediamtx temp config file
-        cfg_path = self._mediamtx_cfg_files.pop(tag, None)
-        if cfg_path:
-            try:
-                os.unlink(cfg_path)
-            except OSError:
-                pass
-
         q = self._frame_queues.pop(tag, None)
         if q:
             try:
@@ -406,45 +369,6 @@ class RTMPOutputNode(Node):
         if dpg.does_item_exist(tag + ":Button"):
             dpg.configure_item(tag + ":Button", label="▶ Start RTMP")
         logger.info("RTMPOutputNode[%s]: Stopped.", tag)
-
-    def _start_mediamtx(self, tag: str, binary: str, port: int):
-        """Launch mediamtx with a minimal inline config for RTMP on *port*."""
-        cfg = (
-            f"rtmpAddress: :{port}\n"
-            "rtmpEncryption: no\n"
-            "paths:\n"
-            "  all:\n"
-            "    source: publisher\n"
-        )
-        cfg_file = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yml", delete=False
-        )
-        cfg_file.write(cfg)
-        cfg_file.flush()
-        cfg_file.close()
-        self._mediamtx_cfg_files[tag] = cfg_file.name
-
-        try:
-            mproc = subprocess.Popen(
-                [binary, cfg_file.name],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            self._mediamtx_proc[tag] = mproc
-            logger.info(
-                "RTMPOutputNode[%s]: mediamtx started (pid=%d, port=%d).",
-                tag, mproc.pid, port,
-            )
-        except Exception as exc:
-            logger.warning(
-                "RTMPOutputNode[%s]: mediamtx launch failed: %s", tag, exc
-            )
-            # Clean up config file immediately if launch fails
-            try:
-                os.unlink(cfg_file.name)
-            except OSError:
-                pass
-            self._mediamtx_cfg_files.pop(tag, None)
 
     # ------------------------------------------------------------------
     # Background threads
@@ -479,10 +403,12 @@ class RTMPOutputNode(Node):
                 decoded = line.decode("utf-8", errors="replace").strip()
                 if decoded:
                     logger.debug("RTMPOutputNode[%s] ffmpeg: %s", tag, decoded)
-                if "Connection refused" in decoded or "Failed to connect" in decoded:
-                    self._set_status(
-                        tag, "⚠ No consumer (OBS not connected?)", (255, 200, 0, 255)
-                    )
+                # FFmpeg prints this when an RTMP client connects in -listen mode
+                if "Sending publish" in decoded or "start time:" in decoded or "Output #0" in decoded:
+                    port = _DEFAULT_PORT
+                    key = _DEFAULT_STREAM_KEY
+                    obs_url = f"rtmp://localhost:{port}/live/{key}"
+                    self._set_status(tag, f"● Live  →  {obs_url}", (80, 255, 80, 255))
         except Exception:
             pass
         ret = proc.wait()
