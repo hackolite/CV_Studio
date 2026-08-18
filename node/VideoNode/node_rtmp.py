@@ -24,7 +24,6 @@ OBS configuration (Media Source)
 * Reconnect Delay: 1 s
 """
 
-import copy
 import logging
 import os
 import queue
@@ -32,6 +31,7 @@ import shutil
 import socket
 import subprocess
 import threading
+import time
 
 import cv2
 import numpy as np
@@ -69,12 +69,21 @@ def _find_ffmpeg() -> str:
     return found if found is not None else "ffmpeg"
 
 
+_MAX_RESTART_ATTEMPTS = 10   # stop after this many consecutive auto-restarts
+_RESTART_DELAY_S = 3.0       # seconds to wait before auto-restarting
+
+
 def _is_port_free(port: int) -> bool:
-    """Return True only if the port is not bound on any interface."""
+    """Return True only if the port is not currently listened on.
+
+    Use SO_REUSEADDR=1 so that a port that is still in TIME_WAIT (from a
+    recently-killed FFmpeg) is still considered free — matching what FFmpeg
+    itself does when it binds the socket.
+    """
     for host in ("127.0.0.1", "0.0.0.0"):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 s.bind((host, port))
         except OSError:
             return False
@@ -249,6 +258,8 @@ class RTMPOutputNode(Node):
         self._frame_queues: dict = {}
         self._writer_threads: dict = {}
         self._streaming: dict = {}
+        self._restart_count: dict = {}  # consecutive auto-restart attempts per tag
+        self._stream_params: dict = {}  # saved params for auto-restart
 
     # ------------------------------------------------------------------
     # GUI callback
@@ -278,7 +289,7 @@ class RTMPOutputNode(Node):
         key = (dpg_get_value(tag + ":StreamKey") or _DEFAULT_STREAM_KEY).strip()
         return f"rtmp://localhost:{port}/live/{key}"
 
-    def _start(self, tag: str):
+    def _start(self, tag: str, _auto_restart: bool = False):
         port = int(dpg_get_value(tag + ":Port") or _DEFAULT_PORT)
         key = (dpg_get_value(tag + ":StreamKey") or _DEFAULT_STREAM_KEY).strip()
         res_str = dpg_get_value(tag + ":Resolution") or "1280x720"
@@ -297,6 +308,13 @@ class RTMPOutputNode(Node):
             self._set_status(tag, f"⚠ Port {port} already in use", (255, 80, 80, 255))
             logger.error("RTMPOutputNode[%s]: port %d is already in use.", tag, port)
             return
+
+        # Save params so auto-restart can re-use them
+        self._stream_params[tag] = (out_w, out_h, fps, rtmp_url, obs_url)
+
+        # Reset restart counter when the user manually starts
+        if not _auto_restart:
+            self._restart_count[tag] = 0
 
         # Update URL label (show the URL OBS should use)
         if dpg.does_item_exist(tag + ":URLLabel"):
@@ -320,9 +338,9 @@ class RTMPOutputNode(Node):
             "-tune", "zerolatency",
             "-b:v", "4000k",
             "-maxrate", "4000k",
-            "-bufsize", "500k",
+            "-bufsize", "8000k",
             "-pix_fmt", "yuv420p",
-            "-g", str(fps * 2),
+            "-g", str(fps * 4),
             # Audio encode
             "-c:a", "aac",
             "-b:a", "128k",
@@ -351,7 +369,17 @@ class RTMPOutputNode(Node):
 
         self._ffmpeg_proc[tag] = proc
         self._streaming[tag] = True
-        self._frame_queues[tag] = queue.Queue(maxsize=4)
+
+        # Drain any stale frames before the new connection receives data
+        old_q = self._frame_queues.get(tag)
+        if old_q is not None:
+            while not old_q.empty():
+                try:
+                    old_q.get_nowait()
+                except queue.Empty:
+                    break
+
+        self._frame_queues[tag] = queue.Queue(maxsize=2)
 
         t = threading.Thread(
             target=self._writer_loop,
@@ -374,6 +402,8 @@ class RTMPOutputNode(Node):
 
     def _stop(self, tag: str):
         self._streaming[tag] = False
+        self._stream_params.pop(tag, None)  # prevent any pending auto-restart
+        self._restart_count[tag] = 0
 
         proc = self._ffmpeg_proc.pop(tag, None)
         if proc:
@@ -435,12 +465,42 @@ class RTMPOutputNode(Node):
                 if "Sending publish" in decoded or "start time:" in decoded or "Output #0" in decoded:
                     obs_url = self._rtmp_url(tag)
                     self._set_status(tag, f"● Live  →  {obs_url}", (80, 255, 80, 255))
+                    self._restart_count[tag] = 0  # reset counter on successful connection
         except Exception:
             pass
         ret = proc.wait()
-        if self._streaming.get(tag, False) and ret != 0:
+        if self._streaming.get(tag, False):
+            # Unexpected exit — try to auto-restart so OBS can reconnect
+            attempt = self._restart_count.get(tag, 0) + 1
+            self._restart_count[tag] = attempt
+            if attempt <= _MAX_RESTART_ATTEMPTS:
+                logger.warning(
+                    "RTMPOutputNode[%s]: FFmpeg exited (code %d), auto-restart %d/%d in %.0fs…",
+                    tag, ret, attempt, _MAX_RESTART_ATTEMPTS, _RESTART_DELAY_S,
+                )
+                self._set_status(
+                    tag,
+                    f"↺ Reconnecting ({attempt}/{_MAX_RESTART_ATTEMPTS})…",
+                    (255, 200, 0, 255),
+                )
+                # Clean up the dead process before restarting
+                self._ffmpeg_proc.pop(tag, None)
+                self._streaming[tag] = False
+                time.sleep(_RESTART_DELAY_S)
+                # Only restart if the user hasn't manually stopped it
+                if tag in self._stream_params:
+                    self._start(tag, _auto_restart=True)
+            else:
+                logger.error(
+                    "RTMPOutputNode[%s]: FFmpeg exited (code %d), max restarts reached.",
+                    tag, ret,
+                )
+                self._set_status(tag, f"⚠ FFmpeg exit {ret} (max retries)", (255, 80, 80, 255))
+                self._streaming[tag] = False
+                if dpg.does_item_exist(tag + ":Button"):
+                    dpg.configure_item(tag + ":Button", label="▶ Start RTMP")
+        elif ret != 0:
             self._set_status(tag, f"⚠ FFmpeg exit {ret}", (255, 80, 80, 255))
-            self._streaming[tag] = False
             if dpg.does_item_exist(tag + ":Button"):
                 dpg.configure_item(tag + ":Button", label="▶ Start RTMP")
 
@@ -482,18 +542,16 @@ class RTMPOutputNode(Node):
         frame = node_image_dict.get(connection_info_src, None)
 
         if frame is not None:
-            display = copy.deepcopy(frame)
-
             if self._streaming.get(tag_node_name, False):
                 q = self._frame_queues.get(tag_node_name)
                 if q is not None:
                     try:
-                        q.put_nowait(copy.deepcopy(frame))
+                        q.put_nowait(np.array(frame))
                     except queue.Full:
                         pass
 
             texture = self.convert_cv_to_dpg(
-                display, small_window_w, small_window_h
+                frame, small_window_w, small_window_h
             )
             dpg_set_value(input_value01_tag, texture)
 
