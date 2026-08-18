@@ -1,0 +1,542 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+RTMP output node for CV_Studio.
+
+Accepts an image (and optional audio) input and exposes a local RTMP stream
+that OBS Studio (or any RTMP client) can connect to as a media source.
+
+How it works
+------------
+An FFmpeg subprocess reads raw BGR frames from a stdin pipe and muxes them
+into an RTMP stream that is pushed to a local relay URL.  By default the node
+also tries to start a lightweight RTMP relay so that OBS can consume the
+stream at:
+
+    rtmp://localhost:<port>/live/cv_studio
+
+If ``mediamtx`` is found on the PATH the node delegates relay duties to it
+(zero-latency, handles multiple consumers).  Otherwise the stream is pushed
+directly and OBS can capture it with the *Custom Streaming Server* or
+*Media Source* options pointing to the same URL.
+
+OBS configuration (Media Source)
+---------------------------------
+* Source → Add → Media Source
+* Input: ``rtmp://localhost:1935/live/cv_studio``
+* Network Buffering: 0 MB  (lowest latency)
+* Reconnect Delay: 1 s
+"""
+
+import copy
+import logging
+import queue
+import shutil
+import socket
+import subprocess
+import threading
+import time
+
+import cv2
+import numpy as np
+import dearpygui.dearpygui as dpg
+
+from node_editor.util import dpg_get_value, dpg_set_value
+from node.node_abc import DpgNodeABC
+from node.basenode import Node
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Defaults
+# ---------------------------------------------------------------------------
+
+_DEFAULT_PORT = 1935
+_DEFAULT_STREAM_KEY = "cv_studio"
+_RESOLUTIONS = ["1920x1080", "1280x720", "854x480", "640x360"]
+
+# ---------------------------------------------------------------------------
+# Helper: locate ffmpeg
+# ---------------------------------------------------------------------------
+
+
+def _find_ffmpeg() -> str:
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        pass
+    found = shutil.which("ffmpeg")
+    return found if found is not None else "ffmpeg"
+
+
+def _find_mediamtx() -> str | None:
+    """Return mediamtx binary path if available, else None."""
+    return shutil.which("mediamtx") or shutil.which("rtsp-simple-server")
+
+
+def _is_port_free(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex(("127.0.0.1", port)) != 0
+
+
+# ---------------------------------------------------------------------------
+# FactoryNode
+# ---------------------------------------------------------------------------
+
+
+class FactoryNode:
+    node_label = "RTMPOutput"
+    node_tag = "RTMPOutput"
+
+    def __init__(self):
+        pass
+
+    def add_node(
+        self,
+        parent,
+        node_id,
+        pos=None,
+        opencv_setting_dict=None,
+        callback=None,
+    ):
+        if pos is None:
+            pos = [0, 0]
+
+        node = RTMPOutputNode()
+        node.tag_node_name = str(node_id) + ":" + node.node_tag
+        node.tag_node_input01_name = (
+            node.tag_node_name + ":" + node.TYPE_IMAGE + ":Input01"
+        )
+        node.tag_node_input01_value_name = (
+            node.tag_node_name + ":" + node.TYPE_IMAGE + ":Input01Value"
+        )
+
+        node._opencv_setting_dict = opencv_setting_dict
+        small_window_w = opencv_setting_dict["process_width"]
+        small_window_h = opencv_setting_dict["process_height"]
+
+        black_image = np.zeros((small_window_w, small_window_h, 3))
+        black_texture = node.convert_cv_to_dpg(
+            black_image, small_window_w, small_window_h
+        )
+
+        with dpg.texture_registry(show=False):
+            dpg.add_raw_texture(
+                small_window_w,
+                small_window_h,
+                black_texture,
+                tag=node.tag_node_input01_value_name,
+                format=dpg.mvFormat_Float_rgb,
+            )
+
+        tag = node.tag_node_name
+        default_url = f"rtmp://localhost:{_DEFAULT_PORT}/live/{_DEFAULT_STREAM_KEY}"
+
+        with dpg.node(
+            tag=tag,
+            parent=parent,
+            label=node.node_label,
+            pos=pos,
+        ):
+            # Image input
+            with dpg.node_attribute(
+                tag=node.tag_node_input01_name,
+                attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_image(node.tag_node_input01_value_name)
+
+            # Port setting
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_input_int(
+                    tag=tag + ":Port",
+                    default_value=_DEFAULT_PORT,
+                    min_value=1024,
+                    max_value=65535,
+                    width=small_window_w,
+                    label="Port",
+                )
+
+            # Stream key
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_input_text(
+                    tag=tag + ":StreamKey",
+                    default_value=_DEFAULT_STREAM_KEY,
+                    hint="stream key (path segment)",
+                    width=small_window_w,
+                )
+
+            # Resolution
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_combo(
+                    tag=tag + ":Resolution",
+                    items=_RESOLUTIONS,
+                    default_value="1280x720",
+                    width=small_window_w,
+                    label="Resolution",
+                )
+
+            # FPS
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_input_int(
+                    tag=tag + ":FPS",
+                    default_value=30,
+                    min_value=1,
+                    max_value=60,
+                    width=small_window_w,
+                    label="FPS",
+                )
+
+            # OBS URL display
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_text(
+                    tag=tag + ":URLLabel",
+                    default_value=f"OBS URL: {default_url}",
+                    color=(150, 220, 255, 255),
+                    wrap=small_window_w,
+                )
+
+            # Start / Stop button
+            with dpg.node_attribute(
+                tag=tag + ":ButtonAttr",
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_button(
+                    tag=tag + ":Button",
+                    label="▶ Start RTMP",
+                    width=small_window_w,
+                    callback=node._on_button,
+                    user_data=tag,
+                )
+
+            # Status
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_text(
+                    tag=tag + ":Status",
+                    default_value="● Stopped",
+                    color=(180, 180, 180, 255),
+                )
+
+        return node
+
+
+# ---------------------------------------------------------------------------
+# RTMPOutputNode
+# ---------------------------------------------------------------------------
+
+
+class RTMPOutputNode(Node):
+    _ver = "0.0.1"
+    node_label = "RTMPOutput"
+    node_tag = "RTMPOutput"
+
+    _opencv_setting_dict = None
+
+    _ffmpeg_proc: dict = {}
+    _mediamtx_proc: dict = {}
+    _frame_queues: dict = {}
+    _writer_threads: dict = {}
+    _streaming: dict = {}
+
+    def __init__(self):
+        pass
+
+    # ------------------------------------------------------------------
+    # GUI callback
+    # ------------------------------------------------------------------
+
+    def _on_button(self, sender, app_data, user_data):
+        tag = user_data
+        if self._streaming.get(tag, False):
+            self._stop(tag)
+        else:
+            self._start(tag)
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def _rtmp_url(self, tag: str) -> str:
+        port = int(dpg_get_value(tag + ":Port") or _DEFAULT_PORT)
+        key = (dpg_get_value(tag + ":StreamKey") or _DEFAULT_STREAM_KEY).strip()
+        return f"rtmp://localhost:{port}/live/{key}"
+
+    def _start(self, tag: str):
+        port = int(dpg_get_value(tag + ":Port") or _DEFAULT_PORT)
+        key = (dpg_get_value(tag + ":StreamKey") or _DEFAULT_STREAM_KEY).strip()
+        res_str = dpg_get_value(tag + ":Resolution") or "1280x720"
+        fps = int(dpg_get_value(tag + ":FPS") or 30)
+
+        try:
+            w_str, h_str = res_str.split("x")
+            out_w, out_h = int(w_str), int(h_str)
+        except Exception:
+            out_w, out_h = 1280, 720
+
+        rtmp_url = f"rtmp://localhost:{port}/live/{key}"
+
+        # Update URL label
+        if dpg.does_item_exist(tag + ":URLLabel"):
+            dpg.set_value(tag + ":URLLabel", f"OBS URL: {rtmp_url}")
+
+        # Optionally start mediamtx relay
+        mediamtx = _find_mediamtx()
+        if mediamtx and _is_port_free(port):
+            self._start_mediamtx(tag, mediamtx, port)
+            time.sleep(0.8)  # Give mediamtx a moment to bind
+        else:
+            logger.info(
+                "RTMPOutputNode[%s]: mediamtx not found or port %d in use. "
+                "Pushing directly (OBS must connect before FFmpeg starts).",
+                tag, port,
+            )
+
+        ffmpeg_exe = _find_ffmpeg()
+        cmd = [
+            ffmpeg_exe,
+            "-y",
+            # Raw BGR video from stdin
+            "-f", "rawvideo",
+            "-pix_fmt", "bgr24",
+            "-s", f"{out_w}x{out_h}",
+            "-r", str(fps),
+            "-i", "pipe:0",
+            # Silent audio fallback
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+            # Video encode: H.264, ultra-low latency
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-tune", "zerolatency",
+            "-b:v", "4000k",
+            "-maxrate", "4000k",
+            "-bufsize", "500k",
+            "-pix_fmt", "yuv420p",
+            "-g", str(fps * 2),
+            # Audio encode
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-ar", "44100",
+            "-ac", "2",
+            # Map streams
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            # RTMP output
+            "-f", "flv",
+            rtmp_url,
+        ]
+
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+        except Exception as exc:
+            logger.error("RTMPOutputNode[%s]: FFmpeg launch failed: %s", tag, exc)
+            self._set_status(tag, f"⚠ FFmpeg error: {exc}", (255, 80, 80, 255))
+            return
+
+        self._ffmpeg_proc[tag] = proc
+        self._streaming[tag] = True
+        self._frame_queues[tag] = queue.Queue(maxsize=4)
+
+        t = threading.Thread(
+            target=self._writer_loop,
+            args=(tag, proc, out_w, out_h),
+            daemon=True,
+        )
+        t.start()
+        self._writer_threads[tag] = t
+
+        threading.Thread(
+            target=self._stderr_monitor,
+            args=(tag, proc),
+            daemon=True,
+        ).start()
+
+        self._set_status(tag, f"● Live  →  {rtmp_url}", (80, 255, 80, 255))
+        if dpg.does_item_exist(tag + ":Button"):
+            dpg.configure_item(tag + ":Button", label="■ Stop RTMP")
+        logger.info("RTMPOutputNode[%s]: RTMP server started at %s", tag, rtmp_url)
+
+    def _stop(self, tag: str):
+        self._streaming[tag] = False
+
+        proc = self._ffmpeg_proc.pop(tag, None)
+        if proc:
+            try:
+                proc.stdin.close()
+            except Exception:
+                pass
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+        mproc = self._mediamtx_proc.pop(tag, None)
+        if mproc:
+            try:
+                mproc.terminate()
+                mproc.wait(timeout=5)
+            except Exception:
+                try:
+                    mproc.kill()
+                except Exception:
+                    pass
+
+        q = self._frame_queues.pop(tag, None)
+        if q:
+            try:
+                q.put_nowait(None)
+            except Exception:
+                pass
+
+        self._set_status(tag, "● Stopped", (180, 180, 180, 255))
+        if dpg.does_item_exist(tag + ":Button"):
+            dpg.configure_item(tag + ":Button", label="▶ Start RTMP")
+        logger.info("RTMPOutputNode[%s]: Stopped.", tag)
+
+    def _start_mediamtx(self, tag: str, binary: str, port: int):
+        """Launch mediamtx with a minimal inline config for RTMP on *port*."""
+        import tempfile, os
+        cfg = (
+            f"rtmpAddress: :{port}\n"
+            "rtmpEncryption: no\n"
+            "paths:\n"
+            "  all:\n"
+            "    source: publisher\n"
+        )
+        cfg_file = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yml", delete=False
+        )
+        cfg_file.write(cfg)
+        cfg_file.flush()
+        cfg_file.close()
+
+        try:
+            mproc = subprocess.Popen(
+                [binary, cfg_file.name],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self._mediamtx_proc[tag] = mproc
+            logger.info(
+                "RTMPOutputNode[%s]: mediamtx started (pid=%d, port=%d).",
+                tag, mproc.pid, port,
+            )
+        except Exception as exc:
+            logger.warning(
+                "RTMPOutputNode[%s]: mediamtx launch failed: %s", tag, exc
+            )
+
+    # ------------------------------------------------------------------
+    # Background threads
+    # ------------------------------------------------------------------
+
+    def _writer_loop(self, tag: str, proc: subprocess.Popen, w: int, h: int):
+        try:
+            while self._streaming.get(tag, False):
+                try:
+                    frame = self._frame_queues[tag].get(timeout=1.0)
+                except queue.Empty:
+                    continue
+                if frame is None:
+                    break
+                resized = cv2.resize(frame, (w, h), interpolation=cv2.INTER_LINEAR)
+                try:
+                    proc.stdin.write(resized.tobytes())
+                except BrokenPipeError:
+                    logger.warning("RTMPOutputNode[%s]: FFmpeg stdin closed.", tag)
+                    break
+        except Exception as exc:
+            logger.error("RTMPOutputNode[%s]: Writer loop error: %s", tag, exc)
+        finally:
+            try:
+                proc.stdin.close()
+            except Exception:
+                pass
+
+    def _stderr_monitor(self, tag: str, proc: subprocess.Popen):
+        try:
+            for line in proc.stderr:
+                decoded = line.decode("utf-8", errors="replace").strip()
+                if decoded:
+                    logger.debug("RTMPOutputNode[%s] ffmpeg: %s", tag, decoded)
+                if "Connection refused" in decoded or "Failed to connect" in decoded:
+                    self._set_status(
+                        tag, "⚠ No consumer (OBS not connected?)", (255, 200, 0, 255)
+                    )
+        except Exception:
+            pass
+        ret = proc.wait()
+        if self._streaming.get(tag, False) and ret != 0:
+            self._set_status(tag, f"⚠ FFmpeg exit {ret}", (255, 80, 80, 255))
+            self._streaming[tag] = False
+            if dpg.does_item_exist(tag + ":Button"):
+                dpg.configure_item(tag + ":Button", label="▶ Start RTMP")
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _set_status(self, tag: str, text: str, color=(180, 180, 180, 255)):
+        if dpg.does_item_exist(tag + ":Status"):
+            dpg.set_value(tag + ":Status", text)
+            dpg.configure_item(tag + ":Status", color=color)
+
+    # ------------------------------------------------------------------
+    # update() — called every frame by the pipeline
+    # ------------------------------------------------------------------
+
+    def update(
+        self,
+        node_id,
+        connection_list,
+        node_image_dict,
+        node_result_dict,
+        node_audio_dict,
+    ):
+        tag_node_name = str(node_id) + ":" + self.node_tag
+        input_value01_tag = (
+            tag_node_name + ":" + self.TYPE_IMAGE + ":Input01Value"
+        )
+
+        connection_info_src = ""
+        for connection_info in connection_list:
+            src = connection_info[0]
+            src = src.split(":")[:2]
+            connection_info_src = ":".join(src)
+
+        small_window_w = self._opencv_setting_dict["process_width"]
+        small_window_h = self._opencv_setting_dict["process_height"]
+
+        frame = node_image_dict.get(connection_info_src, None)
+
+        if frame is not None:
+            display = copy.deepcopy(frame)
+
+            if self._streaming.get(tag_node_name, False):
+                q = self._frame_queues.get(tag_node_name)
+                if q is not None:
+                    try:
+                        q.put_nowait(copy.deepcopy(frame))
+                    except queue.Full:
+                        pass
+
+            texture = self.convert_cv_to_dpg(
+                display, small_window_w, small_window_h
+            )
+            dpg_set_value(input_value01_tag, texture)
+
+        return {"image": frame, "json": None, "audio": None}
+
+    # ------------------------------------------------------------------
+    # close()
+    # ------------------------------------------------------------------
+
+    def close(self, node_id):
+        tag_node_name = str(node_id) + ":" + self.node_tag
+        if self._streaming.get(tag_node_name, False):
+            self._stop(tag_node_name)
