@@ -114,7 +114,7 @@ class FactoryNode:
         small_window_w = opencv_setting_dict["process_width"]
         small_window_h = opencv_setting_dict["process_height"]
 
-        black_image = np.zeros((small_window_w, small_window_h, 3))
+        black_image = np.zeros((small_window_h, small_window_w, 3))
         black_texture = node.convert_cv_to_dpg(
             black_image, small_window_w, small_window_h
         )
@@ -218,14 +218,12 @@ class StreamingNode(Node):
 
     _opencv_setting_dict = None
 
-    # Per-instance streaming state (keyed by tag_node_name)
-    _ffmpeg_proc: dict = {}
-    _frame_queues: dict = {}
-    _writer_threads: dict = {}
-    _streaming: dict = {}
-
     def __init__(self):
-        pass
+        # Per-instance streaming state (keyed by tag_node_name)
+        self._ffmpeg_proc: dict = {}
+        self._frame_queues: dict = {}
+        self._writer_threads: dict = {}
+        self._streaming: dict = {}
 
     # ------------------------------------------------------------------
     # GUI callback

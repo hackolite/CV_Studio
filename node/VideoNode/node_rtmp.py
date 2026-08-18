@@ -30,10 +30,12 @@ OBS configuration (Media Source)
 
 import copy
 import logging
+import os
 import queue
 import shutil
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 
@@ -117,7 +119,7 @@ class FactoryNode:
         small_window_w = opencv_setting_dict["process_width"]
         small_window_h = opencv_setting_dict["process_height"]
 
-        black_image = np.zeros((small_window_w, small_window_h, 3))
+        black_image = np.zeros((small_window_h, small_window_w, 3))
         black_texture = node.convert_cv_to_dpg(
             black_image, small_window_w, small_window_h
         )
@@ -233,14 +235,13 @@ class RTMPOutputNode(Node):
 
     _opencv_setting_dict = None
 
-    _ffmpeg_proc: dict = {}
-    _mediamtx_proc: dict = {}
-    _frame_queues: dict = {}
-    _writer_threads: dict = {}
-    _streaming: dict = {}
-
     def __init__(self):
-        pass
+        self._ffmpeg_proc: dict = {}
+        self._mediamtx_proc: dict = {}
+        self._mediamtx_cfg_files: dict = {}
+        self._frame_queues: dict = {}
+        self._writer_threads: dict = {}
+        self._streaming: dict = {}
 
     # ------------------------------------------------------------------
     # GUI callback
@@ -386,6 +387,14 @@ class RTMPOutputNode(Node):
                 except Exception:
                     pass
 
+        # Clean up mediamtx temp config file
+        cfg_path = self._mediamtx_cfg_files.pop(tag, None)
+        if cfg_path:
+            try:
+                os.unlink(cfg_path)
+            except OSError:
+                pass
+
         q = self._frame_queues.pop(tag, None)
         if q:
             try:
@@ -400,7 +409,6 @@ class RTMPOutputNode(Node):
 
     def _start_mediamtx(self, tag: str, binary: str, port: int):
         """Launch mediamtx with a minimal inline config for RTMP on *port*."""
-        import tempfile, os
         cfg = (
             f"rtmpAddress: :{port}\n"
             "rtmpEncryption: no\n"
@@ -414,6 +422,7 @@ class RTMPOutputNode(Node):
         cfg_file.write(cfg)
         cfg_file.flush()
         cfg_file.close()
+        self._mediamtx_cfg_files[tag] = cfg_file.name
 
         try:
             mproc = subprocess.Popen(
@@ -430,6 +439,12 @@ class RTMPOutputNode(Node):
             logger.warning(
                 "RTMPOutputNode[%s]: mediamtx launch failed: %s", tag, exc
             )
+            # Clean up config file immediately if launch fails
+            try:
+                os.unlink(cfg_file.name)
+            except OSError:
+                pass
+            self._mediamtx_cfg_files.pop(tag, None)
 
     # ------------------------------------------------------------------
     # Background threads
