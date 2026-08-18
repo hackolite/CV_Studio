@@ -51,6 +51,9 @@ _DEFAULT_PORT = 1935
 _DEFAULT_STREAM_KEY = "cv_studio"
 _RESOLUTIONS = ["1920x1080", "1280x720", "854x480", "640x360"]
 
+# Auto-incremented port counter so that each new node gets a unique default port
+_next_port = _DEFAULT_PORT
+
 # ---------------------------------------------------------------------------
 # Helper: locate ffmpeg
 # ---------------------------------------------------------------------------
@@ -67,9 +70,15 @@ def _find_ffmpeg() -> str:
 
 
 def _is_port_free(port: int) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.5)
-        return s.connect_ex(("127.0.0.1", port)) != 0
+    """Return True only if the port is not bound on any interface."""
+    for host in ("127.0.0.1", "0.0.0.0"):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+                s.bind((host, port))
+        except OSError:
+            return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +101,7 @@ class FactoryNode:
         opencv_setting_dict=None,
         callback=None,
     ):
+        global _next_port
         if pos is None:
             pos = [0, 0]
 
@@ -123,7 +133,13 @@ class FactoryNode:
             )
 
         tag = node.tag_node_name
-        default_url = f"rtmp://localhost:{_DEFAULT_PORT}/live/{_DEFAULT_STREAM_KEY}"
+
+        # Each new node gets its own default port so two nodes don't collide
+        node_port = _next_port
+        _next_port += 1
+
+        default_key = _DEFAULT_STREAM_KEY
+        default_url = f"rtmp://localhost:{node_port}/live/{default_key}"
 
         with dpg.node(
             tag=tag,
@@ -142,20 +158,24 @@ class FactoryNode:
             with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
                 dpg.add_input_int(
                     tag=tag + ":Port",
-                    default_value=_DEFAULT_PORT,
+                    default_value=node_port,
                     min_value=1024,
                     max_value=65535,
                     width=small_window_w,
                     label="Port",
+                    callback=node._on_settings_changed,
+                    user_data=tag,
                 )
 
             # Stream key
             with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
                 dpg.add_input_text(
                     tag=tag + ":StreamKey",
-                    default_value=_DEFAULT_STREAM_KEY,
+                    default_value=default_key,
                     hint="stream key (path segment)",
                     width=small_window_w,
+                    callback=node._on_settings_changed,
+                    user_data=tag,
                 )
 
             # Resolution
@@ -240,6 +260,14 @@ class RTMPOutputNode(Node):
             self._stop(tag)
         else:
             self._start(tag)
+
+    def _on_settings_changed(self, sender, app_data, user_data):
+        """Update the OBS URL label whenever port or stream key changes."""
+        tag = user_data
+        if not self._streaming.get(tag, False):
+            obs_url = self._rtmp_url(tag)
+            if dpg.does_item_exist(tag + ":URLLabel"):
+                dpg.set_value(tag + ":URLLabel", f"OBS URL: {obs_url}")
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -405,9 +433,7 @@ class RTMPOutputNode(Node):
                     logger.debug("RTMPOutputNode[%s] ffmpeg: %s", tag, decoded)
                 # FFmpeg prints this when an RTMP client connects in -listen mode
                 if "Sending publish" in decoded or "start time:" in decoded or "Output #0" in decoded:
-                    port = _DEFAULT_PORT
-                    key = _DEFAULT_STREAM_KEY
-                    obs_url = f"rtmp://localhost:{port}/live/{key}"
+                    obs_url = self._rtmp_url(tag)
                     self._set_status(tag, f"● Live  →  {obs_url}", (80, 255, 80, 255))
         except Exception:
             pass
