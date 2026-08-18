@@ -24,7 +24,6 @@ OBS configuration (Media Source)
 * Reconnect Delay: 1 s
 """
 
-import copy
 import logging
 import os
 import queue
@@ -339,9 +338,9 @@ class RTMPOutputNode(Node):
             "-tune", "zerolatency",
             "-b:v", "4000k",
             "-maxrate", "4000k",
-            "-bufsize", "500k",
+            "-bufsize", "8000k",
             "-pix_fmt", "yuv420p",
-            "-g", str(fps * 2),
+            "-g", str(fps * 4),
             # Audio encode
             "-c:a", "aac",
             "-b:a", "128k",
@@ -380,7 +379,7 @@ class RTMPOutputNode(Node):
                 except queue.Empty:
                     break
 
-        self._frame_queues[tag] = queue.Queue(maxsize=4)
+        self._frame_queues[tag] = queue.Queue(maxsize=2)
 
         t = threading.Thread(
             target=self._writer_loop,
@@ -445,7 +444,6 @@ class RTMPOutputNode(Node):
                 resized = cv2.resize(frame, (w, h), interpolation=cv2.INTER_LINEAR)
                 try:
                     proc.stdin.write(resized.tobytes())
-                    proc.stdin.flush()
                 except BrokenPipeError:
                     logger.warning("RTMPOutputNode[%s]: FFmpeg stdin closed.", tag)
                     break
@@ -544,18 +542,16 @@ class RTMPOutputNode(Node):
         frame = node_image_dict.get(connection_info_src, None)
 
         if frame is not None:
-            display = copy.deepcopy(frame)
-
             if self._streaming.get(tag_node_name, False):
                 q = self._frame_queues.get(tag_node_name)
                 if q is not None:
                     try:
-                        q.put_nowait(copy.deepcopy(frame))
+                        q.put_nowait(np.array(frame))
                     except queue.Full:
                         pass
 
             texture = self.convert_cv_to_dpg(
-                display, small_window_w, small_window_h
+                frame, small_window_w, small_window_h
             )
             dpg_set_value(input_value01_tag, texture)
 
