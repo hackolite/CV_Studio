@@ -176,8 +176,17 @@ def _convert_onnx_to_torch(model_path: str):
 
 # Number of trailing parameter tensors trained when ``train_scope='head'``.
 _DEFAULT_HEAD_PARAMS = 8
-# Weight of the classification term relative to the box term in the loss.
-_CLASS_LOSS_WEIGHT = 1.0
+
+# Adaptive class-loss weight phases (keyed by update count thresholds).
+# Phase 1 (updates < 100): focus on localisation.
+# Phase 2 (100 ≤ updates < 500): balanced.
+# Phase 3 (updates ≥ 500): refine classification.
+_CLASS_LOSS_PHASES = ((100, 0.3), (500, 1.0), (float("inf"), 2.0))
+
+# Temperature scheduling for soft-label distillation.
+# T decays linearly from T_INIT to 1.0 over T_STEPS update steps.
+_TEMPERATURE_INIT = 4.0
+_TEMPERATURE_STEPS = 500
 
 
 class TorchStudent:
@@ -257,8 +266,13 @@ class TorchStudent:
             p.requires_grad_(True)
         self._trainable_params = [p for p in trainable if p.requires_grad]
 
-        self.optimizer = torch.optim.SGD(
-            self._trainable_params, lr=self.learning_rate, momentum=0.9
+        self.optimizer = torch.optim.AdamW(
+            self._trainable_params, lr=self.learning_rate, weight_decay=1e-4
+        )
+        # Cosine-annealing restarts every T_0 update steps so the optimiser
+        # can escape flat regions in online learning.
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            self.optimizer, T_0=200
         )
         self._initial_state = {
             k: v.detach().clone() for k, v in self.module.state_dict().items()
@@ -429,12 +443,24 @@ class TorchStudent:
         union = area_a[:, None] + area_b[None, :] - inter + 1e-9
         return inter / union
 
-    def _build_loss(self, pred_boxes, pred_scores, teacher_boxes_in, teacher_classes):
+    def _build_loss(self, pred_boxes, pred_scores, teacher_boxes_in, teacher_classes,
+                    teacher_scores=None):
         """Differentiable distillation loss between matched student/teacher boxes.
 
         The discrete assignment (which student anchor explains which teacher box)
         is computed without gradients; the per-pair box-regression and
         classification terms are differentiable and drive the backprop.
+
+        Improvements over the original implementation:
+
+        * **GIoU** replaces (1 - IoU) so unmatched boxes still receive a
+          non-zero gradient even when IoU = 0.
+        * **Soft labels** use the teacher confidence score for the matched class
+          instead of a hard 1.0, and **temperature scaling** (T decaying from 4
+          to 1 over 500 steps) is applied to the student logits before BCE so
+          the student learns the teacher's confidence calibration.
+        * **Adaptive class weight** automatically shifts emphasis from
+          localisation (early) to classification (later) based on update count.
         """
         T = teacher_boxes_in.shape[0]
         A = pred_boxes.shape[0]
@@ -456,6 +482,17 @@ class TorchStudent:
                         taken.add(a)
                         break
 
+        # Adaptive class weight: phase-1 → localisation, phase-3 → classification.
+        class_weight = _CLASS_LOSS_PHASES[-1][1]
+        for threshold, weight in _CLASS_LOSS_PHASES:
+            if self.updates < threshold:
+                class_weight = weight
+                break
+
+        # Temperature schedule: linear decay T_INIT → 1.0 over T_STEPS updates.
+        t_ratio = min(1.0, self.updates / max(1, _TEMPERATURE_STEPS))
+        temperature = max(1.0, _TEMPERATURE_INIT - t_ratio * (_TEMPERATURE_INIT - 1.0))
+
         diag = float(np.hypot(self.input_width, self.input_height)) + 1e-6
         box_terms = []
         class_terms = []
@@ -465,30 +502,45 @@ class TorchStudent:
                 continue
             tb = teacher_boxes_in[t]
             pb = pred_boxes[a]
-            # Box regression: normalised L1 + (1 - IoU) of this pair.
+
+            # ── Box regression: normalised L1 + (1 − GIoU) ──────────────────
             l1 = torch.abs(pb - tb).mean() / diag
+
+            # GIoU = IoU − |enclosing \ union| / |enclosing|
             inter_lt = torch.max(pb[:2], tb[:2])
             inter_rb = torch.min(pb[2:], tb[2:])
             inter_wh = (inter_rb - inter_lt).clamp(min=0)
             inter = inter_wh[0] * inter_wh[1]
             area_p = (pb[2] - pb[0]).clamp(min=0) * (pb[3] - pb[1]).clamp(min=0)
             area_t = (tb[2] - tb[0]).clamp(min=0) * (tb[3] - tb[1]).clamp(min=0)
-            iou_pair = inter / (area_p + area_t - inter + 1e-9)
-            box_terms.append(l1 + (1.0 - iou_pair))
+            union = area_p + area_t - inter + 1e-9
+            iou_pair = inter / union
+            enc_lt = torch.min(pb[:2], tb[:2])
+            enc_rb = torch.max(pb[2:], tb[2:])
+            enc_wh = (enc_rb - enc_lt).clamp(min=0)
+            enc_area = enc_wh[0] * enc_wh[1] + 1e-9
+            giou = iou_pair - (enc_area - union) / enc_area
+            box_terms.append(l1 + (1.0 - giou))
 
-            # Classification: push the matched anchor toward the teacher class.
+            # ── Classification: soft targets + temperature scaling ────────────
             target = torch.zeros(self.num_classes)
             cls_id = int(teacher_classes[t]) if teacher_classes is not None else 0
             if 0 <= cls_id < self.num_classes:
-                target[cls_id] = 1.0
-            prob = pred_scores[a].clamp(1e-6, 1.0 - 1e-6)
+                # Use teacher confidence as soft label when available.
+                soft_val = float(teacher_scores[t]) if (
+                    teacher_scores is not None and t < len(teacher_scores)
+                ) else 1.0
+                target[cls_id] = float(np.clip(soft_val, 0.0, 1.0))
+
+            # Apply temperature to student logits before BCE (temp > 1 → softer).
+            prob = (pred_scores[a] / temperature).sigmoid().clamp(1e-6, 1.0 - 1e-6)
             class_terms.append(F.binary_cross_entropy(prob, target))
 
         if not box_terms:
             return None
         loss = torch.stack(box_terms).mean()
         if class_terms:
-            loss = loss + _CLASS_LOSS_WEIGHT * torch.stack(class_terms).mean()
+            loss = loss + class_weight * torch.stack(class_terms).mean()
         return loss
 
     def train_step(
@@ -498,12 +550,16 @@ class TorchStudent:
         teacher_classes: List,
         orig_w: int,
         orig_h: int,
+        teacher_scores: Optional[List] = None,
     ) -> Optional[float]:
         """One real backprop step through the network. Returns the loss value.
 
         ``blob`` is the preprocessed NCHW input. ``teacher_boxes_orig`` are
         ``[x1,y1,x2,y2]`` boxes in *original image* pixels; they are scaled into
         the network input space to match the decoded student boxes.
+
+        ``teacher_scores`` (optional) are the teacher confidence scores for each
+        box, used as soft labels in the classification loss.
         """
         if len(teacher_boxes_orig) == 0:
             return None
@@ -516,13 +572,17 @@ class TorchStudent:
             np.asarray(teacher_boxes_orig, dtype=np.float32)
         ).reshape(-1, 4) * scale
 
-        loss = self._build_loss(pred_boxes, pred_scores, teacher_in, teacher_classes)
+        loss = self._build_loss(pred_boxes, pred_scores, teacher_in, teacher_classes,
+                                teacher_scores=teacher_scores)
         if loss is None:
             return None
 
         self.optimizer.zero_grad()
         loss.backward()
+        # Gradient clipping prevents divergence on frames with large loss spikes.
+        torch.nn.utils.clip_grad_norm_(self._trainable_params, max_norm=1.0)
         self.optimizer.step()
+        self.scheduler.step()
         self.updates += 1
         return float(loss.detach().cpu().item())
 
@@ -559,8 +619,11 @@ class TorchStudent:
     def reset(self):
         """Restore the original (pre-training) weights and optimizer state."""
         self.module.load_state_dict(self._initial_state)
-        self.optimizer = torch.optim.SGD(
-            self._trainable_params, lr=self.learning_rate, momentum=0.9
+        self.optimizer = torch.optim.AdamW(
+            self._trainable_params, lr=self.learning_rate, weight_decay=1e-4
+        )
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            self.optimizer, T_0=200
         )
         self.updates = 0
 

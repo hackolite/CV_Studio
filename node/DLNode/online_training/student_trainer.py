@@ -17,6 +17,7 @@ The primary workflow:
 5. Export updated ONNX model on demand
 """
 
+import collections
 import copy
 import logging
 import os
@@ -86,6 +87,8 @@ class StudentTrainer:
         score_threshold: float = 0.3,
         providers: Optional[List[str]] = None,
         train_scope: str = "head",
+        min_teacher_confidence: float = 0.35,
+        replay_buffer_size: int = 32,
     ):
         if providers is None:
             providers = ["CPUExecutionProvider"]
@@ -99,6 +102,8 @@ class StudentTrainer:
         self.score_threshold = score_threshold
         self.providers = providers
         self.train_scope = train_scope
+        self.min_teacher_confidence = float(min_teacher_confidence)
+        self.replay_buffer_size = int(replay_buffer_size)
 
         # Statistics
         self.frames_processed = 0
@@ -116,6 +121,13 @@ class StudentTrainer:
         self._last_loss = None
         self.last_train_loss = None
         self._nanodet_cls_pre_activated = None
+
+        # Replay buffer for online distillation: stores (blob, teacher_boxes,
+        # teacher_classes, teacher_scores) tuples from high-quality frames so
+        # the student can be trained on past observations to prevent forgetting.
+        self._replay_buffer: collections.deque = collections.deque(
+            maxlen=self.replay_buffer_size
+        )
 
         # Real, gradient-trained correction head for the requested loss. This is
         # what lets the student's *output* actually change (and improve) frame to
@@ -411,6 +423,7 @@ class StudentTrainer:
                 # propagated through the student backbone/heads via PyTorch.
                 training_performed = self._torch_train_step(
                     frame, teacher_bboxes, teacher_class_ids, frame_w, frame_h,
+                    teacher_scores=teacher_scores,
                 )
             else:
                 # Fallback: sub-gradient descent on the affine correction head.
@@ -429,16 +442,36 @@ class StudentTrainer:
         }
 
     def _torch_train_step(self, frame, teacher_bboxes, teacher_class_ids,
-                          frame_w, frame_h):
+                          frame_w, frame_h, teacher_scores=None):
         """One real backprop step through the PyTorch student network.
 
-        Returns True when an optimizer step updated the network weights.
+        Applies a teacher-confidence quality filter before backpropagating:
+        frames where the teacher is uncertain (mean confidence < threshold) are
+        skipped so noisy pseudo-labels do not pollute the gradient.
+
+        After training on the current frame, up to 2 additional steps are
+        performed on randomly sampled frames from the replay buffer to prevent
+        catastrophic forgetting when the scene changes.
+
+        Returns True when at least one optimizer step updated the network weights.
         """
+        # Teacher quality filter: skip low-confidence frames.
+        if teacher_scores is not None and len(teacher_scores) > 0:
+            mean_conf = float(np.mean(teacher_scores))
+            if mean_conf < self.min_teacher_confidence:
+                logger.debug(
+                    "[StudentTrainer] Skipping torch train step — teacher mean "
+                    "confidence %.3f < threshold %.3f.", mean_conf,
+                    self.min_teacher_confidence,
+                )
+                return False
+
         try:
             blob, _ratio = self._student_model._preprocess(frame)
             loss_val = self._torch.train_step(
                 blob, list(teacher_bboxes), list(teacher_class_ids),
                 frame_w, frame_h,
+                teacher_scores=list(teacher_scores) if teacher_scores is not None else None,
             )
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug(f"[StudentTrainer] torch train step failed: {exc}")
@@ -446,6 +479,27 @@ class StudentTrainer:
         if loss_val is None:
             return False
         self.last_train_loss = float(loss_val)
+
+        # Add this frame to the replay buffer (after a successful train step).
+        self._replay_buffer.append((blob, list(teacher_bboxes), list(teacher_class_ids),
+                                    list(teacher_scores) if teacher_scores is not None else []))
+
+        # Replay up to 2 past frames to prevent catastrophic forgetting.
+        if len(self._replay_buffer) > 1:
+            import random
+            n_replay = min(2, len(self._replay_buffer) - 1)
+            replay_sample = random.sample(
+                [x for x in self._replay_buffer][:-1], n_replay
+            )
+            for r_blob, r_boxes, r_classes, r_scores in replay_sample:
+                try:
+                    self._torch.train_step(
+                        r_blob, r_boxes, r_classes, frame_w, frame_h,
+                        teacher_scores=r_scores if r_scores else None,
+                    )
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.debug(f"[StudentTrainer] replay step failed: {exc}")
+
         return True
 
     @staticmethod
@@ -504,6 +558,8 @@ class StudentTrainer:
         self.last_train_loss = None
         # Restore the correction head to the identity (no learned correction).
         self._adapter.reset()
+        # Clear the replay buffer so stale frames don't influence the fresh student.
+        self._replay_buffer.clear()
         # Restore the trained PyTorch network weights to their original state.
         if self._torch is not None:
             try:
