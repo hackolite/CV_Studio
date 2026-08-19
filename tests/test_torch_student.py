@@ -47,7 +47,8 @@ def _make_student(num_classes=3, input_size=64, anchors=12):
     ts.train_scope = "all"
     ts.module = TinyDetector(num_classes + 4, anchors, num_classes)
     ts._trainable_params = list(ts.module.parameters())
-    ts.optimizer = torch.optim.SGD(ts._trainable_params, lr=0.5, momentum=0.9)
+    ts.optimizer = torch.optim.AdamW(ts._trainable_params, lr=0.5, weight_decay=1e-4)
+    ts.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(ts.optimizer, T_0=200)
     ts._initial_state = {k: v.detach().clone()
                          for k, v in ts.module.state_dict().items()}
     ts.updates = 0
@@ -155,7 +156,8 @@ def _make_nanodet_student(num_classes=3, input_size=64, reg_max=7, seed=0):
     ts._nanodet_grid_cache = {}
     ts.module = TinyNano()
     ts._trainable_params = list(ts.module.parameters())
-    ts.optimizer = torch.optim.SGD(ts._trainable_params, lr=0.5, momentum=0.9)
+    ts.optimizer = torch.optim.AdamW(ts._trainable_params, lr=0.5, weight_decay=1e-4)
+    ts.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(ts.optimizer, T_0=200)
     ts._initial_state = {k: v.detach().clone()
                          for k, v in ts.module.state_dict().items()}
     ts.updates = 0
