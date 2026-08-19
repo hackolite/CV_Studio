@@ -39,22 +39,42 @@ class BoxAffineAdapter:
         SGD step size (applied in normalised [0, 1] coordinate space).
     min_scale, max_scale : float
         Bounds keeping the scale factors positive (so box ordering is kept).
+    max_translation : float
+        Maximum absolute value for translation parameters ``tx`` and ``ty``
+        (in normalised [0, 1] space). Prevents unbounded box drift when the
+        student and teacher detections are far apart.
+    l2_reg : float
+        L2 regularisation coefficient pulling the parameters back toward the
+        identity ``(sx=1, sy=1, tx=0, ty=0)`` every step. Keeps the
+        correction head from diverging on frames with poor matching.
+    divergence_factor : float
+        If the loss exceeds ``divergence_factor × initial_loss``, the
+        parameters are automatically reset to the identity. This acts as a
+        safety net when the optimiser overshoots.
     """
 
     def __init__(self, learning_rate: float = 0.05,
-                 min_scale: float = 0.1, max_scale: float = 10.0):
+                 min_scale: float = 0.1, max_scale: float = 10.0,
+                 max_translation: float = 1.0,
+                 l2_reg: float = 1e-3,
+                 divergence_factor: float = 3.0):
         self.learning_rate = float(learning_rate)
         self.min_scale = float(min_scale)
         self.max_scale = float(max_scale)
+        self.max_translation = float(max_translation)
+        self.l2_reg = float(l2_reg)
+        self.divergence_factor = float(divergence_factor)
         # params = [sx, sy, tx, ty]; identity transform.
         self.params = np.array([1.0, 1.0, 0.0, 0.0], dtype=np.float64)
         self.updates = 0
+        self._initial_loss: float | None = None
 
     # ─── helpers ────────────────────────────────────────────────────────────
     def reset(self):
         """Restore the identity transform (no correction)."""
         self.params = np.array([1.0, 1.0, 0.0, 0.0], dtype=np.float64)
         self.updates = 0
+        self._initial_loss = None
 
     @property
     def is_identity(self) -> bool:
@@ -149,6 +169,18 @@ class BoxAffineAdapter:
         grad_sy = float(np.sum(gy * sy_in)) / n_terms
         grad_ty = float(np.sum(gy)) / n_terms
 
+        # ── Divergence guard: reset to identity if loss keeps growing ────────
+        if self._initial_loss is None:
+            self._initial_loss = loss_before
+        elif (
+            self._initial_loss > 0
+            and loss_before > self.divergence_factor * self._initial_loss
+        ):
+            self.params = np.array([1.0, 1.0, 0.0, 0.0], dtype=np.float64)
+            self._initial_loss = None
+            self.updates += 1
+            return True, loss_before
+
         # Compose the incremental step into the running parameters (sx, sy, tx,
         # ty): new = old * ds + dt   (ds = 1 - lr*grad_s, dt = -lr*grad_t)
         ds_x = 1.0 - lr * grad_sx
@@ -157,9 +189,17 @@ class BoxAffineAdapter:
         dt_y = -lr * grad_ty
 
         sx, sy, tx, ty = self.params
-        self.params[0] = np.clip(sx * ds_x, self.min_scale, self.max_scale)
-        self.params[1] = np.clip(sy * ds_y, self.min_scale, self.max_scale)
-        self.params[2] = tx * ds_x + dt_x
-        self.params[3] = ty * ds_y + dt_y
+
+        # ── L2 regularisation: pull toward identity each step ─────────────
+        reg = self.l2_reg
+        new_sx = np.clip(sx * ds_x - reg * (sx - 1.0), self.min_scale, self.max_scale)
+        new_sy = np.clip(sy * ds_y - reg * (sy - 1.0), self.min_scale, self.max_scale)
+        new_tx = np.clip(tx * ds_x + dt_x - reg * tx, -self.max_translation, self.max_translation)
+        new_ty = np.clip(ty * ds_y + dt_y - reg * ty, -self.max_translation, self.max_translation)
+
+        self.params[0] = new_sx
+        self.params[1] = new_sy
+        self.params[2] = new_tx
+        self.params[3] = new_ty
         self.updates += 1
         return True, loss_before
