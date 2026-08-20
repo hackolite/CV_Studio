@@ -1117,7 +1117,7 @@ class Node(Node):
 
                 # Draw score + loss overlay
                 loss_val = distillation.get('loss', 0.0)
-                map_score = stats.get('map_score', 0.0)
+                map_score = step_stats.get('map_score', 0.0)
                 score_text = f"Score: {distillation['score']:.2f} | Loss: {loss_val:.3f} | mAP@0.5: {map_score:.2f}"
                 cv2.putText(
                     output_frame, score_text, (10, 25),
