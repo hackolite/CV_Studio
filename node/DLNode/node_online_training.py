@@ -75,6 +75,10 @@ class FactoryNode:
         node.tag_node_input_json_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input02'
         node.tag_node_input_json_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input02Value'
 
+        # Second teacher JSON input (optional — enables multi-teacher ensemble).
+        node.tag_node_input_json2_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input03'
+        node.tag_node_input_json2_value_name = node.tag_node_name + ':' + node.TYPE_JSON + ':Input03Value'
+
         # --- Output tags ---
         node.tag_node_output_image_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
         node.tag_node_output_image = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
@@ -187,6 +191,16 @@ class FactoryNode:
                 dpg.add_text(
                     tag=node.tag_node_input_json_value_name,
                     default_value='Teacher JSON',
+                )
+
+            # Input: second teacher JSON (optional — multi-teacher ensemble)
+            with dpg.node_attribute(
+                tag=node.tag_node_input_json2_name,
+                attribute_type=dpg.mvNode_Attr_Input,
+            ):
+                dpg.add_text(
+                    tag=node.tag_node_input_json2_value_name,
+                    default_value='Teacher 2 JSON (optional)',
                 )
 
             # Output: Image (student annotated)
@@ -385,6 +399,36 @@ class FactoryNode:
                     width=small_window_w,
                     callback=_on_reset,
                 )
+
+            # ── Download catalog ────────────────────────────────────────────
+            # Shows pre-validated student models.  When a model has a populated
+            # ``download_url`` the "Download" button fetches and registers it;
+            # otherwise a log message guides the user to export the model.
+            catalog_combo_tag = node.tag_node_name + ':CatalogCombo'
+            download_btn_tag = node.tag_node_name + ':DownloadBtn'
+            catalog_names = [m['name'] for m in student_models_registry.DOWNLOADABLE_MODELS]
+
+            def _on_download_catalog_model(sender, app_data, user_data):
+                node._download_catalog_model(catalog_combo_tag)
+
+            with dpg.node_attribute(
+                tag=node.tag_node_name + ':CatalogAttr',
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    catalog_names,
+                    default_value=catalog_names[0] if catalog_names else '',
+                    width=small_window_w - 100,
+                    tag=catalog_combo_tag,
+                )
+                dpg.add_same_line()
+                download_btn = dpg.add_button(
+                    label=u"Download",
+                    tag=download_btn_tag,
+                    width=90,
+                    callback=_on_download_catalog_model,
+                )
+                dpg.bind_item_theme(download_btn, green_button_theme)
 
         return node
 
@@ -677,6 +721,125 @@ class Node(Node):
             self._student_trainer.reset()
             logger.info("[OnlineTraining] Student model reset.")
 
+    @staticmethod
+    def _merge_teacher_predictions(teacher_jsons: list) -> dict:
+        """Merge predictions from multiple teachers using per-class NMS.
+
+        Boxes from all teachers are concatenated then filtered with
+        class-aware NMS (IoU threshold 0.5, score threshold 0.0) so
+        duplicate detections from overlapping teachers are suppressed.
+        A non-overlapping union of confident predictions is returned —
+        the student then learns from this richer, more reliable signal.
+        """
+        all_bboxes: list = []
+        all_scores: list = []
+        all_class_ids: list = []
+        score_th = 0.0
+
+        for tj in teacher_jsons:
+            if not tj:
+                continue
+            bboxes = tj.get('bboxes', [])
+            scores = tj.get('scores', [])
+            class_ids = tj.get('class_ids', [])
+            th = tj.get('score_th', 0.0)
+            score_th = max(score_th, th)
+            for b, s, c in zip(bboxes, scores, class_ids):
+                all_bboxes.append(b)
+                all_scores.append(float(s))
+                all_class_ids.append(int(c))
+
+        if not all_bboxes:
+            return {'bboxes': [], 'scores': [], 'class_ids': [], 'score_th': score_th}
+
+        # Per-class NMS using cv2.dnn.NMSBoxes.
+        merged_bboxes, merged_scores, merged_cls = [], [], []
+        classes_present = set(all_class_ids)
+        for cls in classes_present:
+            idx = [i for i, c in enumerate(all_class_ids) if c == cls]
+            boxes_cls = [all_bboxes[i] for i in idx]
+            scores_cls = [all_scores[i] for i in idx]
+            # cv2 NMSBoxes expects [x, y, w, h] format.
+            rects = [
+                [int(b[0]), int(b[1]), max(1, int(b[2] - b[0])), max(1, int(b[3] - b[1]))]
+                for b in boxes_cls
+            ]
+            try:
+                keep = cv2.dnn.NMSBoxes(rects, scores_cls, score_threshold=0.0,
+                                        nms_threshold=0.5)
+                keep_idx = keep.flatten().tolist() if len(keep) > 0 else []
+            except Exception:
+                keep_idx = list(range(len(rects)))
+            for ki in keep_idx:
+                merged_bboxes.append(boxes_cls[ki])
+                merged_scores.append(scores_cls[ki])
+                merged_cls.append(cls)
+
+        return {
+            'bboxes': merged_bboxes,
+            'scores': merged_scores,
+            'class_ids': merged_cls,
+            'score_th': score_th,
+        }
+
+    def _download_catalog_model(self, catalog_combo_tag: str) -> None:
+        """Download the model selected in the catalog combo and register it."""
+        try:
+            selected = dpg_get_value(catalog_combo_tag)
+        except Exception:
+            selected = ''
+        if not selected:
+            logger.warning("[OnlineTraining] No catalog model selected.")
+            return
+
+        meta = next(
+            (m for m in student_models_registry.DOWNLOADABLE_MODELS
+             if m['name'] == selected),
+            None,
+        )
+        if meta is None:
+            logger.warning("[OnlineTraining] Catalog model '%s' not found.", selected)
+            return
+
+        url = meta.get('download_url', '')
+        if not url:
+            logger.warning(
+                "[OnlineTraining] No download URL for '%s'. "
+                "Export the model manually (see description: %s).",
+                selected, meta.get('description', ''),
+            )
+            return
+
+        os.makedirs(_STUDENTS_DIR, exist_ok=True)
+        dest_path = os.path.join(_STUDENTS_DIR, selected + '.onnx')
+        logger.info("[OnlineTraining] Downloading '%s' → %s …", selected, dest_path)
+
+        ok = student_models_registry.download_model(url, dest_path)
+        if not ok:
+            logger.error("[OnlineTraining] Download of '%s' failed.", selected)
+            return
+
+        entry = {**meta, 'path': dest_path}
+        if 'class_names' not in entry:
+            entry['class_names'] = {
+                str(i): f"class_{i}" for i in range(entry.get('num_classes', 0))
+            }
+        entry['class_names'] = {
+            str(k): v for k, v in entry['class_names'].items()
+        }
+        try:
+            student_models_registry.save_entry(entry)
+            Node._student_models[selected] = entry
+            combo_tag = self.tag_node_name + ':ModelCombo'
+            current_items = dpg.get_item_configuration(combo_tag).get('items', [])
+            if selected not in current_items:
+                current_items = list(current_items) + [selected]
+            dpg.configure_item(combo_tag, items=current_items, default_value=selected)
+            self._load_student_from_entry(entry)
+            logger.info("[OnlineTraining] '%s' downloaded and loaded successfully.", selected)
+        except Exception as exc:
+            logger.error("[OnlineTraining] Post-download registration failed: %s", exc)
+
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict):
         data = {}
         try:
@@ -702,45 +865,70 @@ class Node(Node):
                         image_timestamp = node_audio_dict.get_timestamp(image_source_node)
                     break
 
-            # --- Get teacher JSON from connected JSON input ---
-            # The student receives the image before the teacher result is ready,
-            # so we poll briefly to allow the teacher result to arrive.
-            teacher_json = {}
-            teacher_source_node = None
+            # --- Get teacher JSON from connected JSON inputs ---
+            # Support both single-teacher (one JSON connection) and multi-teacher
+            # (two or more JSON connections) configurations.  The primary teacher
+            # (first JSON source) drives the timestamp-alignment wait; secondary
+            # teachers are collected without additional waiting.
+            teacher_source_nodes: list = []
             for connection_info in connection_list:
                 connection_type = connection_info[0].split(':')[2]
                 if connection_type == self.TYPE_JSON:
-                    teacher_source_node = ':'.join(connection_info[0].split(':')[:2])
-                    break
+                    src = ':'.join(connection_info[0].split(':')[:2])
+                    if src not in teacher_source_nodes:
+                        teacher_source_nodes.append(src)
 
-            if teacher_source_node is not None:
+            teacher_jsons: list = []
+            primary_teacher_source = teacher_source_nodes[0] if teacher_source_nodes else None
+
+            if primary_teacher_source is not None:
                 # Wait up to _MAX_TEACHER_WAIT for teacher result matching image timestamp
                 _MAX_TEACHER_WAIT = 0.15  # seconds (150ms max wait)
                 _POLL_INTERVAL = 0.01  # 10ms polling interval
                 _TIMESTAMP_MATCH_TOLERANCE = 0.05  # 50ms — teacher/image timestamps considered matching
                 waited = 0.0
 
-                teacher_json = node_result_dict.get(teacher_source_node, {})
-                teacher_timestamp = teacher_json.get('timestamp', None) if teacher_json else None
+                primary_json = node_result_dict.get(primary_teacher_source, {})
+                primary_ts = primary_json.get('timestamp', None) if primary_json else None
 
                 # If teacher result is stale or absent, wait briefly for a fresh one
                 if image_timestamp is not None and frame is not None:
                     while waited < _MAX_TEACHER_WAIT:
-                        teacher_json = node_result_dict.get(teacher_source_node, {})
-                        teacher_timestamp = teacher_json.get('timestamp', None) if teacher_json else None
-                        if teacher_timestamp is not None and abs(teacher_timestamp - image_timestamp) < _TIMESTAMP_MATCH_TOLERANCE:
-                            # Teacher result matches our image — proceed
+                        primary_json = node_result_dict.get(primary_teacher_source, {})
+                        primary_ts = primary_json.get('timestamp', None) if primary_json else None
+                        if primary_ts is not None and abs(primary_ts - image_timestamp) < _TIMESTAMP_MATCH_TOLERANCE:
                             break
                         time.sleep(_POLL_INTERVAL)
                         waited += _POLL_INTERVAL
                     else:
-                        # Timed out — use whatever teacher data is available
-                        teacher_json = node_result_dict.get(teacher_source_node, {})
+                        primary_json = node_result_dict.get(primary_teacher_source, {})
                         if waited > 0:
                             logger.debug(
                                 f"[OnlineTraining] Waited {waited:.3f}s for teacher result "
-                                f"(image_ts={image_timestamp}, teacher_ts={teacher_timestamp})"
+                                f"(image_ts={image_timestamp}, teacher_ts={primary_ts})"
                             )
+
+                teacher_jsons.append(primary_json)
+
+                # Collect secondary teachers without waiting.
+                for src in teacher_source_nodes[1:]:
+                    secondary_json = node_result_dict.get(src, {})
+                    teacher_jsons.append(secondary_json)
+
+            # Merge all teacher predictions (NMS for multi-teacher, pass-through for one).
+            if len(teacher_jsons) > 1:
+                teacher_json = Node._merge_teacher_predictions(teacher_jsons)
+                # Carry the primary teacher's timestamp for staleness checks.
+                primary_ts_val = teacher_jsons[0].get('timestamp', None) if teacher_jsons[0] else None
+                if primary_ts_val is not None:
+                    teacher_json['timestamp'] = primary_ts_val
+                logger.debug(
+                    "[OnlineTraining] Merged %d teachers → %d boxes.",
+                    len(teacher_jsons),
+                    len(teacher_json.get('bboxes', [])),
+                )
+            else:
+                teacher_json = teacher_jsons[0] if teacher_jsons else {}
 
             # --- Get UI parameters ---
             score_th_tag = self.tag_node_name + ':ThresholdSlider'
@@ -892,6 +1080,10 @@ class Node(Node):
                     'network_updates': step_stats.get('network_updates', 0),
                     'adapter_updates': step_stats.get('adapter_updates', 0),
                     'train_loss': step_stats.get('train_loss') or 0.0,
+                    # mAP@0.5 on the replay buffer (recomputed every N frames).
+                    'map_score': float(step_stats.get('map_score', 0.0)),
+                    'replay_buffer_size': int(step_stats.get('replay_buffer_size', 0)),
+                    'num_teachers': len(teacher_jsons),
                 }
 
                 # Draw student predictions on frame
@@ -925,7 +1117,8 @@ class Node(Node):
 
                 # Draw score + loss overlay
                 loss_val = distillation.get('loss', 0.0)
-                score_text = f"Score: {distillation['score']:.2f} | Loss: {loss_val:.3f}"
+                map_score = stats.get('map_score', 0.0)
+                score_text = f"Score: {distillation['score']:.2f} | Loss: {loss_val:.3f} | mAP@0.5: {map_score:.2f}"
                 cv2.putText(
                     output_frame, score_text, (10, 25),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2
@@ -936,6 +1129,7 @@ class Node(Node):
                 best_loss_text = f"{best_loss:.3f}" if best_loss != float('inf') else "--"
                 improvement_pct = stats.get('improvement_pct', 0.0)
                 mode_text = stats.get('backprop_mode', 'affine-head')
+                map_score = stats.get('map_score', 0.0)
                 avg_text = (
                     f"Best: {stats['best_score']:.2f} | BestLoss: {best_loss_text} "
                     f"| Improv: {improvement_pct:.1f}% | {mode_text}"
@@ -952,7 +1146,8 @@ class Node(Node):
                         f"Score: {distillation['score']:.2f} | "
                         f"Loss: {loss_val:.3f} | "
                         f"BestLoss: {best_loss_text} | "
-                        f"Improv: {improvement_pct:.1f}%"
+                        f"Improv: {improvement_pct:.1f}% | "
+                        f"mAP: {map_score:.2f}"
                     )
                     training_status = "active" if training_active else "paused"
                     if not self._student_trainer.is_training_available:
@@ -967,7 +1162,8 @@ class Node(Node):
                         stats_display_tag,
                         f"Frames: {stats['frames_processed']} | "
                         f"Training: {training_status} ({mode_text}) | "
-                        f"{updates_text}"
+                        f"{updates_text} | "
+                        f"mAP@0.5: {map_score:.2f}"
                     )
                 except Exception:
                     pass

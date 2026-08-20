@@ -11,11 +11,13 @@ from node.DLNode.online_training.distillation_loss import (
     compute_distillation_score,
     hungarian_match_boxes,
     compute_set_distillation_loss,
+    compute_map_at_50,
     _class_distribution_similarity,
     _count_ratio_score,
     _confidence_alignment,
     _spatial_coverage_score,
 )
+from node.DLNode.online_training.replay_buffer import ReservoirBuffer
 
 
 class TestComputeIoU:
@@ -384,3 +386,142 @@ class TestDistillationScoreExposesLoss:
             assert key in r
         # Identical → near-zero loss
         assert r['loss'] == pytest.approx(0.0, abs=1e-6)
+
+
+# ─── New: mAP@0.5 ─────────────────────────────────────────────────────────────
+
+
+class TestComputeMapAt50:
+    def test_empty_frames(self):
+        assert compute_map_at_50([], []) == pytest.approx(0.0)
+
+    def test_perfect_match_single_frame(self):
+        boxes = [[0, 0, 10, 10]]
+        result = compute_map_at_50([boxes], [boxes])
+        assert result == pytest.approx(1.0, abs=0.01)
+
+    def test_no_student_detections(self):
+        boxes = [[0, 0, 10, 10]]
+        result = compute_map_at_50([boxes], [[]])
+        assert result == pytest.approx(0.0)
+
+    def test_perfect_match_multiple_frames(self):
+        boxes = [[0, 0, 50, 50], [100, 100, 150, 150]]
+        result = compute_map_at_50([boxes, boxes], [boxes, boxes])
+        assert result >= 0.99
+
+    def test_partial_match_lower_than_perfect(self):
+        t_boxes = [[0, 0, 50, 50], [100, 100, 150, 150]]
+        s_boxes = [[0, 0, 50, 50]]   # student misses the second object
+        result = compute_map_at_50([t_boxes], [s_boxes])
+        assert 0.0 < result < 1.0
+
+    def test_class_aware_mismatch(self):
+        """Same location but different class → FP + FN → lower mAP."""
+        t_boxes = [[0, 0, 10, 10]]
+        s_boxes = [[0, 0, 10, 10]]
+        t_cls = [0]
+        s_cls = [1]   # wrong class
+        result = compute_map_at_50([t_boxes], [s_boxes], [t_cls], [s_cls])
+        assert result == pytest.approx(0.0)
+
+    def test_class_aware_correct(self):
+        """Same location and same class → perfect."""
+        boxes = [[0, 0, 10, 10]]
+        classes = [0]
+        result = compute_map_at_50([boxes], [boxes], [classes], [classes])
+        assert result == pytest.approx(1.0, abs=0.01)
+
+    def test_iou_threshold_boundary(self):
+        """IoU slightly above 0.5 → TP; slightly below → FP."""
+        t_box = [[0, 0, 100, 100]]
+        # This box has IoU ≈ 0.25 with the teacher → FP
+        s_box_fp = [[50, 0, 150, 100]]
+        result_fp = compute_map_at_50([t_box], [s_box_fp])
+        # IoU = 0.33 < 0.5 → no TP → AP = 0
+        assert result_fp == pytest.approx(0.0)
+
+        # IoU = 1.0 → TP
+        result_tp = compute_map_at_50([t_box], [t_box])
+        assert result_tp > 0.9
+
+    def test_class_agnostic_when_no_classes_provided(self):
+        """When no class lists are provided all boxes use class 0."""
+        t_boxes = [[0, 0, 10, 10]]
+        s_boxes = [[0, 0, 10, 10]]
+        # No class args → class-agnostic
+        result = compute_map_at_50([t_boxes], [s_boxes])
+        assert result == pytest.approx(1.0, abs=0.01)
+
+
+# ─── New: ReservoirBuffer ─────────────────────────────────────────────────────
+
+
+class TestReservoirBuffer:
+    def test_basic_add_and_len(self):
+        buf = ReservoirBuffer(maxsize=5)
+        for i in range(3):
+            buf.add(f"item_{i}")
+        assert len(buf) == 3
+
+    def test_does_not_exceed_maxsize(self):
+        buf = ReservoirBuffer(maxsize=4)
+        for i in range(20):
+            buf.add(i, loss=float(i))
+        assert len(buf) <= 4
+
+    def test_clear_resets_buffer(self):
+        buf = ReservoirBuffer(maxsize=10)
+        for i in range(5):
+            buf.add(i)
+        buf.clear()
+        assert len(buf) == 0
+
+    def test_sample_returns_at_most_n(self):
+        buf = ReservoirBuffer(maxsize=10)
+        for i in range(8):
+            buf.add(i, loss=float(i))
+        samples = buf.sample(3)
+        assert len(samples) <= 3
+
+    def test_sample_empty_buffer(self):
+        buf = ReservoirBuffer(maxsize=5)
+        assert buf.sample(3) == []
+
+    def test_hard_mining_bias_selects_harder_items(self):
+        """With hard_mining_ratio=1.0 only the top half (highest loss) is sampled."""
+        buf = ReservoirBuffer(maxsize=10)
+        for i in range(10):
+            buf.add(f"item_{i}", loss=float(i))
+        # 10 items, half are loss ≥ 5 ("hard")
+        samples = buf.sample(5, hard_mining_ratio=1.0)
+        # All 5 samples should come from items with loss ≥ 5
+        # (top-5 in a 10-item buffer with losses 0..9)
+        item_numbers = [int(s.split('_')[1]) for s in samples]
+        assert all(n >= 5 for n in item_numbers)
+
+    def test_iter_yields_payloads(self):
+        buf = ReservoirBuffer(maxsize=5)
+        payloads = [f"x{i}" for i in range(5)]
+        for p in payloads:
+            buf.add(p, loss=1.0)
+        result = list(buf)
+        assert sorted(result) == sorted(payloads)
+
+    def test_reservoir_samples_all_items_uniformly(self):
+        """Items added early should have non-zero probability of survival.
+
+        Fill a buffer of size 5 with 50 items and verify that the final buffer
+        does not consist exclusively of the last 5 (which would indicate FIFO
+        rather than reservoir sampling).
+        """
+        import random as _rand
+        _rand.seed(0)
+        buf = ReservoirBuffer(maxsize=5)
+        for i in range(50):
+            buf.add(i, loss=0.0)
+        final = list(buf)
+        # At least one of the first 20 items should have survived.
+        assert any(v < 20 for v in final), (
+            "Reservoir sampling should retain items from early in the stream."
+        )

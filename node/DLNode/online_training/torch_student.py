@@ -36,6 +36,77 @@ logger = logging.getLogger(__name__)
 # matches the network output is selected.
 _NANODET_STRIDE_SETS: Tuple[Tuple[int, ...], ...] = ((8, 16, 32, 64), (8, 16, 32))
 
+# ---------------------------------------------------------------------------
+# Catalog of student models validated to be compatible with onnx2torch ≥ 0.0.30
+# and the differentiable decode implemented in this module.
+#
+# ``download_url`` is left empty until the models are hosted; populate it and
+# call ``student_models_registry.download_model(url, dest_path)`` to retrieve
+# the ONNX file and register it for the OnlineTraining node.
+# ---------------------------------------------------------------------------
+_COCO_80_CLASS_NAMES = [
+    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
+    "truck", "boat", "traffic light", "fire hydrant", "stop sign",
+    "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
+    "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag",
+    "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite",
+    "baseball bat", "baseball glove", "skateboard", "surfboard",
+    "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon",
+    "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot",
+    "hot dog", "pizza", "donut", "cake", "chair", "couch", "potted plant",
+    "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote",
+    "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
+    "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
+    "hair drier", "toothbrush",
+]
+_COCO_CLASS_NAMES_DICT = {str(i): n for i, n in enumerate(_COCO_80_CLASS_NAMES)}
+
+VALIDATED_STUDENT_MODELS = [
+    {
+        "name": "yolov8n-coco",
+        "description": (
+            "YOLOv8 nano — 80 COCO classes, 640×640. "
+            "Export: yolo export model=yolov8n.pt format=onnx opset=12"
+        ),
+        "output_format": "yolo11",   # YOLOv8 and YOLO11 share the same head format
+        "num_classes": 80,
+        "input_width": 640,
+        "input_height": 640,
+        "download_url": "",          # populate when hosted
+        "class_names": _COCO_CLASS_NAMES_DICT,
+    },
+    {
+        "name": "yolov8s-coco",
+        "description": (
+            "YOLOv8 small — 80 COCO classes, 640×640. "
+            "Export: yolo export model=yolov8s.pt format=onnx opset=12"
+        ),
+        "output_format": "yolo11",
+        "num_classes": 80,
+        "input_width": 640,
+        "input_height": 640,
+        "download_url": "",
+        "class_names": _COCO_CLASS_NAMES_DICT,
+    },
+    {
+        "name": "nanodet-plus-m_416",
+        "description": (
+            "NanoDet-Plus-m — 80 COCO classes, 416×416. "
+            "Download: github.com/RangiLyu/nanodet/releases"
+        ),
+        "output_format": "nanodet",
+        "num_classes": 80,
+        "input_width": 416,
+        "input_height": 416,
+        "download_url": "",
+        "class_names": _COCO_CLASS_NAMES_DICT,
+    },
+]
+"""Catalog of student models validated with onnx2torch (≥ 0.0.30) and the
+differentiable decode in this module.  Each entry follows the registry schema
+and can be registered directly via ``student_models_registry.save_entry``
+after the ONNX file is obtained."""
+
 
 def nanodet_anchor_grid(input_width: int, input_height: int,
                         num_anchors: Optional[int] = None):
@@ -139,6 +210,87 @@ def is_format_supported(output_format: str) -> bool:
     return str(output_format).lower() in SUPPORTED_FORMATS
 
 
+def probe_pytorch_compatibility(model_path: str, output_format: str) -> dict:
+    """Check whether a model can use the PyTorch backprop path.
+
+    Performs a step-by-step probe:
+
+    1. Verifies that PyTorch and ``onnx2torch`` are installed.
+    2. Verifies that the output format is supported by the differentiable
+       decode.
+    3. Attempts to convert the model with ``onnx2torch`` and counts trainable
+       parameters.
+
+    All steps are defensive — the function never raises.
+
+    Returns
+    -------
+    dict with keys:
+        compatible : bool
+            True iff real gradient backprop can be used for this model.
+        reason : str
+            Human-readable explanation (especially useful when ``compatible``
+            is False).
+        torch_available, onnx2torch_available, format_supported,
+        conversion_ok : bool — individual step outcomes.
+        num_trainable_params : int — trainable tensors found after conversion
+            (0 when conversion failed).
+    """
+    result: dict = {
+        'compatible': False,
+        'reason': '',
+        'torch_available': _TORCH_AVAILABLE,
+        'onnx2torch_available': _ONNX2TORCH_AVAILABLE,
+        'format_supported': is_format_supported(output_format),
+        'conversion_ok': False,
+        'num_trainable_params': 0,
+    }
+
+    if not _TORCH_AVAILABLE:
+        result['reason'] = (
+            "PyTorch not installed. Run `pip install torch` (≥2.0) to enable "
+            "real gradient backprop. Falling back to the affine correction head."
+        )
+        return result
+
+    if not _ONNX2TORCH_AVAILABLE:
+        result['reason'] = (
+            "onnx2torch not installed. Run `pip install onnx2torch` (≥0.0.30) "
+            "to convert ONNX models to trainable PyTorch modules. "
+            "Falling back to the affine correction head."
+        )
+        return result
+
+    if not is_format_supported(output_format):
+        result['reason'] = (
+            f"Output format '{output_format}' is not supported by the "
+            f"differentiable decode (supported: {', '.join(SUPPORTED_FORMATS)}). "
+            "Re-export the model in a supported format or choose a model from "
+            "VALIDATED_STUDENT_MODELS."
+        )
+        return result
+
+    try:
+        module = _convert_onnx_to_torch(model_path)
+        n_params = len(list(module.parameters()))
+        result['conversion_ok'] = True
+        result['compatible'] = True
+        result['num_trainable_params'] = n_params
+        result['reason'] = (
+            f"PyTorch backprop available — {n_params} trainable parameter "
+            f"tensor(s) found after onnx2torch conversion."
+        )
+    except Exception as exc:
+        result['reason'] = (
+            f"onnx2torch conversion failed: {type(exc).__name__}: {exc}. "
+            "Common fixes: (a) re-export with opset_version=11 or 12; "
+            "(b) use a model from VALIDATED_STUDENT_MODELS; "
+            "(c) the affine correction head remains active as a fallback."
+        )
+
+    return result
+
+
 def _convert_onnx_to_torch(model_path: str):
     """Convert an ONNX model to a ``torch.nn.Module`` with ``onnx2torch``.
 
@@ -187,6 +339,11 @@ _CLASS_LOSS_PHASES = ((100, 0.3), (500, 1.0), (float("inf"), 2.0))
 # T decays linearly from T_INIT to 1.0 over T_STEPS update steps.
 _TEMPERATURE_INIT = 4.0
 _TEMPERATURE_STEPS = 500
+
+# Weight for the negative-mining background BCE loss applied to unmatched
+# student anchors.  Kept deliberately small (0.2) so hard negatives regularise
+# the student without dominating the foreground distillation signal.
+_NEG_WEIGHT = 0.2
 
 
 class TorchStudent:
@@ -557,6 +714,30 @@ class TorchStudent:
         loss = torch.stack(box_terms).mean()
         if class_terms:
             loss = loss + class_weight * torch.stack(class_terms).mean()
+
+        # ── Negative mining ─────────────────────────────────────────────────
+        # FP student predictions (no teacher match) receive a background BCE
+        # loss.  We sample up to max(T*3, 9) hard negatives — those with the
+        # highest predicted class score — mirroring the hard-negative strategy
+        # in SSD/FCOS without exploding compute for large anchor sets (e.g.
+        # YOLO with ~8400 anchors).
+        unmatched_anchors = [a for a in range(A) if a not in taken]
+        if unmatched_anchors and _NEG_WEIGHT > 0.0:
+            max_neg = max(T * 3, 9)
+            sorted_neg = sorted(
+                unmatched_anchors,
+                key=lambda a: float(pred_scores[a].max().detach()),
+                reverse=True,
+            )
+            hard_negs = sorted_neg[:max_neg]
+            bg_target = torch.zeros(self.num_classes, device=self.device)
+            neg_terms = []
+            for a in hard_negs:
+                prob = (pred_scores[a] / temperature).sigmoid().clamp(1e-6, 1.0 - 1e-6)
+                neg_terms.append(F.binary_cross_entropy(prob, bg_target))
+            if neg_terms:
+                loss = loss + _NEG_WEIGHT * class_weight * torch.stack(neg_terms).mean()
+
         return loss
 
     def train_step(

@@ -669,6 +669,127 @@ def compute_distillation_score(
     }
 
 
+def compute_map_at_50(
+    teacher_boxes_per_frame,
+    student_boxes_per_frame,
+    teacher_classes_per_frame=None,
+    student_classes_per_frame=None,
+) -> float:
+    """Approximate mAP@IoU=0.5 treating teacher annotations as ground truth.
+
+    Evaluates student quality over a set of frames (typically the replay
+    buffer).  Each frame contributes TP/FP decisions for every student
+    detection; AP per class is integrated from the precision-recall curve and
+    the result is the mean AP across all classes present in the teacher
+    annotations.
+
+    Parameters
+    ----------
+    teacher_boxes_per_frame : list[list]
+        Per-frame teacher bounding boxes ``[[x1,y1,x2,y2], …]``.
+    student_boxes_per_frame : list[list]
+        Per-frame student bounding boxes (same layout).
+    teacher_classes_per_frame : list[list] | None
+        Per-frame teacher class IDs.  When *None*, all boxes are treated as
+        class 0 (class-agnostic evaluation).
+    student_classes_per_frame : list[list] | None
+        Per-frame student class IDs.
+
+    Returns
+    -------
+    float
+        mAP@0.5 in ``[0, 1]``.  Returns ``0.0`` when no teacher detections
+        exist across all frames.
+    """
+    from collections import defaultdict
+
+    n_frames = len(teacher_boxes_per_frame)
+    if n_frames == 0:
+        return 0.0
+
+    use_classes = (
+        teacher_classes_per_frame is not None
+        and student_classes_per_frame is not None
+        and len(teacher_classes_per_frame) == n_frames
+        and len(student_classes_per_frame) == n_frames
+    )
+
+    class_detections: dict = defaultdict(list)  # cls -> [is_tp, …]
+    class_gt_counts: dict = defaultdict(int)     # cls -> total GT count
+
+    for fi in range(n_frames):
+        t_boxes = list(teacher_boxes_per_frame[fi])
+        s_boxes = list(student_boxes_per_frame[fi])
+        t_cls = (
+            [int(c) for c in teacher_classes_per_frame[fi]]
+            if use_classes else [0] * len(t_boxes)
+        )
+        s_cls = (
+            [int(c) for c in student_classes_per_frame[fi]]
+            if use_classes else [0] * len(s_boxes)
+        )
+
+        for c in t_cls:
+            class_gt_counts[c] += 1
+
+        if not t_boxes or not s_boxes:
+            for j in range(len(s_boxes)):
+                c = s_cls[j] if j < len(s_cls) else 0
+                class_detections[c].append(0)   # false positive
+            continue
+
+        gt_matched = [False] * len(t_boxes)
+        for j, s_box in enumerate(s_boxes):
+            c_s = s_cls[j] if j < len(s_cls) else 0
+            best_iou = 0.0
+            best_gt = -1
+            for i, t_box in enumerate(t_boxes):
+                if gt_matched[i]:
+                    continue
+                c_t = t_cls[i] if i < len(t_cls) else 0
+                if use_classes and c_t != c_s:
+                    continue
+                iou = compute_iou(t_box, s_box)
+                if iou > best_iou:
+                    best_iou = iou
+                    best_gt = i
+            is_tp = 0
+            if best_gt >= 0 and best_iou >= 0.5:
+                gt_matched[best_gt] = True
+                is_tp = 1
+            class_detections[c_s].append(is_tp)
+
+    if not class_gt_counts:
+        return 0.0
+
+    ap_list = []
+    for cls, gt_count in class_gt_counts.items():
+        if gt_count == 0:
+            continue
+        dets = class_detections.get(cls, [])
+        if not dets:
+            ap_list.append(0.0)
+            continue
+        tps = np.asarray(dets, dtype=np.float64)
+        cum_tp = np.cumsum(tps)
+        cum_fp = np.cumsum(1.0 - tps)
+        precision = cum_tp / (cum_tp + cum_fp + 1e-9)
+        recall = cum_tp / (gt_count + 1e-9)
+        # Prepend (recall=0, precision=precision[0]) so the trapezoid covers
+        # the full [0, max_recall] interval and a perfect detector yields 1.0.
+        precision = np.concatenate([[precision[0]], precision])
+        recall = np.concatenate([[0.0], recall])
+        _trapz = getattr(np, 'trapezoid', None) or getattr(np, 'trapz')
+        ap = (
+            float(_trapz(precision, recall))
+            if len(precision) > 1
+            else float(precision[0] * recall[0])
+        )
+        ap_list.append(max(0.0, ap))
+
+    return float(np.mean(ap_list)) if ap_list else 0.0
+
+
 def _loss_keys(set_loss):
     """Extract the set-based loss components + chart metrics for merging into
     a score dict (consumed by the OnlineTraining node and the Chart node)."""
