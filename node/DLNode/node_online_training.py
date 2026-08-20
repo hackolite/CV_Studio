@@ -30,7 +30,7 @@ from node.DLNode.online_training.student_trainer import StudentTrainer
 from node.DLNode.online_training.distillation_loss import compute_distillation_score
 from node.DLNode.online_training import student_models_registry
 from src.utils.logging import get_logger
-from src.utils.gpu_utils import get_execution_providers
+from src.utils.gpu_utils import get_execution_providers, check_gpu_availability
 
 logger = get_logger(__name__)
 
@@ -90,6 +90,7 @@ class FactoryNode:
         node.tag_node_bbox_thickness_slider = node.tag_node_name + ':BboxThicknessSlider'
         node.tag_node_training_checkbox = node.tag_node_name + ':TrainingActive'
         node.tag_node_model_combo = node.tag_node_name + ':ModelCombo'
+        node.tag_node_device_combo = node.tag_node_name + ':DeviceCombo'
 
         node._opencv_setting_dict = opencv_setting_dict
 
@@ -367,6 +368,24 @@ class FactoryNode:
                     callback=_on_reset,
                 )
 
+            # Device selection combo (CPU / GPU)
+            def _on_device_combo_change(sender, app_data, user_data):
+                node._on_device_change(app_data)
+
+            with dpg.node_attribute(
+                tag=node.tag_node_name + ':DeviceComboAttr',
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                device_options = Node._get_device_options()
+                default_device = device_options[0] if device_options else 'CPU'
+                dpg.add_combo(
+                    device_options,
+                    default_value=default_device,
+                    width=small_window_w,
+                    tag=node.tag_node_device_combo,
+                    callback=_on_device_combo_change,
+                )
+
         return node
 
 
@@ -384,6 +403,15 @@ class Node(Node):
 
     def __init__(self):
         pass
+
+    @staticmethod
+    def _get_device_options() -> list:
+        """Return available device options (always includes CPU, adds GPU when CUDA is available)."""
+        options = ['CPU']
+        is_available, _, _ = check_gpu_availability()
+        if is_available:
+            options.append('GPU')
+        return options
 
     @classmethod
     def _ensure_builtin_student_models(cls):
@@ -442,6 +470,27 @@ class Node(Node):
 
         self._load_student_from_entry(entry)
 
+    def _on_device_change(self, selected_device: str):
+        """Reload the current student model when the user changes the device."""
+        # Reload the currently selected model under the new device.
+        try:
+            combo_tag = self.tag_node_name + ':ModelCombo'
+            selected_model = dpg_get_value(combo_tag)
+        except Exception:
+            selected_model = ''
+        if selected_model:
+            self._on_model_combo_change(selected_model)
+        logger.info(f"[OnlineTraining] Device changed to: {selected_device}")
+
+    def _get_selected_device(self) -> str:
+        """Return the device string ('cpu' or 'cuda') based on the UI combo selection."""
+        try:
+            device_tag = self.tag_node_name + ':DeviceCombo'
+            selected = dpg_get_value(device_tag)
+        except Exception:
+            selected = 'CPU'
+        return 'cuda' if str(selected).upper() == 'GPU' else 'cpu'
+
     def _load_student_from_entry(self, entry):
         """Load a student model from a registry entry dict."""
         path = entry.get('path', '')
@@ -458,6 +507,10 @@ class Node(Node):
 
         self._student_class_names = class_names
 
+        device = self._get_selected_device()
+        use_gpu = (device == 'cuda')
+        providers = get_execution_providers(use_gpu=use_gpu)
+
         self._student_trainer = StudentTrainer(
             model_path=path,
             input_width=entry.get('input_width', 320),
@@ -466,9 +519,13 @@ class Node(Node):
             num_classes=entry.get('num_classes', 80),
             learning_rate=0.0001,
             score_threshold=0.3,
-            providers=["CPUExecutionProvider"],
+            providers=providers,
+            device=device,
         )
-        logger.info(f"[OnlineTraining] Student model loaded: {entry.get('name')}")
+        logger.info(
+            f"[OnlineTraining] Student model loaded: {entry.get('name')} "
+            f"(device={device}, providers={providers})"
+        )
 
     def _callback_student_onnx_select(self, sender, data, user_data=None):
         """Handle student ONNX file selection (upload)."""
@@ -951,6 +1008,7 @@ class Node(Node):
         lr_tag = self.tag_node_name + ':LRSlider'
         training_tag = self.tag_node_name + ':TrainingActive'
         model_combo_tag = self.tag_node_name + ':ModelCombo'
+        device_combo_tag = self.tag_node_name + ':DeviceCombo'
 
         pos = dpg.get_item_pos(self.tag_node_name)
 
@@ -961,6 +1019,7 @@ class Node(Node):
         setting_dict[lr_tag] = dpg_get_value(lr_tag)
         setting_dict[training_tag] = dpg_get_value(training_tag)
         setting_dict['student_model'] = dpg_get_value(model_combo_tag)
+        setting_dict['device'] = dpg_get_value(device_combo_tag)
 
         return setting_dict
 
@@ -970,11 +1029,16 @@ class Node(Node):
         lr_tag = self.tag_node_name + ':LRSlider'
         training_tag = self.tag_node_name + ':TrainingActive'
         model_combo_tag = self.tag_node_name + ':ModelCombo'
+        device_combo_tag = self.tag_node_name + ':DeviceCombo'
 
         try:
             dpg_set_value(score_th_tag, setting_dict.get(score_th_tag, 0.3))
             dpg_set_value(lr_tag, setting_dict.get(lr_tag, 0.0001))
             dpg_set_value(training_tag, setting_dict.get(training_tag, True))
+            # Restore device selection before loading the model so the right
+            # providers and PyTorch device are used from the start.
+            saved_device = setting_dict.get('device', 'CPU')
+            dpg_set_value(device_combo_tag, saved_device)
             # Restore student model selection
             saved_model = setting_dict.get('student_model', '')
             if saved_model:

@@ -223,6 +223,7 @@ class TorchStudent:
         train_scope: str = "head",
         head_params: int = _DEFAULT_HEAD_PARAMS,
         nanodet_reg_first: bool = False,
+        device: str = "cpu",
     ):
         if not is_torch_backprop_available():
             raise RuntimeError(
@@ -241,6 +242,18 @@ class TorchStudent:
         self.num_classes = int(num_classes)
         self.learning_rate = float(learning_rate)
         self.train_scope = train_scope
+        # Resolve the device string, falling back to CPU when the requested
+        # device (e.g. 'cuda') is not available.
+        if _TORCH_AVAILABLE:
+            requested = torch.device(device)
+            if requested.type == "cuda" and not torch.cuda.is_available():
+                logger.warning(
+                    "[TorchStudent] CUDA requested but not available — falling back to CPU."
+                )
+                requested = torch.device("cpu")
+            self.device = requested
+        else:
+            self.device = "cpu"
         # NanoDet GFL/DFL: channel layout ([classes, reg] vs [reg, classes]) and
         # a small cache of the (anchor centres, strides) grid keyed by anchor
         # count, built lazily from the first decoded tensor.
@@ -250,6 +263,7 @@ class TorchStudent:
         # Convert ONNX -> torch.nn.Module (raises on failure; caller handles it).
         # Resilient to read-only model directories (see ``_convert_onnx_to_torch``).
         self.module = _convert_onnx_to_torch(model_path)
+        self.module.to(self.device)
         self.module.train()
 
         # Select which parameters receive gradients.
@@ -280,9 +294,9 @@ class TorchStudent:
         self.updates = 0
         logger.info(
             "[TorchStudent] Loaded %s into PyTorch — scope=%s, trainable tensors=%d, "
-            "format=%s, classes=%d",
+            "format=%s, classes=%d, device=%s",
             model_path, train_scope, len(self._trainable_params),
-            output_format, num_classes,
+            output_format, num_classes, self.device,
         )
 
     # ------------------------------------------------------------------
@@ -290,7 +304,7 @@ class TorchStudent:
     # ------------------------------------------------------------------
     def _to_input_tensor(self, blob: np.ndarray):
         """Convert a preprocessed NCHW float32 ``blob`` to a torch tensor."""
-        return torch.from_numpy(np.ascontiguousarray(blob)).float()
+        return torch.from_numpy(np.ascontiguousarray(blob)).float().to(self.device)
 
     def _forward_raw(self, blob: np.ndarray):
         """Run the network, returning the first output tensor (with grad)."""
@@ -342,8 +356,8 @@ class TorchStudent:
         if cached is None:
             centers_np, strides_np = nanodet_anchor_grid(
                 self.input_width, self.input_height, num_anchors)
-            centers = torch.from_numpy(centers_np).float()
-            strides = torch.from_numpy(strides_np).float()
+            centers = torch.from_numpy(centers_np).float().to(self.device)
+            strides = torch.from_numpy(strides_np).float().to(self.device)
             cached = (centers, strides)
             self._nanodet_grid_cache[num_anchors] = cached
         return cached
@@ -404,9 +418,11 @@ class TorchStudent:
             yv, xv = torch.meshgrid(
                 torch.arange(hsize), torch.arange(wsize), indexing="ij"
             )
-            grid = torch.stack((xv, yv), 2).reshape(-1, 2).float()
+            grid = torch.stack((xv, yv), 2).reshape(-1, 2).float().to(self.device)
             grids.append(grid)
-            expanded_strides.append(torch.full((grid.shape[0], 1), float(stride)))
+            expanded_strides.append(
+                torch.full((grid.shape[0], 1), float(stride), device=self.device)
+            )
         grid = torch.cat(grids, 0)
         strides_t = torch.cat(expanded_strides, 0)
         if grid.shape[0] != out.shape[0]:
@@ -523,7 +539,7 @@ class TorchStudent:
             box_terms.append(l1 + (1.0 - giou))
 
             # ── Classification: soft targets + temperature scaling ────────────
-            target = torch.zeros(self.num_classes)
+            target = torch.zeros(self.num_classes, device=self.device)
             cls_id = int(teacher_classes[t]) if teacher_classes is not None else 0
             if 0 <= cls_id < self.num_classes:
                 # Use teacher confidence as soft label when available.
@@ -570,7 +586,7 @@ class TorchStudent:
         scale = self._teacher_input_scale(orig_w, orig_h, pred_boxes.dtype)
         teacher_in = torch.tensor(
             np.asarray(teacher_boxes_orig, dtype=np.float32)
-        ).reshape(-1, 4) * scale
+        ).reshape(-1, 4).to(self.device) * scale
 
         loss = self._build_loss(pred_boxes, pred_scores, teacher_in, teacher_classes,
                                 teacher_scores=teacher_scores)
@@ -596,10 +612,10 @@ class TorchStudent:
         if self.output_format == "nanodet":
             ratio = min(self.input_height / max(1, int(orig_h)),
                         self.input_width / max(1, int(orig_w)))
-            return torch.tensor([ratio, ratio, ratio, ratio], dtype=dtype)
+            return torch.tensor([ratio, ratio, ratio, ratio], dtype=dtype, device=self.device)
         sx = self.input_width / max(1, int(orig_w))
         sy = self.input_height / max(1, int(orig_h))
-        return torch.tensor([sx, sy, sx, sy], dtype=dtype)
+        return torch.tensor([sx, sy, sx, sy], dtype=dtype, device=self.device)
 
     # ------------------------------------------------------------------
     # Inference with the (updated) weights
@@ -631,7 +647,8 @@ class TorchStudent:
         """Export the current (trained) weights back to an ONNX file."""
         self.module.eval()
         dummy = torch.zeros(
-            1, 3, self.input_height, self.input_width, dtype=torch.float32
+            1, 3, self.input_height, self.input_width, dtype=torch.float32,
+            device=self.device,
         )
         torch.onnx.export(
             self.module, dummy, output_path,
