@@ -21,6 +21,7 @@ import collections
 import copy
 import logging
 import os
+import random
 import tempfile
 import time
 from typing import Dict, List, Optional, Tuple
@@ -33,10 +34,12 @@ from node.DLNode.object_detection.onnx_session_utils import make_session
 from node.DLNode.object_detection.CustomONNX.custom_onnx import CustomONNX
 from node.DLNode.online_training.distillation_loss import compute_distillation_score
 from node.DLNode.online_training.online_adapter import BoxAffineAdapter
+from node.DLNode.online_training.replay_buffer import ReservoirBuffer
 from node.DLNode.online_training.torch_student import (
     TorchStudent,
     is_torch_backprop_available,
     is_format_supported as _torch_format_supported,
+    probe_pytorch_compatibility,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,6 +52,11 @@ logger = logging.getLogger(__name__)
 _ADAPTER_LR_GAIN = 500.0
 _ADAPTER_LR_MIN = 1e-3
 _ADAPTER_LR_MAX = 0.5
+
+# How many training frames between full mAP@0.5 evaluations on the replay
+# buffer.  Evaluating every frame is too expensive; every 30 frames keeps the
+# mAP display responsive without slowing down the pipeline.
+_MAP_EVAL_INTERVAL = 30
 
 
 class StudentTrainer:
@@ -124,12 +132,16 @@ class StudentTrainer:
         self.last_train_loss = None
         self._nanodet_cls_pre_activated = None
 
-        # Replay buffer for online distillation: stores (blob, teacher_boxes,
-        # teacher_classes, teacher_scores) tuples from high-quality frames so
-        # the student can be trained on past observations to prevent forgetting.
-        self._replay_buffer: collections.deque = collections.deque(
-            maxlen=self.replay_buffer_size
-        )
+        # Replay buffer (reservoir sampling + hard-example mining).
+        # Stores (frame, teacher_bboxes, teacher_classes, teacher_scores)
+        # payloads tagged with the distillation loss at insertion time.
+        # Frames are stored (not blobs) so that mAP can re-run current
+        # inference on buffered scenes.
+        self._replay_buffer: ReservoirBuffer = ReservoirBuffer(self.replay_buffer_size)
+
+        # mAP@0.5 tracking: recomputed every _MAP_EVAL_INTERVAL training steps.
+        self._map_score: float = 0.0
+        self._frames_since_map_update: int = 0
 
         # Real, gradient-trained correction head for the requested loss. This is
         # what lets the student's *output* actually change (and improve) frame to
@@ -158,6 +170,21 @@ class StudentTrainer:
         # fails, we silently fall back to the affine adaptation head.
         self._torch = None
         self._torch_backprop = False
+
+        # Probe compatibility first — provides a clear, actionable log message
+        # regardless of the outcome so the user knows exactly why a particular
+        # path was chosen.
+        compat = probe_pytorch_compatibility(model_path, output_format)
+        if compat['compatible']:
+            logger.info(
+                "[StudentTrainer] Compatibility probe: %s", compat['reason']
+            )
+        else:
+            logger.warning(
+                "[StudentTrainer] PyTorch backprop unavailable — %s",
+                compat['reason'],
+            )
+
         if is_torch_backprop_available() and _torch_format_supported(output_format):
             try:
                 self._torch = TorchStudent(
@@ -453,7 +480,8 @@ class StudentTrainer:
         skipped so noisy pseudo-labels do not pollute the gradient.
 
         After training on the current frame, up to 2 additional steps are
-        performed on randomly sampled frames from the replay buffer to prevent
+        performed on frames sampled from the replay buffer with hard-example
+        mining bias (harder frames are replayed more often) to prevent
         catastrophic forgetting when the scene changes.
 
         Returns True when at least one optimizer step updated the network weights.
@@ -483,25 +511,36 @@ class StudentTrainer:
             return False
         self.last_train_loss = float(loss_val)
 
-        # Add this frame to the replay buffer (after a successful train step).
-        self._replay_buffer.append((blob, list(teacher_bboxes), list(teacher_class_ids),
-                                    list(teacher_scores) if teacher_scores is not None else []))
+        # Add this frame to the reservoir buffer tagged with the current loss
+        # so hard-example mining can bias replay toward difficult frames.
+        payload = (
+            frame,
+            list(teacher_bboxes),
+            list(teacher_class_ids),
+            list(teacher_scores) if teacher_scores is not None else [],
+        )
+        self._replay_buffer.add(payload, loss=self.last_train_loss)
 
-        # Replay up to 2 past frames to prevent catastrophic forgetting.
+        # Replay up to 2 past frames with hard-mining bias (70 % hard / 30 %
+        # random) to reinforce knowledge of difficult scenes.
         if len(self._replay_buffer) > 1:
-            import random
-            n_replay = min(2, len(self._replay_buffer) - 1)
-            replay_sample = random.sample(
-                [x for x in self._replay_buffer][:-1], n_replay
-            )
-            for r_blob, r_boxes, r_classes, r_scores in replay_sample:
+            replays = self._replay_buffer.sample(2, hard_mining_ratio=0.7)
+            for r_frame, r_boxes, r_classes, r_scores in replays:
                 try:
+                    r_blob, _ = self._student_model._preprocess(r_frame)
+                    r_h, r_w = r_frame.shape[:2]
                     self._torch.train_step(
-                        r_blob, r_boxes, r_classes, frame_w, frame_h,
+                        r_blob, r_boxes, r_classes, r_w, r_h,
                         teacher_scores=r_scores if r_scores else None,
                     )
                 except Exception as exc:  # pragma: no cover - defensive
                     logger.debug(f"[StudentTrainer] replay step failed: {exc}")
+
+        # Periodic mAP@0.5 re-evaluation on buffered frames.
+        self._frames_since_map_update += 1
+        if self._frames_since_map_update >= _MAP_EVAL_INTERVAL:
+            self._map_score = self._compute_map_on_buffer()
+            self._frames_since_map_update = 0
 
         return True
 
@@ -511,6 +550,48 @@ class StudentTrainer:
         if frame is not None and hasattr(frame, 'shape') and len(frame.shape) >= 2:
             return int(frame.shape[0]), int(frame.shape[1])
         return 1, 1
+
+    def _compute_map_on_buffer(self) -> float:
+        """Compute mAP@0.5 of the *current* student over all buffered frames.
+
+        Runs inference on every frame stored in the replay buffer and compares
+        the result against the buffered teacher annotations.  The evaluation is
+        exact up to the current student weights (not stale predictions) and uses
+        the same :func:`compute_map_at_50` implementation that is exported to
+        callers.
+
+        Returns 0.0 when the buffer is empty or inference fails.
+        """
+        from node.DLNode.online_training.distillation_loss import compute_map_at_50
+
+        if len(self._replay_buffer) == 0:
+            return 0.0
+
+        t_boxes_list, s_boxes_list = [], []
+        t_cls_list, s_cls_list = [], []
+
+        for buf_frame, t_boxes, t_classes, _t_scores in self._replay_buffer:
+            try:
+                s_bboxes, s_scores, s_class_ids = self.infer(buf_frame)
+                if len(s_scores) > 0:
+                    mask = s_scores >= self.score_threshold
+                    s_bboxes = s_bboxes[mask]
+                    s_class_ids = s_class_ids[mask]
+                t_boxes_list.append(list(t_boxes))
+                s_boxes_list.append(s_bboxes.tolist() if len(s_bboxes) > 0 else [])
+                t_cls_list.append(list(t_classes))
+                s_cls_list.append(s_class_ids.tolist() if len(s_class_ids) > 0 else [])
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("[StudentTrainer] mAP eval step failed: %s", exc)
+
+        if not t_boxes_list:
+            return 0.0
+        return compute_map_at_50(t_boxes_list, s_boxes_list, t_cls_list, s_cls_list)
+
+    @property
+    def map_score(self) -> float:
+        """Cached mAP@0.5 on the replay buffer (recomputed every N frames)."""
+        return self._map_score
 
     def _adapt_step(self, frame_w, frame_h, teacher_bboxes, teacher_class_ids,
                     student_bboxes, student_class_ids):
@@ -559,6 +640,9 @@ class StudentTrainer:
         self.best_loss = float('inf')
         self.initial_loss = None
         self.last_train_loss = None
+        # Reset mAP tracking.
+        self._map_score = 0.0
+        self._frames_since_map_update = 0
         # Restore the correction head to the identity (no learned correction).
         self._adapter.reset()
         # Clear the replay buffer so stale frames don't influence the fresh student.
@@ -634,4 +718,6 @@ class StudentTrainer:
             'train_loss': self.last_train_loss,
             'training_active': self.training_active,
             'training_available': self.is_training_available,
+            'map_score': self._map_score,
+            'replay_buffer_size': len(self._replay_buffer),
         }
