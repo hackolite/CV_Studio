@@ -1117,6 +1117,7 @@ class Node(Node):
 
                 # Draw score + loss overlay
                 loss_val = distillation.get('loss', 0.0)
+                stats = self._student_trainer.get_stats()
                 map_score = stats.get('map_score', 0.0)
                 score_text = f"Score: {distillation['score']:.2f} | Loss: {loss_val:.3f} | mAP@0.5: {map_score:.2f}"
                 cv2.putText(
@@ -1124,12 +1125,10 @@ class Node(Node):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2
                 )
 
-                stats = self._student_trainer.get_stats()
                 best_loss = stats.get('best_loss', float('inf'))
                 best_loss_text = f"{best_loss:.3f}" if best_loss != float('inf') else "--"
                 improvement_pct = stats.get('improvement_pct', 0.0)
                 mode_text = stats.get('backprop_mode', 'affine-head')
-                map_score = stats.get('map_score', 0.0)
                 avg_text = (
                     f"Best: {stats['best_score']:.2f} | BestLoss: {best_loss_text} "
                     f"| Improv: {improvement_pct:.1f}% | {mode_text}"
