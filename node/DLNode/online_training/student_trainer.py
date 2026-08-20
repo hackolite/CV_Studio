@@ -89,6 +89,7 @@ class StudentTrainer:
         train_scope: str = "head",
         min_teacher_confidence: float = 0.35,
         replay_buffer_size: int = 32,
+        device: str = "cpu",
     ):
         if providers is None:
             providers = ["CPUExecutionProvider"]
@@ -104,6 +105,7 @@ class StudentTrainer:
         self.train_scope = train_scope
         self.min_teacher_confidence = float(min_teacher_confidence)
         self.replay_buffer_size = int(replay_buffer_size)
+        self.device = device
 
         # Statistics
         self.frames_processed = 0
@@ -166,6 +168,7 @@ class StudentTrainer:
                     num_classes=num_classes,
                     learning_rate=learning_rate,
                     train_scope=train_scope,
+                    device=device,
                 )
                 self._torch_backprop = True
                 logger.info(
