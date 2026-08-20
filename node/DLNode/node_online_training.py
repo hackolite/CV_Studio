@@ -97,6 +97,7 @@ class FactoryNode:
         small_window_w = opencv_setting_dict['process_width']
         small_window_h = opencv_setting_dict['process_height']
         use_pref_counter = opencv_setting_dict['use_pref_counter']
+        use_gpu = opencv_setting_dict['use_gpu']
 
         black_image = np.zeros((small_window_h, small_window_w, 3))
         black_texture = node.convert_cv_to_dpg(
@@ -194,6 +195,23 @@ class FactoryNode:
                 attribute_type=dpg.mvNode_Attr_Output,
             ):
                 dpg.add_image(node.tag_node_output_image)
+
+            # Device selection radio button (CPU / GPU)
+            if use_gpu:
+                def _on_device_radio_change(sender, app_data, user_data):
+                    node._on_device_change(app_data)
+
+                with dpg.node_attribute(
+                    tag=node.tag_node_name + ':DeviceComboAttr',
+                    attribute_type=dpg.mvNode_Attr_Static,
+                ):
+                    dpg.add_radio_button(
+                        ("CPU", "GPU"),
+                        tag=node.tag_node_device_combo,
+                        default_value='CPU',
+                        horizontal=True,
+                        callback=_on_device_radio_change,
+                    )
 
             # Score threshold slider
             with dpg.node_attribute(
@@ -366,24 +384,6 @@ class FactoryNode:
                     tag=node.tag_node_name + ':ResetBtn',
                     width=small_window_w,
                     callback=_on_reset,
-                )
-
-            # Device selection combo (CPU / GPU)
-            def _on_device_combo_change(sender, app_data, user_data):
-                node._on_device_change(app_data)
-
-            with dpg.node_attribute(
-                tag=node.tag_node_name + ':DeviceComboAttr',
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                device_options = Node._get_device_options()
-                default_device = device_options[0] if device_options else 'CPU'
-                dpg.add_combo(
-                    device_options,
-                    default_value=default_device,
-                    width=small_window_w,
-                    tag=node.tag_node_device_combo,
-                    callback=_on_device_combo_change,
                 )
 
         return node
