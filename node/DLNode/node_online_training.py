@@ -1116,6 +1116,7 @@ class Node(Node):
                     cv2.rectangle(output_frame, (x1, y1), (x2, y2), (255, 100, 0), max(1, bbox_thickness - 1))
 
                 # Draw score + loss overlay
+                stats = self._student_trainer.get_stats()
                 loss_val = distillation.get('loss', 0.0)
                 map_score = stats.get('map_score', 0.0)
                 score_text = f"Score: {distillation['score']:.2f} | Loss: {loss_val:.3f} | mAP@0.5: {map_score:.2f}"
@@ -1124,7 +1125,6 @@ class Node(Node):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2
                 )
 
-                stats = self._student_trainer.get_stats()
                 best_loss = stats.get('best_loss', float('inf'))
                 best_loss_text = f"{best_loss:.3f}" if best_loss != float('inf') else "--"
                 improvement_pct = stats.get('improvement_pct', 0.0)
