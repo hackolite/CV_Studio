@@ -329,6 +329,12 @@ def _convert_onnx_to_torch(model_path: str):
 # Number of trailing parameter tensors trained when ``train_scope='head'``.
 _DEFAULT_HEAD_PARAMS = 8
 
+# Default backprop depth expressed as a number of trailing parameter tensors.
+# 0  → no PyTorch backprop (fall back to affine head).
+# 1‥N → train the last N parameter tensors.
+# A special sentinel value of -1 means "train all" (equivalent to train_scope='all').
+_BACKPROP_DEPTH_ALL = -1
+
 # Adaptive class-loss weight phases (keyed by update count thresholds).
 # Phase 1 (updates < 100): focus on localisation.
 # Phase 2 (100 ≤ updates < 500): balanced.
@@ -364,6 +370,16 @@ class TorchStudent:
     train_scope : str
         ``'head'`` to train only the last few parameter tensors (detection
         heads), or ``'all'`` to fine-tune the whole backbone + heads.
+        Ignored when ``backprop_depth`` is set to a value other than ``None``.
+    backprop_depth : int or None
+        Number of trailing parameter tensors to train.  ``0`` disables
+        PyTorch backprop entirely (caller should use the affine-head path).
+        Positive values train the last N tensors. ``-1`` trains all parameters.
+        ``None`` (default) falls back to the ``train_scope``/``head_params``
+        behaviour for backwards compatibility.
+    head_params : int
+        Number of trailing tensors used when ``train_scope='head'`` and
+        ``backprop_depth`` is ``None``.
     nanodet_reg_first : bool
         NanoDet channel layout: ``False`` (default) for ``[classes, reg]``,
         ``True`` for ``[reg, classes]``.
@@ -379,6 +395,7 @@ class TorchStudent:
         learning_rate: float = 1e-4,
         train_scope: str = "head",
         head_params: int = _DEFAULT_HEAD_PARAMS,
+        backprop_depth: Optional[int] = None,
         nanodet_reg_first: bool = False,
         device: str = "cpu",
     ):
@@ -399,6 +416,16 @@ class TorchStudent:
         self.num_classes = int(num_classes)
         self.learning_rate = float(learning_rate)
         self.train_scope = train_scope
+        self._head_params = int(head_params)
+        # Resolve backprop_depth from the (backprop_depth, train_scope, head_params) trio.
+        # backprop_depth=None → keep legacy train_scope behaviour.
+        if backprop_depth is None:
+            if train_scope == "all":
+                self._backprop_depth = _BACKPROP_DEPTH_ALL
+            else:
+                self._backprop_depth = max(1, int(head_params))
+        else:
+            self._backprop_depth = int(backprop_depth)
         # Resolve the device string, falling back to CPU when the requested
         # device (e.g. 'cuda') is not available.
         if _TORCH_AVAILABLE:
@@ -427,15 +454,8 @@ class TorchStudent:
         params = list(self.module.parameters())
         if not params:
             raise RuntimeError("Converted module exposes no trainable parameters.")
-        if train_scope == "all":
-            trainable = params
-        else:  # 'head' (default): only the last few tensors near the output.
-            for p in params:
-                p.requires_grad_(False)
-            trainable = params[-max(1, int(head_params)):]
-        for p in trainable:
-            p.requires_grad_(True)
-        self._trainable_params = [p for p in trainable if p.requires_grad]
+        self._all_params = params
+        self._apply_backprop_depth(self._backprop_depth)
 
         self.optimizer = torch.optim.AdamW(
             self._trainable_params, lr=self.learning_rate, weight_decay=1e-4
@@ -450,11 +470,74 @@ class TorchStudent:
         }
         self.updates = 0
         logger.info(
-            "[TorchStudent] Loaded %s into PyTorch — scope=%s, trainable tensors=%d, "
+            "[TorchStudent] Loaded %s into PyTorch — depth=%s, trainable tensors=%d, "
             "format=%s, classes=%d, device=%s",
-            model_path, train_scope, len(self._trainable_params),
+            model_path, self._backprop_depth, len(self._trainable_params),
             output_format, num_classes, self.device,
         )
+
+    # ------------------------------------------------------------------
+    # Backprop depth management
+    # ------------------------------------------------------------------
+
+    def _apply_backprop_depth(self, depth: int) -> None:
+        """Apply ``depth`` to control which parameters receive gradients.
+
+        Parameters
+        ----------
+        depth : int
+            ``-1`` (or any negative value) → all params.
+            ``0`` → none (inference only).
+            Positive → last ``depth`` parameter tensors.
+        """
+        params = self._all_params
+        for p in params:
+            p.requires_grad_(False)
+        if depth < 0:
+            # Any negative value means "train all" (-1 is the documented sentinel).
+            trainable = params
+        elif depth == 0:
+            trainable = []
+        else:
+            trainable = params[-min(depth, len(params)):]
+        for p in trainable:
+            p.requires_grad_(True)
+        self._trainable_params = [p for p in trainable if p.requires_grad]
+
+    def set_backprop_depth(self, depth: int) -> None:
+        """Change the backprop depth at runtime without reloading the model.
+
+        Reapplies ``requires_grad_()`` flags and rebuilds the optimizer
+        param-groups so the new depth takes effect on the next training step.
+
+        Parameters
+        ----------
+        depth : int
+            Number of trailing parameter tensors to train.
+            ``-1`` trains all, ``0`` disables PyTorch backprop.
+        """
+        depth = int(depth)
+        if depth == self._backprop_depth:
+            return
+        self._backprop_depth = depth
+        self._apply_backprop_depth(depth)
+        # Rebuild optimizer param_groups with the new trainable set.
+        if self._trainable_params:
+            self.optimizer = torch.optim.AdamW(
+                self._trainable_params, lr=self.learning_rate, weight_decay=1e-4
+            )
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                self.optimizer, T_0=200
+            )
+        logger.info(
+            "[TorchStudent] backprop_depth updated to %d — trainable tensors: %d",
+            depth, len(self._trainable_params),
+        )
+
+    @property
+    def backprop_depth(self) -> int:
+        """Current backprop depth (number of trailing trainable tensors, or -1 for all)."""
+        return self._backprop_depth
 
     # ------------------------------------------------------------------
     # Forward / decode
@@ -759,6 +842,9 @@ class TorchStudent:
         box, used as soft labels in the classification loss.
         """
         if len(teacher_boxes_orig) == 0:
+            return None
+        if not self._trainable_params:
+            # backprop_depth=0: inference-only, no gradient update.
             return None
         self.module.train()
         raw = self._forward_raw(blob)
