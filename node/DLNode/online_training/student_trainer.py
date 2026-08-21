@@ -98,6 +98,7 @@ class StudentTrainer:
         min_teacher_confidence: float = 0.35,
         replay_buffer_size: int = 32,
         device: str = "cpu",
+        backprop_depth: Optional[int] = None,
     ):
         if providers is None:
             providers = ["CPUExecutionProvider"]
@@ -111,6 +112,7 @@ class StudentTrainer:
         self.score_threshold = score_threshold
         self.providers = providers
         self.train_scope = train_scope
+        self.backprop_depth = backprop_depth  # None = legacy train_scope behaviour
         self.min_teacher_confidence = float(min_teacher_confidence)
         self.replay_buffer_size = int(replay_buffer_size)
         self.device = device
@@ -195,6 +197,7 @@ class StudentTrainer:
                     num_classes=num_classes,
                     learning_rate=learning_rate,
                     train_scope=train_scope,
+                    backprop_depth=backprop_depth,
                     device=device,
                 )
                 self._torch_backprop = True
@@ -241,8 +244,26 @@ class StudentTrainer:
     def backprop_mode(self) -> str:
         """Human-readable description of the active learning path."""
         if self._torch_backprop:
+            depth = getattr(self._torch, '_backprop_depth', None)
+            if depth == -1:
+                return "pytorch-all"
+            if depth is not None:
+                return f"pytorch-{depth}L"
             return f"pytorch-{self.train_scope}"
         return "affine-head"
+
+    def set_backprop_depth(self, depth: int) -> None:
+        """Change the backprop depth at runtime without reloading the model.
+
+        Parameters
+        ----------
+        depth : int
+            Number of trailing parameter tensors to train.
+            ``-1`` trains all, ``0`` uses affine-head only.
+        """
+        self.backprop_depth = int(depth)
+        if self._torch is not None:
+            self._torch.set_backprop_depth(self.backprop_depth)
 
     @property
     def _network_update_count(self) -> int:

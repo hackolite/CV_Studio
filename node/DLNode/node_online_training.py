@@ -88,13 +88,14 @@ class FactoryNode:
 
         # --- Control tags ---
         node.tag_node_score_display = node.tag_node_name + ':ScoreDisplay'
-        node.tag_node_stats_display = node.tag_node_name + ':StatsDisplay'
         node.tag_node_lr_slider = node.tag_node_name + ':LRSlider'
         node.tag_node_threshold_slider = node.tag_node_name + ':ThresholdSlider'
         node.tag_node_bbox_thickness_slider = node.tag_node_name + ':BboxThicknessSlider'
         node.tag_node_training_checkbox = node.tag_node_name + ':TrainingActive'
         node.tag_node_model_combo = node.tag_node_name + ':ModelCombo'
         node.tag_node_device_combo = node.tag_node_name + ':DeviceCombo'
+        node.tag_node_backprop_depth_slider = node.tag_node_name + ':BackpropDepthSlider'
+        node.tag_node_start_btn = node.tag_node_name + ':StartBtn'
 
         node._opencv_setting_dict = opencv_setting_dict
 
@@ -248,7 +249,7 @@ class FactoryNode:
             ):
                 dpg.add_slider_float(
                     tag=node.tag_node_lr_slider,
-                    label="learning_rate",
+                    label="Lr",
                     width=small_window_w - 80,
                     default_value=0.0001,
                     min_value=0.00001,
@@ -274,31 +275,36 @@ class FactoryNode:
             ):
                 dpg.add_slider_int(
                     tag=node.tag_node_bbox_thickness_slider,
-                    label="bbox_thickness",
+                    label="bb_t",
                     width=small_window_w - 80,
                     default_value=2,
                     min_value=1,
                     max_value=10,
                 )
 
-            # Score display
+            # Backprop depth slider
+            with dpg.node_attribute(
+                tag=node.tag_node_name + ':BackpropDepthAttr',
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_int(
+                    tag=node.tag_node_backprop_depth_slider,
+                    label="bp_depth",
+                    width=small_window_w - 80,
+                    default_value=8,
+                    min_value=0,
+                    max_value=30,
+                    format="%d",
+                )
+
+            # Compact status display (score + training mode)
             with dpg.node_attribute(
                 tag=node.tag_node_name + ':ScoreAttr',
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_text(
                     tag=node.tag_node_score_display,
-                    default_value='Score: -- | Avg: -- | Best: --',
-                )
-
-            # Stats display
-            with dpg.node_attribute(
-                tag=node.tag_node_name + ':StatsAttr',
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_text(
-                    tag=node.tag_node_stats_display,
-                    default_value='Frames: 0 | Training: waiting',
+                    default_value='score: -- | Training: waiting',
                 )
 
             # Output: JSON (student result)
@@ -314,7 +320,7 @@ class FactoryNode:
                 )
                 dpg.bind_item_theme(btn, json_button_theme)
 
-            # Student model combobox
+            # Student model combobox (select before Start)
             with dpg.node_attribute(
                 tag=node.tag_node_name + ':ModelComboAttr',
                 attribute_type=dpg.mvNode_Attr_Static,
@@ -326,8 +332,26 @@ class FactoryNode:
                     default_value=default_model,
                     width=small_window_w,
                     tag=node.tag_node_model_combo,
-                    callback=lambda s, a, u: node._on_model_combo_change(a),
                 )
+
+            # Start button — loads the selected student and activates training
+            def _on_start(sender, app_data, user_data):
+                selected = dpg_get_value(node.tag_node_model_combo)
+                if selected:
+                    node._on_model_combo_change(selected)
+                dpg_set_value(node.tag_node_training_checkbox, True)
+
+            with dpg.node_attribute(
+                tag=node.tag_node_name + ':StartAttr',
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                start_btn = dpg.add_button(
+                    label=u"Start",
+                    tag=node.tag_node_start_btn,
+                    width=small_window_w,
+                    callback=_on_start,
+                )
+                dpg.bind_item_theme(start_btn, green_button_theme)
 
             # Load Student Model button (upload new ONNX)
             def _on_load_student(sender, app_data, user_data):
@@ -399,36 +423,6 @@ class FactoryNode:
                     width=small_window_w,
                     callback=_on_reset,
                 )
-
-            # ── Download catalog ────────────────────────────────────────────
-            # Shows pre-validated student models.  When a model has a populated
-            # ``download_url`` the "Download" button fetches and registers it;
-            # otherwise a log message guides the user to export the model.
-            catalog_combo_tag = node.tag_node_name + ':CatalogCombo'
-            download_btn_tag = node.tag_node_name + ':DownloadBtn'
-            catalog_names = [m['name'] for m in student_models_registry.DOWNLOADABLE_MODELS]
-
-            def _on_download_catalog_model(sender, app_data, user_data):
-                node._download_catalog_model(catalog_combo_tag)
-
-            with dpg.node_attribute(
-                tag=node.tag_node_name + ':CatalogAttr',
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_combo(
-                    catalog_names,
-                    default_value=catalog_names[0] if catalog_names else '',
-                    width=small_window_w - 100,
-                    tag=catalog_combo_tag,
-                )
-                dpg.add_same_line()
-                download_btn = dpg.add_button(
-                    label=u"Download",
-                    tag=download_btn_tag,
-                    width=90,
-                    callback=_on_download_catalog_model,
-                )
-                dpg.bind_item_theme(download_btn, green_button_theme)
 
         return node
 
@@ -555,6 +549,11 @@ class Node(Node):
         use_gpu = (device == 'cuda')
         providers = get_execution_providers(use_gpu=use_gpu)
 
+        try:
+            bp_depth = int(dpg_get_value(self.tag_node_backprop_depth_slider))
+        except Exception:
+            bp_depth = 8
+
         self._student_trainer = StudentTrainer(
             model_path=path,
             input_width=entry.get('input_width', 320),
@@ -565,6 +564,7 @@ class Node(Node):
             score_threshold=0.3,
             providers=providers,
             device=device,
+            backprop_depth=bp_depth,
         )
         logger.info(
             f"[OnlineTraining] Student model loaded: {entry.get('name')} "
@@ -935,7 +935,7 @@ class Node(Node):
             lr_tag = self.tag_node_name + ':LRSlider'
             training_tag = self.tag_node_name + ':TrainingActive'
             score_display_tag = self.tag_node_name + ':ScoreDisplay'
-            stats_display_tag = self.tag_node_name + ':StatsDisplay'
+            backprop_depth_tag = self.tag_node_name + ':BackpropDepthSlider'
 
             try:
                 score_th = float(dpg_get_value(score_th_tag))
@@ -958,6 +958,11 @@ class Node(Node):
             except Exception:
                 bbox_thickness = 2
 
+            try:
+                bp_depth = int(dpg_get_value(backprop_depth_tag))
+            except Exception:
+                bp_depth = 8
+
             # --- Process ---
             result = {}
             output_frame = frame
@@ -967,6 +972,9 @@ class Node(Node):
                 self._student_trainer.learning_rate = lr
                 self._student_trainer.training_active = training_active
                 self._student_trainer.score_threshold = score_th
+                # Apply backprop depth change at runtime without model reload
+                if self._student_trainer._torch is not None:
+                    self._student_trainer.set_backprop_depth(bp_depth)
 
                 # Get teacher predictions
                 teacher_bboxes = teacher_json.get('bboxes', [])
@@ -1115,56 +1123,20 @@ class Node(Node):
                     x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
                     cv2.rectangle(output_frame, (x1, y1), (x2, y2), (255, 100, 0), max(1, bbox_thickness - 1))
 
-                # Draw score + loss overlay
+                # Draw score + mode overlay (compact)
                 stats = self._student_trainer.get_stats()
-                loss_val = distillation.get('loss', 0.0)
-                map_score = stats.get('map_score', 0.0)
-                score_text = f"Score: {distillation['score']:.2f} | Loss: {loss_val:.3f} | mAP@0.5: {map_score:.2f}"
-                cv2.putText(
-                    output_frame, score_text, (10, 25),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2
-                )
-
-                best_loss = stats.get('best_loss', float('inf'))
-                best_loss_text = f"{best_loss:.3f}" if best_loss != float('inf') else "--"
-                improvement_pct = stats.get('improvement_pct', 0.0)
                 mode_text = stats.get('backprop_mode', 'affine-head')
-                map_score = stats.get('map_score', 0.0)
-                avg_text = (
-                    f"Best: {stats['best_score']:.2f} | BestLoss: {best_loss_text} "
-                    f"| Improv: {improvement_pct:.1f}% | {mode_text}"
-                )
+                score_val = distillation['score']
+                training_status = "active" if training_active else "paused"
+                overlay = f"score: {score_val:.2f} | Training: {training_status} ({mode_text})"
                 cv2.putText(
-                    output_frame, avg_text, (10, 50),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1
+                    output_frame, overlay, (10, 25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2
                 )
 
-                # Update UI displays
+                # Update UI status display
                 try:
-                    dpg_set_value(
-                        score_display_tag,
-                        f"Score: {distillation['score']:.2f} | "
-                        f"Loss: {loss_val:.3f} | "
-                        f"BestLoss: {best_loss_text} | "
-                        f"Improv: {improvement_pct:.1f}% | "
-                        f"mAP: {map_score:.2f}"
-                    )
-                    training_status = "active" if training_active else "paused"
-                    if not self._student_trainer.is_training_available:
-                        training_status = "inference-only"
-                    # In the PyTorch path report real network weight updates;
-                    # otherwise the affine correction-head updates.
-                    if mode_text.startswith("pytorch"):
-                        updates_text = f"NetUpdates: {stats.get('network_updates', 0)}"
-                    else:
-                        updates_text = f"Updates: {stats.get('adapter_updates', 0)}"
-                    dpg_set_value(
-                        stats_display_tag,
-                        f"Frames: {stats['frames_processed']} | "
-                        f"Training: {training_status} ({mode_text}) | "
-                        f"{updates_text} | "
-                        f"mAP@0.5: {map_score:.2f}"
-                    )
+                    dpg_set_value(score_display_tag, overlay)
                 except Exception:
                     pass
 
@@ -1205,6 +1177,7 @@ class Node(Node):
         training_tag = self.tag_node_name + ':TrainingActive'
         model_combo_tag = self.tag_node_name + ':ModelCombo'
         device_combo_tag = self.tag_node_name + ':DeviceCombo'
+        backprop_depth_tag = self.tag_node_name + ':BackpropDepthSlider'
 
         pos = dpg.get_item_pos(self.tag_node_name)
 
@@ -1216,6 +1189,7 @@ class Node(Node):
         setting_dict[training_tag] = dpg_get_value(training_tag)
         setting_dict['student_model'] = dpg_get_value(model_combo_tag)
         setting_dict['device'] = dpg_get_value(device_combo_tag)
+        setting_dict[backprop_depth_tag] = dpg_get_value(backprop_depth_tag)
 
         return setting_dict
 
@@ -1226,11 +1200,13 @@ class Node(Node):
         training_tag = self.tag_node_name + ':TrainingActive'
         model_combo_tag = self.tag_node_name + ':ModelCombo'
         device_combo_tag = self.tag_node_name + ':DeviceCombo'
+        backprop_depth_tag = self.tag_node_name + ':BackpropDepthSlider'
 
         try:
             dpg_set_value(score_th_tag, setting_dict.get(score_th_tag, 0.3))
             dpg_set_value(lr_tag, setting_dict.get(lr_tag, 0.0001))
             dpg_set_value(training_tag, setting_dict.get(training_tag, True))
+            dpg_set_value(backprop_depth_tag, setting_dict.get(backprop_depth_tag, 8))
             # Restore device selection before loading the model so the right
             # providers and PyTorch device are used from the start.
             saved_device = setting_dict.get('device', 'CPU')
