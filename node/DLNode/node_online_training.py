@@ -973,8 +973,7 @@ class Node(Node):
                 self._student_trainer.training_active = training_active
                 self._student_trainer.score_threshold = score_th
                 # Apply backprop depth change at runtime without model reload
-                if self._student_trainer._torch is not None:
-                    self._student_trainer.set_backprop_depth(bp_depth)
+                self._student_trainer.set_backprop_depth(bp_depth)
 
                 # Get teacher predictions
                 teacher_bboxes = teacher_json.get('bboxes', [])

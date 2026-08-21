@@ -244,11 +244,12 @@ class StudentTrainer:
     def backprop_mode(self) -> str:
         """Human-readable description of the active learning path."""
         if self._torch_backprop:
-            depth = getattr(self._torch, '_backprop_depth', None)
+            depth = getattr(self._torch, '_backprop_depth', -2)
             if depth == -1:
                 return "pytorch-all"
-            if depth is not None:
+            if depth >= 0:
                 return f"pytorch-{depth}L"
+            # _torch exists but depth attribute not yet set (should not happen)
             return f"pytorch-{self.train_scope}"
         return "affine-head"
 

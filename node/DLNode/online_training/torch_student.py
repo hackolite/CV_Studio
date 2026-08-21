@@ -486,15 +486,17 @@ class TorchStudent:
         Parameters
         ----------
         depth : int
-            ``-1`` → all params.  ``0`` → none (inference only).
+            ``-1`` (or any negative value) → all params.
+            ``0`` → none (inference only).
             Positive → last ``depth`` parameter tensors.
         """
         params = self._all_params
         for p in params:
             p.requires_grad_(False)
-        if depth == _BACKPROP_DEPTH_ALL:
+        if depth < 0:
+            # Any negative value means "train all" (-1 is the documented sentinel).
             trainable = params
-        elif depth <= 0:
+        elif depth == 0:
             trainable = []
         else:
             trainable = params[-min(depth, len(params)):]
