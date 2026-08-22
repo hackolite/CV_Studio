@@ -11,6 +11,11 @@ import traceback
 import uuid
 import cv2
 
+from src.utils.logging import get_logger
+from node_editor.util import _dpg_lock
+
+logger = get_logger(__name__)
+
 
 class DataType:
     TYPE_BOOLEAN = "BOOLEAN"
@@ -106,14 +111,15 @@ class Node:
 
         for connection_info in connection_list:
             connection_type = connection_info[0].split(":")[2]
-            print(f"Connection type detected: {connection_type}")
+            logger.debug("Connection type detected: %s", connection_type)
 
             # ✅ Accepter IMAGE et AUDIO
             if connection_type in [self.TYPE_IMAGE, self.TYPE_AUDIO]:
                 connection_info_src = ":".join(connection_info[0].split(":")[:2])
                 connection_type_found = connection_type
-                print(
-                    f"Connection source: {connection_info_src}, type: {connection_type_found}"
+                logger.debug(
+                    "Connection source: %s, type: %s",
+                    connection_info_src, connection_type_found,
                 )
                 break
 
@@ -133,15 +139,24 @@ class Node:
 
     def get_setting_dict(self, node_id):
         self.tag_node_name = f"{node_id}:{self.node_tag}"
-        # Assurez-vous que dpg.get_value est bien défini
         setting_dict = {}
 
         for tag, value in self.tags.items():
-            setting_dict[tag] = dpg.get_value(
-                tag
-            )  # Exemple d'utilisation de dpg.get_value
+            with _dpg_lock:
+                if dpg.does_item_exist(tag):
+                    setting_dict[tag] = dpg.get_value(tag)
+                else:
+                    logger.warning("get_setting_dict: tag %s does not exist, skipping", tag)
 
-        pos = dpg.get_item_pos(self.tag_node_name)
+        pos = [0, 0]
+        with _dpg_lock:
+            try:
+                pos = dpg.get_item_pos(self.tag_node_name)
+            except Exception as exc:
+                logger.warning(
+                    "get_setting_dict: could not get position for %s: %s",
+                    self.tag_node_name, exc,
+                )
 
         setting_dict["ver"] = self._ver
         setting_dict["pos"] = pos
@@ -150,9 +165,22 @@ class Node:
     def set_setting_dict(self, node_id, setting_dict):
         self.tag_node_name = f"{node_id}:{self.node_tag}"
 
-        # Mise à jour des tags selon les settings
+        # "ver" and "pos" are metadata entries, not DPG item tags.
+        _skip_keys = {"ver", "pos"}
         for tag, value in setting_dict.items():
-            dpg.set_value(tag, value)  # Exemple d'utilisation de dpg.set_value
+            if tag in _skip_keys:
+                continue
+            with _dpg_lock:
+                if dpg.does_item_exist(tag):
+                    try:
+                        dpg.set_value(tag, value)
+                    except Exception as exc:
+                        logger.warning(
+                            "set_setting_dict: set_value failed for tag %s: %s",
+                            tag, exc,
+                        )
+                else:
+                    logger.debug("set_setting_dict: tag %s does not exist, skipping", tag)
 
     def draw_info(self, node_name, node_result, image):
         classification_nodes = ["Classification"]

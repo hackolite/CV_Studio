@@ -828,15 +828,25 @@ class DpgNodeEditor(object):
         """Delete a DearPyGui item selected by ID or alias."""
         try:
             if item is not None and dpg.does_item_exist(item):
+                logger.debug("_delete_item_by_selection: deleting item %s", item)
                 dpg.delete_item(item)
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error(
+                "_delete_item_by_selection: failed to delete item %s: %s",
+                item, exc, exc_info=True,
+            )
         if fallback_alias is not None:
             try:
+                logger.debug(
+                    "_delete_item_by_selection: fallback delete alias %s", fallback_alias
+                )
                 dpg.delete_item(fallback_alias)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.error(
+                    "_delete_item_by_selection: fallback delete failed for alias %s: %s",
+                    fallback_alias, exc, exc_info=True,
+                )
 
     def _purge_node_textures(self, node_id_name):
         """Delete any DPG texture items registered under this node's namespace.
@@ -848,22 +858,70 @@ class DpgNodeEditor(object):
         undo to fail silently for every node type that outputs an image.
         """
         prefix = node_id_name + ':'
-        for alias in list(dpg.get_aliases()):
+        purged = []
+        try:
+            all_aliases = list(dpg.get_aliases())
+        except Exception as exc:
+            logger.error(
+                "_purge_node_textures: could not retrieve alias list for %s: %s",
+                node_id_name, exc, exc_info=True,
+            )
+            return
+        for alias in all_aliases:
             if not alias.startswith(prefix):
                 continue
             try:
                 item_id = dpg.get_alias_id(alias)
+            except Exception as exc:
+                logger.warning(
+                    "_purge_node_textures: get_alias_id failed for alias %s: %s",
+                    alias, exc,
+                )
+                continue
+            try:
                 if not dpg.does_item_exist(item_id):
+                    logger.debug(
+                        "_purge_node_textures: alias %s (id=%s) no longer exists, skipping",
+                        alias, item_id,
+                    )
                     continue
                 item_type = str(dpg.get_item_type(item_id))
-                if 'texture' in item_type.lower():
-                    dpg.delete_item(item_id)
-                    try:
-                        dpg.remove_alias(alias)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "_purge_node_textures: could not inspect item %s (alias=%s): %s",
+                    item_id, alias, exc,
+                )
+                continue
+            if 'texture' not in item_type.lower():
+                continue
+            try:
+                logger.debug(
+                    "_purge_node_textures: deleting texture alias=%s id=%s type=%s",
+                    alias, item_id, item_type,
+                )
+                dpg.delete_item(item_id)
+                purged.append(alias)
+            except Exception as exc:
+                logger.error(
+                    "_purge_node_textures: delete_item failed for texture alias=%s id=%s: %s",
+                    alias, item_id, exc, exc_info=True,
+                )
+                continue
+            try:
+                dpg.remove_alias(alias)
+            except Exception as exc:
+                logger.warning(
+                    "_purge_node_textures: remove_alias failed for %s: %s", alias, exc
+                )
+        if purged:
+            logger.info(
+                "_purge_node_textures: purged %d texture(s) for node %s: %s",
+                len(purged), node_id_name, purged,
+            )
+        else:
+            logger.debug(
+                "_purge_node_textures: no textures found for node %s", node_id_name
+            )
 
     def _delete_dpg_link(self, link_info):
         """Delete the visual dpg node_link item matching link_info [source, dest]."""
@@ -874,15 +932,20 @@ class DpgNodeEditor(object):
                 attr_1_alias = dpg.get_item_alias(config.get("attr_1", 0))
                 attr_2_alias = dpg.get_item_alias(config.get("attr_2", 0))
                 if attr_1_alias == link_info[0] and attr_2_alias == link_info[1]:
+                    logger.debug("_delete_dpg_link: removing link %s", link_info)
                     dpg.delete_item(child_id)
                     break
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error(
+                "_delete_dpg_link: failed to delete link %s: %s",
+                link_info, exc, exc_info=True,
+            )
 
     def _callback_mv_key_del(self):
         # Hold the shared DPG lock for the whole deletion so the async
         # update thread cannot touch items while they are being deleted
         # (concurrent DPG mutation causes segfaults).
+        logger.debug("_callback_mv_key_del: Delete key pressed, acquiring lock")
         with _dpg_lock:
             self._delete_selection()
 
@@ -894,17 +957,32 @@ class DpgNodeEditor(object):
             return
 
         selected_nodes = list(dpg.get_selected_nodes(self._node_editor_tag))
+        selected_links = list(dpg.get_selected_links(self._node_editor_tag))
+        logger.info(
+            "_delete_selection: %d node(s) and %d link(s) selected",
+            len(selected_nodes),
+            len(selected_links),
+        )
         for item_id in selected_nodes:
             node_id_name = self._resolve_item_alias(item_id)
             if not node_id_name:
+                logger.warning(
+                    "_delete_selection: could not resolve alias for item_id=%s, skipping",
+                    item_id,
+                )
                 continue
             node_id, node_name = node_id_name.split(":")
 
             if node_name == "ExecPythonCode":
+                logger.debug("_delete_selection: skipping ExecPythonCode node %s", node_id_name)
                 continue
             if node_id_name not in self._node_list:
+                logger.warning(
+                    "_delete_selection: node %s not in _node_list, skipping", node_id_name
+                )
                 continue
 
+            logger.info("_delete_selection: deleting node %s (item_id=%s)", node_id_name, item_id)
             node_instance = self.get_node_instances(node_id_name)
 
             # Snapshot for undo: save settings and involved links before deletion
@@ -925,13 +1003,26 @@ class DpgNodeEditor(object):
                 if len(self._undo_stack) > 20:
                     self._undo_stack.pop(0)
             except Exception as exc:
-                logger.warning(f"Undo snapshot failed for {node_id_name}: {exc}")
+                logger.warning(
+                    "_delete_selection: undo snapshot failed for %s: %s",
+                    node_id_name, exc, exc_info=True,
+                )
 
             if node_instance is not None:
-                node_instance.close(node_id)
+                try:
+                    logger.debug("_delete_selection: calling close() on %s", node_id_name)
+                    node_instance.close(node_id)
+                except Exception as exc:
+                    logger.error(
+                        "_delete_selection: close() raised for %s: %s",
+                        node_id_name, exc, exc_info=True,
+                    )
 
             self._node_list.remove(node_id_name)
             self._node_instances_list.pop(node_id_name, None)
+            logger.debug(
+                "_delete_selection: removed %s from node list and instances", node_id_name
+            )
 
             # Remove links associated with the deleted node and
             # delete the corresponding visual dpg link items.
@@ -950,19 +1041,31 @@ class DpgNodeEditor(object):
             # the texture first leaves those children with a dangling reference
             # which causes DearPyGui to crash (segfault) when the widget is
             # subsequently cleaned up.
+            logger.debug(
+                "_delete_selection: deleting widget for %s (item_id=%s) then purging textures",
+                node_id_name, item_id,
+            )
             self._delete_item_by_selection(item_id, fallback_alias=node_id_name)
             self._purge_node_textures(node_id_name)
+            logger.info("_delete_selection: node %s fully removed", node_id_name)
 
-        selected_links = list(dpg.get_selected_links(self._node_editor_tag))
         for selected_link in selected_links:
             try:
                 if not dpg.does_item_exist(selected_link):
                     continue
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "_delete_selection: does_item_exist failed for link %s: %s",
+                    selected_link, exc,
+                )
                 continue
             try:
                 config = dpg.get_item_configuration(selected_link)
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "_delete_selection: get_item_configuration failed for link %s: %s",
+                    selected_link, exc,
+                )
                 continue
             attr_1 = config.get("attr_1")
             attr_2 = config.get("attr_2")
@@ -974,6 +1077,7 @@ class DpgNodeEditor(object):
             ]
             if not all(link_info) or link_info not in self._node_link_list:
                 continue
+            logger.debug("_delete_selection: removing selected link %s", link_info)
             self._node_link_list.remove(link_info)
             self._delete_item_by_selection(selected_link)
 
@@ -1021,7 +1125,11 @@ class DpgNodeEditor(object):
             node_instance = self._node_instances_list.get(node_id_name)
             try:
                 settings = node_instance.get_setting_dict(node_id_str) if node_instance is not None else {}
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "_delete_all_nodes_with_undo: get_setting_dict failed for %s: %s",
+                    node_id_name, exc,
+                )
                 settings = {}
             batch_entries.append({
                 'node_id_name': node_id_name,
@@ -1061,9 +1169,13 @@ class DpgNodeEditor(object):
                 try:
                     item_id = dpg.get_alias_id(node_id_name)
                     if dpg.does_item_exist(item_id):
+                        logger.debug("_clear_all_nodes: deleting widget for %s", node_id_name)
                         dpg.delete_item(item_id)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.error(
+                        "_clear_all_nodes: failed to delete widget for %s: %s",
+                        node_id_name, exc, exc_info=True,
+                    )
                 self._purge_node_textures(node_id_name)
 
             self._node_list.clear()
@@ -1116,7 +1228,9 @@ class DpgNodeEditor(object):
                     if node_id > self._node_id:
                         self._node_id = node_id
                 except Exception as exc:
-                    logger.error(f"Undo batch failed for {node_id_name}: {exc}")
+                    logger.error(
+                        "Undo batch failed for %s: %s", node_id_name, exc, exc_info=True
+                    )
 
             # Restore all links
             for link_info in entry.get('links', []):
@@ -1186,7 +1300,7 @@ class DpgNodeEditor(object):
             )
             logger.info(f"Undo: restored node {node_id_name}.")
         except Exception as exc:
-            logger.error(f"Undo failed for {node_id_name}: {exc}")
+            logger.error("Undo failed for %s: %s", node_id_name, exc, exc_info=True)
 
     # ------------------------------------------------------------------
     # Copy (Ctrl+C): snapshot ALL selected nodes into the clipboard
