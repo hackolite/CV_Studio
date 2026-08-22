@@ -187,6 +187,32 @@ class TestCallbackMvKeyDel:
         editor._callback_mv_key_del()
         assert "1:Video" not in editor._node_list
 
+    def test_malformed_alias_is_logged_and_skipped(self, editor, reset_dpg_mock):
+        """Malformed aliases should be skipped with an error log instead of crashing."""
+        mock_dpg = reset_dpg_mock
+
+        editor._node_list = ["1:Video"]
+        editor._node_link_list = []
+
+        mock_dpg.get_selected_nodes.return_value = [100]
+        mock_dpg.get_selected_links.return_value = []
+        mock_dpg.get_item_alias.side_effect = lambda x: {100: "invalid_alias"}.get(x, x)
+
+        with patch.object(node_main.logger, "error") as mock_log_error:
+            editor._callback_mv_key_del()
+
+        assert "1:Video" in editor._node_list
+        assert any("malformed node alias" in str(call.args[0]) for call in mock_log_error.call_args_list)
+        assert any(len(call.args) > 1 and call.args[1] == "invalid_alias" for call in mock_log_error.call_args_list)
+
+    def test_delete_callback_logs_unexpected_exception(self, editor, reset_dpg_mock):
+        """Unexpected delete exceptions must be logged and not crash the callback."""
+        with patch.object(editor, "_delete_selection", side_effect=RuntimeError("boom")):
+            with patch.object(node_main.logger, "error") as mock_log_error:
+                editor._callback_mv_key_del()
+
+        assert any("unexpected delete failure" in str(call.args[0]) for call in mock_log_error.call_args_list)
+
     def test_alias_selection_delete_works(self, editor, reset_dpg_mock):
         """Deletion should work even if DearPyGui returns selected node aliases."""
         mock_dpg = reset_dpg_mock
