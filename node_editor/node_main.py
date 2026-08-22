@@ -929,7 +929,6 @@ class DpgNodeEditor(object):
 
             if node_instance is not None:
                 node_instance.close(node_id)
-            self._purge_node_textures(node_id_name)
 
             self._node_list.remove(node_id_name)
             self._node_instances_list.pop(node_id_name, None)
@@ -946,7 +945,13 @@ class DpgNodeEditor(object):
                     # Delete the visual link from the node editor
                     self._delete_dpg_link(link_info)
 
+            # Delete the node widget BEFORE purging textures: the node widget
+            # contains add_image children that reference the texture.  Deleting
+            # the texture first leaves those children with a dangling reference
+            # which causes DearPyGui to crash (segfault) when the widget is
+            # subsequently cleaned up.
             self._delete_item_by_selection(item_id, fallback_alias=node_id_name)
+            self._purge_node_textures(node_id_name)
 
         selected_links = list(dpg.get_selected_links(self._node_editor_tag))
         for selected_link in selected_links:
@@ -1051,13 +1056,15 @@ class DpgNodeEditor(object):
                         node_instance.close(node_id)
                     except Exception as exc:
                         logger.warning(f"Error closing node {node_id_name}: {exc}")
-                self._purge_node_textures(node_id_name)
+                # Delete the node widget BEFORE purging textures (same reason as
+                # _delete_selection: add_image children hold texture references).
                 try:
                     item_id = dpg.get_alias_id(node_id_name)
                     if dpg.does_item_exist(item_id):
                         dpg.delete_item(item_id)
                 except Exception:
                     pass
+                self._purge_node_textures(node_id_name)
 
             self._node_list.clear()
             self._node_link_list.clear()
