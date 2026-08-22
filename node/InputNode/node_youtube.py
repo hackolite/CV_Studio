@@ -398,6 +398,7 @@ class YoutubeNode(Node):
         self._audio_stop_event = threading.Event()
         self._loading = False
         self._loading_thread = None
+        self._node_closed = threading.Event()
 
     def convert_cv_to_dpg(self, cv_img, w, h):
         """Converts OpenCV image to DearPyGui format"""
@@ -587,6 +588,13 @@ class YoutubeNode(Node):
                         cookies_browser=(self._opencv_setting_dict or {}).get("youtube_cookies_browser"),
                     )
 
+                    # Node may have been deleted while yt-dlp was running; bail
+                    # out without touching any DearPyGui items to avoid a crash.
+                    if self._node_closed.is_set():
+                        if cap is not None:
+                            cap.release()
+                        return
+
                     if cap is None or not cap.isOpened():
                         print("❌ Erreur: Impossible d'ouvrir le stream")
                         if dpg.does_item_exist(tag_node_button_value_name):
@@ -612,15 +620,19 @@ class YoutubeNode(Node):
 
                 except ValueError as e:
                     print(f"❌ Erreur: {e}")
+                    if self.cap is not None:
+                        self.cap.release()
                     self.cap = None
                     self.is_streaming = False
-                    if dpg.does_item_exist(tag_node_button_value_name):
+                    if not self._node_closed.is_set() and dpg.does_item_exist(tag_node_button_value_name):
                         dpg.set_item_label(tag_node_button_value_name, self._start_label)
                 except Exception as e:
                     print(f"❌ Erreur inattendue: {e}")
+                    if self.cap is not None:
+                        self.cap.release()
                     self.cap = None
                     self.is_streaming = False
-                    if dpg.does_item_exist(tag_node_button_value_name):
+                    if not self._node_closed.is_set() and dpg.does_item_exist(tag_node_button_value_name):
                         dpg.set_item_label(tag_node_button_value_name, self._start_label)
                 finally:
                     self._loading = False
@@ -728,6 +740,7 @@ class YoutubeNode(Node):
     
     def close(self, node_id):
         """Clean up resources when node is closed."""
+        self._node_closed.set()
         if self._loading_thread and self._loading_thread.is_alive():
             self._loading = False
             self._loading_thread.join(timeout=2.0)
