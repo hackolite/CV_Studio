@@ -186,6 +186,25 @@ class TestCallbackMvKeyDel:
         editor._callback_mv_key_del()
         assert "1:Video" not in editor._node_list
 
+    def test_alias_selection_delete_works(self, editor, reset_dpg_mock):
+        """Deletion should work even if DearPyGui returns selected node aliases."""
+        mock_dpg = reset_dpg_mock
+
+        editor._node_list = ["1:Video"]
+        editor._node_link_list = []
+        mock_instance = MagicMock()
+        editor._node_instances_list["1:Video"] = mock_instance
+
+        mock_dpg.get_selected_nodes.return_value = ["1:Video"]
+        mock_dpg.get_selected_links.return_value = []
+
+        editor._callback_mv_key_del()
+
+        assert "1:Video" not in editor._node_list
+        assert "1:Video" not in editor._node_instances_list
+        mock_instance.close.assert_called_once_with("1")
+        mock_dpg.delete_item.assert_called_once_with("1:Video")
+
     def test_visual_link_deletion_called(self, editor, reset_dpg_mock):
         """Verify _delete_dpg_link is called for each removed link."""
         mock_dpg = reset_dpg_mock

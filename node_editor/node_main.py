@@ -338,10 +338,10 @@ class DpgNodeEditor(object):
                         node_sources_path = os.path.join(
                             node_dir,
                             menu_info[1],
-                            "*.py",
+                            "node_*.py",
                         )
 
-                        node_sources = glob(node_sources_path)
+                        node_sources = sorted(glob(node_sources_path))
                         # print(node_sources)
 
                         for node_source in node_sources:
@@ -814,6 +814,15 @@ class DpgNodeEditor(object):
                 dpg.get_selected_nodes(self._node_editor_tag)[0]
             )
 
+    def _resolve_item_alias(self, item):
+        """Return a stable DearPyGui alias whether selection yielded an ID or alias."""
+        if isinstance(item, str) and ":" in item:
+            return item
+        try:
+            return dpg.get_item_alias(item)
+        except Exception:
+            return item if isinstance(item, str) else None
+
     def _purge_node_textures(self, node_id_name):
         """Delete any DPG texture items registered under this node's namespace.
 
@@ -864,7 +873,7 @@ class DpgNodeEditor(object):
 
         selected_nodes = list(dpg.get_selected_nodes(self._node_editor_tag))
         for item_id in selected_nodes:
-            node_id_name = dpg.get_item_alias(item_id)
+            node_id_name = self._resolve_item_alias(item_id)
             if not node_id_name:
                 continue
             node_id, node_name = node_id_name.split(":")
@@ -901,6 +910,7 @@ class DpgNodeEditor(object):
             self._purge_node_textures(node_id_name)
 
             self._node_list.remove(node_id_name)
+            self._node_instances_list.pop(node_id_name, None)
 
             # Remove links associated with the deleted node and
             # delete the corresponding visual dpg link items.
@@ -914,36 +924,25 @@ class DpgNodeEditor(object):
                     # Delete the visual link from the node editor
                     self._delete_dpg_link(link_info)
 
-            dpg.delete_item(item_id)
+            dpg.delete_item(node_id_name)
 
-        if selected_nodes:
+        selected_links = list(dpg.get_selected_links(self._node_editor_tag))
+        if selected_links:
+            selected_link = selected_links[0]
+            config = dpg.get_item_configuration(selected_link)
+            link_info = [
+                self._resolve_item_alias(config.get("attr_1")),
+                self._resolve_item_alias(config.get("attr_2")),
+            ]
+            if link_info in self._node_link_list:
+                self._node_link_list.remove(link_info)
+            dpg.delete_item(selected_link)
+
+        if selected_nodes or selected_links:
             self._node_connection_dict = self._sort_node_graph(
                 self._node_list,
                 self._node_link_list,
             )
-
-        if len(dpg.get_selected_links(self._node_editor_tag)) > 0:
-            self._node_link_list.remove(
-                [
-                    dpg.get_item_alias(
-                        dpg.get_item_configuration(
-                            dpg.get_selected_links(self._node_editor_tag)[0]
-                        )["attr_1"]
-                    ),
-                    dpg.get_item_alias(
-                        dpg.get_item_configuration(
-                            dpg.get_selected_links(self._node_editor_tag)[0]
-                        )["attr_2"]
-                    ),
-                ]
-            )
-
-            self._node_connection_dict = self._sort_node_graph(
-                self._node_list,
-                self._node_link_list,
-            )
-
-            dpg.delete_item(dpg.get_selected_links(self._node_editor_tag)[0])
 
         if self._use_debug_print:
             logger.debug("_callback_mv_key_del details:")
