@@ -658,6 +658,10 @@ def _do_scan_and_compute(node):
         n_vp = scan["n_vision_proc"]
         n_ap = scan["n_audio_proc"]
 
+        # Bail out early if the node was deleted while scanning.
+        if node._node_closed.is_set():
+            return
+
         # Update streams read-only display
         dpg_set_value(
             tag + ':StreamsDisplay',
@@ -774,7 +778,7 @@ class _Node(Node):
     tag_chart_texture = ''
 
     def __init__(self):
-        pass
+        self._node_closed = threading.Event()
 
     def update(
         self,
@@ -788,7 +792,7 @@ class _Node(Node):
         return {"image": None, "json": None, "audio": None}
 
     def close(self, node_id):
-        pass
+        self._node_closed.set()
 
     def get_setting_dict(self, node_id):
         tag = str(node_id) + ':' + self.node_tag

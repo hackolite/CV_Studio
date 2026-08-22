@@ -375,6 +375,7 @@ class VideoNode(Node):
         self._audio_chunk_paths = {}  # Store paths to WAV chunk files
         self._chunk_metadata = {}  # Metadata for chunk-to-frame mapping
         self._chunk_temp_dirs = {}  # Track temporary directories for cleanup
+        self._node_closed = threading.Event()
 
     def _preprocess_video(self, node_id, movie_path, chunk_duration=5.0, step_duration=1.0, progress_callback=None):
         """
@@ -728,6 +729,8 @@ class VideoNode(Node):
 
         def progress_callback(p):
             self._preprocessing_progress[node_id] = p
+            if self._node_closed.is_set():
+                return
             with _dpg_lock:
                 if dpg.does_item_exist(tag_node_progress_bar_name):
                     dpg.set_value(tag_node_progress_bar_name, p)
@@ -752,21 +755,23 @@ class VideoNode(Node):
 
                 # Auto-start playback
                 self._is_playing[node_id] = True
-                with _dpg_lock:
-                    if dpg.does_item_exist(tag_node_button_value_name):
-                        dpg.configure_item(tag_node_button_value_name, label=self._stop_label)
-                    if dpg.does_item_exist(tag_node_progress_bar_name):
-                        dpg.configure_item(tag_node_progress_bar_name, show=False)
+                if not self._node_closed.is_set():
+                    with _dpg_lock:
+                        if dpg.does_item_exist(tag_node_button_value_name):
+                            dpg.configure_item(tag_node_button_value_name, label=self._stop_label)
+                        if dpg.does_item_exist(tag_node_progress_bar_name):
+                            dpg.configure_item(tag_node_progress_bar_name, show=False)
             except Exception as e:
                 logger.error("Error during video preprocessing for node %s: %s", node_id, e)
                 import traceback
                 traceback.print_exc()
                 self._preprocessing_status[node_id] = 'error'
-                with _dpg_lock:
-                    if dpg.does_item_exist(tag_node_button_value_name):
-                        dpg.configure_item(tag_node_button_value_name, label=self._start_label)
-                    if dpg.does_item_exist(tag_node_progress_bar_name):
-                        dpg.configure_item(tag_node_progress_bar_name, show=False)
+                if not self._node_closed.is_set():
+                    with _dpg_lock:
+                        if dpg.does_item_exist(tag_node_button_value_name):
+                            dpg.configure_item(tag_node_button_value_name, label=self._start_label)
+                        if dpg.does_item_exist(tag_node_progress_bar_name):
+                            dpg.configure_item(tag_node_progress_bar_name, show=False)
             finally:
                 if node_id in self._preprocessing_threads:
                     del self._preprocessing_threads[node_id]
@@ -1016,6 +1021,7 @@ class VideoNode(Node):
     def close(self, node_id):
         """Clean up audio chunks, temporary files, and threads when node is closed."""
         node_id_str = str(node_id)
+        self._node_closed.set()
         
         # Clean up audio chunks
         self._cleanup_audio_chunks(node_id_str)

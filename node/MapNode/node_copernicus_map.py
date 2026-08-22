@@ -863,6 +863,7 @@ class _Node(Node):
         self._last_fetch_lat    = None
         self._last_fetch_lon    = None
         self._coord_from_input  = False   # True once coords arrive from JSON input
+        self._node_closed       = threading.Event()
 
     # ── Band-slot management ────────────────────────────────────────────────
 
@@ -1227,15 +1228,24 @@ class _Node(Node):
             f"  dates={params['date_from']}→{params['date_to']}  cloud<={params['cloud']}%"
         )
         print(f"[CopernicusMap] Evalscript:\n{params['evalscript']}")
+
+        def _safe_status(msg):
+            """Set status label only when the node is still alive."""
+            if not self._node_closed.is_set():
+                try:
+                    dpg_set_value(tag_node + ":Status", msg)
+                except Exception:
+                    pass
+
         try:
             tiles, (lat_min, lat_max, lon_min, lon_max) = _bbox_tiles(
                 params["lat"], params["lon"], params["radius"]
             )
             # Clamp to _MAX_TILES × _MAX_TILES to avoid huge requests
             if len(tiles) > _MAX_TILES * _MAX_TILES:
-                dpg_set_value(tag_node + ":Status",
-                              f"Status: Area too large (>{_MAX_TILES**2} tiles). "
-                              "Reduce radius.")
+                _safe_status(
+                    f"Status: Area too large (>{_MAX_TILES**2} tiles). "
+                    "Reduce radius.")
                 self._fetching = False
                 return
 
@@ -1276,10 +1286,7 @@ class _Node(Node):
                   f"{len(tiles) - total} from cache")
 
             if total > 0:
-                dpg_set_value(
-                    tag_node + ":Status",
-                    f"Status: Downloading {total} tile(s)…",
-                )
+                _safe_status(f"Status: Downloading {total} tile(s)…")
                 # Download missing tiles in parallel (mirrors the OSM tile
                 # prefetch approach in node_map.py: up to _FETCH_WORKERS
                 # concurrent requests to avoid waiting sequentially).
@@ -1325,8 +1332,7 @@ class _Node(Node):
             self._last_fetch_lon = params["lon"]
 
             print(f"[CopernicusMap] Fetch done — {total} new tile(s) downloaded")
-            dpg_set_value(tag_node + ":Status",
-                          f"Status: Done ✓  ({total} new tiles)")
+            _safe_status(f"Status: Done ✓  ({total} new tiles)")
 
             # Warm the cache with the 8 km² beside the position so subsequent
             # panning / zoom around this first position is served from disk.
@@ -1336,8 +1342,7 @@ class _Node(Node):
             print(f"[CopernicusMap] ERROR: {exc}")
             print(traceback.format_exc())
             short = str(exc)
-            dpg_set_value(tag_node + ":Status",
-                          f"Error: {short[:120]}" if len(short) > 120 else f"Error: {short}")
+            _safe_status(f"Error: {short[:120]}" if len(short) > 120 else f"Error: {short}")
         finally:
             self._fetching = False
 
@@ -1577,7 +1582,7 @@ class _Node(Node):
         }
 
     def close(self, node_id):
-        pass
+        self._node_closed.set()
 
 
 # ---------------------------------------------------------------------------
