@@ -165,7 +165,8 @@ class TestCallbackMvKeyDel:
         assert "2:Display" not in editor._node_list
         # Both links referencing "2:Display" should be removed
         assert len(editor._node_link_list) == 0
-        # close should have been called
+        # close should have been called (runs in a background thread)
+        editor._join_pending_closes("2:Display")
         mock_instance.close.assert_called_once_with("2")
 
     def test_null_instance_does_not_crash(self, editor, reset_dpg_mock):
@@ -229,6 +230,7 @@ class TestCallbackMvKeyDel:
 
         assert "1:Video" not in editor._node_list
         assert "1:Video" not in editor._node_instances_list
+        editor._join_pending_closes("1:Video")
         mock_instance.close.assert_called_once_with("1")
         mock_dpg.delete_item.assert_called_once_with("1:Video")
 
