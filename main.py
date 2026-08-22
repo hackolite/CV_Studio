@@ -23,7 +23,7 @@ import dearpygui.dearpygui as dpg
 from src.utils.logging import setup_logging, get_logger
 from src.utils.gpu_utils import log_gpu_info
 
-from node_editor.util import check_camera_connection
+from node_editor.util import check_camera_connection, _dpg_lock
 from node_editor.node_main import DpgNodeEditor
 from node_editor.node_main import update_uptime_display
 
@@ -126,18 +126,22 @@ def update_node_info(
     node_audio_dict,
     mode_async=True,
 ):
-    editor_width = dpg.get_viewport_client_width()
-    editor_height = dpg.get_viewport_client_height()
+    # All DearPyGui calls below must hold _dpg_lock: this function runs in the
+    # async worker thread while the main thread can delete nodes concurrently
+    # (unlocked concurrent DPG mutation segfaults, notably on Linux).
+    with _dpg_lock:
+        editor_width = dpg.get_viewport_client_width()
+        editor_height = dpg.get_viewport_client_height()
 
-    # Update uptime display
-    update_uptime_display()
+        # Update uptime display
+        update_uptime_display()
 
-    try:
-        dpg.set_item_pos(node_editor.window, [0, 0])
-        dpg.set_item_width(node_editor.window, dpg.get_viewport_client_width())
-        dpg.set_item_height(node_editor.window, dpg.get_viewport_client_height())
-    except Exception as e:
-        logger.error(f"Failed to set node editor window properties: {e}")
+        try:
+            dpg.set_item_pos(node_editor.window, [0, 0])
+            dpg.set_item_width(node_editor.window, dpg.get_viewport_client_width())
+            dpg.set_item_height(node_editor.window, dpg.get_viewport_client_height())
+        except Exception as e:
+            logger.error(f"Failed to set node editor window properties: {e}")
 
     # Snapshot the node list: the delete callback (main thread) can mutate it
     # while this loop runs in the async worker thread.
@@ -151,15 +155,32 @@ def update_node_info(
 
         node_id, _ = node_id_name.split(":")
         connection_list = sorted_node_connection_dict.get(node_id_name, [])
-        node_instance = node_editor.get_node_instances(node_id_name)
-        if node_instance is None:
-            # Node was deleted after the snapshot was taken; skip it.
-            continue
-        logger.debug(
-            f"Processing node {node_id_name} with connections: {connection_list}"
-        )
-        if mode_async:
-            try:
+        # Hold the lock while updating the node: node updates draw to DPG
+        # (textures, values) and must not run while the main thread deletes
+        # items. Re-check the instance inside the lock in case the node was
+        # deleted after the snapshot was taken.
+        with _dpg_lock:
+            node_instance = node_editor.get_node_instances(node_id_name)
+            if node_instance is None:
+                # Node was deleted after the snapshot was taken; skip it.
+                continue
+            logger.debug(
+                f"Processing node {node_id_name} with connections: {connection_list}"
+            )
+            if mode_async:
+                try:
+                    data = node_instance.update(
+                        node_id,
+                        connection_list,
+                        node_image_dict,
+                        node_result_dict,
+                        node_audio_dict,
+                    )
+                except Exception as e:
+                    logger.error(f"Error updating node {node_id_name}: {e}", exc_info=True)
+                    # sys.exit()
+                    continue
+            else:
                 data = node_instance.update(
                     node_id,
                     connection_list,
@@ -167,17 +188,6 @@ def update_node_info(
                     node_result_dict,
                     node_audio_dict,
                 )
-            except Exception as e:
-                logger.error(f"Error updating node {node_id_name}: {e}", exc_info=True)
-                # sys.exit()
-        else:
-            data = node_instance.update(
-                node_id,
-                connection_list,
-                node_image_dict,
-                node_result_dict,
-                node_audio_dict,
-            )
 
         try:
             # Determine if this is an input node or a processing node
