@@ -36,7 +36,7 @@ def _get_ffmpeg_exe():
             pass
     return shutil.which("ffmpeg")
 
-from node_editor.util import dpg_get_value, dpg_set_value, _dpg_lock
+from node_editor.util import dpg_get_value, dpg_set_value, _dpg_lock, dpg_delete_item
 
 from node.node_abc import DpgNodeABC
 from node.basenode import Node
@@ -1028,6 +1028,21 @@ class VideoNode(Node):
         # and will be automatically terminated when the main thread exits
         if node_id_str in self._preprocessing_threads:
             del self._preprocessing_threads[node_id_str]
+
+        # Delete the file_dialog widget (created outside the node hierarchy
+        # so dpg.delete_item(node_widget) does not remove it automatically).
+        # Leaving it as an orphan causes a duplicate-tag error on undo/re-add.
+        dialog_tag = 'movie_select:' + node_id_str
+        try:
+            if dpg.does_item_exist(dialog_tag):
+                logger.debug(
+                    "node_video.close: deleting orphan file_dialog tag=%s", dialog_tag,
+                )
+                dpg_delete_item(dialog_tag)
+        except Exception as exc:
+            logger.warning(
+                "node_video.close: failed to delete file_dialog tag=%s: %s", dialog_tag, exc,
+            )
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ":" + self.node_tag

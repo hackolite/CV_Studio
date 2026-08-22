@@ -859,63 +859,93 @@ class DpgNodeEditor(object):
         them.  If they are not removed explicitly before a node is re-created by
         undo, DearPyGui raises an error because the tag already exists, causing
         undo to fail silently for every node type that outputs an image.
+
+        All DPG calls (get_aliases, get_alias_id, does_item_exist, get_item_type,
+        delete_item, remove_alias) are performed while holding _dpg_lock to
+        prevent race conditions with the async worker thread on Windows where
+        the thread scheduler exposes concurrent DPG alias-registry access.
         """
+        import platform as _platform
         prefix = node_id_name + ':'
         purged = []
-        try:
-            all_aliases = list(dpg.get_aliases())
-        except Exception as exc:
-            logger.error(
-                "_purge_node_textures: could not retrieve alias list for %s: %s",
-                node_id_name, exc, exc_info=True,
-            )
-            return
-        for alias in all_aliases:
-            if not alias.startswith(prefix):
-                continue
+        logger.debug(
+            "_purge_node_textures: starting purge for node=%s platform=%s",
+            node_id_name, _platform.system(),
+        )
+        with _dpg_lock:
             try:
-                item_id = dpg.get_alias_id(alias)
-            except Exception as exc:
-                logger.warning(
-                    "_purge_node_textures: get_alias_id failed for alias %s: %s",
-                    alias, exc,
-                )
-                continue
-            try:
-                if not dpg.does_item_exist(item_id):
-                    logger.debug(
-                        "_purge_node_textures: alias %s (id=%s) no longer exists, skipping",
-                        alias, item_id,
-                    )
-                    continue
-                item_type = str(dpg.get_item_type(item_id))
-            except Exception as exc:
-                logger.warning(
-                    "_purge_node_textures: could not inspect item %s (alias=%s): %s",
-                    item_id, alias, exc,
-                )
-                continue
-            if 'texture' not in item_type.lower():
-                continue
-            try:
-                logger.debug(
-                    "_purge_node_textures: deleting texture alias=%s id=%s type=%s",
-                    alias, item_id, item_type,
-                )
-                dpg_delete_item(item_id)
-                purged.append(alias)
+                all_aliases = list(dpg.get_aliases())
             except Exception as exc:
                 logger.error(
-                    "_purge_node_textures: delete_item failed for texture alias=%s id=%s: %s",
-                    alias, item_id, exc, exc_info=True,
+                    "_purge_node_textures: could not retrieve alias list for %s: %s",
+                    node_id_name, exc, exc_info=True,
                 )
-                continue
-            try:
-                dpg.remove_alias(alias)
-            except Exception as exc:
-                logger.warning(
-                    "_purge_node_textures: remove_alias failed for %s: %s", alias, exc
+                return
+            logger.debug(
+                "_purge_node_textures: total aliases in registry=%d, scanning prefix='%s'",
+                len(all_aliases), prefix,
+            )
+            for alias in all_aliases:
+                if not alias.startswith(prefix):
+                    continue
+                try:
+                    item_id = dpg.get_alias_id(alias)
+                except Exception as exc:
+                    logger.warning(
+                        "_purge_node_textures: get_alias_id failed for alias %s: %s",
+                        alias, exc,
+                    )
+                    continue
+                try:
+                    if not dpg.does_item_exist(item_id):
+                        logger.debug(
+                            "_purge_node_textures: alias %s (id=%s) no longer exists, skipping",
+                            alias, item_id,
+                        )
+                        continue
+                    item_type = str(dpg.get_item_type(item_id))
+                except Exception as exc:
+                    logger.warning(
+                        "_purge_node_textures: could not inspect item %s (alias=%s): %s",
+                        item_id, alias, exc,
+                    )
+                    continue
+                logger.debug(
+                    "_purge_node_textures: found alias=%s id=%s type=%s",
+                    alias, item_id, item_type,
                 )
+                if 'texture' not in item_type.lower():
+                    logger.debug(
+                        "_purge_node_textures: alias=%s is not a texture (type=%s), skipping",
+                        alias, item_type,
+                    )
+                    continue
+                try:
+                    logger.debug(
+                        "_purge_node_textures: deleting texture alias=%s id=%s type=%s",
+                        alias, item_id, item_type,
+                    )
+                    # Use dpg.delete_item directly (not the dpg_delete_item wrapper)
+                    # because we already hold _dpg_lock for the entire purge loop.
+                    # dpg_delete_item would re-acquire _dpg_lock; while _dpg_lock is
+                    # reentrant, calling it here adds unnecessary overhead.
+                    dpg.delete_item(item_id)
+                    purged.append(alias)
+                except Exception as exc:
+                    logger.error(
+                        "_purge_node_textures: delete_item failed for texture alias=%s id=%s: %s",
+                        alias, item_id, exc, exc_info=True,
+                    )
+                    continue
+                try:
+                    dpg.remove_alias(alias)
+                    logger.debug(
+                        "_purge_node_textures: removed alias=%s from registry", alias,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "_purge_node_textures: remove_alias failed for %s: %s", alias, exc
+                    )
         if purged:
             logger.info(
                 "_purge_node_textures: purged %d texture(s) for node %s: %s",

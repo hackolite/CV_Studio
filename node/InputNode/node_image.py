@@ -1,14 +1,17 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import logging
 import cv2
 import numpy as np
 import dearpygui.dearpygui as dpg
 
-from node_editor.util import dpg_get_value, dpg_set_value
+from node_editor.util import dpg_get_value, dpg_set_value, dpg_delete_item
 
 from node.node_abc import DpgNodeABC
 #from node_editor.util import convert_cv_to_dpg
 from node.basenode import Node
+
+logger = logging.getLogger(__name__)
 
 
 class FactoryNode:
@@ -225,6 +228,21 @@ class ImageNode(Node):
             del self._prev_image_filepath[node_id_str]
         if node_id_str in self._texture_cache:
             del self._texture_cache[node_id_str]
+        # Delete the file_dialog widget (created outside the node hierarchy
+        # so dpg.delete_item(node_widget) does not remove it automatically).
+        # Leaving it as an orphan causes a duplicate-tag error on undo/re-add
+        # on Windows where alias cleanup is stricter.
+        dialog_tag = 'image_select:' + node_id_str
+        try:
+            if dpg.does_item_exist(dialog_tag):
+                logger.debug(
+                    "node_image.close: deleting orphan file_dialog tag=%s", dialog_tag,
+                )
+                dpg_delete_item(dialog_tag)
+        except Exception as exc:
+            logger.warning(
+                "node_image.close: failed to delete file_dialog tag=%s: %s", dialog_tag, exc,
+            )
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
