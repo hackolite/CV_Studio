@@ -831,7 +831,7 @@ class DpgNodeEditor(object):
                 return
         except Exception:
             pass
-        if fallback_alias:
+        if fallback_alias is not None:
             try:
                 dpg.delete_item(fallback_alias)
             except Exception:
@@ -951,9 +951,13 @@ class DpgNodeEditor(object):
                 config = dpg.get_item_configuration(selected_link)
             except Exception:
                 continue
+            attr_1 = config.get("attr_1")
+            attr_2 = config.get("attr_2")
+            if attr_1 is None or attr_2 is None:
+                continue
             link_info = [
-                self._resolve_item_alias(config.get("attr_1")),
-                self._resolve_item_alias(config.get("attr_2")),
+                self._resolve_item_alias(attr_1),
+                self._resolve_item_alias(attr_2),
             ]
             if link_info in self._node_link_list:
                 self._node_link_list.remove(link_info)
