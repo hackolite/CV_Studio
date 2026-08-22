@@ -925,6 +925,10 @@ class DpgNodeEditor(object):
                         "_purge_node_textures: deleting texture alias=%s id=%s type=%s",
                         alias, item_id, item_type,
                     )
+                    # Use dpg.delete_item directly (not the dpg_delete_item wrapper)
+                    # because we already hold _dpg_lock for the entire purge loop.
+                    # dpg_delete_item would re-acquire _dpg_lock; while _dpg_lock is
+                    # reentrant, calling it here adds unnecessary overhead.
                     dpg.delete_item(item_id)
                     purged.append(alias)
                 except Exception as exc:

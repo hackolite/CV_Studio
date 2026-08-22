@@ -78,8 +78,9 @@ class DpgNodeABC(metaclass=ABCMeta):
                     )
                     _dpg.delete_item(dialog_tag)
                     try:
-                        if _dpg.get_item_alias(dialog_tag):
-                            _dpg.remove_alias(dialog_tag)
+                        # dialog_tag is already the alias string; remove it from
+                        # the registry so undo/re-add can reuse the same tag.
+                        _dpg.remove_alias(dialog_tag)
                     except Exception:
                         pass
             except Exception as exc:
