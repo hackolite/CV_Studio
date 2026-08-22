@@ -262,6 +262,12 @@ def update_node_info(
                     node_result_dict,
                     node_audio_dict,
                 )
+            # Deepcopy data while holding the lock so that any numpy arrays
+            # that share memory with DPG texture buffers are fully copied
+            # before the lock is released.  Without this, the main thread
+            # can delete the texture (freeing its buffer) between here and
+            # the deepcopy call below, which causes a segfault on Linux.
+            data = copy.deepcopy(data)
 
         try:
             # Determine if this is an input node or a processing node
