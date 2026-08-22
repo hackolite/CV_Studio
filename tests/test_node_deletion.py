@@ -221,7 +221,7 @@ class TestCallbackMvKeyDel:
 
         with patch.object(node_main, "dpg_delete_item") as safe_delete:
             editor._callback_mv_key_del()
-            safe_delete.assert_called_with("1:Video")
+            safe_delete.assert_called_once_with("1:Video")
 
     def test_visual_link_deletion_called(self, editor, reset_dpg_mock):
         """Verify _delete_dpg_link is called for each removed link."""
