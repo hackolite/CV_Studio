@@ -30,6 +30,7 @@ sys.modules['dearpygui'] = _mock_dearpygui
 sys.modules['dearpygui.dearpygui'] = _mock_dpg
 
 from node_editor.node_main import DpgNodeEditor  # noqa: E402
+import node_editor.node_main as node_main  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -204,6 +205,23 @@ class TestCallbackMvKeyDel:
         assert "1:Video" not in editor._node_instances_list
         mock_instance.close.assert_called_once_with("1")
         mock_dpg.delete_item.assert_called_once_with("1:Video")
+
+    def test_delete_uses_thread_safe_delete_wrapper(self, editor, reset_dpg_mock):
+        """Node deletion should route through dpg_delete_item wrapper."""
+        mock_dpg = reset_dpg_mock
+
+        editor._node_list = ["1:Video"]
+        editor._node_link_list = []
+        mock_instance = MagicMock()
+        editor._node_instances_list["1:Video"] = mock_instance
+
+        mock_dpg.get_selected_nodes.return_value = ["1:Video"]
+        mock_dpg.get_selected_links.return_value = []
+        mock_dpg.does_item_exist.return_value = True
+
+        with patch.object(node_main, "dpg_delete_item") as safe_delete:
+            editor._callback_mv_key_del()
+            safe_delete.assert_called_with("1:Video")
 
     def test_visual_link_deletion_called(self, editor, reset_dpg_mock):
         """Verify _delete_dpg_link is called for each removed link."""
