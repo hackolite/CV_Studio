@@ -498,7 +498,17 @@ def main():
         logger.info("Async draw is enabled")
         event_loop = asyncio.get_event_loop()
         event_loop.run_in_executor(None, async_main, node_editor, queue_manager)
-        dpg.start_dearpygui()
+        # Use a manual render loop instead of dpg.start_dearpygui() so that
+        # each frame render holds _dpg_lock.  dpg.start_dearpygui() runs the
+        # DPG C-level loop without acquiring _dpg_lock, which races with the
+        # worker thread's DPG calls and causes a segfault on Linux.
+        # The lock is released between frames so the worker thread can acquire
+        # it to make DPG calls without starving.  The 1ms sleep outside the
+        # lock yields CPU time; DPG's built-in vsync caps the frame rate.
+        while dpg.is_dearpygui_running():
+            with _dpg_lock:
+                dpg.render_dearpygui_frame()
+            time.sleep(0.001)  # 1ms yield between frames
 
     else:
         logger.info("Async draw is disabled")
