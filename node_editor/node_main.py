@@ -982,10 +982,10 @@ class DpgNodeEditor(object):
                 continue
             try:
                 node_id, node_name = node_id_name.split(":", 1)
-            except ValueError:
+            except ValueError as exc:
                 logger.error(
-                    "_delete_selection: malformed node alias %s for item_id=%s, skipping",
-                    node_id_name, item_id, exc_info=True,
+                    "_delete_selection: malformed node alias %s for item_id=%s, skipping: %s",
+                    node_id_name, item_id, exc,
                 )
                 continue
 
