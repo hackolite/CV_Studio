@@ -1000,15 +1000,34 @@ class DpgNodeEditor(object):
 
             logger.info("_delete_selection: deleting node %s (item_id=%s)", node_id_name, item_id)
             node_instance = self.get_node_instances(node_id_name)
+            try:
+                exists_before_delete = dpg.does_item_exist(item_id)
+            except Exception as exc:
+                exists_before_delete = "unknown"
+                logger.warning(
+                    "_delete_selection: does_item_exist failed for node %s (item_id=%s): %s",
+                    node_id_name, item_id, exc,
+                )
+
+            attached_links = [
+                lnk for lnk in self._node_link_list
+                if ":".join(lnk[0].split(":")[:2]) == node_id_name
+                or ":".join(lnk[1].split(":")[:2]) == node_id_name
+            ]
+            logger.debug(
+                "_delete_selection: pre-delete context node=%s exists=%s instance=%s attached_links=%d",
+                node_id_name,
+                exists_before_delete,
+                type(node_instance).__name__ if node_instance is not None else None,
+                len(attached_links),
+            )
+            for link_info in attached_links:
+                logger.debug("_delete_selection: attached link for %s -> %s", node_id_name, link_info)
 
             # Snapshot for undo: save settings and involved links before deletion
             try:
                 snapshot_settings = node_instance.get_setting_dict(node_id) if node_instance is not None else {}
-                snapshot_links = [
-                    lnk for lnk in self._node_link_list
-                    if ":".join(lnk[0].split(":")[:2]) == node_id_name
-                    or ":".join(lnk[1].split(":")[:2]) == node_id_name
-                ]
+                snapshot_links = attached_links
                 self._undo_stack.append({
                     'node_id_name': node_id_name,
                     'node_id': int(node_id),
