@@ -1002,17 +1002,17 @@ class DpgNodeEditor(object):
                     # Remove the alias first so the tag is immediately available
                     # again (undo re-creates the node with the same tag).
                     dpg.remove_alias(alias)
+                    # Defer the actual deletion: this runs inside a DPG callback,
+                    # i.e. during a frame, and deleting a texture still referenced
+                    # by the current draw list segfaults on Linux.
+                    schedule_deferred_delete(item_id, alias)
+                    purged.append(alias)
                 except Exception as exc:
                     logger.error(
-                        "_purge_node_textures: remove_alias failed for %s (id=%s): %s",
+                        "_purge_node_textures: could not release texture alias=%s (id=%s): %s",
                         alias, item_id, exc, exc_info=True,
                     )
                     continue
-                # Defer the actual deletion: this runs inside a DPG callback,
-                # i.e. during a frame, and deleting a texture still referenced
-                # by the current draw list segfaults on Linux.
-                schedule_deferred_delete(item_id, alias)
-                purged.append(alias)
         if purged:
             logger.info(
                 "_purge_node_textures: purged %d texture(s) for node %s: %s",
