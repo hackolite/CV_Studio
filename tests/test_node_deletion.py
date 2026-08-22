@@ -203,6 +203,7 @@ class TestCallbackMvKeyDel:
 
         assert "1:Video" in editor._node_list
         assert any("malformed node alias" in str(call.args[0]) for call in mock_log_error.call_args_list)
+        assert any("invalid_alias" in str(call.args) for call in mock_log_error.call_args_list)
 
     def test_delete_callback_logs_unexpected_exception(self, editor, reset_dpg_mock):
         """Unexpected delete exceptions must be logged and not crash the callback."""
