@@ -1004,7 +1004,7 @@ class Node(Node):
         return {"image": output_frame, "json": result, "audio": None}
 
     def close(self, node_id):
-        pass
+        super().close(node_id)
     
     def draw_classification_info(
         self,

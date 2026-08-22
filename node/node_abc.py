@@ -1,4 +1,7 @@
 from abc import ABCMeta, abstractmethod
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DpgNodeABC(metaclass=ABCMeta):
@@ -45,6 +48,42 @@ class DpgNodeABC(metaclass=ABCMeta):
     def set_setting_dict(self, node_id, setting_dict):
         pass
 
-    @abstractmethod
     def close(self, node_id):
-        pass
+        """Default cleanup: delete any file_dialog widgets stored as instance
+        attributes (tag_upload_file_dialog, tag_export_file_dialog, etc.).
+
+        File dialogs are created outside the node widget hierarchy, so
+        dpg.delete_item(node_widget) does NOT remove them.  Leaving them as
+        orphans causes duplicate-tag errors on undo/re-add, which is especially
+        visible on Windows.
+
+        Sub-classes should call super().close(node_id) or perform the same
+        cleanup themselves.
+        """
+        import dearpygui.dearpygui as _dpg
+        dialog_attrs = [
+            'tag_upload_file_dialog',
+            'tag_export_file_dialog',
+            'tag_file_dialog',
+        ]
+        for attr in dialog_attrs:
+            dialog_tag = getattr(self, attr, None)
+            if dialog_tag is None:
+                continue
+            try:
+                if _dpg.does_item_exist(dialog_tag):
+                    logger.debug(
+                        "DpgNodeABC.close: deleting orphan dialog tag=%s (attr=%s)",
+                        dialog_tag, attr,
+                    )
+                    _dpg.delete_item(dialog_tag)
+                    try:
+                        if _dpg.get_item_alias(dialog_tag):
+                            _dpg.remove_alias(dialog_tag)
+                    except Exception:
+                        pass
+            except Exception as exc:
+                logger.warning(
+                    "DpgNodeABC.close: failed to delete dialog tag=%s (attr=%s): %s",
+                    dialog_tag, attr, exc,
+                )

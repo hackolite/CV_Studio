@@ -597,7 +597,7 @@ class Node(Node):  # noqa: F811
         return {"image": debug_frame if debug_frame is not None else frame, "json": result, "audio": None}
 
     def close(self, node_id):
-        pass
+        super().close(node_id)
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag

@@ -1447,7 +1447,7 @@ class Node(Node):
 
 
     def close(self, node_id):
-        pass
+        super().close(node_id)
 
     def get_setting_dict(self, node_id):
         self.tag_node_name = str(node_id) + ':' + self.node_tag

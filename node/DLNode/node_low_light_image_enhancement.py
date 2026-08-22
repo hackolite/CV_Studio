@@ -264,7 +264,7 @@ class Node(Node):
         return {"image": frame, "json": None, "audio": None}
 
     def close(self, node_id):
-        pass
+        super().close(node_id)
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
