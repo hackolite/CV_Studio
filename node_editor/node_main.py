@@ -952,10 +952,10 @@ class DpgNodeEditor(object):
         with _dpg_lock:
             try:
                 self._delete_selection()
-            except Exception as exc:
+            except Exception:
                 logger.error(
-                    "_callback_mv_key_del: unexpected delete failure: %s",
-                    exc, exc_info=True,
+                    "_callback_mv_key_del: unexpected delete failure",
+                    exc_info=True,
                 )
 
     def _delete_selection(self):
