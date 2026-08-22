@@ -3,25 +3,58 @@
 """Regression tests for deterministic cross-platform node discovery."""
 
 import os
+import sys
+from unittest.mock import MagicMock
 
 
-def test_node_editor_discovers_only_node_modules():
-    """Node menus should scan only concrete node_*.py modules."""
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    node_main_path = os.path.join(repo_root, "node_editor", "node_main.py")
+_mock_dpg = MagicMock()
+_mock_dearpygui = MagicMock()
+_mock_dearpygui.dearpygui = _mock_dpg
+sys.modules['dearpygui'] = _mock_dearpygui
+sys.modules['dearpygui.dearpygui'] = _mock_dpg
 
-    with open(node_main_path, "r", encoding="utf-8") as f:
-        source = f.read()
-
-    assert "node_*.py" in source
+import node_editor.node_main as node_main  # noqa: E402
 
 
-def test_node_editor_sorts_discovered_modules():
-    """Node discovery must be sorted so Linux/Windows show the same menu order."""
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    node_main_path = os.path.join(repo_root, "node_editor", "node_main.py")
+def test_node_editor_discovers_only_sorted_node_modules(monkeypatch, tmp_path):
+    """Only node_*.py files should be loaded, in sorted order."""
+    _mock_dpg.reset_mock()
 
-    with open(node_main_path, "r", encoding="utf-8") as f:
-        source = f.read()
+    node_dir = tmp_path / "node"
+    dl_dir = node_dir / "DLNode"
+    dl_dir.mkdir(parents=True)
+    for filename in ("node_zeta.py", "helper.py", "node_alpha.py"):
+        (dl_dir / filename).write_text("# test\n", encoding="utf-8")
 
-    assert "sorted(glob(node_sources_path))" in source
+    loaded_modules = []
+
+    def fake_import_module(import_path):
+        loaded_modules.append(import_path)
+        module = MagicMock()
+        factory = MagicMock()
+        short_name = import_path.rsplit(".", 1)[-1]
+        label = short_name.replace("node_", "").title()
+        factory.node_tag = label
+        factory.node_label = label
+        module.FactoryNode.return_value = factory
+        return module
+
+    monkeypatch.setattr(node_main, "import_module", fake_import_module)
+
+    node_main.DpgNodeEditor(
+        width=800,
+        height=600,
+        opencv_setting_dict={
+            'webcam_width': 640,
+            'webcam_height': 480,
+            'input_window_width': 320,
+            'input_window_height': 240,
+        },
+        menu_dict={"VisionModel": "DLNode"},
+        node_dir=os.fspath(node_dir),
+    )
+
+    assert loaded_modules == [
+        "node.DLNode.node_alpha",
+        "node.DLNode.node_zeta",
+    ]

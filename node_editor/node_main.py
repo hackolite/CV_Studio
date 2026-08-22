@@ -946,7 +946,7 @@ class DpgNodeEditor(object):
                 if not dpg.does_item_exist(selected_link):
                     continue
             except Exception:
-                pass
+                continue
             try:
                 config = dpg.get_item_configuration(selected_link)
             except Exception:
