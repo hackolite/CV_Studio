@@ -14,7 +14,7 @@ import dearpygui.dearpygui as dpg
 from node.node_factory import NodeFactory
 import time
 from node_editor.style import STYLE
-from node_editor.util import _dpg_lock  # Import shared DearPyGUI lock
+from node_editor.util import _dpg_lock, dpg_delete_item  # Import shared DearPyGUI lock
 from src.utils.logging import get_logger
 
 # Uptime tracking
@@ -542,7 +542,7 @@ class DpgNodeEditor(object):
             )
 
     def _callback_close_window(self, sender):
-        dpg.delete_item(sender)
+        dpg_delete_item(sender)
 
     def _sort_node_graph(self, node_list, node_link_list):
         node_id_dict = OrderedDict({})
@@ -829,7 +829,7 @@ class DpgNodeEditor(object):
         try:
             if item is not None and dpg.does_item_exist(item):
                 logger.debug("_delete_item_by_selection: deleting item %s", item)
-                dpg.delete_item(item)
+                dpg_delete_item(item)
                 return
         except Exception as exc:
             logger.error(
@@ -841,7 +841,7 @@ class DpgNodeEditor(object):
                 logger.debug(
                     "_delete_item_by_selection: fallback delete alias %s", fallback_alias
                 )
-                dpg.delete_item(fallback_alias)
+                dpg_delete_item(fallback_alias)
             except Exception as exc:
                 logger.error(
                     "_delete_item_by_selection: fallback delete failed for alias %s: %s",
@@ -899,7 +899,7 @@ class DpgNodeEditor(object):
                     "_purge_node_textures: deleting texture alias=%s id=%s type=%s",
                     alias, item_id, item_type,
                 )
-                dpg.delete_item(item_id)
+                dpg_delete_item(item_id)
                 purged.append(alias)
             except Exception as exc:
                 logger.error(
@@ -933,7 +933,7 @@ class DpgNodeEditor(object):
                 attr_2_alias = dpg.get_item_alias(config.get("attr_2", 0))
                 if attr_1_alias == link_info[0] and attr_2_alias == link_info[1]:
                     logger.debug("_delete_dpg_link: removing link %s", link_info)
-                    dpg.delete_item(child_id)
+                    dpg_delete_item(child_id)
                     break
         except Exception as exc:
             logger.error(
@@ -1170,7 +1170,7 @@ class DpgNodeEditor(object):
                     item_id = dpg.get_alias_id(node_id_name)
                     if dpg.does_item_exist(item_id):
                         logger.debug("_clear_all_nodes: deleting widget for %s", node_id_name)
-                        dpg.delete_item(item_id)
+                        dpg_delete_item(item_id)
                 except Exception as exc:
                     logger.error(
                         "_clear_all_nodes: failed to delete widget for %s: %s",
