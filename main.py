@@ -14,6 +14,7 @@ import copy
 import json
 import asyncio
 import argparse
+import atexit
 import faulthandler
 import signal
 import threading
@@ -43,6 +44,7 @@ from node_editor.splash import show_splash_screen as _show_splash_screen
 # (e.g., Deploy node for schema export)
 _node_editor_ref = None
 _fault_log_file_handle = None
+_fault_log_atexit_registered = False
 
 
 def _log_thread_exception(args):
@@ -56,18 +58,23 @@ def _log_thread_exception(args):
 
 def configure_fault_diagnostics(fault_log_path=None):
     """Enable diagnostics for hard crashes (e.g., segfaults) and thread exceptions."""
-    global _fault_log_file_handle
+    global _fault_log_file_handle, _fault_log_atexit_registered
 
     target_stream = sys.stderr
     resolved_path = None
     path = fault_log_path or os.environ.get("CV_STUDIO_FAULT_LOG")
     if path:
+        if _fault_log_file_handle is not None:
+            _close_fault_log_file()
         resolved_path = os.path.abspath(path)
         resolved_dir = os.path.dirname(resolved_path)
         if resolved_dir:
             os.makedirs(resolved_dir, exist_ok=True)
         _fault_log_file_handle = open(resolved_path, "a", buffering=1, encoding="utf-8")
         target_stream = _fault_log_file_handle
+        if not _fault_log_atexit_registered:
+            atexit.register(_close_fault_log_file)
+            _fault_log_atexit_registered = True
 
     faulthandler.enable(file=target_stream, all_threads=True)
 
@@ -77,14 +84,29 @@ def configure_fault_diagnostics(fault_log_path=None):
             continue
         try:
             faulthandler.register(sig, file=target_stream, all_threads=True, chain=False)
-        except RuntimeError:
-            logger.debug("Fault dump signal %s already registered", sig_name)
+        except (OSError, ValueError) as exc:
+            logger.warning("Failed to register fault dump signal %s: %s", sig_name, exc)
 
     threading.excepthook = _log_thread_exception
     logger.info(
         "Fault diagnostics enabled%s",
         f" (fault trace output: {resolved_path})" if resolved_path else " (fault trace output: stderr)",
     )
+
+
+def _close_fault_log_file():
+    global _fault_log_file_handle
+    if _fault_log_file_handle is not None:
+        file_handle = _fault_log_file_handle
+        try:
+            file_handle.flush()
+            file_handle.close()
+            try:
+                faulthandler.enable(file=sys.stderr, all_threads=True)
+            except Exception:
+                pass
+        finally:
+            _fault_log_file_handle = None
 
 
 def get_resource_path(relative_path):
