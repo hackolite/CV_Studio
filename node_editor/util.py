@@ -112,3 +112,67 @@ def dpg_delete_item(tag):
                 "dpg_delete_item: failed for tag %s: %s",
                 tag, exc, exc_info=True,
             )
+
+
+# Items whose deletion must happen between two rendered frames.
+# Deleting a texture from a DearPyGui callback deletes it *during* the frame,
+# while the GPU draw list still references it; on Linux (OpenGL backend) this
+# segfaults.  Such items are queued here instead and deleted by
+# process_deferred_deletes(), which the render loop calls once the frame has
+# been fully rendered.
+_deferred_delete_queue = []
+_deferred_delete_lock = threading.Lock()
+
+
+def schedule_deferred_delete(item, description=None):
+    """Queue a DPG item for deletion after the current frame has been rendered.
+
+    Args:
+        item: the item id (or tag) to delete.
+        description: optional human readable label used for logging.
+    """
+    with _deferred_delete_lock:
+        _deferred_delete_queue.append((item, description))
+    logger.debug(
+        "schedule_deferred_delete: queued item %s (%s) for post-frame deletion",
+        item, description,
+    )
+
+
+def process_deferred_deletes():
+    """Delete every item queued by schedule_deferred_delete().
+
+    Must be called from the render loop, outside of dpg.render_dearpygui_frame(),
+    so no draw command still references the deleted items.
+
+    Returns:
+        The number of items actually deleted.
+    """
+    with _deferred_delete_lock:
+        if not _deferred_delete_queue:
+            return 0
+        pending = list(_deferred_delete_queue)
+        _deferred_delete_queue.clear()
+
+    deleted = 0
+    with _dpg_lock:
+        for item, description in pending:
+            try:
+                if not dpg.does_item_exist(item):
+                    logger.debug(
+                        "process_deferred_deletes: item %s (%s) no longer exists",
+                        item, description,
+                    )
+                    continue
+                dpg.delete_item(item)
+                deleted += 1
+                logger.debug(
+                    "process_deferred_deletes: deleted item %s (%s)",
+                    item, description,
+                )
+            except Exception as exc:
+                logger.error(
+                    "process_deferred_deletes: failed to delete item %s (%s): %s",
+                    item, description, exc, exc_info=True,
+                )
+    return deleted

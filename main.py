@@ -27,7 +27,11 @@ import dearpygui.dearpygui as dpg
 from src.utils.logging import setup_logging, get_logger
 from src.utils.gpu_utils import log_gpu_info
 
-from node_editor.util import check_camera_connection, _dpg_lock
+from node_editor.util import (
+    check_camera_connection,
+    _dpg_lock,
+    process_deferred_deletes,
+)
 from node_editor.node_main import DpgNodeEditor
 from node_editor.node_main import update_uptime_display
 
@@ -606,6 +610,9 @@ def main():
         while dpg.is_dearpygui_running():
             with _dpg_lock:
                 dpg.render_dearpygui_frame()
+            # Delete items queued during the frame (textures of deleted nodes):
+            # destroying them while the frame is being drawn segfaults on Linux.
+            process_deferred_deletes()
             time.sleep(0.001)  # 1ms yield between frames
 
     else:
@@ -627,8 +634,12 @@ def main():
                 mode_async=False,
             )
             dpg.render_dearpygui_frame()
+            process_deferred_deletes()
 
     logger.info("Terminating process")
+
+    # Drain any item deletion queued during the last frame
+    process_deferred_deletes()
 
     # Signal async loop to stop before closing nodes so update calls cease
     node_editor.set_terminate_flag()

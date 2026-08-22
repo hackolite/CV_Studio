@@ -15,7 +15,11 @@ import dearpygui.dearpygui as dpg
 from node.node_factory import NodeFactory
 import time
 from node_editor.style import STYLE
-from node_editor.util import _dpg_lock, dpg_delete_item  # Import shared DearPyGUI lock
+from node_editor.util import (  # Import shared DearPyGUI lock
+    _dpg_lock,
+    dpg_delete_item,
+    schedule_deferred_delete,
+)
 from src.utils.logging import get_logger
 
 # Uptime tracking
@@ -925,9 +929,15 @@ class DpgNodeEditor(object):
         undo to fail silently for every node type that outputs an image.
 
         All DPG calls (get_aliases, get_alias_id, does_item_exist, get_item_type,
-        delete_item, remove_alias) are performed while holding _dpg_lock to
-        prevent race conditions with the async worker thread on Windows where
-        the thread scheduler exposes concurrent DPG alias-registry access.
+        remove_alias) are performed while holding _dpg_lock to prevent race
+        conditions with the async worker thread on Windows where the thread
+        scheduler exposes concurrent DPG alias-registry access.
+
+        The alias is removed immediately (so undo can re-create the node with
+        the same tag) but the item deletion itself is deferred through
+        schedule_deferred_delete(): this callback runs *during* a frame, and
+        destroying a texture the current draw list still references segfaults
+        on Linux.  The render loop drains the queue between two frames.
         """
         import platform as _platform
         prefix = node_id_name + ':'
@@ -986,30 +996,23 @@ class DpgNodeEditor(object):
                     continue
                 try:
                     logger.debug(
-                        "_purge_node_textures: deleting texture alias=%s id=%s type=%s",
+                        "_purge_node_textures: releasing alias=%s id=%s type=%s",
                         alias, item_id, item_type,
                     )
-                    # Use dpg.delete_item directly (not the dpg_delete_item wrapper)
-                    # because we already hold _dpg_lock for the entire purge loop.
-                    # dpg_delete_item would re-acquire _dpg_lock; while _dpg_lock is
-                    # reentrant, calling it here adds unnecessary overhead.
-                    dpg.delete_item(item_id)
-                    purged.append(alias)
+                    # Remove the alias first so the tag is immediately available
+                    # again (undo re-creates the node with the same tag).
+                    dpg.remove_alias(alias)
                 except Exception as exc:
                     logger.error(
-                        "_purge_node_textures: delete_item failed for texture alias=%s id=%s: %s",
+                        "_purge_node_textures: remove_alias failed for %s (id=%s): %s",
                         alias, item_id, exc, exc_info=True,
                     )
                     continue
-                try:
-                    dpg.remove_alias(alias)
-                    logger.debug(
-                        "_purge_node_textures: removed alias=%s from registry", alias,
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "_purge_node_textures: remove_alias failed for %s: %s", alias, exc
-                    )
+                # Defer the actual deletion: this runs inside a DPG callback,
+                # i.e. during a frame, and deleting a texture still referenced
+                # by the current draw list segfaults on Linux.
+                schedule_deferred_delete(item_id, alias)
+                purged.append(alias)
         if purged:
             logger.info(
                 "_purge_node_textures: purged %d texture(s) for node %s: %s",
