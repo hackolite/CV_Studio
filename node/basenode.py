@@ -165,7 +165,11 @@ class Node:
     def set_setting_dict(self, node_id, setting_dict):
         self.tag_node_name = f"{node_id}:{self.node_tag}"
 
+        # "ver" and "pos" are metadata entries, not DPG item tags.
+        _skip_keys = {"ver", "pos"}
         for tag, value in setting_dict.items():
+            if tag in _skip_keys:
+                continue
             with _dpg_lock:
                 if dpg.does_item_exist(tag):
                     try:

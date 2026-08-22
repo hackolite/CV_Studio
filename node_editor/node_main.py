@@ -957,10 +957,11 @@ class DpgNodeEditor(object):
             return
 
         selected_nodes = list(dpg.get_selected_nodes(self._node_editor_tag))
+        selected_links = list(dpg.get_selected_links(self._node_editor_tag))
         logger.info(
             "_delete_selection: %d node(s) and %d link(s) selected",
             len(selected_nodes),
-            len(dpg.get_selected_links(self._node_editor_tag)),
+            len(selected_links),
         )
         for item_id in selected_nodes:
             node_id_name = self._resolve_item_alias(item_id)
@@ -1048,7 +1049,6 @@ class DpgNodeEditor(object):
             self._purge_node_textures(node_id_name)
             logger.info("_delete_selection: node %s fully removed", node_id_name)
 
-        selected_links = list(dpg.get_selected_links(self._node_editor_tag))
         for selected_link in selected_links:
             try:
                 if not dpg.does_item_exist(selected_link):
