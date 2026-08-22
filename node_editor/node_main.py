@@ -6,6 +6,7 @@ import copy
 import json
 import platform
 import datetime
+import threading
 from glob import glob
 from collections import OrderedDict
 from importlib import import_module
@@ -270,6 +271,11 @@ class DpgNodeEditor(object):
         self._clipboard_paste_offset = 0
         # Select-all flag: set by Ctrl+A, consumed by Delete
         self._select_all_flag = False
+        # Background close() threads keyed by node_id_name.  Node close() can
+        # block for a long time (thread joins, capture release, subprocess
+        # wait); running it on the UI thread while _dpg_lock is held freezes
+        # rendering and starves the async update thread.
+        self._pending_close_threads = {}
 
         if menu_dict is None:
             menu_dict = OrderedDict(
@@ -851,6 +857,60 @@ class DpgNodeEditor(object):
                     fallback_alias, exc, exc_info=True,
                 )
 
+    def _start_node_close(self, node_id_name, node_instance, node_id):
+        """Run a node's close() in a background thread.
+
+        close() implementations release cameras, join worker threads and wait on
+        subprocesses, which can block for many seconds.  Deletion runs on the UI
+        thread while _dpg_lock is held, so a blocking close() freezes rendering
+        *and* blocks the async update thread in update_node_info until the close
+        returns (reported by the fault watchdog as "Timeout (0:00:30)!" on
+        Linux).  Running close() off the UI thread keeps the lock free.
+        """
+        if node_instance is None:
+            return None
+
+        def _run():
+            try:
+                node_instance.close(node_id)
+            except Exception as exc:
+                logger.error(
+                    "_start_node_close: close() raised for %s: %s",
+                    node_id_name, exc, exc_info=True,
+                )
+
+        thread = threading.Thread(
+            target=_run, name=f"node-close-{node_id_name}", daemon=True
+        )
+        self._pending_close_threads[node_id_name] = thread
+        logger.debug("_start_node_close: closing %s in background", node_id_name)
+        thread.start()
+        return thread
+
+    def _join_pending_closes(self, node_id_name=None, timeout=5.0):
+        """Wait for background close() threads to finish (bounded by timeout).
+
+        Called before a node is re-created (undo/paste/load) so that a pending
+        close does not delete widgets of the freshly created node.
+        """
+        if node_id_name is not None:
+            items = [(node_id_name, self._pending_close_threads.get(node_id_name))]
+        else:
+            items = list(self._pending_close_threads.items())
+
+        for name, thread in items:
+            if thread is None:
+                continue
+            if thread.is_alive():
+                thread.join(timeout)
+                if thread.is_alive():
+                    logger.warning(
+                        "_join_pending_closes: close() for %s still running after %ss",
+                        name, timeout,
+                    )
+                    continue
+            self._pending_close_threads.pop(name, None)
+
     def _purge_node_textures(self, node_id_name):
         """Delete any DPG texture items registered under this node's namespace.
 
@@ -1074,14 +1134,10 @@ class DpgNodeEditor(object):
                 )
 
             if node_instance is not None:
-                try:
-                    logger.debug("_delete_selection: calling close() on %s", node_id_name)
-                    node_instance.close(node_id)
-                except Exception as exc:
-                    logger.error(
-                        "_delete_selection: close() raised for %s: %s",
-                        node_id_name, exc, exc_info=True,
-                    )
+                # close() may block (thread joins / capture release); run it in
+                # the background so _dpg_lock is not held for its duration.
+                logger.debug("_delete_selection: scheduling close() on %s", node_id_name)
+                self._start_node_close(node_id_name, node_instance, node_id)
 
             self._node_list.remove(node_id_name)
             self._node_instances_list.pop(node_id_name, None)
@@ -1225,10 +1281,9 @@ class DpgNodeEditor(object):
                 node_id, _ = node_id_name.split(":")
                 node_instance = self._node_instances_list.get(node_id_name)
                 if node_instance is not None:
-                    try:
-                        node_instance.close(node_id)
-                    except Exception as exc:
-                        logger.warning(f"Error closing node {node_id_name}: {exc}")
+                    # Background close(): see _start_node_close – a blocking
+                    # close() here would hold _dpg_lock and freeze the UI.
+                    self._start_node_close(node_id_name, node_instance, node_id)
                 # Delete the node widget BEFORE purging textures (same reason as
                 # _delete_selection: add_image children hold texture references).
                 try:
@@ -1252,6 +1307,11 @@ class DpgNodeEditor(object):
             self._clipboard = None
             self._clipboard_paste_offset = 0
             logger.info("All nodes cleared.")
+
+        # Outside the lock: pending close() threads may need _dpg_lock themselves
+        # (e.g. to delete orphan file dialogs), so joining them while holding the
+        # lock would deadlock.
+        self._join_pending_closes()
 
     # ------------------------------------------------------------------
     # Undo (Ctrl+Z): restore the last deleted node (up to 3 levels)
@@ -1279,6 +1339,9 @@ class DpgNodeEditor(object):
                     continue
                 try:
                     pos = settings.get('pos', [0, 0])
+                    # Wait for a pending background close() so it cannot delete
+                    # widgets belonging to the node we are about to re-create.
+                    self._join_pending_closes(node_id_name)
                     self._purge_node_textures(node_id_name)
                     node = factorynode.add_node(
                         self._node_editor_tag,
@@ -1331,6 +1394,9 @@ class DpgNodeEditor(object):
 
         try:
             pos = settings.get('pos', [0, 0])
+            # Wait for a pending background close() so it cannot delete widgets
+            # belonging to the node we are about to re-create.
+            self._join_pending_closes(node_id_name)
             self._purge_node_textures(node_id_name)
             node = factorynode.add_node(
                 self._node_editor_tag,
