@@ -823,6 +823,20 @@ class DpgNodeEditor(object):
         except Exception:
             return item if isinstance(item, str) else None
 
+    def _delete_item_by_selection(self, item, fallback_alias=None):
+        """Delete a DearPyGui item selected by ID or alias."""
+        try:
+            if item is not None and dpg.does_item_exist(item):
+                dpg.delete_item(item)
+                return
+        except Exception:
+            pass
+        if fallback_alias:
+            try:
+                dpg.delete_item(fallback_alias)
+            except Exception:
+                pass
+
     def _purge_node_textures(self, node_id_name):
         """Delete any DPG texture items registered under this node's namespace.
 
@@ -924,19 +938,26 @@ class DpgNodeEditor(object):
                     # Delete the visual link from the node editor
                     self._delete_dpg_link(link_info)
 
-            dpg.delete_item(node_id_name)
+            self._delete_item_by_selection(item_id, fallback_alias=node_id_name)
 
         selected_links = list(dpg.get_selected_links(self._node_editor_tag))
-        if selected_links:
-            selected_link = selected_links[0]
-            config = dpg.get_item_configuration(selected_link)
+        for selected_link in selected_links:
+            try:
+                if not dpg.does_item_exist(selected_link):
+                    continue
+            except Exception:
+                pass
+            try:
+                config = dpg.get_item_configuration(selected_link)
+            except Exception:
+                continue
             link_info = [
                 self._resolve_item_alias(config.get("attr_1")),
                 self._resolve_item_alias(config.get("attr_2")),
             ]
             if link_info in self._node_link_list:
                 self._node_link_list.remove(link_info)
-            dpg.delete_item(selected_link)
+            self._delete_item_by_selection(selected_link)
 
         if selected_nodes or selected_links:
             self._node_connection_dict = self._sort_node_graph(

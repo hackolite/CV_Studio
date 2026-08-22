@@ -13,7 +13,7 @@ def test_node_editor_discovers_only_node_modules():
     with open(node_main_path, "r", encoding="utf-8") as f:
         source = f.read()
 
-    assert '"node_*.py"' in source
+    assert "node_*.py" in source
 
 
 def test_node_editor_sorts_discovered_modules():
