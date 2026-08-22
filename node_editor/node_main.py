@@ -816,12 +816,13 @@ class DpgNodeEditor(object):
 
     def _resolve_item_alias(self, item):
         """Return a stable DearPyGui alias whether selection yielded an ID or alias."""
-        if isinstance(item, str) and ":" in item:
-            return item
         try:
-            return dpg.get_item_alias(item)
+            alias = dpg.get_item_alias(item)
+            if alias:
+                return alias
         except Exception:
-            return item if isinstance(item, str) else None
+            pass
+        return item if isinstance(item, str) else None
 
     def _delete_item_by_selection(self, item, fallback_alias=None):
         """Delete a DearPyGui item selected by ID or alias."""
@@ -959,8 +960,9 @@ class DpgNodeEditor(object):
                 self._resolve_item_alias(attr_1),
                 self._resolve_item_alias(attr_2),
             ]
-            if link_info in self._node_link_list:
-                self._node_link_list.remove(link_info)
+            if not all(link_info) or link_info not in self._node_link_list:
+                continue
+            self._node_link_list.remove(link_info)
             self._delete_item_by_selection(selected_link)
 
         if selected_nodes or selected_links:
