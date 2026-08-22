@@ -820,8 +820,11 @@ class DpgNodeEditor(object):
             alias = dpg.get_item_alias(item)
             if alias:
                 return alias
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "_resolve_item_alias: get_item_alias failed for item=%s: %s",
+                item, exc, exc_info=True,
+            )
         return item if isinstance(item, str) else None
 
     def _delete_item_by_selection(self, item, fallback_alias=None):
@@ -947,7 +950,13 @@ class DpgNodeEditor(object):
         # (concurrent DPG mutation causes segfaults).
         logger.debug("_callback_mv_key_del: Delete key pressed, acquiring lock")
         with _dpg_lock:
-            self._delete_selection()
+            try:
+                self._delete_selection()
+            except Exception as exc:
+                logger.error(
+                    "_callback_mv_key_del: unexpected delete failure: %s",
+                    exc, exc_info=True,
+                )
 
     def _delete_selection(self):
         # If Ctrl+A was used, delete ALL nodes as a single batch (undoable)
@@ -971,7 +980,14 @@ class DpgNodeEditor(object):
                     item_id,
                 )
                 continue
-            node_id, node_name = node_id_name.split(":")
+            try:
+                node_id, node_name = node_id_name.split(":", 1)
+            except ValueError:
+                logger.error(
+                    "_delete_selection: malformed node alias %s for item_id=%s, skipping",
+                    node_id_name, item_id, exc_info=True,
+                )
+                continue
 
             if node_name == "ExecPythonCode":
                 logger.debug("_delete_selection: skipping ExecPythonCode node %s", node_id_name)
