@@ -880,6 +880,13 @@ class DpgNodeEditor(object):
             pass
 
     def _callback_mv_key_del(self):
+        # Hold the shared DPG lock for the whole deletion so the async
+        # update thread cannot touch items while they are being deleted
+        # (concurrent DPG mutation causes segfaults).
+        with _dpg_lock:
+            self._delete_selection()
+
+    def _delete_selection(self):
         # If Ctrl+A was used, delete ALL nodes as a single batch (undoable)
         if self._select_all_flag:
             self._select_all_flag = False

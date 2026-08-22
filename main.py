@@ -139,7 +139,9 @@ def update_node_info(
     except Exception as e:
         logger.error(f"Failed to set node editor window properties: {e}")
 
-    node_list = node_editor.get_node_list()
+    # Snapshot the node list: the delete callback (main thread) can mutate it
+    # while this loop runs in the async worker thread.
+    node_list = list(node_editor.get_node_list())
 
     sorted_node_connection_dict = node_editor.get_sorted_node_connection()
 
@@ -150,6 +152,9 @@ def update_node_info(
         node_id, _ = node_id_name.split(":")
         connection_list = sorted_node_connection_dict.get(node_id_name, [])
         node_instance = node_editor.get_node_instances(node_id_name)
+        if node_instance is None:
+            # Node was deleted after the snapshot was taken; skip it.
+            continue
         logger.debug(
             f"Processing node {node_id_name} with connections: {connection_list}"
         )
