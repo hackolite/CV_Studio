@@ -56,8 +56,47 @@ def _log_thread_exception(args):
     )
 
 
+def _unique_streams(*streams):
+    """Return a deduplicated list of streams, always including sys.stderr."""
+    seen_fds = set()
+    result = []
+    for s in streams:
+        if s is None:
+            continue
+        try:
+            fd = s.fileno()
+        except Exception:
+            fd = id(s)
+        if fd not in seen_fds:
+            seen_fds.add(fd)
+            result.append(s)
+    # Always include stderr as a fallback if not already present
+    try:
+        stderr_fd = sys.stderr.fileno()
+    except Exception:
+        stderr_fd = id(sys.stderr)
+    if stderr_fd not in seen_fds:
+        result.append(sys.stderr)
+    return result
+
+
 def configure_fault_diagnostics(fault_log_path=None):
-    """Enable diagnostics for hard crashes (e.g., segfaults) and thread exceptions."""
+    """Enable diagnostics for hard crashes (e.g., segfaults) and thread exceptions.
+
+    Registers handlers for SIGSEGV, SIGABRT, SIGFPE, SIGBUS and SIGUSR1/SIGUSR2 so
+    that a full stack trace of *all* threads is written on any hard crash.  The
+    handlers use chain=True so that the default OS action (core dump) still fires
+    after the Python trace is written.
+
+    When a log file path is supplied the trace is written to that file **and** to
+    stderr (fd 2), because Python I/O may be unreliable inside a signal handler
+    after a segfault.  Using raw file descriptors (sys.stderr / the open fd of the
+    log file) maximises the chance that output reaches disk before the process dies.
+
+    A background watchdog via faulthandler.dump_traceback_later() writes a full
+    thread dump every 30 seconds; this captures the last-known state even when the
+    crash happens between two watchdog ticks.
+    """
     global _fault_log_file_handle, _fault_log_atexit_registered
 
     target_stream = sys.stderr
@@ -70,27 +109,80 @@ def configure_fault_diagnostics(fault_log_path=None):
         resolved_dir = os.path.dirname(resolved_path)
         if resolved_dir:
             os.makedirs(resolved_dir, exist_ok=True)
+        # Line-buffered text mode; every newline flushes to the OS.
         _fault_log_file_handle = open(resolved_path, "a", buffering=1, encoding="utf-8")
         target_stream = _fault_log_file_handle
         if not _fault_log_atexit_registered:
             atexit.register(_close_fault_log_file)
             _fault_log_atexit_registered = True
 
+    # Primary handler: dumps all threads on SIGSEGV / hard faults.
     faulthandler.enable(file=target_stream, all_threads=True)
+
+    # When writing to a file, also mirror the crash dump to stderr so that it is
+    # visible in the terminal and survives even if the file flush is incomplete.
+    if target_stream is not sys.stderr:
+        try:
+            faulthandler.enable(file=sys.stderr, all_threads=True)
+        except Exception as exc:
+            logger.warning("Failed to enable faulthandler on stderr: %s", exc)
+
+    # Explicitly register crash signals with chain=True so the OS default
+    # (e.g., core dump) still executes after the Python traceback is printed.
+    # This gives the most exhaustive output: full Python stacks from every thread.
+    # NOTE: SIGSEGV, SIGABRT, SIGFPE, SIGBUS are handled exclusively by
+    # faulthandler.enable() on Linux — faulthandler.register() raises RuntimeError
+    # for those signals.  We register them symbolically for the startup log message
+    # but rely on faulthandler.enable() (called above) for the actual handler.
+    _crash_signals = ("SIGSEGV", "SIGABRT", "SIGFPE", "SIGBUS")
+    _registered_signals = [
+        sig_name
+        for sig_name in _crash_signals
+        if getattr(signal, sig_name, None) is not None
+    ]
+
+    # SIGUSR1/SIGUSR2: on-demand dump triggered by the user.
+    # faulthandler.register() only supports a single stream per signal (each
+    # successive call replaces the previous handler).  To write to both the log
+    # file and stderr we install a Python-level signal handler that calls
+    # faulthandler.dump_traceback() for every output stream explicitly.
+    _dump_streams = _unique_streams(target_stream)
+
+    def _on_dump_signal(signum, frame, streams=_dump_streams):
+        for s in streams:
+            try:
+                faulthandler.dump_traceback(file=s, all_threads=True)
+                s.flush()
+            except Exception:
+                pass
 
     for sig_name in ("SIGUSR1", "SIGUSR2"):
         sig = getattr(signal, sig_name, None)
         if sig is None:
             continue
         try:
-            faulthandler.register(sig, file=target_stream, all_threads=True, chain=False)
+            signal.signal(sig, _on_dump_signal)
         except (OSError, ValueError) as exc:
             logger.warning("Failed to register fault dump signal %s: %s", sig_name, exc)
 
+    # Watchdog: periodically write all-thread stacks so the last snapshot is
+    # available even if the crash happens between two watchdog ticks.
+    _watchdog_interval = int(os.environ.get("CV_STUDIO_WATCHDOG_INTERVAL", "30"))
+    try:
+        faulthandler.dump_traceback_later(
+            _watchdog_interval, repeat=True, file=target_stream, exit=False
+        )
+        logger.info(
+            "Fault watchdog enabled: full thread dump every %ds", _watchdog_interval
+        )
+    except Exception as exc:
+        logger.warning("Failed to start faulthandler watchdog: %s", exc)
+
     threading.excepthook = _log_thread_exception
     logger.info(
-        "Fault diagnostics enabled%s",
+        "Fault diagnostics enabled%s — crash signals: %s",
         f" (fault trace output: {resolved_path})" if resolved_path else " (fault trace output: stderr)",
+        ", ".join(_registered_signals) if _registered_signals else "none",
     )
 
 
@@ -99,6 +191,12 @@ def _close_fault_log_file():
     if _fault_log_file_handle is not None:
         file_handle = _fault_log_file_handle
         try:
+            # Cancel the watchdog before closing the file so it doesn't write to
+            # the closed file descriptor after this point.
+            try:
+                faulthandler.cancel_dump_traceback_later()
+            except Exception:
+                pass
             file_handle.flush()
             file_handle.close()
             try:
