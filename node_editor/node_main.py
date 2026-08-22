@@ -276,6 +276,7 @@ class DpgNodeEditor(object):
         # wait); running it on the UI thread while _dpg_lock is held freezes
         # rendering and starves the async update thread.
         self._pending_close_threads = {}
+        self._pending_close_lock = threading.Lock()
 
         if menu_dict is None:
             menu_dict = OrderedDict(
@@ -882,7 +883,8 @@ class DpgNodeEditor(object):
         thread = threading.Thread(
             target=_run, name=f"node-close-{node_id_name}", daemon=True
         )
-        self._pending_close_threads[node_id_name] = thread
+        with self._pending_close_lock:
+            self._pending_close_threads[node_id_name] = thread
         logger.debug("_start_node_close: closing %s in background", node_id_name)
         thread.start()
         return thread
@@ -893,10 +895,11 @@ class DpgNodeEditor(object):
         Called before a node is re-created (undo/paste/load) so that a pending
         close does not delete widgets of the freshly created node.
         """
-        if node_id_name is not None:
-            items = [(node_id_name, self._pending_close_threads.get(node_id_name))]
-        else:
-            items = list(self._pending_close_threads.items())
+        with self._pending_close_lock:
+            if node_id_name is not None:
+                items = [(node_id_name, self._pending_close_threads.get(node_id_name))]
+            else:
+                items = list(self._pending_close_threads.items())
 
         for name, thread in items:
             if thread is None:
@@ -909,7 +912,8 @@ class DpgNodeEditor(object):
                         name, timeout,
                     )
                     continue
-            self._pending_close_threads.pop(name, None)
+            with self._pending_close_lock:
+                self._pending_close_threads.pop(name, None)
 
     def _purge_node_textures(self, node_id_name):
         """Delete any DPG texture items registered under this node's namespace.
