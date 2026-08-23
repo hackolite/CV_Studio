@@ -96,6 +96,8 @@ def _fetch_groq_vision_models(api_key=''):
                 m['id'] for m in resp.json().get('data', [])
                 if m.get('id') and m.get('object') == 'model'
                 and not any(exc in m['id'] for exc in ('whisper', 'tts', 'speech'))
+                and ('vision' in m['id'].lower() or 'llama-4' in m['id'].lower()
+                     or m['id'] in GROQ_DEFAULT_VISION_MODELS)
             ]
             if models:
                 return sorted(models)
@@ -910,16 +912,30 @@ class VLMNode(BaseNode):
         tag_node_delay_value_name = tag_node_name + ':DelayValue'
 
         provider = setting_dict.get(tag_node_provider_value_name, PROVIDER_OPENROUTER)
+        saved_model = setting_dict.get(tag_node_model_value_name, '')
         dpg_set_value(tag_node_provider_value_name, provider)
-        default_model = self._available_models[0] if self._available_models else ''
-        dpg_set_value(tag_node_model_value_name,
-                      setting_dict.get(tag_node_model_value_name, default_model))
+        # Restore API key first so background fetch can authenticate (Groq/Google AI)
         dpg_set_value(tag_node_apikey_value_name,
                       setting_dict.get(tag_node_apikey_value_name, self.DEFAULT_API_KEY))
         dpg_set_value(tag_node_prompt_value_name,
                       setting_dict.get(tag_node_prompt_value_name, self.DEFAULT_PROMPT))
         dpg_set_value(tag_node_delay_value_name,
                       float(setting_dict.get(tag_node_delay_value_name, self.DEFAULT_INSENSITIVITY_DELAY)))
+        # Fetch models for the restored provider and restore the saved model once loaded
+        def _fetch_and_restore():
+            self._bg_fetch_models()
+            if saved_model:
+                try:
+                    if self._tag_model:
+                        items = list(self._available_models)
+                        if saved_model not in items:
+                            items.insert(0, saved_model)
+                            self._available_models = items
+                            dpg.configure_item(self._tag_model, items=items)
+                        dpg_set_value(self._tag_model, saved_model)
+                except (SystemError, AttributeError):
+                    pass
+        threading.Thread(target=_fetch_and_restore, daemon=True).start()
 
 
 # Test code to verify that the node displays correctly
