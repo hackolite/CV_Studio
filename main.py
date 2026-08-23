@@ -16,6 +16,8 @@ import asyncio
 import argparse
 import atexit
 import faulthandler
+import logging
+import platform
 import signal
 import threading
 from collections import OrderedDict
@@ -169,6 +171,18 @@ def configure_fault_diagnostics(fault_log_path=None):
         except (OSError, ValueError) as exc:
             logger.warning("Failed to register fault dump signal %s: %s", sig_name, exc)
 
+    # Windows does not have SIGUSR1/SIGUSR2.  Register SIGBREAK (Ctrl+Break)
+    # as the on-demand thread-dump trigger instead so that Windows users can
+    # get a full traceback from a running process by pressing Ctrl+Break.
+    if sys.platform == "win32":
+        sig_break = getattr(signal, "SIGBREAK", None)
+        if sig_break is not None:
+            try:
+                signal.signal(sig_break, _on_dump_signal)
+                logger.info("Windows: on-demand thread dump registered on SIGBREAK (Ctrl+Break)")
+            except (OSError, ValueError) as exc:
+                logger.warning("Failed to register SIGBREAK handler: %s", exc)
+
     # Watchdog: periodically write all-thread stacks so the last snapshot is
     # available even if the crash happens between two watchdog ticks.
     _watchdog_interval = int(os.environ.get("CV_STUDIO_WATCHDOG_INTERVAL", "30"))
@@ -266,6 +280,16 @@ def get_args():
         type=str,
         default=None,
         help="Optional file path for faulthandler output (segfault traceback).",
+    )
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        default=None,
+        help=(
+            "Optional file path for application log output. "
+            "On Windows, defaults to %%APPDATA%%\\CV_Studio\\cv_studio.log "
+            "when not provided."
+        ),
     )
     args = parser.parse_args()
     return args
@@ -448,16 +472,33 @@ def main():
     unuse_async_draw = args.unuse_async_draw
     use_debug_print = args.use_debug_print
     fault_log = args.fault_log
+    log_file = args.log_file
 
-    # Setup logging based on debug flag
-    log_level = "DEBUG" if use_debug_print else "INFO"
-    setup_logging(level=getattr(__import__("logging"), log_level))
+    # Setup logging based on debug flag.
+    # On Windows, setup_logging() automatically writes to
+    # %APPDATA%\CV_Studio\cv_studio.log when log_file is None, ensuring a
+    # persistent log even when the process has no attached console.
+    log_level = logging.DEBUG if use_debug_print else logging.INFO
+    root_logger = setup_logging(level=log_level, log_file=log_file)
     configure_fault_diagnostics(fault_log_path=fault_log)
 
     logger.info("=" * 60)
     logger.info("CV_STUDIO Starting")
     logger.info("=" * 60)
-    
+
+    # Log platform and Python version for easier remote diagnosis.
+    logger.info(
+        "Platform: %s | Python: %s | Frozen: %s",
+        platform.platform(),
+        sys.version.split()[0],
+        getattr(sys, "frozen", False),
+    )
+
+    # Log the active log file paths so users know where to find their logs.
+    for handler in root_logger.handlers:
+        if hasattr(handler, "baseFilename"):
+            logger.info("Application log file: %s", handler.baseFilename)
+
     # Initialize timestamped buffer system
     logger.info("Initializing timestamped buffer system")
     queue_manager = NodeDataQueueManager(default_maxsize=10)
@@ -598,7 +639,11 @@ def main():
     event_loop = None
     if not unuse_async_draw:
         logger.info("Async draw is enabled")
-        event_loop = asyncio.get_event_loop()
+        # asyncio.get_event_loop() is deprecated in Python 3.10+ when there is
+        # no running loop (raises DeprecationWarning / RuntimeError on 3.12+).
+        # Create and install a new event loop explicitly instead.
+        event_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(event_loop)
         event_loop.run_in_executor(None, async_main, node_editor, queue_manager)
         # Use a manual render loop instead of dpg.start_dearpygui() so that
         # each frame render holds _dpg_lock.  dpg.start_dearpygui() runs the
