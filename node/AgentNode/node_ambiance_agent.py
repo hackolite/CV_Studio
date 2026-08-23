@@ -466,6 +466,7 @@ class Node(BaseNode):
                     tag=tag_apikey,
                     hint='sk-or-... (OpenRouter) / AIza... (Google AI) / gsk_... (Groq)',
                     width=w,
+                    password=True,
                 )
 
             # ── Model dropdown (no label, auto-populated) ─────────────────
