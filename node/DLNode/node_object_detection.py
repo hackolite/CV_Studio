@@ -1418,6 +1418,7 @@ class Node(Node):
                         scores,
                         class_ids,
                         class_name_dict,
+                        provider_label=provider,
                         thickness=bbox_thickness,
                     )
                     
@@ -1432,6 +1433,7 @@ class Node(Node):
                             scores,
                             class_ids,
                             class_name_dict,
+                            provider_label=provider,
                             thickness=bbox_thickness,
                         )
                     else:
@@ -1583,6 +1585,7 @@ class Node(Node):
             scores,
             class_ids,
             class_names,
+            provider_label=None,
             thickness=3,
         ):
             debug_image = copy.deepcopy(image)
@@ -1598,6 +1601,24 @@ class Node(Node):
             
             # Scale thickness: base thickness of 3 for ~640px, scale proportionally
             adaptive_thickness = max(1, int((min_dimension / 640.0) * thickness))
+
+            if provider_label:
+                provider_text = str(provider_label).upper()
+                (_, provider_text_height), _ = cv2.getTextSize(
+                    provider_text,
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale,
+                    adaptive_thickness,
+                )
+                debug_image = cv2.putText(
+                    debug_image,
+                    provider_text,
+                    (10, provider_text_height + 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale,
+                    (0, 255, 255),
+                    thickness=adaptive_thickness,
+                )
             
             for bbox, score, class_id in zip(bboxes, scores, class_ids):
                 x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
