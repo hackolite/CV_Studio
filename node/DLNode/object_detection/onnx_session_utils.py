@@ -6,7 +6,7 @@ Shared onnxruntime session utilities for CvStudio object detection.
 
 import logging
 import re
-from typing import List, Union
+from typing import List, Optional, Union
 
 import onnxruntime
 
@@ -62,7 +62,7 @@ def make_session(
     disable_optimizations: bool = False,
     strip_initializer_inputs: bool = True,
     log_severity_level: int = 2,
-    provider_options: List[dict] = None,
+    provider_options: Optional[List[dict]] = None,
 ) -> onnxruntime.InferenceSession:
     """Create an onnxruntime InferenceSession, clamping IR version if needed.
 
@@ -151,7 +151,7 @@ def make_session(
             model_source,
             sess_options=sess_options,
             providers=providers,
-            provider_options=provider_options if provider_options else None,
+            provider_options=provider_options,
         )
     except Exception as exc:
         # onnxruntime does not expose stable public exception sub-types, so we
@@ -187,7 +187,7 @@ def make_session(
             model_proto.SerializeToString(),
             sess_options=sess_options,
             providers=providers,
-            provider_options=provider_options if provider_options else None,
+            provider_options=provider_options,
         )
 
 
