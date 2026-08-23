@@ -1603,8 +1603,14 @@ class Node(Node):
             adaptive_thickness = max(1, int((min_dimension / 640.0) * thickness))
 
             if provider_label:
-                provider_text = str(provider_label).upper()
-                (_, provider_text_height), _ = cv2.getTextSize(
+                provider_raw = str(provider_label).upper()
+                if "CUDA" in provider_raw or provider_raw == "GPU":
+                    provider_text = "GPU"
+                elif "CPU" in provider_raw:
+                    provider_text = "CPU"
+                else:
+                    provider_text = provider_raw
+                (_, provider_text_height), provider_baseline = cv2.getTextSize(
                     provider_text,
                     cv2.FONT_HERSHEY_SIMPLEX,
                     font_scale,
@@ -1613,7 +1619,7 @@ class Node(Node):
                 debug_image = cv2.putText(
                     debug_image,
                     provider_text,
-                    (10, provider_text_height + 10),
+                    (10, provider_text_height + provider_baseline + 10),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     font_scale,
                     (0, 255, 255),
