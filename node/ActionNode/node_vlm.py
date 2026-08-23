@@ -18,6 +18,37 @@ from node.basenode import Node as BaseNode
 OPENROUTER_API_URL = 'https://openrouter.ai/api/v1'
 OPENROUTER_MODELS_URL = f'{OPENROUTER_API_URL}/models'
 
+GOOGLE_AI_API_URL = 'https://generativelanguage.googleapis.com/v1beta'
+GOOGLE_AI_MODELS_URL = f'{GOOGLE_AI_API_URL}/models'
+
+GROQ_API_URL = 'https://api.groq.com/openai/v1'
+GROQ_MODELS_URL = f'{GROQ_API_URL}/models'
+
+PROVIDER_OPENROUTER = 'OpenRouter'
+PROVIDER_GOOGLE_AI = 'Google AI Studio'
+PROVIDER_GROQ = 'Groq'
+PROVIDERS = [PROVIDER_OPENROUTER, PROVIDER_GOOGLE_AI, PROVIDER_GROQ]
+
+_APIKEY_HINTS = {
+    PROVIDER_OPENROUTER: 'sk-or-... (OpenRouter)',
+    PROVIDER_GOOGLE_AI:  'AIza... (Google AI Studio)',
+    PROVIDER_GROQ:       'gsk_... (Groq)',
+}
+
+GROQ_DEFAULT_VISION_MODELS = [
+    'meta-llama/llama-4-scout-17b-16e-instruct',
+    'meta-llama/llama-4-maverick-17b-128e-instruct',
+    'llama-3.2-90b-vision-preview',
+    'llama-3.2-11b-vision-preview',
+]
+
+GOOGLE_AI_DEFAULT_VISION_MODELS = [
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro',
+]
+
 
 def fetch_free_vision_models():
     """Fetch free vision-capable models from OpenRouter.
@@ -49,6 +80,53 @@ def fetch_free_vision_models():
         return vision_free if vision_free else fallback
     except Exception:
         return fallback
+
+
+def _fetch_groq_vision_models(api_key=''):
+    """Fetch vision-capable models from Groq."""
+    if api_key:
+        try:
+            resp = requests.get(
+                GROQ_MODELS_URL,
+                headers={'Authorization': 'Bearer ' + api_key},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            models = [
+                m['id'] for m in resp.json().get('data', [])
+                if m.get('id') and m.get('object') == 'model'
+                and not any(exc in m['id'] for exc in ('whisper', 'tts', 'speech'))
+                and ('vision' in m['id'].lower() or 'llama-4' in m['id'].lower()
+                     or m['id'] in GROQ_DEFAULT_VISION_MODELS)
+            ]
+            if models:
+                return sorted(models)
+        except Exception:
+            pass
+    return list(GROQ_DEFAULT_VISION_MODELS)
+
+
+def _fetch_google_ai_vision_models(api_key=''):
+    """Fetch vision-capable Gemini models from Google AI Studio."""
+    if api_key:
+        try:
+            resp = requests.get(
+                GOOGLE_AI_MODELS_URL,
+                params={'key': api_key},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            models = [
+                m['name'].replace('models/', '')
+                for m in resp.json().get('models', [])
+                if 'generateContent' in m.get('supportedGenerationMethods', [])
+                and 'gemini' in m.get('name', '').lower()
+            ]
+            if models:
+                return models
+        except Exception:
+            pass
+    return list(GOOGLE_AI_DEFAULT_VISION_MODELS)
 
 
 def _vlm_request_worker(result_queue, api_key, model, prompt, frame):
@@ -113,6 +191,114 @@ def _vlm_request_worker(result_queue, api_key, model, prompt, frame):
         result_queue.put({'error': f'Error: {str(e)[:60]}'})
 
 
+def _groq_vlm_worker(result_queue, api_key, model, prompt, frame):
+    """Run a Groq VLM request in a background thread."""
+    try:
+        success, buffer = cv2.imencode('.jpg', frame)
+        if not success:
+            result_queue.put({'error': 'Encode error'})
+            return
+        img_b64 = base64.b64encode(buffer).decode('utf-8')
+        headers = {
+            'Authorization': 'Bearer ' + api_key,
+            'Content-Type': 'application/json',
+        }
+        payload = {
+            'model': model,
+            'messages': [
+                {
+                    'role': 'user',
+                    'content': [
+                        {
+                            'type': 'image_url',
+                            'image_url': {
+                                'url': f'data:image/jpeg;base64,{img_b64}',
+                            },
+                        },
+                        {
+                            'type': 'text',
+                            'text': prompt,
+                        },
+                    ],
+                }
+            ],
+        }
+        response = requests.post(
+            f'{GROQ_API_URL}/chat/completions',
+            headers=headers,
+            json=payload,
+            timeout=60,
+        )
+        response.raise_for_status()
+        data = response.json()
+        result_text = (
+            data.get('choices', [{}])[0]
+            .get('message', {})
+            .get('content', str(data))
+        )
+        result_queue.put({'text': result_text})
+    except requests.exceptions.ConnectionError:
+        result_queue.put({'error': 'Connection error'})
+    except requests.exceptions.Timeout:
+        result_queue.put({'error': 'Timeout'})
+    except requests.exceptions.HTTPError as e:
+        result_queue.put({'error': f'HTTP {e.response.status_code}'})
+    except Exception as e:
+        result_queue.put({'error': f'Error: {str(e)[:60]}'})
+
+
+def _google_ai_vlm_worker(result_queue, api_key, model, prompt, frame):
+    """Run a Google AI Studio (Gemini) VLM request in a background thread."""
+    try:
+        success, buffer = cv2.imencode('.jpg', frame)
+        if not success:
+            result_queue.put({'error': 'Encode error'})
+            return
+        img_b64 = base64.b64encode(buffer).decode('utf-8')
+        payload = {
+            'contents': [
+                {
+                    'parts': [
+                        {
+                            'inline_data': {
+                                'mime_type': 'image/jpeg',
+                                'data': img_b64,
+                            },
+                        },
+                        {
+                            'text': prompt,
+                        },
+                    ]
+                }
+            ]
+        }
+        url = f'{GOOGLE_AI_API_URL}/models/{model}:generateContent'
+        response = requests.post(
+            url,
+            params={'key': api_key},
+            json=payload,
+            headers={'Content-Type': 'application/json'},
+            timeout=60,
+        )
+        response.raise_for_status()
+        data = response.json()
+        result_text = (
+            data.get('candidates', [{}])[0]
+            .get('content', {})
+            .get('parts', [{}])[0]
+            .get('text', str(data))
+        )
+        result_queue.put({'text': result_text})
+    except requests.exceptions.ConnectionError:
+        result_queue.put({'error': 'Connection error'})
+    except requests.exceptions.Timeout:
+        result_queue.put({'error': 'Timeout'})
+    except requests.exceptions.HTTPError as e:
+        result_queue.put({'error': f'HTTP {e.response.status_code}'})
+    except Exception as e:
+        result_queue.put({'error': f'Error: {str(e)[:60]}'})
+
+
 class FactoryNode:
     node_label = 'VLM'
     node_tag = 'VLM'
@@ -121,14 +307,10 @@ class FactoryNode:
         pass
 
     def add_node(self, parent, node_id, pos=[0, 0], callback=None, opencv_setting_dict=None):
-        """Adds a VLM (Vision Language Model) node using OpenRouter free models."""
-
-        # Fetch available free vision models at node creation time
-        available_models = fetch_free_vision_models()
+        """Adds a VLM (Vision Language Model) node with multi-provider support."""
 
         node = VLMNode()
         node.tag_node_name = f"{node_id}:{node.node_tag}"
-        node._available_models = available_models
 
         tag_node_name = node.tag_node_name
 
@@ -152,6 +334,9 @@ class FactoryNode:
         node.tag_node_output_canvas_image_name = tag_node_name + ':CanvasImage'
 
         # Static widget tags
+        tag_node_provider_name = tag_node_name + ':Provider'
+        tag_node_provider_value_name = tag_node_name + ':ProviderValue'
+
         tag_node_model_name = tag_node_name + ':Model'
         tag_node_model_value_name = tag_node_name + ':ModelValue'
 
@@ -169,6 +354,11 @@ class FactoryNode:
 
         tag_node_status_name = tag_node_name + ':Status'
         tag_node_status_value_name = tag_node_name + ':StatusValue'
+
+        # Store provider tag on the node instance for use in update/callbacks
+        node._tag_provider = tag_node_provider_value_name
+        node._tag_apikey   = tag_node_apikey_value_name
+        node._tag_model    = tag_node_model_value_name
 
         # Set opencv settings
         node._opencv_setting_dict = opencv_setting_dict or {}
@@ -220,28 +410,41 @@ class FactoryNode:
             ):
                 dpg.add_text(default_value='Image input')
 
-            # OpenRouter API key field
+            # Provider dropdown
+            with dpg.node_attribute(
+                tag=tag_node_provider_name,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_combo(
+                    tag=tag_node_provider_value_name,
+                    items=PROVIDERS,
+                    default_value=PROVIDER_OPENROUTER,
+                    width=240,
+                    callback=node._cb_provider_changed,
+                )
+
+            # API key field (password-masked)
             with dpg.node_attribute(
                 tag=tag_node_apikey_name,
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_input_text(
                     tag=tag_node_apikey_value_name,
-                    hint='OpenRouter API key (sk-or-...)',
+                    hint=_APIKEY_HINTS[PROVIDER_OPENROUTER],
                     default_value=VLMNode.DEFAULT_API_KEY,
                     width=240,
+                    password=True,
                 )
 
-            # Model combobox (populated with free vision models fetched at startup)
+            # Model combobox (populated lazily in background)
             with dpg.node_attribute(
                 tag=tag_node_model_name,
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
-                default_model = available_models[0] if available_models else ''
                 dpg.add_combo(
                     tag=tag_node_model_value_name,
-                    items=available_models,
-                    default_value=default_model,
+                    items=[],
+                    default_value='',
                     width=240,
                 )
 
@@ -316,6 +519,9 @@ class FactoryNode:
                     enabled=False,
                 )
 
+        # Kick off model fetch in background after GUI is built
+        threading.Thread(target=node._bg_fetch_models, daemon=True).start()
+
         return node
 
 
@@ -347,6 +553,52 @@ class VLMNode(BaseNode):
         self._result_queue = None
         self._pending_frame = None
         self._insensitivity_end_time = 0
+        self._tag_provider = None
+        self._tag_apikey   = None
+        self._tag_model    = None
+
+    def _get_current_provider(self):
+        try:
+            if self._tag_provider:
+                return dpg_get_value(self._tag_provider)
+        except (SystemError, AttributeError):
+            pass
+        return PROVIDER_OPENROUTER
+
+    def _bg_fetch_models(self):
+        """Fetch vision models for the current provider in a background thread."""
+        provider = self._get_current_provider()
+        api_key = ''
+        try:
+            if self._tag_apikey:
+                api_key = dpg_get_value(self._tag_apikey).strip()
+        except (SystemError, AttributeError):
+            pass
+        if provider == PROVIDER_GROQ:
+            models = _fetch_groq_vision_models(api_key)
+        elif provider == PROVIDER_GOOGLE_AI:
+            models = _fetch_google_ai_vision_models(api_key)
+        else:
+            models = fetch_free_vision_models()
+        self._available_models = models
+        default = models[0] if models else ''
+        try:
+            if self._tag_model:
+                dpg.configure_item(self._tag_model, items=models, default_value=default)
+                dpg_set_value(self._tag_model, default)
+        except (SystemError, AttributeError):
+            pass
+
+    def _cb_provider_changed(self, sender, app_data, user_data=None):
+        """Reset the API key hint and refresh the model list when provider changes."""
+        provider = self._get_current_provider()
+        try:
+            if self._tag_apikey:
+                dpg_set_value(self._tag_apikey, '')
+                dpg.configure_item(self._tag_apikey, hint=_APIKEY_HINTS.get(provider, ''))
+        except (SystemError, AttributeError):
+            pass
+        threading.Thread(target=self._bg_fetch_models, daemon=True).start()
 
     def _encode_image(self, frame):
         """Encode a BGR OpenCV frame to a base64 JPEG string."""
@@ -608,8 +860,15 @@ class VLMNode(BaseNode):
                 self._insensitivity_end_time = current_time + insensitivity_delay
                 dpg_set_value(tag_node_status_value_name, 'Requesting...')
                 self._result_queue = queue.Queue()
+                provider = self._get_current_provider()
+                if provider == PROVIDER_GROQ:
+                    worker = _groq_vlm_worker
+                elif provider == PROVIDER_GOOGLE_AI:
+                    worker = _google_ai_vlm_worker
+                else:
+                    worker = _vlm_request_worker
                 self._request_process = threading.Thread(
-                    target=_vlm_request_worker,
+                    target=worker,
                     args=(self._result_queue, api_key, model, prompt, frame.copy()),
                     daemon=True,
                 )
@@ -626,6 +885,7 @@ class VLMNode(BaseNode):
 
     def get_setting_dict(self, node_id):
         tag_node_name = str(node_id) + ':' + self.node_tag
+        tag_node_provider_value_name = tag_node_name + ':ProviderValue'
         tag_node_model_value_name = tag_node_name + ':ModelValue'
         tag_node_apikey_value_name = tag_node_name + ':ApiKeyValue'
         tag_node_prompt_value_name = tag_node_name + ':PromptValue'
@@ -636,6 +896,7 @@ class VLMNode(BaseNode):
         setting_dict = {}
         setting_dict['ver'] = self._ver
         setting_dict['pos'] = pos
+        setting_dict[tag_node_provider_value_name] = dpg_get_value(tag_node_provider_value_name)
         setting_dict[tag_node_model_value_name] = dpg_get_value(tag_node_model_value_name)
         setting_dict[tag_node_apikey_value_name] = dpg_get_value(tag_node_apikey_value_name)
         setting_dict[tag_node_prompt_value_name] = dpg_get_value(tag_node_prompt_value_name)
@@ -644,20 +905,37 @@ class VLMNode(BaseNode):
 
     def set_setting_dict(self, node_id, setting_dict):
         tag_node_name = str(node_id) + ':' + self.node_tag
+        tag_node_provider_value_name = tag_node_name + ':ProviderValue'
         tag_node_model_value_name = tag_node_name + ':ModelValue'
         tag_node_apikey_value_name = tag_node_name + ':ApiKeyValue'
         tag_node_prompt_value_name = tag_node_name + ':PromptValue'
         tag_node_delay_value_name = tag_node_name + ':DelayValue'
 
-        default_model = self._available_models[0] if self._available_models else ''
-        dpg_set_value(tag_node_model_value_name,
-                      setting_dict.get(tag_node_model_value_name, default_model))
+        provider = setting_dict.get(tag_node_provider_value_name, PROVIDER_OPENROUTER)
+        saved_model = setting_dict.get(tag_node_model_value_name, '')
+        dpg_set_value(tag_node_provider_value_name, provider)
+        # Restore API key first so background fetch can authenticate (Groq/Google AI)
         dpg_set_value(tag_node_apikey_value_name,
                       setting_dict.get(tag_node_apikey_value_name, self.DEFAULT_API_KEY))
         dpg_set_value(tag_node_prompt_value_name,
                       setting_dict.get(tag_node_prompt_value_name, self.DEFAULT_PROMPT))
         dpg_set_value(tag_node_delay_value_name,
                       float(setting_dict.get(tag_node_delay_value_name, self.DEFAULT_INSENSITIVITY_DELAY)))
+        # Fetch models for the restored provider and restore the saved model once loaded
+        def _fetch_and_restore():
+            self._bg_fetch_models()
+            if saved_model:
+                try:
+                    if self._tag_model:
+                        items = list(self._available_models)
+                        if saved_model not in items:
+                            items.insert(0, saved_model)
+                            self._available_models = items
+                            dpg.configure_item(self._tag_model, items=items)
+                        dpg_set_value(self._tag_model, saved_model)
+                except (SystemError, AttributeError):
+                    pass
+        threading.Thread(target=_fetch_and_restore, daemon=True).start()
 
 
 # Test code to verify that the node displays correctly
