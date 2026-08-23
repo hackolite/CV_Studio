@@ -6,7 +6,7 @@ Shared onnxruntime session utilities for CvStudio object detection.
 
 import logging
 import re
-from typing import List, Union
+from typing import List, Optional, Union
 
 import onnxruntime
 
@@ -62,6 +62,7 @@ def make_session(
     disable_optimizations: bool = False,
     strip_initializer_inputs: bool = True,
     log_severity_level: int = 2,
+    provider_options: Optional[List[dict]] = None,
 ) -> onnxruntime.InferenceSession:
     """Create an onnxruntime InferenceSession, clamping IR version if needed.
 
@@ -89,11 +90,19 @@ def make_session(
         OnnxRuntime log severity level (0=VERBOSE, 1=INFO, 2=WARNING,
         3=ERROR, 4=FATAL).  Defaults to 2 (WARNING).  Pass 3 to suppress
         expected per-frame warnings such as dynamic output shape mismatches.
+    provider_options : list[dict] or None
+        Per-provider option dicts, aligned with ``providers``.  When None the
+        defaults are applied automatically (see below).
 
     Returns
     -------
     onnxruntime.InferenceSession
     """
+    using_cuda = any(
+        (p if isinstance(p, str) else p[0]) == "CUDAExecutionProvider"
+        for p in providers
+    )
+
     sess_options = onnxruntime.SessionOptions()
     sess_options.log_severity_level = log_severity_level
     if disable_optimizations:
@@ -101,12 +110,48 @@ def make_session(
             onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
         )
 
+    if using_cuda:
+        # When CUDA handles inference, the ORT CPU thread-pool is used only for
+        # host-side bookkeeping and any CPU-fallback operators.  Leaving it at
+        # the default (all logical cores) causes 100 % CPU utilisation with near-
+        # zero GPU utilisation because the OS scheduler fights over the same
+        # cores that feed the GPU.  Capping to 1 thread each eliminates this.
+        sess_options.intra_op_num_threads = 1
+        sess_options.inter_op_num_threads = 1
+        # Disable the CPU memory arena so ORT does not pre-allocate large CPU
+        # buffers that are never used when running on the GPU.
+        sess_options.enable_cpu_mem_arena = False
+        logger.debug(
+            "[OnnxSession] CUDA provider detected — "
+            "CPU thread pool capped to 1 intra / 1 inter, CPU arena disabled."
+        )
+
+    # Build default CUDA provider options when none were supplied
+    if provider_options is None:
+        provider_options = []
+        for p in providers:
+            name = p if isinstance(p, str) else p[0]
+            if name == "CUDAExecutionProvider":
+                provider_options.append({
+                    # Allocate only as much GPU memory as actually needed rather
+                    # than doubling the arena on each growth event.
+                    "arena_extend_strategy": "kSameAsRequested",
+                    # Allow ORT to fall back to a CUDA kernel that does not use
+                    # cuDNN if a cuDNN version mismatch is detected.
+                    "cudnn_conv_use_max_workspace": "0",
+                })
+            else:
+                provider_options.append({})
+
     if strip_initializer_inputs:
         model_source = _strip_initializer_inputs(model_source)
 
     try:
         return onnxruntime.InferenceSession(
-            model_source, sess_options=sess_options, providers=providers
+            model_source,
+            sess_options=sess_options,
+            providers=providers,
+            provider_options=provider_options,
         )
     except Exception as exc:
         # onnxruntime does not expose stable public exception sub-types, so we
@@ -142,6 +187,7 @@ def make_session(
             model_proto.SerializeToString(),
             sess_options=sess_options,
             providers=providers,
+            provider_options=provider_options,
         )
 
 

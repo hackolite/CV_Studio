@@ -293,7 +293,8 @@ class CustomONNX:
         )
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = img.astype(np.float32) / 255.0
-        img = np.transpose(img, (2, 0, 1))  # HWC → CHW
+        img = np.transpose(img, (2, 0, 1))  # HWC → CHW  (non-contiguous view)
+        img = np.ascontiguousarray(img)      # ensure C-contiguous before ORT feed
         img = np.expand_dims(img, axis=0)   # CHW → BCHW
         return img, 1.0
 
@@ -337,8 +338,9 @@ class CustomONNX:
         else:
             # BCHW layout — normalise to [0, 1]
             img = img.astype(np.float32) / 255.0
-            img = np.transpose(img, (2, 0, 1))  # HWC → CHW
-            blob = np.expand_dims(img, axis=0)   # CHW → BCHW
+            img = np.transpose(img, (2, 0, 1))         # HWC → CHW (non-contiguous view)
+            img = np.ascontiguousarray(img)             # ensure C-contiguous before ORT feed
+            blob = np.expand_dims(img, axis=0)          # CHW → BCHW
 
         return blob, 1.0
 
