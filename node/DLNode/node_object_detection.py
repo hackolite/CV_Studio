@@ -119,6 +119,15 @@ _BUILTIN_MODELS = [
         'class_names': _COCO_CLASSES,
     },
     {
+        'name': 'YOLOv8m(640x640)',
+        'path': os.path.join(_OBJECT_DETECTION_BASE, 'YOLO', 'model', 'yolov8m.onnx'),
+        'output_format': 'yolo11',
+        'input_width': 640,
+        'input_height': 640,
+        'num_classes': 80,
+        'class_names': _COCO_CLASSES,
+    },
+    {
         'name': 'FreeYOLO-Nano(640x640)',
         'path': os.path.join(_OBJECT_DETECTION_BASE, 'FreeYOLO', 'model', 'yolo_free_nano_640x640.onnx'),
         'output_format': 'yolox',

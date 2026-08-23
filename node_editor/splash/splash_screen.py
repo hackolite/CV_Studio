@@ -290,10 +290,23 @@ def show_splash_screen(duration_seconds: float = 8.0, steps: int = 240):
     duration_seconds = max(0.0, float(duration_seconds))
     _create_splash_theme()
 
-    # Get viewport dimensions
+    # On Linux the window manager may not have delivered the maximized geometry
+    # yet immediately after show_viewport().  Pump a few frames until the
+    # reported client area is large enough to reliably centre the splash.
+    for _ in range(10):
+        vp_w = dpg.get_viewport_client_width()
+        vp_h = dpg.get_viewport_client_height()
+        if vp_w >= _SPLASH_W and vp_h >= _SPLASH_H:
+            break
+        dpg.render_dearpygui_frame()
+        time.sleep(0.02)
+
+    # Re-read after the final frame pump so we always have fresh values.
     vp_w = dpg.get_viewport_client_width()
     vp_h = dpg.get_viewport_client_height()
-    if vp_w <= 0 or vp_h <= 0:
+
+    # Final fallback: use the raw viewport size if client area is still small
+    if vp_w < _SPLASH_W or vp_h < _SPLASH_H:
         vp_w = dpg.get_viewport_width()
         vp_h = dpg.get_viewport_height()
 
