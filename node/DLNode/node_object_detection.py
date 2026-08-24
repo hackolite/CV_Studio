@@ -10,6 +10,7 @@ registry (custom_models_registry.json).  Users add their own models via the
 editor.
 """
 
+import collections
 import copy
 import os
 import sys
@@ -688,6 +689,14 @@ class Node(Node):
 
     _model_instance: dict = {}
 
+    # Batch-inference state (keyed by model_name_with_provider).
+    # _frame_buffer  : deques of raw frames pending batch inference.
+    # _result_buffer : deques of (bboxes, scores, class_ids) ready to emit.
+    # _last_batch_size: last seen batch_size per key (detect slider changes).
+    _frame_buffer: dict = {}
+    _result_buffer: dict = {}
+    _last_batch_size: dict = {}
+
     def __init__(self):
         pass
 
@@ -1222,8 +1231,13 @@ class Node(Node):
         return bboxes[keep_indices], scores[keep_indices], class_ids[keep_indices]
 
     @staticmethod
-    def _build_trt_provider_options(batch_size):
-        """Build TensorRT provider options for a chosen max batch size."""
+    def _build_trt_provider_options(batch_size=1):
+        """Build TensorRT provider options for a chosen max batch size.
+
+        ``trt_max_workspace_size`` is scaled linearly with *batch_size*
+        (1 GiB per batch slot) so the TensorRT engine builder has enough
+        GPU scratch memory to optimise multi-frame execution plans.
+        """
         batch_size = max(1, int(batch_size))
         cache_dir = os.path.join(_UPLOADS_DIR, "trt_engine_cache")
         try:
@@ -1231,11 +1245,30 @@ class Node(Node):
         except Exception as exc:
             logger.warning(f"Could not create TensorRT cache dir '{cache_dir}': {exc}")
             cache_dir = _UPLOADS_DIR
+        workspace_bytes = batch_size * 1073741824  # 1 GiB × batch_size
         return {
             "trt_engine_cache_enable": "True",
             "trt_engine_cache_path": cache_dir,
-            "trt_max_batch_size": str(batch_size),
+            "trt_max_workspace_size": str(workspace_bytes),
         }
+
+    @staticmethod
+    def _run_batch_inference(model_instance, frames):
+        """Run inference on a list of frames, returning one result per frame.
+
+        Uses ``model_instance.call_batch`` when available (``CustomONNX``),
+        which submits a single batched ``session.run`` call for models that
+        have a dynamic batch axis.  Falls back to sequential ``__call__`` for
+        any model that does not expose ``call_batch``.
+
+        Returns
+        -------
+        list[tuple[np.ndarray, np.ndarray, np.ndarray]]
+            ``(bboxes, scores, class_ids)`` per frame.
+        """
+        if hasattr(model_instance, 'call_batch'):
+            return model_instance.call_batch(frames)
+        return [model_instance(f) for f in frames]
 
 
 
@@ -1364,7 +1397,51 @@ class Node(Node):
                     if hasattr(model_instance, 'conf_threshold'):
                         model_instance.conf_threshold = score_th
 
-                    bboxes, scores, class_ids = model_instance(frame)
+                    # ------------------------------------------------------------------
+                    # Batch inference logic
+                    # When batch_size > 1 frames are accumulated into a rolling buffer.
+                    # Every time the buffer reaches batch_size frames, a single batched
+                    # call processes all frames at once (one session.run for CustomONNX
+                    # models that have a dynamic batch axis).  Results are queued and
+                    # drained one per update() call so every frame that arrives also
+                    # produces an output — after the initial (batch_size - 1) frame
+                    # warm-up the output is continuous.
+                    # ------------------------------------------------------------------
+                    key = model_name_with_provider
+                    if batch_size <= 1:
+                        # Fast path: single-frame inference (unchanged behaviour).
+                        bboxes, scores, class_ids = model_instance(frame)
+                    else:
+                        # Reset buffers whenever the user changes the batch slider.
+                        if self._last_batch_size.get(key) != batch_size:
+                            self._frame_buffer[key] = collections.deque()
+                            self._result_buffer[key] = collections.deque()
+                            self._last_batch_size[key] = batch_size
+
+                        fb = self._frame_buffer[key]
+                        rb = self._result_buffer[key]
+
+                        # Always accumulate the current frame.
+                        fb.append(copy.deepcopy(frame))
+
+                        if rb:
+                            # A previous batch already produced queued results.
+                            bboxes, scores, class_ids = rb.popleft()
+                        elif len(fb) >= batch_size:
+                            # Buffer is full — run a batched inference call.
+                            batch_frames = [fb.popleft() for _ in range(batch_size)]
+                            batch_results = self._run_batch_inference(model_instance, batch_frames)
+                            rb.extend(batch_results)
+                            bboxes, scores, class_ids = rb.popleft()
+                            logger.debug(
+                                f"[Batch] Processed {batch_size} frames in one call; "
+                                f"{len(rb)} results queued."
+                            )
+                        else:
+                            # Not enough frames yet — emit empty detections.
+                            bboxes = np.empty((0, 4), dtype=np.float32)
+                            scores = np.empty((0,), dtype=np.float32)
+                            class_ids = np.empty((0,), dtype=np.int64)
                     
                     # Apply class rejection filter
                     if len(bboxes) > 0:

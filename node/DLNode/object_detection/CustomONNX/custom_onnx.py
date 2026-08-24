@@ -136,6 +136,92 @@ class CustomONNX:
     # Public interface
     # ------------------------------------------------------------------
 
+    @property
+    def _has_dynamic_batch(self) -> bool:
+        """True when the model's first input dimension is dynamic (not a fixed int > 0).
+
+        ONNX Runtime exposes symbolic/dynamic dimensions as strings or -1.
+        A fixed batch-1 model has shape[0] == 1 (int).
+        """
+        try:
+            batch_dim = self.onnx_session.get_inputs()[0].shape[0]
+            return not (isinstance(batch_dim, int) and batch_dim > 0)
+        except Exception:
+            return False
+
+    def call_batch(self, images):
+        """Run inference on a list of BGR images as a single batched call.
+
+        When the loaded ONNX model has a dynamic batch axis (shape[0] != 1),
+        all images are preprocessed, stacked into a single ``[N, C, H, W]``
+        tensor, and fed to the ONNX session in one ``session.run`` call.
+        This gives a real throughput gain on CUDA/TensorRT providers.
+
+        For models with a static batch axis (batch fixed to 1), or for
+        multi-output formats (ssd, nanodet_multi) whose postprocessing cannot
+        easily be vectorised, the method falls back to calling ``__call__``
+        sequentially on each image.
+
+        Parameters
+        ----------
+        images : list[np.ndarray]
+            BGR images (uint8, HWC).
+
+        Returns
+        -------
+        list[tuple[np.ndarray, np.ndarray, np.ndarray]]
+            One ``(bboxes, scores, class_ids)`` tuple per input image,
+            in the same order as ``images``.
+        """
+        if not images:
+            return []
+
+        # Multi-output formats need per-tensor postprocessing — fall back.
+        if self.output_format in ("ssd", "nanodet_multi"):
+            return [self(img) for img in images]
+
+        # Static-batch models cannot accept N > 1 in a single call.
+        if not self._has_dynamic_batch:
+            return [self(img) for img in images]
+
+        # Preprocess each image; keep per-image metadata for postprocessing.
+        blobs = []
+        metas = []  # (orig_h, orig_w, ratio)
+        for img in images:
+            orig_h, orig_w = img.shape[:2]
+            blob, ratio = self._preprocess(img)  # shape [1, C, H, W]
+            blobs.append(blob)
+            metas.append((orig_h, orig_w, ratio))
+
+        # Stack to [N, C, H, W] and run a single batched inference call.
+        batch_blob = np.concatenate(blobs, axis=0)
+        try:
+            outputs = self.onnx_session.run(None, {self.input_name: batch_blob})
+        except Exception as exc:
+            logger.warning(
+                f"[CustomONNX] Batched session.run failed ({exc}); falling back to sequential."
+            )
+            return [self(img) for img in images]
+
+        # Unpack per-image results — slice [i:i+1] keeps the batch dim so that
+        # existing postprocess helpers (which call np.squeeze internally) work
+        # without modification.
+        raw_batch = outputs[0]  # [N, ...]
+        results = []
+        for i, (orig_h, orig_w, ratio) in enumerate(metas):
+            raw_i = raw_batch[i:i + 1]  # [1, ...]
+            if self.output_format == "yolox":
+                r = self._postprocess_yolox(raw_i, orig_w, orig_h, ratio)
+            elif self.output_format == "yolo11_obb":
+                r = self._postprocess_yolo11_obb(raw_i, orig_w, orig_h)
+            elif self.output_format == "nanodet":
+                r = self._postprocess_nanodet(raw_i, orig_w, orig_h)
+            else:
+                r = self._postprocess_yolo11(raw_i, orig_w, orig_h)
+            results.append(r)
+
+        return results
+
     def __call__(self, image):
         """Run inference on a BGR image.
 
