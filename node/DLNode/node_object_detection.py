@@ -205,6 +205,11 @@ def get_class_rejection_dropdown_items(class_name_dict):
             for class_id in sorted(class_name_dict.keys())]
 
 
+def get_batch_badge_label(is_batch_capable):
+    """Return the label shown beside the model combo for true batch-capable models."""
+    return "B" if is_batch_capable else ""
+
+
 
 class FactoryNode:
     node_label = 'ObjectDetection'
@@ -232,6 +237,7 @@ class FactoryNode:
         
         node.tag_node_input_text_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input02'
         node.tag_node_input_text_value_name = node.tag_node_name + ':' + node.TYPE_TEXT + ':Input02Value'
+        node.tag_node_batch_badge_value_name = node.tag_node_name + ':BatchBadgeValue'
         
 
         node.tag_node_input_float_name = node.tag_node_name + ':' + node.TYPE_FLOAT + ':Input03'
@@ -270,6 +276,7 @@ class FactoryNode:
                 dpg.configure_item(node.tag_delete_btn, enabled=not is_builtin)
             except Exception:
                 pass
+            node._update_batch_badge(selected_model)
 
         node.tag_node_output_image_name = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01'
         node.tag_node_output_image = node.tag_node_name + ':' + node.TYPE_IMAGE + ':Output01Value'
@@ -440,13 +447,20 @@ class FactoryNode:
                     tag=node.tag_node_input_text_name,
                     attribute_type=dpg.mvNode_Attr_Static,
             ):
-                dpg.add_combo(
-                    list(node._model_class.keys()),
-                    default_value=list(node._model_class.keys())[0],
-                    width=small_window_w,
-                    tag=node.tag_node_input_text_value_name,
-                    callback=on_model_change,
-                )
+                default_model = list(node._model_class.keys())[0]
+                with dpg.group(horizontal=True):
+                    dpg.add_combo(
+                        list(node._model_class.keys()),
+                        default_value=default_model,
+                        width=small_window_w - 32,
+                        tag=node.tag_node_input_text_value_name,
+                        callback=on_model_change,
+                    )
+                    dpg.add_text(
+                        get_batch_badge_label(node._model_batch_capable.get(default_model, False)),
+                        tag=node.tag_node_batch_badge_value_name,
+                        color=(120, 255, 120, 255),
+                    )
 
             # ---- Collapse / expand toggle for the settings section ----------
             # The configuration widgets below (provider, score, reject, draw,
@@ -686,6 +700,7 @@ class Node(Node):
     _model_class: dict = {}           # name → CustomONNX factory callable
     _model_path_setting: dict = {}    # name → onnx file path
     _model_class_name_list: dict = {} # name → {int_id: str_name}
+    _model_batch_capable: dict = {}   # name → supports true batched OD inference
 
     _model_instance: dict = {}
 
@@ -721,6 +736,12 @@ class Node(Node):
             if not os.path.isfile(path):
                 logger.debug(f"[Builtin] Skipping '{name}' — ONNX file not found: {path}")
                 continue
+            supports_batch = False
+            try:
+                inspected = onnx_inspector.inspect_onnx_model(path)
+                supports_batch = bool(inspected.get('supports_batched_detection', False))
+            except Exception as exc:
+                logger.warning(f"[Builtin] Could not inspect batch support for '{name}': {exc}")
             # Registry always stores class_names with string keys
             entry = {
                 'name': name,
@@ -730,6 +751,7 @@ class Node(Node):
                 'input_height': meta['input_height'],
                 'num_classes': meta['num_classes'],
                 'class_names': {str(k): v for k, v in meta['class_names'].items()},
+                'supports_batched_detection': supports_batch,
             }
             if meta.get('disable_optimizations'):
                 entry['disable_optimizations'] = True
@@ -777,14 +799,26 @@ class Node(Node):
             nanodet_reg_first = entry.get('nanodet_reg_first', None)
             if nanodet_reg_first is not None:
                 nanodet_reg_first = bool(nanodet_reg_first)
+            supports_batch = entry.get('supports_batched_detection', None)
+            if supports_batch is None:
+                try:
+                    meta = onnx_inspector.inspect_onnx_model(path)
+                    supports_batch = bool(meta.get('supports_batched_detection', False))
+                    entry['supports_batched_detection'] = supports_batch
+                    custom_models_registry.save_entry(entry)
+                except Exception as exc:
+                    logger.warning(f"Could not inspect batch support for '{name}': {exc}")
+                    supports_batch = False
             cls._register_custom_model(name, path, class_names, output_fmt, in_w, in_h,
                                        disable_optimizations=disable_opt,
-                                       nanodet_reg_first=nanodet_reg_first)
+                                       nanodet_reg_first=nanodet_reg_first,
+                                       supports_batch=bool(supports_batch))
             logger.info(f"Loaded model from registry: {name}")
 
     @classmethod
     def _register_custom_model(cls, name, path, class_names, output_fmt, in_w, in_h,
-                               disable_optimizations=False, nanodet_reg_first=None):
+                               disable_optimizations=False, nanodet_reg_first=None,
+                               supports_batch=False):
         """Add a model to the class-level runtime dictionaries."""
         def _make_factory(p, fmt, w, h, disable_opt, nd_reg_first):
             def factory(model_path, providers=None, provider_options=None):
@@ -810,6 +844,7 @@ class Node(Node):
         cls._model_class[name] = _make_factory(path, output_fmt, in_w, in_h, disable_optimizations, nanodet_reg_first)
         cls._model_path_setting[name] = path
         cls._model_class_name_list[name] = class_names
+        cls._model_batch_capable[name] = bool(supports_batch)
 
     # ------------------------------------------------------------------
     # Upload callback
@@ -839,7 +874,8 @@ class Node(Node):
                 f"[Upload] Inspection result: format='{meta.get('output_format')}', "
                 f"input={meta.get('input_width')}x{meta.get('input_height')}, "
                 f"num_classes={meta.get('num_classes')}, "
-                f"class_names_count={len(meta.get('class_names', {}))}"
+                f"class_names_count={len(meta.get('class_names', {}))}, "
+                f"supports_batch={meta.get('supports_batched_detection', False)}"
             )
         except Exception as exc:
             logger.error(f"[Upload] ONNX inspection failed: {exc}", exc_info=True)
@@ -924,6 +960,16 @@ class Node(Node):
         )
         dpg.add_text(
             f"Number of classes: {num_cls}",
+            parent=self.tag_preview_details,
+        )
+        dpg.add_text(
+            "Dynamic batch     : "
+            + ("yes" if meta.get("has_dynamic_batch", False) else "no"),
+            parent=self.tag_preview_details,
+        )
+        dpg.add_text(
+            "ObjectDetection B : "
+            + ("yes" if meta.get("supports_batched_detection", False) else "no"),
             parent=self.tag_preview_details,
         )
 
@@ -1058,7 +1104,16 @@ class Node(Node):
             f"input={in_w}x{in_h}, classes={num_classes}"
         )
 
-        Node._register_custom_model(name, onnx_path, class_names, output_fmt, in_w, in_h)
+        supports_batch = bool(meta.get("supports_batched_detection", False))
+        Node._register_custom_model(
+            name,
+            onnx_path,
+            class_names,
+            output_fmt,
+            in_w,
+            in_h,
+            supports_batch=supports_batch,
+        )
 
         registry_entry = {
             "name": name,
@@ -1068,6 +1123,7 @@ class Node(Node):
             "input_width": in_w,
             "input_height": in_h,
             "num_classes": num_classes,
+            "supports_batched_detection": supports_batch,
         }
         try:
             custom_models_registry.save_entry(registry_entry)
@@ -1082,6 +1138,7 @@ class Node(Node):
             if name not in current_items:
                 current_items = list(current_items) + [name]
             dpg.configure_item(model_combo_tag, items=current_items, default_value=name)
+            node._update_batch_badge(name)
             logger.info(f"[Upload] Model dropdown updated — '{name}' selected.")
         except Exception as exc:
             logger.warning(f"[Upload] Could not update model dropdown: {exc}")
@@ -1131,6 +1188,7 @@ class Node(Node):
         cls._model_class.pop(name, None)
         cls._model_path_setting.pop(name, None)
         cls._model_class_name_list.pop(name, None)
+        cls._model_batch_capable.pop(name, None)
         # Drop any cached inference instances for this model (name_provider keys).
         for key in [k for k in cls._model_instance if k == name or k.startswith(name + '_')]:
             cls._model_instance.pop(key, None)
@@ -1154,6 +1212,7 @@ class Node(Node):
         new_default = remaining[0] if remaining else ""
         try:
             dpg.configure_item(model_combo_tag, items=remaining, default_value=new_default)
+            self._update_batch_badge(new_default)
             logger.info(f"[Delete] Model '{name}' deleted — '{new_default}' now selected.")
         except Exception as exc:
             logger.warning(f"[Delete] Could not update model dropdown: {exc}")
@@ -1251,6 +1310,16 @@ class Node(Node):
             "trt_engine_cache_path": cache_dir,
             "trt_max_workspace_size": str(workspace_bytes),
         }
+
+    def _update_batch_badge(self, model_name):
+        """Refresh the small 'B' marker beside the model combo."""
+        try:
+            dpg_set_value(
+                self.tag_node_batch_badge_value_name,
+                get_batch_badge_label(self._model_batch_capable.get(model_name, False)),
+            )
+        except Exception:
+            pass
 
     @staticmethod
     def _run_batch_inference(model_instance, frames):
@@ -1681,6 +1750,7 @@ class Node(Node):
                     entry.get('output_format', 'yolo11'),
                     int(entry.get('input_width', 640)),
                     int(entry.get('input_height', 640)),
+                    supports_batch=bool(entry.get('supports_batched_detection', False)),
                 )
                 logger.info(f"Restored custom model from registry on set_setting_dict: {model_name}")
             else:
@@ -1696,6 +1766,7 @@ class Node(Node):
             pass
 
         dpg_set_value(self.tag_node_input_text_value_name, model_name)
+        self._update_batch_badge(model_name)
         dpg_set_value(self.tag_node_input_float_value_name, score_th)
         
         # Update the dropdown items to match the loaded model's classes

@@ -53,6 +53,23 @@ def test_get_class_rejection_dropdown_items():
     assert person_items[0] == "0: person"
 
 
+def test_get_batch_badge_label():
+    """Only true batch-capable models should show the B marker."""
+    import unittest.mock as mock
+    for mod in ('dearpygui', 'dearpygui.dearpygui', 'node_editor', 'node_editor.util',
+                'src', 'src.utils', 'src.utils.logging', 'src.utils.gpu_utils',
+                'node.DLNode.object_detection.CustomONNX',
+                'node.DLNode.object_detection.CustomONNX.custom_onnx',
+                'node.DLNode.object_detection.custom_models_registry',
+                'node.DLNode.object_detection.onnx_inspector'):
+        sys.modules.setdefault(mod, mock.MagicMock())
+
+    from node.DLNode.node_object_detection import get_batch_badge_label
+
+    assert get_batch_badge_label(True) == "B"
+    assert get_batch_badge_label(False) == ""
+
+
 def _mock_dpg_modules():
     """Helper: install mocks for dpg and related modules."""
     import unittest.mock as mock
@@ -117,6 +134,20 @@ def test_rejected_classes_cleared_on_model_change():
 
     assert 'dpg_set_value(node.tag_node_rejected_classes_value_name, "")' in content, \
         "Should clear rejected classes when model changes"
+
+
+def test_batch_badge_wiring_present():
+    """The node UI should expose and refresh a batch badge next to the model combo."""
+    file_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        'node', 'DLNode', 'node_object_detection.py'
+    )
+    with open(file_path, 'r') as f:
+        content = f.read()
+
+    assert 'tag_node_batch_badge_value_name' in content
+    assert 'get_batch_badge_label' in content
+    assert 'node._update_batch_badge(selected_model)' in content
 
 
 if __name__ == '__main__':
