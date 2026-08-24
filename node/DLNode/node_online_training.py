@@ -221,7 +221,7 @@ class FactoryNode:
                     attribute_type=dpg.mvNode_Attr_Static,
                 ):
                     dpg.add_radio_button(
-                        ("cpu", "PTcuda"),
+                        ("cpu", "cuda"),
                         tag=node.tag_node_device_combo,
                         default_value='cpu',
                         horizontal=True,
@@ -444,11 +444,11 @@ class Node(Node):
 
     @staticmethod
     def _get_device_options() -> list:
-        """Return available device options (always includes cpu, adds PTcuda when CUDA is available)."""
+        """Return available device options (always includes cpu, adds cuda when CUDA is available)."""
         options = ['cpu']
         is_available, _, _ = check_gpu_availability()
         if is_available:
-            options.append('PTcuda')
+            options.append('cuda')
         return options
 
     @classmethod

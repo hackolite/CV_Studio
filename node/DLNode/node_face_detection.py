@@ -408,7 +408,7 @@ class Node(Node):  # noqa: F811
 	                    attribute_type=dpg.mvNode_Attr_Static,
 	            ):
 	                dpg.add_radio_button(
-	                    ("cpu", "PTcuda", "TRTcuda"),
+	                    ("cpu", "cuda", "TRTcuda"),
 	                    tag=tag_provider_select_value_name,
 	                    default_value='cpu',
 	                    horizontal=True,

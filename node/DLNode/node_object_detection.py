@@ -488,7 +488,7 @@ class FactoryNode:
                         attribute_type=dpg.mvNode_Attr_Static,
                 ):
                     dpg.add_radio_button(
-                        ("cpu", "PTcuda", "TRTcuda"),
+                        ("cpu", "cuda", "TRTcuda"),
                         tag=node.tag_provider_select_value_name,
                         default_value='cpu',
                         horizontal=True,
@@ -1294,7 +1294,7 @@ class Node(Node):
                 provider = 'cpu'
                 if use_gpu:
                     provider = dpg_get_value(self.tag_provider_select_value_name)
-                    if provider not in ('cpu', 'PTcuda', 'TRTcuda'):
+                    if provider not in ('cpu', 'cuda', 'TRTcuda'):
                         provider = 'cpu'
 
                 batch_size = self.DEFAULT_BATCH_SIZE
@@ -1686,7 +1686,7 @@ class Node(Node):
             if provider_label:
                 provider_raw = str(provider_label).upper()
                 if "PTCUDA" in provider_raw or provider_raw == "PTCUDA":
-                    provider_text = "PTcuda"
+                    provider_text = "cuda"
                 elif "TRTCUDA" in provider_raw or "TENSORRT" in provider_raw:
                     provider_text = "TRTcuda"
                 elif "CPU" in provider_raw:
