@@ -166,11 +166,7 @@ def test_builtin_models_defined():
 
 def test_callback_function_exists():
     """Test that on_model_change callback and related helpers are present."""
-    file_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        'node', 'DLNode', 'node_object_detection.py'
-    )
-    with open(file_path, 'r') as f:
+    with open(_OD_PATH, 'r') as f:
         content = f.read()
 
     assert 'def on_model_change' in content, "Should have on_model_change callback"
@@ -181,29 +177,34 @@ def test_callback_function_exists():
 
 def test_rejected_classes_cleared_on_model_change():
     """Test that rejected classes are cleared when model changes."""
-    file_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        'node', 'DLNode', 'node_object_detection.py'
-    )
-    with open(file_path, 'r') as f:
+    with open(_OD_PATH, 'r') as f:
         content = f.read()
 
     assert 'dpg_set_value(node.tag_node_rejected_classes_value_name, "")' in content, \
         "Should clear rejected classes when model changes"
 
 
-def test_batch_badge_wiring_present():
-    """The node UI should expose and refresh a batch badge next to the model combo."""
-    file_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        'node', 'DLNode', 'node_object_detection.py'
-    )
-    with open(file_path, 'r') as f:
-        content = f.read()
+def test_update_batch_badge_uses_batch_capability_map():
+    """The runtime badge should reflect the selected model batch capability."""
+    module = _load_od_module()
+    node = module.Node()
+    node.tag_node_batch_badge_value_name = 'badge'
+    node._model_batch_capable = {'dynamic': True, 'static': False}
 
-    assert 'tag_node_batch_badge_value_name' in content
-    assert 'get_batch_badge_label' in content
-    assert 'node._update_batch_badge(selected_model)' in content
+    calls = []
+
+    def fake_set_value(tag, value):
+        calls.append((tag, value))
+
+    original = module.dpg_set_value
+    module.dpg_set_value = fake_set_value
+    try:
+        node._update_batch_badge('dynamic')
+        node._update_batch_badge('static')
+    finally:
+        module.dpg_set_value = original
+
+    assert calls == [('badge', 'B'), ('badge', '')]
 
 
 if __name__ == '__main__':
