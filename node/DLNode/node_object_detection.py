@@ -673,6 +673,12 @@ class Node(Node):
     DEFAULT_DRAW_BBOX = True
     DEFAULT_BBOX_THICKNESS = 3
     DEFAULT_BATCH_SIZE = 1
+    CUDA_PROVIDER_OPTIONS = {
+        # Keep CUDA host-side allocation conservative to avoid spikes when
+        # TensorRT falls back to CUDA kernels.
+        "arena_extend_strategy": "kSameAsRequested",
+        "cudnn_conv_use_max_workspace": "0",
+    }
 
     # All models (built-in + user-uploaded) populated from the registry at load time.
     _model_class: dict = {}           # name → CustomONNX factory callable
@@ -1318,10 +1324,7 @@ class Node(Node):
                             providers = ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
                             provider_options = [
                                 self._build_trt_provider_options(batch_size),
-                                {
-                                    "arena_extend_strategy": "kSameAsRequested",
-                                    "cudnn_conv_use_max_workspace": "0",
-                                },
+                                dict(self.CUDA_PROVIDER_OPTIONS),
                                 {},
                             ]
                         else:
@@ -1628,13 +1631,13 @@ class Node(Node):
         # Set bbox thickness slider
         try:
             dpg_set_value(bbox_thickness_tag, bbox_thickness)
-        except:
+        except Exception:
             pass  # Ignore if the UI element doesn't exist yet
 
         # Set TensorRT batch-size slider
         try:
             dpg_set_value(batch_size_tag, max(1, min(32, batch_size)))
-        except:
+        except Exception:
             pass  # Ignore if the UI element doesn't exist yet
 
 
@@ -1669,7 +1672,7 @@ class Node(Node):
                 provider_raw = str(provider_label).upper()
                 if "CUDA" in provider_raw or provider_raw == "GPU":
                     provider_text = "GPU"
-                elif "TENSORRT" in provider_raw or "TENSORRTEXECUTIONPROVIDER" in provider_raw:
+                elif "TENSORRT" in provider_raw:
                     provider_text = "TensorRT"
                 elif "CPU" in provider_raw:
                     provider_text = "CPU"
