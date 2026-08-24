@@ -235,7 +235,7 @@ def _normalize_trt_bool_option(value):
     """Return TensorRT boolean provider options in ORT's expected format."""
     if isinstance(value, bool):
         return "True" if value else "False"
-    if isinstance(value, int):
+    if isinstance(value, int) and not isinstance(value, bool):
         if value in (0, 1):
             return "True" if value else "False"
         raise ValueError(
