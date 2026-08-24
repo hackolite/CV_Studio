@@ -488,9 +488,9 @@ class FactoryNode:
                         attribute_type=dpg.mvNode_Attr_Static,
                 ):
                     dpg.add_radio_button(
-                        ("CPU", "GPU", "TensorRT"),
+                        ("cpu", "PTcuda", "TRTcuda"),
                         tag=node.tag_provider_select_value_name,
-                        default_value='CPU',
+                        default_value='cpu',
                         horizontal=True,
                     )
                 node._collapsible_attr_tags.append(node.tag_provider_select_name)
@@ -1291,14 +1291,14 @@ class Node(Node):
                 except:
                     score_th = 0.3
 
-                provider = 'CPU'
+                provider = 'cpu'
                 if use_gpu:
                     provider = dpg_get_value(self.tag_provider_select_value_name)
-                    if provider not in ('CPU', 'GPU', 'TensorRT'):
-                        provider = 'CPU'
+                    if provider not in ('cpu', 'PTcuda', 'TRTcuda'):
+                        provider = 'cpu'
 
                 batch_size = self.DEFAULT_BATCH_SIZE
-                if use_gpu and provider == 'TensorRT':
+                if use_gpu and provider == 'TRTcuda':
                     try:
                         batch_size = int(dpg_get_value(self.tag_node_batch_size_value_name))
                     except Exception:
@@ -1320,16 +1320,16 @@ class Node(Node):
                 class_name_dict = self._model_class_name_list[model_name]
 
                 model_name_with_provider = model_name + '_' + provider
-                if provider == 'TensorRT':
+                if provider == 'TRTcuda':
                     model_name_with_provider += f"_b{batch_size}"
 
                 if frame is not None:
                     if model_name_with_provider not in self._model_instance:
                         provider_options = None
-                        if provider == 'CPU':
+                        if provider == 'cpu':
                             providers = ['CPUExecutionProvider']
-                        elif provider == 'TensorRT':
-                            trt_prefix = model_name + '_TensorRT_'
+                        elif provider == 'TRTcuda':
+                            trt_prefix = model_name + '_TRTcuda_'
                             for key in [k for k in self._model_instance if k.startswith(trt_prefix)]:
                                 self._model_instance.pop(key, None)
                             providers = ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
@@ -1685,12 +1685,12 @@ class Node(Node):
 
             if provider_label:
                 provider_raw = str(provider_label).upper()
-                if "CUDA" in provider_raw or provider_raw == "GPU":
-                    provider_text = "GPU"
-                elif "TENSORRT" in provider_raw:
-                    provider_text = "TensorRT"
+                if "PTCUDA" in provider_raw or provider_raw == "PTCUDA":
+                    provider_text = "PTcuda"
+                elif "TRTCUDA" in provider_raw or "TENSORRT" in provider_raw:
+                    provider_text = "TRTcuda"
                 elif "CPU" in provider_raw:
-                    provider_text = "CPU"
+                    provider_text = "cpu"
                 else:
                     provider_text = provider_raw
                 (_, provider_text_height), provider_baseline = cv2.getTextSize(

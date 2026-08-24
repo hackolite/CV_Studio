@@ -293,9 +293,9 @@ class FactoryNode:
                         attribute_type=dpg.mvNode_Attr_Static,
                 ):
                     dpg.add_radio_button(
-                        ("CPU", "GPU"),
+                        ("cpu", "PTcuda", "TRTcuda"),
                         tag=tag_provider_select_value_name,
-                        default_value='CPU',
+                        default_value='cpu',
                         horizontal=True,
                     )
                 # Batch mode checkbox (GPU only)
@@ -801,13 +801,13 @@ class Node(Node):
         frame = self.get_input_frame(connection_list, node_image_dict, node_audio_dict)
 
         # CPU/GPU選択状態取得
-        provider = 'CPU'
+        provider = 'cpu'
         if use_gpu:
             provider = dpg_get_value(tag_provider_select_value_name)
 
-        # Batch mode (GPU only)
+        # Batch mode (PTcuda only)
         batch_mode = False
-        if use_gpu and provider == 'GPU':
+        if use_gpu and provider == 'PTcuda':
             try:
                 batch_mode = bool(dpg_get_value(tag_batch_mode_value))
             except Exception:
@@ -825,12 +825,20 @@ class Node(Node):
         # モデル取得
         if frame is not None:
             if model_name_with_provider not in self._model_instance:
-                if provider == 'CPU':
-                    providers = ['CPUExecutionProvider']
+                if provider == 'cpu':
+                    ort_providers = ['CPUExecutionProvider']
                     self._model_instance[
                         model_name_with_provider] = model_class(
                             model_path,
-                            providers=providers,
+                            providers=ort_providers,
+                        )
+                elif provider == 'TRTcuda':
+                    self._model_instance[
+                        model_name_with_provider] = model_class(
+                            model_path,
+                            providers=['TensorrtExecutionProvider',
+                                       'CUDAExecutionProvider',
+                                       'CPUExecutionProvider'],
                         )
                 else:
                     self._model_instance[

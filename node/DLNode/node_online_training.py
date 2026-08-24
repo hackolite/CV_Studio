@@ -221,9 +221,9 @@ class FactoryNode:
                     attribute_type=dpg.mvNode_Attr_Static,
                 ):
                     dpg.add_radio_button(
-                        ("CPU", "GPU"),
+                        ("cpu", "PTcuda"),
                         tag=node.tag_node_device_combo,
-                        default_value='CPU',
+                        default_value='cpu',
                         horizontal=True,
                         callback=_on_device_radio_change,
                     )
@@ -444,11 +444,11 @@ class Node(Node):
 
     @staticmethod
     def _get_device_options() -> list:
-        """Return available device options (always includes CPU, adds GPU when CUDA is available)."""
-        options = ['CPU']
+        """Return available device options (always includes cpu, adds PTcuda when CUDA is available)."""
+        options = ['cpu']
         is_available, _, _ = check_gpu_availability()
         if is_available:
-            options.append('GPU')
+            options.append('PTcuda')
         return options
 
     @classmethod
@@ -526,8 +526,8 @@ class Node(Node):
             device_tag = self.tag_node_name + ':DeviceCombo'
             selected = dpg_get_value(device_tag)
         except Exception:
-            selected = 'CPU'
-        return 'cuda' if str(selected).upper() == 'GPU' else 'cpu'
+            selected = 'cpu'
+        return 'cuda' if str(selected).upper() == 'PTCUDA' else 'cpu'
 
     def _load_student_from_entry(self, entry):
         """Load a student model from a registry entry dict."""
@@ -1208,7 +1208,7 @@ class Node(Node):
             dpg_set_value(backprop_depth_tag, setting_dict.get(backprop_depth_tag, 8))
             # Restore device selection before loading the model so the right
             # providers and PyTorch device are used from the start.
-            saved_device = setting_dict.get('device', 'CPU')
+            saved_device = setting_dict.get('device', 'cpu')
             dpg_set_value(device_combo_tag, saved_device)
             # Restore student model selection
             saved_model = setting_dict.get('student_model', '')
