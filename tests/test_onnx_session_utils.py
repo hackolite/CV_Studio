@@ -9,7 +9,7 @@ Focus on the initializer-in-graph-inputs cleanup that silences onnxruntime's
 import pytest
 
 onnx = pytest.importorskip("onnx")
-pytest.importorskip("onnxruntime")
+onnxruntime = pytest.importorskip("onnxruntime")
 from onnx import TensorProto, helper, numpy_helper  # noqa: E402
 import numpy as np  # noqa: E402
 
@@ -171,4 +171,100 @@ def test_normalize_provider_options_rejects_invalid_trt_bool_values(invalid_valu
         _normalize_provider_options(
             ["TensorrtExecutionProvider"],
             [{"trt_engine_cache_enable": invalid_value}],
+        )
+
+
+# ---------------------------------------------------------------------------
+# TensorRT fallback tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("trt_error_msg", [
+    "TensorRT EP failed to create engine from network for fused node: TensorrtExecutionProvider_TRTKernel_graph_main_0",
+    "TensorRT EP failed to build engine",
+    "Unsupported SM: 0x601",
+])
+def test_make_session_falls_back_when_trt_fails(monkeypatch, trt_error_msg):
+    """When TensorRT raises an engine-build error, make_session retries without it."""
+    call_log = []
+
+    def fake_inference_session(*args, **kwargs):
+        providers = kwargs.get("providers", [])
+        call_log.append(list(providers))
+        if "TensorrtExecutionProvider" in providers:
+            raise RuntimeError(trt_error_msg)
+        return object()
+
+    monkeypatch.setattr(onnxruntime, "InferenceSession", fake_inference_session)
+
+    session = make_session(
+        b"not-a-real-model",
+        providers=["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"],
+        strip_initializer_inputs=False,
+    )
+
+    assert session is not None
+    # First call with TRT, second without
+    assert call_log[0] == ["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]
+    assert "TensorrtExecutionProvider" not in call_log[1]
+
+
+def test_make_session_trt_fallback_preserves_provider_options(monkeypatch):
+    """Provider options for surviving providers are preserved on TRT fallback."""
+    captured = {}
+
+    def fake_inference_session(*args, **kwargs):
+        providers = kwargs.get("providers", [])
+        if "TensorrtExecutionProvider" in providers:
+            raise RuntimeError("TensorRT EP failed to create engine from network")
+        captured["providers"] = list(providers)
+        captured["provider_options"] = list(kwargs.get("provider_options", []))
+        return object()
+
+    monkeypatch.setattr(onnxruntime, "InferenceSession", fake_inference_session)
+
+    make_session(
+        b"not-a-real-model",
+        providers=["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"],
+        provider_options=[
+            {"trt_fp16_enable": "True"},
+            {"arena_extend_strategy": "kSameAsRequested"},
+            {},
+        ],
+        strip_initializer_inputs=False,
+    )
+
+    assert captured["providers"] == ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    assert captured["provider_options"] == [
+        {"arena_extend_strategy": "kSameAsRequested"},
+        {},
+    ]
+
+
+def test_make_session_reraises_when_trt_is_only_provider(monkeypatch):
+    """When TRT is the only provider and it fails, the error is re-raised."""
+    def fake_inference_session(*args, **kwargs):
+        raise RuntimeError("TensorRT EP failed to create engine from network")
+
+    monkeypatch.setattr(onnxruntime, "InferenceSession", fake_inference_session)
+
+    with pytest.raises(RuntimeError, match="TensorRT EP failed"):
+        make_session(
+            b"not-a-real-model",
+            providers=["TensorrtExecutionProvider"],
+            strip_initializer_inputs=False,
+        )
+
+
+def test_make_session_reraises_non_trt_errors(monkeypatch):
+    """Non-TRT errors are not caught by the TRT fallback path."""
+    def fake_inference_session(*args, **kwargs):
+        raise RuntimeError("Model file not found")
+
+    monkeypatch.setattr(onnxruntime, "InferenceSession", fake_inference_session)
+
+    with pytest.raises(RuntimeError, match="Model file not found"):
+        make_session(
+            b"not-a-real-model",
+            providers=["TensorrtExecutionProvider", "CPUExecutionProvider"],
+            strip_initializer_inputs=False,
         )
