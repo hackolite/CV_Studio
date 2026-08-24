@@ -1215,23 +1215,12 @@ class Node(Node):
         return bboxes[keep_indices], scores[keep_indices], class_ids[keep_indices]
 
     @staticmethod
-    def _build_trt_provider_options(model_instance, batch_size):
-        """Build TensorRT provider options with dynamic shape profile."""
-        try:
-            input_name = model_instance.input_name
-            input_height = int(model_instance.input_height)
-            input_width = int(model_instance.input_width)
-            batch_size = max(1, int(batch_size))
-        except Exception:
-            return {}
-
-        shape_1 = f"{input_name}:1x3x{input_height}x{input_width}"
-        shape_n = f"{input_name}:{batch_size}x3x{input_height}x{input_width}"
+    def _build_trt_provider_options(batch_size):
+        """Build TensorRT provider options for a chosen max batch size."""
+        batch_size = max(1, int(batch_size))
         return {
             "trt_engine_cache_enable": "1",
-            "trt_profile_min_shapes": shape_1,
-            "trt_profile_opt_shapes": shape_n,
-            "trt_profile_max_shapes": shape_n,
+            "trt_max_batch_size": str(batch_size),
         }
 
 
@@ -1328,7 +1317,7 @@ class Node(Node):
                         elif provider == 'TensorRT':
                             providers = ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
                             provider_options = [
-                                {},
+                                self._build_trt_provider_options(batch_size),
                                 {
                                     "arena_extend_strategy": "kSameAsRequested",
                                     "cudnn_conv_use_max_workspace": "0",
@@ -1338,32 +1327,11 @@ class Node(Node):
                         else:
                             providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
 
-                        model_instance = model_class(
+                        self._model_instance[model_name_with_provider] = model_class(
                             model_path,
                             providers=providers,
                             provider_options=provider_options,
                         )
-                        if provider == 'TensorRT' and hasattr(model_instance, 'onnx_session'):
-                            trt_provider_options = self._build_trt_provider_options(
-                                model_instance,
-                                batch_size,
-                            )
-                            if trt_provider_options:
-                                providers = ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
-                                provider_options = [
-                                    trt_provider_options,
-                                    {
-                                        "arena_extend_strategy": "kSameAsRequested",
-                                        "cudnn_conv_use_max_workspace": "0",
-                                    },
-                                    {},
-                                ]
-                                model_instance = model_class(
-                                    model_path,
-                                    providers=providers,
-                                    provider_options=provider_options,
-                                )
-                        self._model_instance[model_name_with_provider] = model_instance
 
 
                 if frame is not None and use_pref_counter:
@@ -1702,7 +1670,7 @@ class Node(Node):
                 if "CUDA" in provider_raw or provider_raw == "GPU":
                     provider_text = "GPU"
                 elif "TENSORRT" in provider_raw or "TENSORRTEXECUTIONPROVIDER" in provider_raw:
-                    provider_text = "TRT"
+                    provider_text = "TensorRT"
                 elif "CPU" in provider_raw:
                     provider_text = "CPU"
                 else:
