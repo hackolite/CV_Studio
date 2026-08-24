@@ -233,8 +233,14 @@ def _normalize_provider_options(
 
 def _normalize_trt_bool_option(value):
     """Return TensorRT boolean provider options in ORT's expected format."""
-    if isinstance(value, (bool, int)):
+    if isinstance(value, bool):
         return "True" if value else "False"
+    if isinstance(value, int):
+        if value in (0, 1):
+            return "True" if value else "False"
+        raise ValueError(
+            f"TensorRT boolean provider options must use 0 or 1, got: {value!r}"
+        )
     if isinstance(value, str):
         stripped = value.strip()
         lowered = stripped.lower()
@@ -243,10 +249,12 @@ def _normalize_trt_bool_option(value):
         if lowered in {"0", "false", "no", "off"}:
             return "False"
         raise ValueError(
-            "TensorRT boolean provider options must be 'True'/'False' values."
+            "TensorRT boolean provider options must be recognizable true/false "
+            f"strings, got: {value!r}"
         )
     raise ValueError(
-        "TensorRT boolean provider options must be bool, int, or string values."
+        "TensorRT boolean provider options must be bool, int, or string values, "
+        f"got: {value!r}"
     )
 
 

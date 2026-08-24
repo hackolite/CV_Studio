@@ -177,3 +177,9 @@ def test_normalize_provider_options_rejects_invalid_trt_bool_values():
             ["TensorrtExecutionProvider"],
             [{"trt_engine_cache_enable": "maybe"}],
         )
+
+    with pytest.raises(ValueError):
+        _normalize_provider_options(
+            ["TensorrtExecutionProvider"],
+            [{"trt_engine_cache_enable": 2}],
+        )
