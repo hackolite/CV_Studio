@@ -5,11 +5,24 @@
 import pytest
 import sys
 import os
+import importlib.util
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from node.DLNode.object_detection.coco_class_names import coco_class_names
+
+_COCO_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    'node', 'DLNode', 'object_detection', 'coco_class_names.py'
+)
+_COCO_SPEC = importlib.util.spec_from_file_location('_test_coco_class_names', _COCO_PATH)
+_COCO_MODULE = importlib.util.module_from_spec(_COCO_SPEC)
+_COCO_SPEC.loader.exec_module(_COCO_MODULE)
+coco_class_names = _COCO_MODULE.coco_class_names
+_OD_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    'node', 'DLNode', 'node_object_detection.py'
+)
 
 
 def test_coco_class_names():
@@ -21,16 +34,8 @@ def test_coco_class_names():
 
 def test_get_class_rejection_dropdown_items():
     """Test the function that generates dropdown items from class names"""
-    import unittest.mock as mock
-    for mod in ('dearpygui', 'dearpygui.dearpygui', 'node_editor', 'node_editor.util',
-                'src', 'src.utils', 'src.utils.logging', 'src.utils.gpu_utils',
-                'node.DLNode.object_detection.CustomONNX',
-                'node.DLNode.object_detection.CustomONNX.custom_onnx',
-                'node.DLNode.object_detection.custom_models_registry',
-                'node.DLNode.object_detection.onnx_inspector'):
-        sys.modules.setdefault(mod, mock.MagicMock())
-
-    from node.DLNode.node_object_detection import get_class_rejection_dropdown_items
+    module = _load_od_module()
+    get_class_rejection_dropdown_items = module.get_class_rejection_dropdown_items
 
     # Test with COCO classes
     coco_items = get_class_rejection_dropdown_items(coco_class_names)
@@ -55,37 +60,88 @@ def test_get_class_rejection_dropdown_items():
 
 def test_get_batch_badge_label():
     """Only true batch-capable models should show the B marker."""
-    import unittest.mock as mock
-    for mod in ('dearpygui', 'dearpygui.dearpygui', 'node_editor', 'node_editor.util',
-                'src', 'src.utils', 'src.utils.logging', 'src.utils.gpu_utils',
-                'node.DLNode.object_detection.CustomONNX',
-                'node.DLNode.object_detection.CustomONNX.custom_onnx',
-                'node.DLNode.object_detection.custom_models_registry',
-                'node.DLNode.object_detection.onnx_inspector'):
-        sys.modules.setdefault(mod, mock.MagicMock())
-
-    from node.DLNode.node_object_detection import get_batch_badge_label
+    module = _load_od_module()
+    get_batch_badge_label = module.get_batch_badge_label
 
     assert get_batch_badge_label(True) == "B"
     assert get_batch_badge_label(False) == ""
 
 
-def _mock_dpg_modules():
-    """Helper: install mocks for dpg and related modules."""
+def _load_od_module():
+    """Load node_object_detection with lightweight stubs."""
     import unittest.mock as mock
-    for mod in ('dearpygui', 'dearpygui.dearpygui', 'node_editor', 'node_editor.util',
-                'src', 'src.utils', 'src.utils.logging', 'src.utils.gpu_utils',
-                'node.DLNode.object_detection.CustomONNX',
-                'node.DLNode.object_detection.CustomONNX.custom_onnx',
-                'node.DLNode.object_detection.custom_models_registry',
-                'node.DLNode.object_detection.onnx_inspector'):
-        sys.modules.setdefault(mod, mock.MagicMock())
+    import types
+
+    dpg_mock = mock.MagicMock()
+    mocked = {
+        'cv2': mock.MagicMock(),
+        'numpy': mock.MagicMock(),
+        'onnxruntime': mock.MagicMock(),
+        'dearpygui': types.ModuleType('dearpygui'),
+        'dearpygui.dearpygui': dpg_mock,
+        'node_editor': types.ModuleType('node_editor'),
+        'node_editor.util': types.SimpleNamespace(
+            dpg_get_value=mock.MagicMock(),
+            dpg_set_value=mock.MagicMock(),
+        ),
+        'node.basenode': types.SimpleNamespace(Node=type('BaseNode', (), {})),
+        'src': types.ModuleType('src'),
+        'src.utils': types.ModuleType('src.utils'),
+        'src.utils.logging': types.SimpleNamespace(get_logger=lambda name: mock.MagicMock()),
+        'src.utils.gpu_utils': types.SimpleNamespace(get_execution_providers=lambda: ['CPUExecutionProvider']),
+        'node.DLNode.object_detection': types.ModuleType('node.DLNode.object_detection'),
+        'node.DLNode.object_detection.coco_class_names': _COCO_MODULE,
+        'node.DLNode.object_detection.BlazeFace': types.ModuleType('node.DLNode.object_detection.BlazeFace'),
+        'node.DLNode.object_detection.BlazeFace.blazeface': types.SimpleNamespace(BlazeFace=mock.MagicMock()),
+        'node.DLNode.object_detection.CustomONNX': mock.MagicMock(),
+        'node.DLNode.object_detection.CustomONNX.custom_onnx': types.SimpleNamespace(CustomONNX=mock.MagicMock()),
+        'node.DLNode.object_detection.custom_models_registry': types.SimpleNamespace(
+            load_registry=lambda: [],
+            save_entry=mock.MagicMock(),
+            remove_entry=mock.MagicMock(),
+            get_entry=lambda name: None,
+        ),
+        'node.DLNode.object_detection.onnx_inspector': types.SimpleNamespace(
+            inspect_onnx_model=lambda path: {
+                'output_format': 'yolo11',
+                'input_width': 640,
+                'input_height': 640,
+                'num_classes': 80,
+                'class_names': {},
+                'supports_batched_detection': False,
+                'has_dynamic_batch': False,
+            }
+        ),
+    }
+    mocked['dearpygui'].dearpygui = dpg_mock
+    mocked['node_editor'].util = mocked['node_editor.util']
+    mocked['src'].utils = mocked['src.utils']
+    mocked['node.DLNode.object_detection'].coco_class_names = _COCO_MODULE
+    mocked['node.DLNode.object_detection'].onnx_inspector = mocked['node.DLNode.object_detection.onnx_inspector']
+    mocked['node.DLNode.object_detection'].custom_models_registry = mocked['node.DLNode.object_detection.custom_models_registry']
+
+    saved = {}
+    for name, mod in mocked.items():
+        saved[name] = sys.modules.get(name)
+        sys.modules[name] = mod
+
+    spec = importlib.util.spec_from_file_location('_od_dropdown_test', _OD_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    for name, orig in saved.items():
+        if orig is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = orig
+
+    return module
 
 
 def test_builtin_models_defined():
     """Test that _BUILTIN_MODELS contains expected entries."""
-    _mock_dpg_modules()
-    from node.DLNode.node_object_detection import _BUILTIN_MODELS
+    module = _load_od_module()
+    _BUILTIN_MODELS = module._BUILTIN_MODELS
 
     names = {m['name'] for m in _BUILTIN_MODELS}
     assert 'YOLOX-Nano(416x416)' in names
