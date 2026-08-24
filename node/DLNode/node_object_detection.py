@@ -120,6 +120,16 @@ _BUILTIN_MODELS = [
         'class_names': _COCO_CLASSES,
     },
     {
+        'name': 'yolo8n_B',
+        'path': os.path.join(_OBJECT_DETECTION_BASE, 'YOLO', 'model', 'yolo11_n.onnx'),
+        'output_format': 'yolo11',
+        'input_width': 608,
+        'input_height': 416,
+        'num_classes': 80,
+        'class_names': _COCO_CLASSES,
+        'supports_batched_detection': True,
+    },
+    {
         'name': 'YOLOv8m(640x640)',
         'path': os.path.join(_OBJECT_DETECTION_BASE, 'YOLO', 'model', 'yolov8m.onnx'),
         'output_format': 'yolo11',
@@ -127,6 +137,16 @@ _BUILTIN_MODELS = [
         'input_height': 640,
         'num_classes': 80,
         'class_names': _COCO_CLASSES,
+    },
+    {
+        'name': 'yolo8s_B',
+        'path': os.path.join(_OBJECT_DETECTION_BASE, 'YOLO', 'model', 'yolov8m.onnx'),
+        'output_format': 'yolo11',
+        'input_width': 640,
+        'input_height': 640,
+        'num_classes': 80,
+        'class_names': _COCO_CLASSES,
+        'supports_batched_detection': True,
     },
     {
         'name': 'FreeYOLO-Nano(640x640)',
@@ -736,12 +756,16 @@ class Node(Node):
             if not os.path.isfile(path):
                 logger.debug(f"[Builtin] Skipping '{name}' — ONNX file not found: {path}")
                 continue
-            supports_batch = False
-            try:
-                inspected = onnx_inspector.inspect_onnx_model(path)
-                supports_batch = bool(inspected.get('supports_batched_detection', False))
-            except Exception as exc:
-                logger.warning(f"[Builtin] Could not inspect batch support for '{name}': {exc}")
+            supports_batch = meta.get('supports_batched_detection', None)
+            if supports_batch is None:
+                supports_batch = False
+                try:
+                    inspected = onnx_inspector.inspect_onnx_model(path)
+                    supports_batch = bool(inspected.get('supports_batched_detection', False))
+                except Exception as exc:
+                    logger.warning(f"[Builtin] Could not inspect batch support for '{name}': {exc}")
+            else:
+                supports_batch = bool(supports_batch)
             # Registry always stores class_names with string keys
             entry = {
                 'name': name,

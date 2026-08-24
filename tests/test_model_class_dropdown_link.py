@@ -146,6 +146,8 @@ def test_builtin_models_defined():
     names = {m['name'] for m in _BUILTIN_MODELS}
     assert 'YOLOX-Nano(416x416)' in names
     assert 'YOLO11Nano' in names
+    assert 'yolo8n_B' in names
+    assert 'yolo8s_B' in names
     assert 'YOLOTENNIS' in names
     assert 'Light-Weight Person Detector' in names
 
@@ -162,6 +164,11 @@ def test_builtin_models_defined():
     assert tennis['class_names'].get(0) == 'player1'
     assert tennis['class_names'].get(1) == 'player2'
     assert tennis['class_names'].get(2) == 'ball'
+
+    for name in ('yolo8n_B', 'yolo8s_B'):
+        model = next((m for m in _BUILTIN_MODELS if m['name'] == name), None)
+        assert model is not None, f"{name} should be in _BUILTIN_MODELS"
+        assert model.get('supports_batched_detection') is True
 
 
 def test_callback_function_exists():
