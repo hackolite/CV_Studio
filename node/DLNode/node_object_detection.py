@@ -501,7 +501,7 @@ class FactoryNode:
                 ):
                     dpg.add_slider_int(
                         tag=node.tag_node_batch_size_value_name,
-                        label="Max Batch (TRT)",
+                        label="Batch",
                         width=small_window_w - 80,
                         default_value=node.DEFAULT_BATCH_SIZE,
                         min_value=1,
@@ -1298,7 +1298,7 @@ class Node(Node):
                         provider = 'cpu'
 
                 batch_size = self.DEFAULT_BATCH_SIZE
-                if use_gpu and provider == 'TRTcuda':
+                if use_gpu and provider in ('cuda', 'TRTcuda'):
                     try:
                         batch_size = int(dpg_get_value(self.tag_node_batch_size_value_name))
                     except Exception:

@@ -137,7 +137,7 @@ class TestSettingDictClassFilter(unittest.TestCase):
             tag_class_filter_value: '1: Female',
             f"{tag_node_name}:FLOAT:ScoreThresholdValue": 0.5,
             f"{tag_node_name}:INT:BboxThicknessValue": 2,
-            f"{tag_node_name}:BOOLEAN:BatchModeValue": False,
+            f"{tag_node_name}:INT:BatchSizeValue": 1,
         }
 
         with mock.patch(f'{_CLS_MODULE}.dpg_get_value', side_effect=lambda t: get_value_map.get(t, '')), \
