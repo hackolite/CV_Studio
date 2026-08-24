@@ -33,6 +33,16 @@ _IR_VERSION_ERROR_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Pattern that matches TensorRT engine build failures (e.g. unsupported GPU SM).
+# These are fatal for TensorRT but recoverable by falling back to CUDA/CPU.
+# Examples:
+#   "TensorRT EP failed to create engine from network for fused node: ..."
+#   "IBuilder::buildSerializedNetwork: Error Code 1: ... (Unsupported SM: 0x601)"
+_TRT_FAIL_RE = re.compile(
+    r"TensorRT EP failed|Unsupported SM:",
+    re.IGNORECASE,
+)
+
 
 def remove_initializers_from_inputs(model_proto) -> bool:
     """Drop initializers that are also declared as graph inputs.
@@ -173,9 +183,39 @@ def make_session(
         )
     except Exception as exc:
         # onnxruntime does not expose stable public exception sub-types, so we
-        # inspect the message to distinguish an IR-version error from other
+        # inspect the message to distinguish known recoverable errors from fatal
         # failures (e.g. corrupted file, missing op).
-        match = _IR_VERSION_ERROR_RE.search(str(exc))
+        err_str = str(exc)
+
+        # TensorRT engine build failure (e.g. unsupported GPU SM version).
+        # Drop TensorRT from the provider list and retry with the remaining
+        # providers (typically CUDAExecutionProvider + CPUExecutionProvider).
+        if _TRT_FAIL_RE.search(err_str):
+            trt_name = "TensorrtExecutionProvider"
+            fallback_providers = [
+                p for p in providers
+                if (p if isinstance(p, str) else p[0]) != trt_name
+            ]
+            if fallback_providers and len(fallback_providers) < len(providers):
+                logger.warning(
+                    "[ONNX] TensorRT engine build failed (%s). "
+                    "Falling back to providers: %s",
+                    err_str.split("\n")[0],
+                    fallback_providers,
+                )
+                fallback_options = [
+                    opt for p, opt in zip(providers, provider_options)
+                    if (p if isinstance(p, str) else p[0]) != trt_name
+                ]
+                return onnxruntime.InferenceSession(
+                    model_source,
+                    sess_options=sess_options,
+                    providers=fallback_providers,
+                    provider_options=fallback_options,
+                )
+            raise
+
+        match = _IR_VERSION_ERROR_RE.search(err_str)
         if match is None:
             raise
 
