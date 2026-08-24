@@ -142,3 +142,12 @@ def test_make_session_normalizes_trt_provider_options(monkeypatch):
         {"trt_engine_cache_enable": "True"},
         {},
     ]
+
+
+def test_normalize_provider_options_truncates_extra_entries():
+    normalized = _normalize_provider_options(
+        ["CPUExecutionProvider"],
+        [{"unused": "keep"}, {"extra": "drop"}],
+    )
+
+    assert normalized == [{"unused": "keep"}]

@@ -233,9 +233,7 @@ def _normalize_provider_options(
 
 def _normalize_trt_bool_option(value):
     """Return TensorRT boolean provider options in ORT's expected format."""
-    if isinstance(value, bool):
-        return "True" if value else "False"
-    if isinstance(value, int):
+    if isinstance(value, (bool, int)):
         return "True" if value else "False"
     if isinstance(value, str):
         stripped = value.strip()
