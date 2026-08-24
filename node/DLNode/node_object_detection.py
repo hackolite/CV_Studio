@@ -675,8 +675,8 @@ class Node(Node):
     DEFAULT_BATCH_SIZE = 1
     MAX_BATCH_SIZE = 32
     CUDA_PROVIDER_OPTIONS = {
-        # Keep CUDA host-side allocation conservative to avoid spikes when
-        # TensorRT falls back to CUDA kernels.
+        # Keep CUDA host-side allocation conservative to reduce GPU memory
+        # spikes in both standard CUDA execution and TensorRT CUDA fallback.
         "arena_extend_strategy": "kSameAsRequested",
         "cudnn_conv_use_max_workspace": "0",
     }
@@ -1228,7 +1228,8 @@ class Node(Node):
         cache_dir = os.path.join(_UPLOADS_DIR, "trt_engine_cache")
         try:
             os.makedirs(cache_dir, exist_ok=True)
-        except Exception:
+        except Exception as exc:
+            logger.warning(f"Could not create TensorRT cache dir '{cache_dir}': {exc}")
             cache_dir = _UPLOADS_DIR
         return {
             "trt_engine_cache_enable": "1",
