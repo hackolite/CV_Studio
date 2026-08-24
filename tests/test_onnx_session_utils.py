@@ -165,21 +165,10 @@ def test_normalize_provider_options_truncates_extra_entries():
     assert normalized == [{"unused": "keep"}]
 
 
-def test_normalize_provider_options_rejects_invalid_trt_bool_values():
+@pytest.mark.parametrize("invalid_value", [None, "maybe", 2])
+def test_normalize_provider_options_rejects_invalid_trt_bool_values(invalid_value):
     with pytest.raises(ValueError):
         _normalize_provider_options(
             ["TensorrtExecutionProvider"],
-            [{"trt_engine_cache_enable": None}],
-        )
-
-    with pytest.raises(ValueError):
-        _normalize_provider_options(
-            ["TensorrtExecutionProvider"],
-            [{"trt_engine_cache_enable": "maybe"}],
-        )
-
-    with pytest.raises(ValueError):
-        _normalize_provider_options(
-            ["TensorrtExecutionProvider"],
-            [{"trt_engine_cache_enable": 2}],
+            [{"trt_engine_cache_enable": invalid_value}],
         )
