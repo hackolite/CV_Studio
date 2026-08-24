@@ -1222,9 +1222,8 @@ class Node(Node):
         return bboxes[keep_indices], scores[keep_indices], class_ids[keep_indices]
 
     @staticmethod
-    def _build_trt_provider_options(batch_size):
-        """Build TensorRT provider options for a chosen max batch size."""
-        batch_size = max(1, int(batch_size))
+    def _build_trt_provider_options(batch_size=1):
+        """Build TensorRT provider options."""
         cache_dir = os.path.join(_UPLOADS_DIR, "trt_engine_cache")
         try:
             os.makedirs(cache_dir, exist_ok=True)
@@ -1234,7 +1233,6 @@ class Node(Node):
         return {
             "trt_engine_cache_enable": "True",
             "trt_engine_cache_path": cache_dir,
-            "trt_max_batch_size": str(batch_size),
         }
 
 
