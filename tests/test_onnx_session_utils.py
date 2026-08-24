@@ -15,9 +15,28 @@ import numpy as np  # noqa: E402
 
 from node.DLNode.object_detection.onnx_session_utils import (  # noqa: E402
     _normalize_provider_options,
+    filter_available_providers,
     make_session,
     remove_initializers_from_inputs,
 )
+
+
+def _pretend_gpu_providers_available(monkeypatch):
+    """Make TensorRT/CUDA look available so provider-specific paths can be tested.
+
+    ``make_session`` now drops execution providers that the installed
+    onnxruntime build does not offer, so tests that exercise TensorRT/CUDA
+    behaviour must advertise those providers explicitly.
+    """
+    monkeypatch.setattr(
+        onnxruntime,
+        "get_available_providers",
+        lambda: [
+            "TensorrtExecutionProvider",
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        ],
+    )
 
 
 def _model_with_initializer_in_inputs(ir_version=7):
@@ -122,6 +141,7 @@ def test_normalize_provider_options_trt_bool_values(raw_value, expected):
 
 
 def test_make_session_normalizes_trt_provider_options(monkeypatch):
+    _pretend_gpu_providers_available(monkeypatch)
     captured = {}
 
     def fake_inference_session(*args, **kwargs):
@@ -184,6 +204,7 @@ def test_normalize_provider_options_rejects_invalid_trt_bool_values(invalid_valu
     "Unsupported SM: 0x601",
 ])
 def test_make_session_falls_back_when_trt_fails(monkeypatch, trt_error_msg):
+    _pretend_gpu_providers_available(monkeypatch)
     """When TensorRT raises an engine-build error, make_session retries without it."""
     call_log = []
 
@@ -210,6 +231,7 @@ def test_make_session_falls_back_when_trt_fails(monkeypatch, trt_error_msg):
 
 def test_make_session_trt_fallback_preserves_provider_options(monkeypatch):
     """Provider options for surviving providers are preserved on TRT fallback."""
+    _pretend_gpu_providers_available(monkeypatch)
     captured = {}
 
     def fake_inference_session(*args, **kwargs):
@@ -268,3 +290,89 @@ def test_make_session_reraises_non_trt_errors(monkeypatch):
             providers=["TensorrtExecutionProvider", "CPUExecutionProvider"],
             strip_initializer_inputs=False,
         )
+
+
+# ---------------------------------------------------------------------------
+# Unavailable-provider filtering
+# ---------------------------------------------------------------------------
+
+def test_filter_available_providers_drops_unavailable(monkeypatch):
+    """Providers missing from the ORT build are dropped, keeping options aligned."""
+    monkeypatch.setattr(
+        onnxruntime, "get_available_providers", lambda: ["CPUExecutionProvider"]
+    )
+
+    providers, options = filter_available_providers(
+        ["CUDAExecutionProvider", "CPUExecutionProvider"],
+        [{"arena_extend_strategy": "kSameAsRequested"}, {"cpu": "opt"}],
+    )
+
+    assert providers == ["CPUExecutionProvider"]
+    assert options == [{"cpu": "opt"}]
+
+
+def test_filter_available_providers_keeps_all_when_available(monkeypatch):
+    _pretend_gpu_providers_available(monkeypatch)
+
+    providers, options = filter_available_providers(
+        ["CUDAExecutionProvider", "CPUExecutionProvider"], None
+    )
+
+    assert providers == ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    assert options is None
+
+
+def test_filter_available_providers_keeps_input_when_none_available(monkeypatch):
+    """With nothing available, the request is passed through so ORT reports it."""
+    monkeypatch.setattr(onnxruntime, "get_available_providers", lambda: [])
+
+    providers, options = filter_available_providers(["CUDAExecutionProvider"], None)
+
+    assert providers == ["CUDAExecutionProvider"]
+    assert options is None
+
+
+def test_make_session_does_not_apply_cuda_tuning_on_cpu_fallback(monkeypatch):
+    """A CPU-only build must not inherit the single-threaded CUDA session tuning."""
+    monkeypatch.setattr(
+        onnxruntime, "get_available_providers", lambda: ["CPUExecutionProvider"]
+    )
+    captured = {}
+
+    def fake_inference_session(*args, **kwargs):
+        captured["providers"] = list(kwargs.get("providers", []))
+        captured["sess_options"] = kwargs["sess_options"]
+        return object()
+
+    monkeypatch.setattr(onnxruntime, "InferenceSession", fake_inference_session)
+
+    make_session(
+        b"not-a-real-model",
+        providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+        strip_initializer_inputs=False,
+    )
+
+    assert captured["providers"] == ["CPUExecutionProvider"]
+    # Default ORT thread-pool settings (0 = "let ORT decide"), not the 1/1 cap.
+    assert captured["sess_options"].intra_op_num_threads != 1
+    assert captured["sess_options"].enable_cpu_mem_arena is True
+
+
+def test_make_session_cuda_defaults_do_not_disable_cudnn_workspace(monkeypatch):
+    """cudnn_conv_use_max_workspace must not be forced to '0' (kills conv perf)."""
+    _pretend_gpu_providers_available(monkeypatch)
+    captured = {}
+
+    def fake_inference_session(*args, **kwargs):
+        captured["provider_options"] = list(kwargs.get("provider_options", []))
+        return object()
+
+    monkeypatch.setattr(onnxruntime, "InferenceSession", fake_inference_session)
+
+    make_session(
+        b"not-a-real-model",
+        providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+        strip_initializer_inputs=False,
+    )
+
+    assert "cudnn_conv_use_max_workspace" not in captured["provider_options"][0]

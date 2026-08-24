@@ -731,7 +731,9 @@ class Node(Node):
         # Keep CUDA host-side allocation conservative to reduce GPU memory
         # spikes in both standard CUDA execution and TensorRT CUDA fallback.
         "arena_extend_strategy": "kSameAsRequested",
-        "cudnn_conv_use_max_workspace": "0",
+        # NOTE: do not set "cudnn_conv_use_max_workspace" to "0" here.  Doing so
+        # prevents cuDNN from selecting its fast convolution algorithms, which
+        # costs 2-3x on convolution-heavy detectors such as YOLO.
     }
 
     # All models (built-in + user-uploaded) populated from the registry at load time.
@@ -1506,11 +1508,16 @@ class Node(Node):
                 result = {}
                 debug_frame = None
                 if frame is not None:
-                    # For BlazeFace, propagate the score threshold to the model's
-                    # conf_threshold so that the built-in NMS uses the same value.
+                    # Propagate the UI score threshold to the model so it is
+                    # applied *before* post-processing instead of only at draw
+                    # time.  BlazeFace exposes conf_threshold (used by its
+                    # built-in NMS); CustomONNX exposes set_score_threshold,
+                    # which prunes candidates before the Python/OpenCV NMS.
                     model_instance = self._model_instance[model_name_with_provider]
                     if hasattr(model_instance, 'conf_threshold'):
                         model_instance.conf_threshold = score_th
+                    if hasattr(model_instance, 'set_score_threshold'):
+                        model_instance.set_score_threshold(score_th)
 
                     # ------------------------------------------------------------------
                     # Batch inference logic
@@ -1668,10 +1675,11 @@ class Node(Node):
                 output_frame = None
                 
                 if frame is not None:
-                    # Display image: ALWAYS draw bounding boxes (for user feedback)
-                    display_frame = copy.deepcopy(frame)
+                    # Display image: ALWAYS draw bounding boxes (for user feedback).
+                    # draw_object_detection_info() copies the frame internally, so
+                    # no extra deepcopy is needed here.
                     display_frame = self.draw_object_detection_info(
-                        display_frame,
+                        frame,
                         score_th,
                         bboxes,
                         scores,
@@ -1680,21 +1688,17 @@ class Node(Node):
                         provider_label=provider,
                         thickness=bbox_thickness,
                     )
-                    
+
                     # Output image: Respect checkbox setting
                     if draw_bbox:
-                        # When checked: send frame WITH bounding boxes (for video recording)
-                        output_frame = copy.deepcopy(frame)
-                        output_frame = self.draw_object_detection_info(
-                            output_frame,
-                            score_th,
-                            bboxes,
-                            scores,
-                            class_ids,
-                            class_name_dict,
-                            provider_label=provider,
-                            thickness=bbox_thickness,
-                        )
+                        # When checked: send frame WITH bounding boxes (for video
+                        # recording).  This is pixel-identical to display_frame,
+                        # so reuse it instead of rendering every box a second time.
+                        # Sharing the buffer is safe: display_frame is only read
+                        # after this point (convert_cv_to_dpg copies), and
+                        # update_node_info() deepcopies the returned data before
+                        # handing it to downstream nodes.
+                        output_frame = display_frame
                     else:
                         # When unchecked: send clean frame (for tracking)
                         output_frame = frame
@@ -1863,7 +1867,10 @@ class Node(Node):
             provider_label=None,
             thickness=3,
         ):
-            debug_image = copy.deepcopy(image)
+            # numpy's copy() is used instead of copy.deepcopy(): it is a plain
+            # buffer copy of the frame and avoids deepcopy's per-object
+            # bookkeeping on a per-frame hot path.
+            debug_image = image.copy()
             logger.debug(f"Drawing object detection info on image with shape: {debug_image.shape}")
             
             # Calculate adaptive font scale and thickness based on image size

@@ -399,6 +399,20 @@ class YoutubeNode(Node):
         self._loading = False
         self._loading_thread = None
 
+        # Video capture reader state.
+        # cap.read() used to run on the graph thread, which serialises H.264
+        # decoding with inference/rendering.  A YouTube stream has no flow
+        # control, so consuming slower than real time makes FFmpeg buffer up
+        # and read() return ever-staler frames.  A dedicated reader thread
+        # drains the stream continuously and keeps only the newest frame.
+        self._capture_thread = None
+        self._capture_stop_event = threading.Event()
+        self._frame_lock = threading.Lock()
+        self._latest_frame = None
+        self._latest_frame_seq = 0
+        self._consumed_frame_seq = 0
+        self._dropped_frames = 0
+
     def convert_cv_to_dpg(self, cv_img, w, h):
         """Converts OpenCV image to DearPyGui format"""
         if cv_img is None:
@@ -556,6 +570,86 @@ class YoutubeNode(Node):
             except queue.Empty:
                 break
 
+    # ------------------------------------------------------------------
+    # Video capture reader thread
+    # ------------------------------------------------------------------
+
+    def _start_capture_reader(self):
+        """Start the background thread that drains the video stream.
+
+        The thread reads frames as fast as the stream delivers them and keeps
+        only the most recent one.  This prevents the FFmpeg receive buffer from
+        growing when the node graph processes slower than real time (which
+        otherwise makes ``cap.read()`` block and return stale frames), and takes
+        H.264 decoding off the graph thread.
+        """
+        self._stop_capture_reader()
+        self._capture_stop_event = threading.Event()
+        with self._frame_lock:
+            self._latest_frame = None
+            self._latest_frame_seq = 0
+            self._consumed_frame_seq = 0
+            self._dropped_frames = 0
+        self._capture_thread = threading.Thread(
+            target=self._capture_reader_loop,
+            args=(self.cap, self._capture_stop_event),
+            daemon=True,
+        )
+        self._capture_thread.start()
+
+    def _capture_reader_loop(self, cap, stop_event):
+        """Background thread: keep only the newest decoded frame."""
+        consecutive_failures = 0
+        while not stop_event.is_set():
+            try:
+                ret, frame = cap.read()
+            except Exception as e:  # pragma: no cover - defensive
+                print(f"❌ Erreur de lecture: {e}")
+                break
+
+            if stop_event.is_set():
+                break
+
+            if not ret or frame is None:
+                consecutive_failures += 1
+                if consecutive_failures > 150:
+                    print("⚠️ Avertissement: Stream pourrait être terminé ou avoir un problème")
+                    break
+                # Back off briefly so a dead stream does not spin the CPU.
+                time.sleep(0.01)
+                continue
+
+            consecutive_failures = 0
+            with self._frame_lock:
+                if self._latest_frame is not None and self._latest_frame_seq > self._consumed_frame_seq:
+                    # The previous frame was never consumed: drop it so the
+                    # graph always works on the freshest available frame.
+                    self._dropped_frames += 1
+                self._latest_frame = frame
+                self._latest_frame_seq += 1
+
+    def _stop_capture_reader(self):
+        """Stop the capture reader thread and wait for it to exit.
+
+        Must be called *before* ``cap.release()``: releasing a VideoCapture
+        while another thread is inside ``read()`` crashes OpenCV.
+        """
+        self._capture_stop_event.set()
+        thread = self._capture_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2.0)
+        self._capture_thread = None
+        with self._frame_lock:
+            self._latest_frame = None
+
+    def _take_latest_frame(self):
+        """Return the newest unconsumed frame, or None if there is no new one."""
+        with self._frame_lock:
+            if self._latest_frame is None or self._latest_frame_seq == self._consumed_frame_seq:
+                return None
+            self._consumed_frame_seq = self._latest_frame_seq
+            return self._latest_frame
+
     def button(self, sender, data, user_data):
         tag_parts = user_data.split(':')
         tag_node_name = ':'.join(tag_parts[:2])
@@ -574,6 +668,7 @@ class YoutubeNode(Node):
 
             self._loading = True
             if self.cap is not None:
+                self._stop_capture_reader()
                 self.cap.release()
                 self.cap = None
 
@@ -600,6 +695,7 @@ class YoutubeNode(Node):
                     self._frame_count = 0
                     self._audio_chunk_counter = 0
                     self._stream_start_time = time.monotonic()
+                    self._start_capture_reader()
 
                     if dpg.does_item_exist(tag_node_button_value_name):
                         dpg.set_item_label(tag_node_button_value_name, self._stop_label)
@@ -630,6 +726,7 @@ class YoutubeNode(Node):
 
         elif label == self._stop_label:
             if self.cap is not None:
+                self._stop_capture_reader()
                 self.cap.release()
                 self.cap = None
                 print("⏹️ Stream YouTube arrêté")
@@ -661,16 +758,19 @@ class YoutubeNode(Node):
         frame = None
         if self.cap is not None and self.is_streaming and self.current_time - self._last_frame_time >= self._frame_interval:
             try:
-                ret, frame = self.cap.read()
-                
-                if ret and frame is not None:
+                # Non-blocking: the reader thread already decoded the frame and
+                # discarded any that piled up behind it.
+                frame = self._take_latest_frame()
+
+                if frame is not None:
                     self._last_frame = frame
                     self._frame_count += 1
                     texture = self.convert_cv_to_dpg(frame, self.small_window_w, self.small_window_h)
                     dpg_set_value(output_value01_tag, texture)
                     self._last_frame_time = self.current_time
                     self._frame_skip_counter = 0
-                else:
+                elif self._capture_thread is not None and not self._capture_thread.is_alive():
+                    # The reader thread exited: the stream really is finished.
                     self._frame_skip_counter += 1
                     if self._frame_skip_counter > 150:
                         print("⚠️ Avertissement: Stream pourrait être terminé ou avoir un problème")
@@ -732,6 +832,7 @@ class YoutubeNode(Node):
             self._loading = False
             self._loading_thread.join(timeout=2.0)
         self._stop_audio_capture()
+        self._stop_capture_reader()
         if self.cap is not None:
             self.cap.release()
             self.cap = None
