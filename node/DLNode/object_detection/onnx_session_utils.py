@@ -243,7 +243,9 @@ def _normalize_trt_bool_option(value):
         if lowered in {"0", "false", "no", "off"}:
             return "False"
         return stripped
-    return value
+    raise ValueError(
+        "TensorRT boolean provider options must be bool, int, or string values."
+    )
 
 
 def _strip_initializer_inputs(

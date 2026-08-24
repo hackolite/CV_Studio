@@ -144,6 +144,18 @@ def test_make_session_normalizes_trt_provider_options(monkeypatch):
     ]
 
 
+def test_normalize_provider_options_pads_missing_entries():
+    normalized = _normalize_provider_options(
+        ["TensorrtExecutionProvider", "CPUExecutionProvider"],
+        [{"trt_engine_cache_enable": "1"}],
+    )
+
+    assert normalized == [
+        {"trt_engine_cache_enable": "True"},
+        {},
+    ]
+
+
 def test_normalize_provider_options_truncates_extra_entries():
     normalized = _normalize_provider_options(
         ["CPUExecutionProvider"],
@@ -151,3 +163,11 @@ def test_normalize_provider_options_truncates_extra_entries():
     )
 
     assert normalized == [{"unused": "keep"}]
+
+
+def test_normalize_provider_options_rejects_invalid_trt_bool_values():
+    with pytest.raises(ValueError):
+        _normalize_provider_options(
+            ["TensorrtExecutionProvider"],
+            [{"trt_engine_cache_enable": None}],
+        )
