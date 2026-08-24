@@ -44,6 +44,18 @@ _OBJECT_DETECTION_BASE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), 'object_detection'
 )
 
+
+def _resolve_builtin_model_path(*relative_candidates):
+    """Return the first existing built-in model path, else the first candidate."""
+    if not relative_candidates:
+        return ""
+    for rel in relative_candidates:
+        candidate = os.path.join(_OBJECT_DETECTION_BASE, rel)
+        if os.path.isfile(candidate):
+            return candidate
+    return os.path.join(_OBJECT_DETECTION_BASE, relative_candidates[0])
+
+
 # Directory where user-uploaded ONNX models are stored permanently
 if getattr(sys, 'frozen', False):
     from src.utils.paths import get_models_dir
@@ -121,10 +133,13 @@ _BUILTIN_MODELS = [
     },
     {
         'name': 'yolo8n_B',
-        'path': os.path.join(_OBJECT_DETECTION_BASE, 'YOLO', 'model', 'yolo11_n.onnx'),
+        'path': _resolve_builtin_model_path(
+            os.path.join('YOLO', 'model', 'yolov8n.onnx'),
+            os.path.join('YOLO', 'model', 'yolo11_n.onnx'),
+        ),
         'output_format': 'yolo11',
-        'input_width': 608,
-        'input_height': 416,
+        'input_width': 640,
+        'input_height': 640,
         'num_classes': 80,
         'class_names': _COCO_CLASSES,
         'supports_batched_detection': True,
@@ -140,7 +155,10 @@ _BUILTIN_MODELS = [
     },
     {
         'name': 'yolo8s_B',
-        'path': os.path.join(_OBJECT_DETECTION_BASE, 'YOLO', 'model', 'yolov8m.onnx'),
+        'path': _resolve_builtin_model_path(
+            os.path.join('YOLO', 'model', 'yolov8s.onnx'),
+            os.path.join('YOLO', 'model', 'yolo11_n.onnx'),
+        ),
         'output_format': 'yolo11',
         'input_width': 640,
         'input_height': 640,
