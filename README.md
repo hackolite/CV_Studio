@@ -154,7 +154,7 @@ CV Studio includes a broad node library spanning:
 - **Outputs and actions** — visualization, JSON export, MongoDB, MQTT, APIs, workflow persistence
 
 For the complete node catalog and detailed descriptions, see
-[doc/DOCUMENTATION.md](doc/DOCUMENTATION.md#6-catalogue-complet-des-nœuds).
+[doc/DOCUMENTATION.md](doc/DOCUMENTATION.md).
 
 ## 🧪 Testing
 
