@@ -1,6 +1,6 @@
  # CV Studio
 
-> A professional node-based image processing application for computer vision development, verification, and comparison.
+ > A node-based geospatial vision platform for flow analytics, mapping, and spatial decision support.
 
 <img src="https://user-images.githubusercontent.com/37477845/172011014-23fb025e-68a5-4cb7-925f-c4417029966c.gif" loading="lazy" width="100%">
 
@@ -10,36 +10,42 @@
 
 ## 🎯 Overview
 
-CV Studio is an advanced node-based image processing application that allows you to visually create computer vision pipelines through an intuitive drag-and-drop interface. Perfect for:
+CV Studio helps teams **observe, count, localize, map, and compare activity over time** through
+visual pipelines. It is best positioned as a platform for **retail intelligence**, **urban
+analytics**, and **spatial intelligence** rather than a generic computer-vision sandbox.
 
-- **Prototyping** - Quickly test and compare different CV algorithms
-- **Education** - Learn computer vision concepts interactively
-- **Development** - Build and validate processing pipelines before production
-- **Research** - Experiment with ML models and traditional CV techniques
+### Primary Use Cases
+
+- **Retail & Footfall Intelligence** - Measure occupancy, customer flow, hot zones, and in-store
+  movement patterns from cameras and detection pipelines
+- **Urban & Mobility Analytics** - Track movement, density, trajectories, and space usage across
+  streets, stations, facilities, and public environments
+- **Spatial Decision Support** - Combine video, coordinates, maps, and Copernicus satellite imagery
+  to analyze territory, assets, and site context
 
 ### How It Works
 
-CV Studio turns computer vision development into a visual workflow. You connect **Input** nodes to
-**Processing**, **ML/DL**, and **Analysis** nodes, then send the results to **Visualization** or
-**Action** nodes — no boilerplate code required. Data flows through the graph in real time.
+CV Studio turns spatial video analytics into a visual workflow. You connect **video or field data**
+to **detection / tracking / analytics** nodes, project results into **maps and visual layers**, and
+send outputs to **dashboards, databases, or APIs** — no boilerplate code required.
 
 ```mermaid
 flowchart LR
-    subgraph Inputs["📥 Inputs"]
+    subgraph Inputs["📥 Acquisition"]
         A1["Webcam / Video"]
-        A2["Images / Screen"]
-        A3["RTSP · HLS · WebRTC"]
-        A4["Satellite / API"]
+        A2["RTSP · HLS · WebRTC"]
+        A3["GPS / JSON / MQTT / API"]
+        A4["Satellite / Copernicus"]
     end
-    subgraph Process["⚙️ Processing &amp; AI"]
-        B1["Filters &amp;<br/>Transforms"]
-        B2["ML / DL Models<br/>(ONNX · YOLO · MediaPipe)"]
-        B3["Tracking &amp;<br/>Analysis"]
+    subgraph Process["⚙️ Detection, Tracking &amp; Analytics"]
+        B1["Object Detection<br/>(ONNX · YOLO)"]
+        B2["Tracking &amp;<br/>Trajectories"]
+        B3["Heatmaps · Charts<br/>&amp; Spatial Analysis"]
     end
-    subgraph Outputs["📤 Outputs"]
-        C1["Result Viewer"]
-        C2["Overlays &<br/>Annotations"]
-        C3["Actions<br/>(MQTT · MongoDB · API)"]
+    subgraph Outputs["📤 Spatial Outputs"]
+        C1["Maps &amp;<br/>Satellite Context"]
+        C2["Overlays · Views<br/>&amp; Dashboards"]
+        C3["MongoDB · MQTT<br/>API / JSON"]
     end
 
     Inputs --> Process --> Outputs
@@ -49,26 +55,41 @@ flowchart LR
     style Outputs fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
 ```
 
-## ✨ Key Features
+## ✨ Core Workflows
 
-- 🎨 **Visual Node Editor** - Intuitive drag-and-drop interface powered by DearPyGUI
-- 🔄 **Real-time Processing** - See results instantly as you build your pipeline
-- 🧩 **150+ Built-in Nodes** - Input, processing, ML/DL, audio, analysis, visualization, and action nodes
-- 🤖 **ML/DL Integration** - ONNX, MediaPipe, YOLOv8/YOLO11, YAMNet, VLM and custom models
-- 📹 **Multiple Input Sources** - Webcam, video, images, RTSP, HLS, WebRTC, WebSocket, MQTT, API, YouTube, screen capture
-- 🔊 **Audio Pipeline** - Microphone input → audio processing → AudioClassification with passthrough sync
-- 🗺️ **Satellite Imagery** - Copernicus/Sentinel-2 live tile streaming with band combinations and NDVI formulas
-- 🧠 **On-Device Training** - OnlineTraining node for live distillation fine-tuning (PyTorch backprop)
-- ➕ **In-Node Model Import** - Upload custom ONNX models directly from any DL node UI without restarting
-- 💾 **Save & Load** - Export and import your processing graphs as JSON
-- 🏗️ **Modern Architecture** - Professional codebase with proper error handling, logging, and testing
-- 🔌 **Extensible** - Easy to add custom nodes and processing algorithms
+- **Retail flow analysis** - Camera → object detection → tracking → heatmap / chart → occupancy and
+  movement insights
+- **Urban mobility analysis** - Street or facility feed → tracking → trajectories → map overlay for
+  density and path analysis
+- **Spatial diagnostics** - Coordinates + satellite imagery + detections → geospatial context for
+  territory monitoring and site review
+
+## 🧱 Core Capabilities
+
+- 🎨 **Visual Node Editor** - Drag-and-drop pipeline building with real-time previews
+- 📹 **Video & Field Inputs** - Webcam, video, RTSP, HLS, WebRTC, WebSocket, MQTT, API, JSON
+- 🤖 **Detection & Tracking** - ONNX / YOLO-based object detection, MOT, re-identification, and
+  trajectories
+- 🗺️ **Maps & Spatial Context** - Map rendering, coordinate traces, tile backgrounds, and geospatial
+  overlays
+- 🛰️ **Satellite Intelligence** - Copernicus / Sentinel imagery with band combinations and formulas
+- 📊 **Visual Analytics** - Heatmaps, charts, overlays, and result views for spatial interpretation
+- 🔌 **Operational Integrations** - Export to MongoDB, MQTT, APIs, and other downstream systems
+- 💾 **Reusable Pipelines** - Save and load workflows as JSON for repeatable analysis
+
+## 🧩 Advanced Modules
+
+CV Studio also includes optional modules for broader experimentation, such as audio processing,
+speech, agent-style automation, on-device training, and specialized action nodes. These extensions
+remain available, but the main product story is centered on **spatial video analytics** and
+**geospatial decision support**.
 
 ## 🎥 See It In Action
 
 The following demonstrations were produced **entirely inside CV Studio**. They show real pipelines
-running end-to-end — from live input to AI inference and visualization — so you can see exactly what
-the studio delivers before installing it.
+running end-to-end — from live input to AI inference and visualization. For a retail / urbanism /
+spatial positioning, prioritize demos that showcase **detection, tracking, mapping, heatmaps, and
+territorial context**.
 
 <table>
   <tr>
