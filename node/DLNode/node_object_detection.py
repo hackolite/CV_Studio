@@ -805,10 +805,14 @@ class Node(Node):
                     meta = onnx_inspector.inspect_onnx_model(path)
                     supports_batch = bool(meta.get('supports_batched_detection', False))
                     entry['supports_batched_detection'] = supports_batch
-                    custom_models_registry.save_entry(entry)
                 except Exception as exc:
                     logger.warning(f"Could not inspect batch support for '{name}': {exc}")
                     supports_batch = False
+                else:
+                    try:
+                        custom_models_registry.save_entry(entry)
+                    except Exception as exc:
+                        logger.warning(f"Could not persist batch support for '{name}': {exc}")
             cls._register_custom_model(name, path, class_names, output_fmt, in_w, in_h,
                                        disable_optimizations=disable_opt,
                                        nanodet_reg_first=nanodet_reg_first,
