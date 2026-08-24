@@ -20,6 +20,25 @@ from node.DLNode.object_detection.onnx_session_utils import make_session
 logger = logging.getLogger(__name__)
 
 
+def has_dynamic_batch_dim(input_shape: list) -> bool:
+    """True when the first input dimension is dynamic/symbolic."""
+    if not input_shape:
+        return False
+    batch_dim = input_shape[0]
+    return (
+        batch_dim is None
+        or isinstance(batch_dim, str)
+        or (isinstance(batch_dim, int) and batch_dim < 0)
+    )
+
+
+def supports_batched_detection(input_shape: list, output_format: str) -> bool:
+    """True when ObjectDetection can run a real batched ONNX call for this model."""
+    if not has_dynamic_batch_dim(input_shape):
+        return False
+    return output_format in {"yolo11", "yolo11_obb", "yolox", "nanodet"}
+
+
 def _dim_value(dim) -> object:
     """Extract an int value from an ONNX TensorShapeProto.Dimension, or a string param name."""
     if dim.HasField("dim_value"):
@@ -201,6 +220,8 @@ def _inspect_onnx_static(model_path: str) -> dict:
         "class_names": class_names,
         "input_width": input_width,
         "input_height": input_height,
+        "has_dynamic_batch": has_dynamic_batch_dim(input_shape),
+        "supports_batched_detection": supports_batched_detection(input_shape, output_format),
     }
     logger.info(
         f"[ONNX Inspector/static] Inspection complete — "
@@ -500,6 +521,8 @@ def inspect_onnx_model(model_path: str) -> dict:
         "class_names": class_names,
         "input_width": input_width,
         "input_height": input_height,
+        "has_dynamic_batch": has_dynamic_batch_dim(input_shape),
+        "supports_batched_detection": supports_batched_detection(input_shape, output_format),
     }
     logger.info(
         f"[ONNX Inspector] Inspection complete — "
