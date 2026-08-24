@@ -25,7 +25,11 @@ def has_dynamic_batch_dim(input_shape: list) -> bool:
     if not input_shape:
         return False
     batch_dim = input_shape[0]
-    return isinstance(batch_dim, str) or (isinstance(batch_dim, int) and batch_dim < 0)
+    return (
+        batch_dim is None
+        or isinstance(batch_dim, str)
+        or (isinstance(batch_dim, int) and batch_dim < 0)
+    )
 
 
 def supports_batched_detection(input_shape: list, output_format: str) -> bool:

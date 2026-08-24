@@ -17,7 +17,7 @@ Entry schema
     "input_width":   int
     "input_height":  int
     "num_classes":   int
-    "supports_batched_detection": bool  – true when ObjectDetection can batch it
+    "supports_batched_detection": bool  - true when ObjectDetection can batch it
 }
 """
 

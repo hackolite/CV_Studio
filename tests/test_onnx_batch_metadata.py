@@ -52,7 +52,7 @@ INSPECTOR = _load_inspector_module()
         (["batch", 3, 640, 640], True),
         ([-1, 3, 640, 640], True),
         ([0, 3, 640, 640], False),
-        ([None, 3, 640, 640], False),
+        ([None, 3, 640, 640], True),
         ([], False),
     ],
 )

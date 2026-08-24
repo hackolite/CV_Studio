@@ -1322,8 +1322,8 @@ class Node(Node):
                 self.tag_node_batch_badge_value_name,
                 get_batch_badge_label(self._model_batch_capable.get(model_name, False)),
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(f"Could not update batch badge for '{model_name}': {exc}")
 
     @staticmethod
     def _run_batch_inference(model_instance, frames):
