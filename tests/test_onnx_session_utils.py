@@ -133,7 +133,7 @@ def test_make_session_normalizes_trt_provider_options(monkeypatch):
     session = make_session(
         b"not-a-real-model",
         providers=["TensorrtExecutionProvider", "CPUExecutionProvider"],
-        provider_options=[{"trt_engine_cache_enable": "1"}],
+        provider_options=[{"trt_engine_cache_enable": "1"}, {}],
         strip_initializer_inputs=False,
     )
 
@@ -170,4 +170,10 @@ def test_normalize_provider_options_rejects_invalid_trt_bool_values():
         _normalize_provider_options(
             ["TensorrtExecutionProvider"],
             [{"trt_engine_cache_enable": None}],
+        )
+
+    with pytest.raises(ValueError):
+        _normalize_provider_options(
+            ["TensorrtExecutionProvider"],
+            [{"trt_engine_cache_enable": "maybe"}],
         )

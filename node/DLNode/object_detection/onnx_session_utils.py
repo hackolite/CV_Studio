@@ -242,7 +242,9 @@ def _normalize_trt_bool_option(value):
             return "True"
         if lowered in {"0", "false", "no", "off"}:
             return "False"
-        return stripped
+        raise ValueError(
+            "TensorRT boolean provider options must be 'True'/'False' values."
+        )
     raise ValueError(
         "TensorRT boolean provider options must be bool, int, or string values."
     )
