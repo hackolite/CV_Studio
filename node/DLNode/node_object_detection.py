@@ -1694,6 +1694,10 @@ class Node(Node):
                         # When checked: send frame WITH bounding boxes (for video
                         # recording).  This is pixel-identical to display_frame,
                         # so reuse it instead of rendering every box a second time.
+                        # Sharing the buffer is safe: display_frame is only read
+                        # after this point (convert_cv_to_dpg copies), and
+                        # update_node_info() deepcopies the returned data before
+                        # handing it to downstream nodes.
                         output_frame = display_frame
                     else:
                         # When unchecked: send clean frame (for tracking)
