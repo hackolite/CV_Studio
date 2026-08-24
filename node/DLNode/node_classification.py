@@ -1213,6 +1213,7 @@ class Node(Node):
             batch_size = int(dpg_get_value(tag_batch_size_value))
         except Exception:
             pass
+        batch_size = max(1, min(self.MAX_BATCH_SIZE, batch_size))
 
         tag_class_filter_value = tag_node_name + ':' + self.TYPE_TEXT + ':ClassFilterValue'
         class_filter = 'All'
