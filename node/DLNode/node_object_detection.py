@@ -1232,7 +1232,7 @@ class Node(Node):
             logger.warning(f"Could not create TensorRT cache dir '{cache_dir}': {exc}")
             cache_dir = _UPLOADS_DIR
         return {
-            "trt_engine_cache_enable": "1",
+            "trt_engine_cache_enable": "True",
             "trt_engine_cache_path": cache_dir,
             "trt_max_batch_size": str(batch_size),
         }

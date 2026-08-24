@@ -14,6 +14,7 @@ from onnx import TensorProto, helper, numpy_helper  # noqa: E402
 import numpy as np  # noqa: E402
 
 from node.DLNode.object_detection.onnx_session_utils import (  # noqa: E402
+    _normalize_provider_options,
     make_session,
     remove_initializers_from_inputs,
 )
@@ -93,3 +94,51 @@ def test_make_session_without_stripping_still_loads():
     )
     out = session.run(None, {"x": np.zeros((2, 2), dtype=np.float32)})[0]
     assert np.allclose(out, np.ones((2, 2), dtype=np.float32))
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [
+        ("1", "True"),
+        ("0", "False"),
+        (True, "True"),
+        (False, "False"),
+        ("true", "True"),
+        ("False", "False"),
+    ],
+)
+def test_normalize_provider_options_trt_bool_values(raw_value, expected):
+    normalized = _normalize_provider_options(
+        ["TensorrtExecutionProvider", "CUDAExecutionProvider"],
+        [
+            {"trt_engine_cache_enable": raw_value, "trt_fp16_enable": raw_value},
+            {"arena_extend_strategy": "kSameAsRequested"},
+        ],
+    )
+
+    assert normalized[0]["trt_engine_cache_enable"] == expected
+    assert normalized[0]["trt_fp16_enable"] == expected
+    assert normalized[1] == {"arena_extend_strategy": "kSameAsRequested"}
+
+
+def test_make_session_normalizes_trt_provider_options(monkeypatch):
+    captured = {}
+
+    def fake_inference_session(*args, **kwargs):
+        captured["provider_options"] = kwargs["provider_options"]
+        return object()
+
+    monkeypatch.setattr(onnxruntime, "InferenceSession", fake_inference_session)
+
+    session = make_session(
+        b"not-a-real-model",
+        providers=["TensorrtExecutionProvider", "CPUExecutionProvider"],
+        provider_options=[{"trt_engine_cache_enable": "1"}],
+        strip_initializer_inputs=False,
+    )
+
+    assert session is not None
+    assert captured["provider_options"] == [
+        {"trt_engine_cache_enable": "True"},
+        {},
+    ]

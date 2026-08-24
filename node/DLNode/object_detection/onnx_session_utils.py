@@ -12,6 +12,20 @@ import onnxruntime
 
 logger = logging.getLogger(__name__)
 
+_TRT_BOOL_PROVIDER_OPTION_KEYS = {
+    "trt_engine_cache_enable",
+    "trt_context_memory_sharing_enable",
+    "trt_cuda_graph_enable",
+    "trt_dump_ep_context_model",
+    "trt_detailed_build_log",
+    "trt_engine_hw_compatible",
+    "trt_fp16_enable",
+    "trt_force_sequential_engine_build",
+    "trt_int8_enable",
+    "trt_layer_norm_fp32_fallback",
+    "trt_sparsity_enable",
+}
+
 # Pattern that matches onnxruntime's IR version error, e.g.:
 # "Unsupported model IR version: 14, max supported IR version: 13"
 _IR_VERSION_ERROR_RE = re.compile(
@@ -142,6 +156,10 @@ def make_session(
                 })
             else:
                 provider_options.append({})
+    else:
+        provider_options = list(provider_options)
+
+    provider_options = _normalize_provider_options(providers, provider_options)
 
     if strip_initializer_inputs:
         model_source = _strip_initializer_inputs(model_source)
@@ -189,6 +207,45 @@ def make_session(
             providers=providers,
             provider_options=provider_options,
         )
+
+
+def _normalize_provider_options(
+    providers: List[str],
+    provider_options: Optional[List[dict]],
+) -> List[dict]:
+    """Normalize provider options for ORT execution providers."""
+    normalized = list(provider_options or [])
+    if len(normalized) < len(providers):
+        normalized.extend({} for _ in range(len(providers) - len(normalized)))
+    elif len(normalized) > len(providers):
+        normalized = normalized[:len(providers)]
+
+    for idx, provider in enumerate(providers):
+        name = provider if isinstance(provider, str) else provider[0]
+        options = dict(normalized[idx] or {})
+        if name == "TensorrtExecutionProvider":
+            for key in _TRT_BOOL_PROVIDER_OPTION_KEYS:
+                if key in options:
+                    options[key] = _normalize_trt_bool_option(options[key])
+        normalized[idx] = options
+    return normalized
+
+
+def _normalize_trt_bool_option(value):
+    """Return TensorRT boolean provider options in ORT's expected format."""
+    if isinstance(value, bool):
+        return "True" if value else "False"
+    if isinstance(value, int):
+        return "True" if value else "False"
+    if isinstance(value, str):
+        stripped = value.strip()
+        lowered = stripped.lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return "True"
+        if lowered in {"0", "false", "no", "off"}:
+            return "False"
+        return stripped
+    return value
 
 
 def _strip_initializer_inputs(
