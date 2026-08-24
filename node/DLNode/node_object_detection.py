@@ -1223,16 +1223,24 @@ class Node(Node):
 
     @staticmethod
     def _build_trt_provider_options(batch_size=1):
-        """Build TensorRT provider options."""
+        """Build TensorRT provider options for a chosen max batch size.
+
+        ``trt_max_workspace_size`` is scaled linearly with *batch_size*
+        (1 GiB per batch slot) so the TensorRT engine builder has enough
+        GPU scratch memory to optimise multi-frame execution plans.
+        """
+        batch_size = max(1, int(batch_size))
         cache_dir = os.path.join(_UPLOADS_DIR, "trt_engine_cache")
         try:
             os.makedirs(cache_dir, exist_ok=True)
         except Exception as exc:
             logger.warning(f"Could not create TensorRT cache dir '{cache_dir}': {exc}")
             cache_dir = _UPLOADS_DIR
+        workspace_bytes = batch_size * 1073741824  # 1 GiB × batch_size
         return {
             "trt_engine_cache_enable": "True",
             "trt_engine_cache_path": cache_dir,
+            "trt_max_workspace_size": str(workspace_bytes),
         }
 
 
