@@ -112,9 +112,9 @@ class FactoryNode:
                         attribute_type=dpg.mvNode_Attr_Static,
                 ):
                     dpg.add_radio_button(
-                        ("CPU", "GPU"),
+                        ("cpu", "cuda", "TRTcuda"),
                         tag=node.tag_provider_select_value_name,
-                        default_value='CPU',
+                        default_value='cpu',
                         horizontal=True,
                     )
 
@@ -213,7 +213,7 @@ class Node(Node):
         frame = node_image_dict.get(connection_info_src, None)
 
 
-        provider = 'CPU'
+        provider = 'cpu'
         if use_gpu:
         	provider = dpg_get_value(tag_provider_select_value_name)
 
@@ -227,12 +227,20 @@ class Node(Node):
 
         if frame is not None:
             if model_name_with_provider not in self._model_instance:
-                if provider == 'CPU':
+                if provider == 'cpu':
                     providers = ['CPUExecutionProvider']
                     self._model_instance[
                         model_name_with_provider] = model_class(
                             model_path,
                             providers=providers,
+                        )
+                elif provider == 'TRTcuda':
+                    self._model_instance[
+                        model_name_with_provider] = model_class(
+                            model_path,
+                            providers=['TensorrtExecutionProvider',
+                                       'CUDAExecutionProvider',
+                                       'CPUExecutionProvider'],
                         )
                 else:
                     self._model_instance[

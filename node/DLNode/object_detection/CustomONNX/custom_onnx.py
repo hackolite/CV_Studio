@@ -63,6 +63,7 @@ class CustomONNX:
         nms_th: float = 0.45,
         nms_score_th: float = 0.1,
         providers=None,
+        provider_options=None,
         disable_optimizations: bool = False,
         nanodet_reg_first: bool = None,
     ):
@@ -84,7 +85,10 @@ class CustomONNX:
         )
 
         self.onnx_session = make_session(
-            model_path, providers, disable_optimizations=disable_optimizations
+            model_path,
+            providers,
+            disable_optimizations=disable_optimizations,
+            provider_options=provider_options,
         )
 
         # Use provided input name, fall back to first input name from model
