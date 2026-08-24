@@ -505,7 +505,7 @@ class FactoryNode:
                         width=small_window_w - 80,
                         default_value=node.DEFAULT_BATCH_SIZE,
                         min_value=1,
-                        max_value=32,
+                        max_value=node.MAX_BATCH_SIZE,
                     )
                 node._collapsible_attr_tags.append(node.tag_node_batch_size_name)
 
@@ -673,6 +673,7 @@ class Node(Node):
     DEFAULT_DRAW_BBOX = True
     DEFAULT_BBOX_THICKNESS = 3
     DEFAULT_BATCH_SIZE = 1
+    MAX_BATCH_SIZE = 32
     CUDA_PROVIDER_OPTIONS = {
         # Keep CUDA host-side allocation conservative to avoid spikes when
         # TensorRT falls back to CUDA kernels.
@@ -1296,12 +1297,12 @@ class Node(Node):
                         provider = 'CPU'
 
                 batch_size = self.DEFAULT_BATCH_SIZE
-                if use_gpu:
+                if use_gpu and provider == 'TensorRT':
                     try:
                         batch_size = int(dpg_get_value(self.tag_node_batch_size_value_name))
                     except Exception:
                         batch_size = self.DEFAULT_BATCH_SIZE
-                batch_size = max(1, min(32, batch_size))
+                batch_size = max(1, min(self.MAX_BATCH_SIZE, batch_size))
 
 
 
@@ -1327,6 +1328,9 @@ class Node(Node):
                         if provider == 'CPU':
                             providers = ['CPUExecutionProvider']
                         elif provider == 'TensorRT':
+                            trt_prefix = model_name + '_TensorRT_'
+                            for key in [k for k in self._model_instance if k.startswith(trt_prefix)]:
+                                self._model_instance.pop(key, None)
                             providers = ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
                             provider_options = [
                                 self._build_trt_provider_options(batch_size),
@@ -1335,6 +1339,10 @@ class Node(Node):
                             ]
                         else:
                             providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+                            provider_options = [
+                                dict(self.CUDA_PROVIDER_OPTIONS),
+                                {},
+                            ]
 
                         self._model_instance[model_name_with_provider] = model_class(
                             model_path,
@@ -1642,7 +1650,7 @@ class Node(Node):
 
         # Set TensorRT batch-size slider
         try:
-            dpg_set_value(batch_size_tag, max(1, min(32, batch_size)))
+            dpg_set_value(batch_size_tag, max(1, min(self.MAX_BATCH_SIZE, batch_size)))
         except Exception:
             pass  # Ignore if the UI element doesn't exist yet
 
