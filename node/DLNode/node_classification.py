@@ -104,8 +104,8 @@ class FactoryNode:
         tag_class_filter_name = tag_node_name + ':' + node.TYPE_TEXT + ':ClassFilter'
         tag_class_filter_value_name = tag_node_name + ':' + node.TYPE_TEXT + ':ClassFilterValue'
 
-        tag_batch_mode_name = tag_node_name + ':' + node.TYPE_BOOLEAN + ':BatchMode'
-        tag_batch_mode_value_name = tag_node_name + ':' + node.TYPE_BOOLEAN + ':BatchModeValue'
+        tag_batch_size_name = tag_node_name + ':' + node.TYPE_INT + ':BatchSize'
+        tag_batch_size_value_name = tag_node_name + ':' + node.TYPE_INT + ':BatchSizeValue'
 
         # OpenCV向け設定
         node._opencv_setting_dict = opencv_setting_dict
@@ -298,15 +298,18 @@ class FactoryNode:
                         default_value='cpu',
                         horizontal=True,
                     )
-                # Batch mode checkbox (GPU only)
+                # Batch size slider (GPU only)
                 with dpg.node_attribute(
-                        tag=tag_batch_mode_name,
+                        tag=tag_batch_size_name,
                         attribute_type=dpg.mvNode_Attr_Static,
                 ):
-                    dpg.add_checkbox(
-                        label='Batch mode',
-                        tag=tag_batch_mode_value_name,
-                        default_value=False,
+                    dpg.add_slider_int(
+                        label='Batch',
+                        tag=tag_batch_size_value_name,
+                        default_value=node.DEFAULT_BATCH_SIZE,
+                        min_value=1,
+                        max_value=node.MAX_BATCH_SIZE,
+                        width=small_window_w - 80,
                     )
             # 処理時間
             if use_pref_counter:
@@ -397,6 +400,9 @@ class Node(Node):
 
     node_label = 'Classification'
     node_tag = 'Classification'
+
+    DEFAULT_BATCH_SIZE = 1
+    MAX_BATCH_SIZE = 32
 
     _opencv_setting_dict = None
 
@@ -767,7 +773,7 @@ class Node(Node):
         tag_score_threshold_value = tag_node_name + ':' + self.TYPE_FLOAT + ':ScoreThresholdValue'
         tag_bbox_thickness_value = tag_node_name + ':' + self.TYPE_INT + ':BboxThicknessValue'
         tag_class_filter_value = tag_node_name + ':' + self.TYPE_TEXT + ':ClassFilterValue'
-        tag_batch_mode_value = tag_node_name + ':' + self.TYPE_BOOLEAN + ':BatchModeValue'
+        tag_batch_size_value = tag_node_name + ':' + self.TYPE_INT + ':BatchSizeValue'
 
         tag_provider_select_value_name = tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
 
@@ -805,13 +811,15 @@ class Node(Node):
         if use_gpu:
             provider = dpg_get_value(tag_provider_select_value_name)
 
-        # Batch mode (cuda only)
-        batch_mode = False
-        if use_gpu and provider == 'cuda':
+        # Batch size (cuda and TRTcuda)
+        batch_size = self.DEFAULT_BATCH_SIZE
+        if use_gpu and provider in ('cuda', 'TRTcuda'):
             try:
-                batch_mode = bool(dpg_get_value(tag_batch_mode_value))
+                batch_size = int(dpg_get_value(tag_batch_size_value))
             except Exception:
-                batch_mode = False
+                batch_size = self.DEFAULT_BATCH_SIZE
+        batch_size = max(1, min(self.MAX_BATCH_SIZE, batch_size))
+        batch_mode = batch_size > 1
 
         # モデル情報取得
         model_name = dpg_get_value(input_value02_tag)
@@ -1199,12 +1207,13 @@ class Node(Node):
         score_threshold = dpg_get_value(tag_score_threshold_value)
         tag_bbox_thickness_value = tag_node_name + ':' + self.TYPE_INT + ':BboxThicknessValue'
         bbox_thickness = dpg_get_value(tag_bbox_thickness_value)
-        tag_batch_mode_value = tag_node_name + ':' + self.TYPE_BOOLEAN + ':BatchModeValue'
-        batch_mode = False
+        tag_batch_size_value = tag_node_name + ':' + self.TYPE_INT + ':BatchSizeValue'
+        batch_size = self.DEFAULT_BATCH_SIZE
         try:
-            batch_mode = bool(dpg_get_value(tag_batch_mode_value))
+            batch_size = int(dpg_get_value(tag_batch_size_value))
         except Exception:
             pass
+        batch_size = max(1, min(self.MAX_BATCH_SIZE, batch_size))
 
         tag_class_filter_value = tag_node_name + ':' + self.TYPE_TEXT + ':ClassFilterValue'
         class_filter = 'All'
@@ -1221,7 +1230,7 @@ class Node(Node):
         setting_dict[input_value02_tag] = model_name
         setting_dict[tag_score_threshold_value] = score_threshold
         setting_dict[tag_bbox_thickness_value] = bbox_thickness
-        setting_dict[tag_batch_mode_value] = batch_mode
+        setting_dict[tag_batch_size_value] = int(batch_size)
         setting_dict[tag_class_filter_value] = class_filter
 
         return setting_dict
@@ -1231,7 +1240,7 @@ class Node(Node):
         input_value02_tag = tag_node_name + ':' + self.TYPE_TEXT + ':Input02Value'
         tag_score_threshold_value = tag_node_name + ':' + self.TYPE_FLOAT + ':ScoreThresholdValue'
         tag_bbox_thickness_value = tag_node_name + ':' + self.TYPE_INT + ':BboxThicknessValue'
-        tag_batch_mode_value = tag_node_name + ':' + self.TYPE_BOOLEAN + ':BatchModeValue'
+        tag_batch_size_value = tag_node_name + ':' + self.TYPE_INT + ':BatchSizeValue'
         tag_class_filter_value = tag_node_name + ':' + self.TYPE_TEXT + ':ClassFilterValue'
 
         model_name = setting_dict[input_value02_tag]
@@ -1274,9 +1283,9 @@ class Node(Node):
         if tag_bbox_thickness_value in setting_dict:
             dpg_set_value(tag_bbox_thickness_value, int(setting_dict[tag_bbox_thickness_value]))
 
-        if tag_batch_mode_value in setting_dict:
+        if tag_batch_size_value in setting_dict:
             try:
-                dpg_set_value(tag_batch_mode_value, bool(setting_dict[tag_batch_mode_value]))
+                dpg_set_value(tag_batch_size_value, max(1, min(self.MAX_BATCH_SIZE, int(setting_dict[tag_batch_size_value]))))
             except Exception:
                 pass
 
