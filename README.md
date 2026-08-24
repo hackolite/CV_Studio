@@ -87,8 +87,8 @@ remain available, but the main product story is centered on **spatial video anal
 ## 🎥 See It In Action
 
 The following demonstrations were produced **entirely inside CV Studio**. They show real pipelines
-running end-to-end — from live input to AI inference and visualization. For the **retail, urban
-analytics, and spatial intelligence** use cases above, prioritize demos that showcase **detection,
+running end-to-end — from live input to AI inference and visualization — including the types of
+flows most relevant to **retail, urban analytics, and spatial intelligence**, such as **detection,
 tracking, mapping, heatmaps, and territorial context**.
 
 <table>
