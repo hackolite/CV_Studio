@@ -527,7 +527,7 @@ class Node(Node):
             selected = dpg_get_value(device_tag)
         except Exception:
             selected = 'cpu'
-        return 'cuda' if str(selected).upper() == 'PTCUDA' else 'cpu'
+        return 'cuda' if str(selected).upper() in ('PTCUDA', 'GPU') else 'cpu'
 
     def _load_student_from_entry(self, entry):
         """Load a student model from a registry entry dict."""
