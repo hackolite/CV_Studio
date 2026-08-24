@@ -77,6 +77,11 @@ class CustomONNX:
         self.class_score_th = class_score_th
         self.nms_th = nms_th
         self.nms_score_th = nms_score_th
+        # Baseline confidence used when no UI threshold is applied.  Kept so
+        # that ``set_score_threshold`` never *lowers* the effective threshold
+        # below the model default (which would let more candidates through and
+        # make post-processing slower than before).
+        self._default_nms_score_th = nms_score_th
 
         logger.info(
             f"[CustomONNX] Loading model: {model_path} | "
@@ -135,6 +140,24 @@ class CustomONNX:
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
+
+    def set_score_threshold(self, score_th) -> None:
+        """Raise the confidence threshold used *before* post-processing.
+
+        The node UI exposes a score threshold that used to be applied only when
+        drawing, so every candidate above the model default (0.1) went through
+        the full Python/OpenCV NMS path on each frame even when the user asked
+        for a much higher confidence.  Applying it here discards those
+        candidates in one vectorised comparison instead.
+
+        The threshold is never lowered below the model default, so this can only
+        remove detections that downstream consumers were already filtering out.
+        """
+        try:
+            score_th = float(score_th)
+        except (TypeError, ValueError):
+            return
+        self.nms_score_th = max(self._default_nms_score_th, score_th)
 
     @property
     def _has_dynamic_batch(self) -> bool:

@@ -36,19 +36,23 @@ def test_separate_display_and_output_frames():
     assert re.search(r'output_frame\s*=\s*None', content), \
         "Should initialize output_frame variable"
     
-    # Check that display frame ALWAYS gets bounding boxes
-    assert re.search(r'display_frame\s*=\s*copy\.deepcopy\s*\(\s*frame\s*\)', content), \
-        "Display frame should be created with deepcopy"
+    # Check that display frame ALWAYS gets bounding boxes.
+    # The frame is copied inside draw_object_detection_info(), so the caller
+    # must NOT copy it again.
     assert re.search(r'display_frame\s*=\s*self\.draw_object_detection_info\s*\(', content), \
         "Display frame should always have bounding boxes drawn"
-    
+    assert not re.search(r'display_frame\s*=\s*copy\.deepcopy\s*\(\s*frame\s*\)', content), \
+        "Display frame should not be deep-copied twice (draw_* already copies)"
+
     # Check that output frame respects checkbox setting
     assert re.search(r'if\s+draw_bbox\s*:', content), \
         "Should check draw_bbox for output frame"
-    assert re.search(r'output_frame\s*=\s*copy\.deepcopy\s*\(\s*frame\s*\)', content), \
-        "Output frame with bboxes should use deepcopy"
-    assert re.search(r'output_frame\s*=\s*self\.draw_object_detection_info\s*\(', content), \
-        "Output frame should draw bboxes when checkbox is checked"
+    # When bboxes are requested the output is pixel-identical to the display
+    # frame, so it must be reused rather than rendered a second time.
+    assert re.search(r'output_frame\s*=\s*display_frame', content), \
+        "Output frame with bboxes should reuse display_frame, not redraw it"
+    assert not re.search(r'output_frame\s*=\s*self\.draw_object_detection_info\s*\(', content), \
+        "Output frame should not trigger a second draw pass"
     
     # Check the else clause for unchecked state - more resilient pattern
     # Look for pattern: else: ... output_frame = frame (without deepcopy)
