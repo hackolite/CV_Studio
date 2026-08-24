@@ -501,7 +501,7 @@ class FactoryNode:
                 ):
                     dpg.add_slider_int(
                         tag=node.tag_node_batch_size_value_name,
-                        label="batch",
+                        label="Max Batch (TRT)",
                         width=small_window_w - 80,
                         default_value=node.DEFAULT_BATCH_SIZE,
                         min_value=1,
@@ -1224,8 +1224,14 @@ class Node(Node):
     def _build_trt_provider_options(batch_size):
         """Build TensorRT provider options for a chosen max batch size."""
         batch_size = max(1, int(batch_size))
+        cache_dir = os.path.join(_UPLOADS_DIR, "trt_engine_cache")
+        try:
+            os.makedirs(cache_dir, exist_ok=True)
+        except Exception:
+            cache_dir = _UPLOADS_DIR
         return {
             "trt_engine_cache_enable": "1",
+            "trt_engine_cache_path": cache_dir,
             "trt_max_batch_size": str(batch_size),
         }
 
