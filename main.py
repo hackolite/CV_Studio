@@ -467,6 +467,7 @@ def show_splash_screen(duration_seconds=5.0, steps=150):
 
 
 def main():
+    import sys
     args = get_args()
     setting = args.setting
     unuse_async_draw = args.unuse_async_draw
