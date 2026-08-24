@@ -248,6 +248,10 @@ class FactoryNode:
         node.tag_node_bbox_thickness_name = node.tag_node_name + ':BBoxThickness'
         node.tag_node_bbox_thickness_value_name = node.tag_node_name + ':BBoxThicknessValue'
 
+        # Tag for TensorRT batch-size slider
+        node.tag_node_batch_size_name = node.tag_node_name + ':BatchSize'
+        node.tag_node_batch_size_value_name = node.tag_node_name + ':BatchSizeValue'
+
         # Callback to update rejected classes dropdown when model changes
         def on_model_change(sender, app_data, user_data):
             """Update the rejected classes dropdown when model selection changes"""
@@ -484,12 +488,26 @@ class FactoryNode:
                         attribute_type=dpg.mvNode_Attr_Static,
                 ):
                     dpg.add_radio_button(
-                        ("CPU", "GPU"),
+                        ("CPU", "GPU", "TensorRT"),
                         tag=node.tag_provider_select_value_name,
                         default_value='CPU',
                         horizontal=True,
                     )
                 node._collapsible_attr_tags.append(node.tag_provider_select_name)
+
+                with dpg.node_attribute(
+                        tag=node.tag_node_batch_size_name,
+                        attribute_type=dpg.mvNode_Attr_Static,
+                ):
+                    dpg.add_slider_int(
+                        tag=node.tag_node_batch_size_value_name,
+                        label="batch",
+                        width=small_window_w - 80,
+                        default_value=node.DEFAULT_BATCH_SIZE,
+                        min_value=1,
+                        max_value=32,
+                    )
+                node._collapsible_attr_tags.append(node.tag_node_batch_size_name)
 
             with dpg.node_attribute(
                     tag=node.tag_node_input_float_name,
@@ -654,6 +672,7 @@ class Node(Node):
 
     DEFAULT_DRAW_BBOX = True
     DEFAULT_BBOX_THICKNESS = 3
+    DEFAULT_BATCH_SIZE = 1
 
     # All models (built-in + user-uploaded) populated from the registry at load time.
     _model_class: dict = {}           # name → CustomONNX factory callable
@@ -752,7 +771,7 @@ class Node(Node):
                                disable_optimizations=False, nanodet_reg_first=None):
         """Add a model to the class-level runtime dictionaries."""
         def _make_factory(p, fmt, w, h, disable_opt, nd_reg_first):
-            def factory(model_path, providers=None):
+            def factory(model_path, providers=None, provider_options=None):
                 if providers is None:
                     providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
                 if fmt == 'blazeface':
@@ -766,6 +785,7 @@ class Node(Node):
                     input_height=h,
                     output_format=fmt,
                     providers=providers,
+                    provider_options=provider_options,
                     disable_optimizations=disable_opt,
                     nanodet_reg_first=nd_reg_first,
                 )
@@ -1194,6 +1214,26 @@ class Node(Node):
         
         return bboxes[keep_indices], scores[keep_indices], class_ids[keep_indices]
 
+    @staticmethod
+    def _build_trt_provider_options(model_instance, batch_size):
+        """Build TensorRT provider options with dynamic shape profile."""
+        try:
+            input_name = model_instance.input_name
+            input_height = int(model_instance.input_height)
+            input_width = int(model_instance.input_width)
+            batch_size = max(1, int(batch_size))
+        except Exception:
+            return {}
+
+        shape_1 = f"{input_name}:1x3x{input_height}x{input_width}"
+        shape_n = f"{input_name}:{batch_size}x3x{input_height}x{input_width}"
+        return {
+            "trt_engine_cache_enable": "1",
+            "trt_profile_min_shapes": shape_1,
+            "trt_profile_opt_shapes": shape_n,
+            "trt_profile_max_shapes": shape_n,
+        }
+
 
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict, node_audio_dict,):
@@ -1206,6 +1246,7 @@ class Node(Node):
                 self.tag_provider_select_value_name = self.tag_node_name + ':' + self.TYPE_IMAGE + ':ProviderValue'
                 self.tag_node_rejected_classes_value_name = self.tag_node_name + ':RejectedClassesValue'
                 self.tag_node_draw_bbox_value_name = self.tag_node_name + ':DrawBBoxValue'
+                self.tag_node_batch_size_value_name = self.tag_node_name + ':BatchSizeValue'
 
                 small_window_w = self._opencv_setting_dict['process_width']
                 small_window_h = self._opencv_setting_dict['process_height']
@@ -1250,6 +1291,16 @@ class Node(Node):
                 provider = 'CPU'
                 if use_gpu:
                     provider = dpg_get_value(self.tag_provider_select_value_name)
+                    if provider not in ('CPU', 'GPU', 'TensorRT'):
+                        provider = 'CPU'
+
+                batch_size = self.DEFAULT_BATCH_SIZE
+                if use_gpu:
+                    try:
+                        batch_size = int(dpg_get_value(self.tag_node_batch_size_value_name))
+                    except Exception:
+                        batch_size = self.DEFAULT_BATCH_SIZE
+                batch_size = max(1, min(32, batch_size))
 
 
 
@@ -1266,23 +1317,53 @@ class Node(Node):
                 class_name_dict = self._model_class_name_list[model_name]
 
                 model_name_with_provider = model_name + '_' + provider
+                if provider == 'TensorRT':
+                    model_name_with_provider += f"_b{batch_size}"
 
                 if frame is not None:
                     if model_name_with_provider not in self._model_instance:
+                        provider_options = None
                         if provider == 'CPU':
                             providers = ['CPUExecutionProvider']
-                            self._model_instance[
-                                model_name_with_provider] = model_class(
-                                    model_path,
-                                    providers=providers,
-                                )
+                        elif provider == 'TensorRT':
+                            providers = ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+                            provider_options = [
+                                {},
+                                {
+                                    "arena_extend_strategy": "kSameAsRequested",
+                                    "cudnn_conv_use_max_workspace": "0",
+                                },
+                                {},
+                            ]
                         else:
                             providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-                            self._model_instance[
-                                model_name_with_provider] = model_class(
+
+                        model_instance = model_class(
+                            model_path,
+                            providers=providers,
+                            provider_options=provider_options,
+                        )
+                        if provider == 'TensorRT' and hasattr(model_instance, 'onnx_session'):
+                            trt_provider_options = self._build_trt_provider_options(
+                                model_instance,
+                                batch_size,
+                            )
+                            if trt_provider_options:
+                                providers = ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+                                provider_options = [
+                                    trt_provider_options,
+                                    {
+                                        "arena_extend_strategy": "kSameAsRequested",
+                                        "cudnn_conv_use_max_workspace": "0",
+                                    },
+                                    {},
+                                ]
+                                model_instance = model_class(
                                     model_path,
                                     providers=providers,
+                                    provider_options=provider_options,
                                 )
+                        self._model_instance[model_name_with_provider] = model_instance
 
 
                 if frame is not None and use_pref_counter:
@@ -1467,6 +1548,7 @@ class Node(Node):
         rejected_classes_tag = self.tag_node_name + ':RejectedClassesValue'
         draw_bbox_tag = self.tag_node_name + ':DrawBBoxValue'
         bbox_thickness_tag = self.tag_node_name + ':BBoxThicknessValue'
+        batch_size_tag = self.tag_node_name + ':BatchSizeValue'
 
 
         model_name = dpg_get_value(input_value02_tag)
@@ -1483,6 +1565,10 @@ class Node(Node):
         if bbox_thickness is None:
             bbox_thickness = self.DEFAULT_BBOX_THICKNESS
 
+        batch_size = dpg_get_value(batch_size_tag)
+        if batch_size is None:
+            batch_size = self.DEFAULT_BATCH_SIZE
+
         pos = dpg.get_item_pos(self.tag_node_name)
 
         setting_dict = {}
@@ -1493,6 +1579,7 @@ class Node(Node):
         setting_dict[rejected_classes_tag] = rejected_classes
         setting_dict[draw_bbox_tag] = draw_bbox
         setting_dict[bbox_thickness_tag] = bbox_thickness
+        setting_dict[batch_size_tag] = int(batch_size)
 
         return setting_dict
 
@@ -1503,12 +1590,14 @@ class Node(Node):
         rejected_classes_tag = self.tag_node_name + ':RejectedClassesValue'
         draw_bbox_tag = self.tag_node_name + ':DrawBBoxValue'
         bbox_thickness_tag = self.tag_node_name + ':BBoxThicknessValue'
+        batch_size_tag = self.tag_node_name + ':BatchSizeValue'
 
         model_name = setting_dict[input_value02_tag]
         score_th = setting_dict[input_value03_tag]
         rejected_classes = setting_dict.get(rejected_classes_tag, "")
         draw_bbox = setting_dict.get(draw_bbox_tag, self.DEFAULT_DRAW_BBOX)
         bbox_thickness = setting_dict.get(bbox_thickness_tag, self.DEFAULT_BBOX_THICKNESS)
+        batch_size = int(setting_dict.get(batch_size_tag, self.DEFAULT_BATCH_SIZE))
 
         # If model_name is a custom model saved in registry but not yet in memory, reload it
         if model_name and model_name not in self._model_class:
@@ -1574,6 +1663,12 @@ class Node(Node):
         except:
             pass  # Ignore if the UI element doesn't exist yet
 
+        # Set TensorRT batch-size slider
+        try:
+            dpg_set_value(batch_size_tag, max(1, min(32, batch_size)))
+        except:
+            pass  # Ignore if the UI element doesn't exist yet
+
 
 
 
@@ -1606,6 +1701,8 @@ class Node(Node):
                 provider_raw = str(provider_label).upper()
                 if "CUDA" in provider_raw or provider_raw == "GPU":
                     provider_text = "GPU"
+                elif "TENSORRT" in provider_raw or "TENSORRTEXECUTIONPROVIDER" in provider_raw:
+                    provider_text = "TRT"
                 elif "CPU" in provider_raw:
                     provider_text = "CPU"
                 else:
