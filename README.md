@@ -1,6 +1,6 @@
  # CV Studio
 
- > A node-based geospatial vision platform for flow analytics, mapping, and spatial decision support.
+ > A node-based computer vision platform for flow analytics, mapping, and spatial decision support.
 
 <img src="https://user-images.githubusercontent.com/37477845/172011014-23fb025e-68a5-4cb7-925f-c4417029966c.gif" loading="lazy" width="100%">
 
