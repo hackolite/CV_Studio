@@ -731,7 +731,9 @@ class Node(Node):
         # Keep CUDA host-side allocation conservative to reduce GPU memory
         # spikes in both standard CUDA execution and TensorRT CUDA fallback.
         "arena_extend_strategy": "kSameAsRequested",
-        "cudnn_conv_use_max_workspace": "0",
+        # NOTE: do not set "cudnn_conv_use_max_workspace" to "0" here.  Doing so
+        # prevents cuDNN from selecting its fast convolution algorithms, which
+        # costs 2-3x on convolution-heavy detectors such as YOLO.
     }
 
     # All models (built-in + user-uploaded) populated from the registry at load time.

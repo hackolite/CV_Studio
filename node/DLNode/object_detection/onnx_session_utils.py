@@ -43,6 +43,101 @@ _TRT_FAIL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Execution providers that actually offload compute to the GPU.  Used to detect
+# the "user asked for GPU but silently got CPU" situation.
+_GPU_PROVIDERS = ("TensorrtExecutionProvider", "CUDAExecutionProvider")
+
+
+def _provider_name(provider) -> str:
+    """Return the provider name from either a plain string or a (name, opts) tuple."""
+    return provider if isinstance(provider, str) else provider[0]
+
+
+def filter_available_providers(providers, provider_options=None):
+    """Drop execution providers that this onnxruntime build cannot offer.
+
+    OnnxRuntime silently ignores unknown/unregistered providers, so requesting
+    ``CUDAExecutionProvider`` from a CPU-only ``onnxruntime`` wheel yields a
+    working — but fully CPU-bound — session with no error.  That makes "GPU
+    mode" look mysteriously slow.  This helper detects the situation up front
+    and logs it loudly so the cause is obvious.
+
+    Parameters
+    ----------
+    providers : list
+        Requested providers (strings or ``(name, options)`` tuples).
+    provider_options : list[dict] or None
+        Per-provider option dicts aligned with *providers*.
+
+    Returns
+    -------
+    tuple[list, list[dict] or None]
+        The filtered providers and the matching option dicts.  When every
+        requested provider is unavailable the inputs are returned unchanged so
+        that onnxruntime raises its own (more precise) error.
+    """
+    try:
+        available = set(onnxruntime.get_available_providers())
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("[OnnxSession] Could not query available providers: %s", exc)
+        return list(providers), provider_options
+
+    kept, kept_options, dropped = [], [], []
+    for index, provider in enumerate(providers):
+        options = provider_options[index] if provider_options is not None and index < len(provider_options) else {}
+        if _provider_name(provider) in available:
+            kept.append(provider)
+            kept_options.append(options)
+        else:
+            dropped.append(_provider_name(provider))
+
+    if not dropped:
+        return list(providers), provider_options
+
+    if not kept:
+        # Nothing left to run on — let onnxruntime report the failure itself.
+        return list(providers), provider_options
+
+    if any(name in _GPU_PROVIDERS for name in dropped):
+        logger.error(
+            "[OnnxSession] GPU execution provider(s) %s were requested but are NOT "
+            "available in this onnxruntime build (available: %s). Inference will run "
+            "on %s instead, which is dramatically slower. Install the GPU runtime "
+            "with: pip uninstall onnxruntime && pip install onnxruntime-gpu",
+            dropped, sorted(available), [_provider_name(p) for p in kept],
+        )
+    else:
+        logger.warning(
+            "[OnnxSession] Execution provider(s) %s are not available; using %s.",
+            dropped, [_provider_name(p) for p in kept],
+        )
+
+    return kept, (kept_options if provider_options is not None else None)
+
+
+def _log_effective_providers(session, requested) -> None:
+    """Warn when the created session did not pick up the requested GPU providers."""
+    try:
+        active = list(session.get_providers())
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("[OnnxSession] Could not query session providers: %s", exc)
+        return
+
+    requested_gpu = [
+        _provider_name(p) for p in requested if _provider_name(p) in _GPU_PROVIDERS
+    ]
+    missing = [name for name in requested_gpu if name not in active]
+    if missing:
+        logger.error(
+            "[OnnxSession] Session was created WITHOUT the requested GPU provider(s) %s "
+            "— active providers: %s. Inference is running on the CPU. Check that "
+            "onnxruntime-gpu is installed and that its CUDA/cuDNN versions match "
+            "your driver.",
+            missing, active,
+        )
+    else:
+        logger.info("[OnnxSession] Active execution providers: %s", active)
+
 
 def remove_initializers_from_inputs(model_proto) -> bool:
     """Drop initializers that are also declared as graph inputs.
@@ -122,9 +217,14 @@ def make_session(
     -------
     onnxruntime.InferenceSession
     """
+    # Drop providers this onnxruntime build cannot offer *before* deciding on
+    # session tuning: otherwise a CPU-only build silently inherits the CUDA
+    # tuning below (1 thread, no CPU arena) and runs many times slower than a
+    # plain CPU session.
+    providers, provider_options = filter_available_providers(providers, provider_options)
+
     using_cuda = any(
-        (p if isinstance(p, str) else p[0]) == "CUDAExecutionProvider"
-        for p in providers
+        _provider_name(p) == "CUDAExecutionProvider" for p in providers
     )
 
     sess_options = onnxruntime.SessionOptions()
@@ -154,15 +254,12 @@ def make_session(
     if provider_options is None:
         provider_options = []
         for p in providers:
-            name = p if isinstance(p, str) else p[0]
+            name = _provider_name(p)
             if name == "CUDAExecutionProvider":
                 provider_options.append({
                     # Allocate only as much GPU memory as actually needed rather
                     # than doubling the arena on each growth event.
                     "arena_extend_strategy": "kSameAsRequested",
-                    # Allow ORT to fall back to a CUDA kernel that does not use
-                    # cuDNN if a cuDNN version mismatch is detected.
-                    "cudnn_conv_use_max_workspace": "0",
                 })
             else:
                 provider_options.append({})
@@ -175,12 +272,14 @@ def make_session(
         model_source = _strip_initializer_inputs(model_source)
 
     try:
-        return onnxruntime.InferenceSession(
+        session = onnxruntime.InferenceSession(
             model_source,
             sess_options=sess_options,
             providers=providers,
             provider_options=provider_options,
         )
+        _log_effective_providers(session, providers)
+        return session
     except Exception as exc:
         # onnxruntime does not expose stable public exception sub-types, so we
         # inspect the message to distinguish known recoverable errors from fatal
@@ -207,12 +306,14 @@ def make_session(
                     opt for p, opt in zip(providers, provider_options)
                     if (p if isinstance(p, str) else p[0]) != trt_name
                 ]
-                return onnxruntime.InferenceSession(
+                fallback_session = onnxruntime.InferenceSession(
                     model_source,
                     sess_options=sess_options,
                     providers=fallback_providers,
                     provider_options=fallback_options,
                 )
+                _log_effective_providers(fallback_session, fallback_providers)
+                return fallback_session
             raise
 
         match = _IR_VERSION_ERROR_RE.search(err_str)
@@ -241,12 +342,14 @@ def make_session(
         original_ir = model_proto.ir_version
         model_proto.ir_version = max_ir
         logger.info(f"[ONNX] IR version clamped {original_ir} → {max_ir}.")
-        return onnxruntime.InferenceSession(
+        clamped_session = onnxruntime.InferenceSession(
             model_proto.SerializeToString(),
             sess_options=sess_options,
             providers=providers,
             provider_options=provider_options,
         )
+        _log_effective_providers(clamped_session, providers)
+        return clamped_session
 
 
 def _normalize_provider_options(
