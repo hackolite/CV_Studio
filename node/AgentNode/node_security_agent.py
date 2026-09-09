@@ -7,12 +7,13 @@ and only specialises the system prompt and the node layout:
 
     [x] Enabled            <- boolean gating the agent start
     ▶ Start
-    Cooldown (s) slider
+    [x] Inference          <- boolean driving the agent inference
+    Cooldown slider (unlabelled)
     Provider (routing) combo
     API key (password)
     Model combo
-    ⚙ Settings 1  -> collapsible Description field
-    ⚙ Settings 2  -> collapsible Summary field
+    JsonInput   -> collapsible field showing the aggregated input JSON
+    JsonOutput  -> collapsible field showing the JSON of the tools to use
     Status / JSON output
     Input 1..N
     + Add Input / - Remove Input   <- always at the very bottom
@@ -65,10 +66,16 @@ class Node(AmbianceAgentNode):
     def __init__(self):
         super().__init__()
         self._enabled = True
+        self._inference = True
         self._tag_enabled = None
+        self._tag_inference = None
+        self._tag_json_input = None
+        self._tag_json_output = None
         self._tag_input_mgmt = None
-        self._show_description = True
-        self._show_summary = True
+        self._show_json_input = True
+        self._show_json_output = True
+        self._last_json_input_text = None
+        self._last_json_output_text = None
 
     # ------------------------------------------------------------------
     # GUI construction
@@ -85,6 +92,7 @@ class Node(AmbianceAgentNode):
 
         self._tag_enabled = tag + ':EnabledValue'
         self._tag_startstop = tag + ':StartStopBtn'
+        self._tag_inference = tag + ':InferenceValue'
         self._tag_cooldown = tag + ':CooldownValue'
         self._tag_provider = tag + ':ProviderValue'
         self._tag_apikey = tag + ':ApiKeyValue'
@@ -92,6 +100,8 @@ class Node(AmbianceAgentNode):
         self._tag_prompt = tag + ':PromptValue'
         self._tag_description = tag + ':DescriptionValue'
         self._tag_summary = tag + ':SummaryValue'
+        self._tag_json_input = tag + ':JsonInputValue'
+        self._tag_json_output = tag + ':JsonOutputValue'
         self._tag_status = tag + ':StatusValue'
         self._tag_input_mgmt = tag + ':InputMgmt'
         self._node_id = node_id
@@ -129,14 +139,25 @@ class Node(AmbianceAgentNode):
                 )
                 self._update_startstop_ui()
 
-            # ── Cooldown slider ──────────────────────────────────────────
+            # ── Inference boolean (drives the agent inference) ────────────
+            with dpg.node_attribute(
+                tag=tag + ':InferenceAttr',
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_checkbox(
+                    tag=self._tag_inference,
+                    label='Inference',
+                    default_value=self._inference,
+                    callback=self._cb_inference_changed,
+                )
+
+            # ── Cooldown slider (no label) ───────────────────────────────
             with dpg.node_attribute(
                 tag=tag + ':CooldownAttr',
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_slider_int(
                     tag=self._tag_cooldown,
-                    label='Cooldown (s)',
                     default_value=self._cooldown_s,
                     min_value=5,
                     max_value=300,
@@ -181,35 +202,56 @@ class Node(AmbianceAgentNode):
                     width=w,
                 )
 
-            # ── Text field 1 (Description), collapsible via Settings 1 ────
+            # ── JsonInput (aggregated input JSON), collapsible ────────────
             with dpg.node_attribute(
-                tag=tag + ':DescriptionAttr',
+                tag=tag + ':JsonInputAttr',
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_button(
-                    label='⚙ Settings 1',
+                    label='JsonInput',
                     width=w,
-                    callback=self._cb_toggle_description,
+                    callback=self._cb_toggle_json_input,
                 )
                 dpg.add_input_text(
+                    tag=self._tag_json_input,
+                    default_value='',
+                    multiline=True,
+                    width=w,
+                    height=100,
+                    readonly=True,
+                    show=self._show_json_input,
+                )
+                # Hidden field kept for the parent engine (LLM description
+                # forwarded to Text2Speech) and for settings persistence.
+                dpg.add_input_text(
                     tag=self._tag_description,
-                    hint='Description (text for Text2Speech)…',
+                    default_value='',
                     multiline=True,
                     width=w,
                     height=70,
-                    show=self._show_description,
+                    show=False,
                 )
 
-            # ── Text field 2 (Summary), collapsible via Settings 2 ────────
+            # ── JsonOutput (tools to use), collapsible ────────────────────
             with dpg.node_attribute(
-                tag=tag + ':SummaryAttr',
+                tag=tag + ':JsonOutputAttr',
                 attribute_type=dpg.mvNode_Attr_Static,
             ):
                 dpg.add_button(
-                    label='⚙ Settings 2',
+                    label='JsonOutput',
                     width=w,
-                    callback=self._cb_toggle_summary,
+                    callback=self._cb_toggle_json_output,
                 )
+                dpg.add_input_text(
+                    tag=self._tag_json_output,
+                    default_value='',
+                    multiline=True,
+                    width=w,
+                    height=130,
+                    readonly=True,
+                    show=self._show_json_output,
+                )
+                # Hidden field kept for the parent engine (decision summary).
                 dpg.add_input_text(
                     tag=self._tag_summary,
                     default_value='',
@@ -217,7 +259,7 @@ class Node(AmbianceAgentNode):
                     width=w,
                     height=130,
                     readonly=True,
-                    show=self._show_summary,
+                    show=False,
                 )
 
             # ── Status ───────────────────────────────────────────────────
@@ -280,13 +322,16 @@ class Node(AmbianceAgentNode):
     def _cb_enabled_changed(self, sender, app_data, user_data=None):
         self._enabled = bool(app_data)
 
-    def _cb_toggle_description(self, sender, app_data, user_data=None):
-        self._show_description = not self._show_description
-        self._set_show(self._tag_description, self._show_description)
+    def _cb_inference_changed(self, sender, app_data, user_data=None):
+        self._inference = bool(app_data)
 
-    def _cb_toggle_summary(self, sender, app_data, user_data=None):
-        self._show_summary = not self._show_summary
-        self._set_show(self._tag_summary, self._show_summary)
+    def _cb_toggle_json_input(self, sender, app_data, user_data=None):
+        self._show_json_input = not self._show_json_input
+        self._set_show(self._tag_json_input, self._show_json_input)
+
+    def _cb_toggle_json_output(self, sender, app_data, user_data=None):
+        self._show_json_output = not self._show_json_output
+        self._set_show(self._tag_json_output, self._show_json_output)
 
     @staticmethod
     def _set_show(item_tag, show):
@@ -301,13 +346,65 @@ class Node(AmbianceAgentNode):
     # ------------------------------------------------------------------
 
     def _is_enabled(self):
-        """The boolean placed before Start decides whether the agent may run."""
+        """Both booleans must be true for the agent to run an inference."""
+        return self._read_bool(self._tag_enabled, self._enabled) and \
+            self._read_bool(self._tag_inference, self._inference)
+
+    @staticmethod
+    def _read_bool(item_tag, fallback):
         try:
-            if self._tag_enabled and dpg.does_item_exist(self._tag_enabled):
-                return bool(dpg_get_value(self._tag_enabled))
+            if item_tag and dpg.does_item_exist(item_tag):
+                return bool(dpg_get_value(item_tag))
         except (SystemError, AttributeError):
             pass
-        return bool(self._enabled)
+        return bool(fallback)
+
+    # ------------------------------------------------------------------
+    # update()
+    # ------------------------------------------------------------------
+
+    def update(self, node_id, connection_list, node_image_dict, node_result_dict,
+               node_audio_dict):
+        self._refresh_json_input(connection_list, node_result_dict)
+        self._refresh_json_output(node_result_dict)
+        return super().update(node_id, connection_list, node_image_dict,
+                              node_result_dict, node_audio_dict)
+
+    def _refresh_json_input(self, connection_list, node_result_dict):
+        """Display the aggregated JSON coming from the connected inputs."""
+        aggregated = {}
+        tag = self.tag_node_name
+        for i in range(self.num_inputs):
+            slot_tag = tag + ':' + self.TYPE_JSON + f':Input{i:02d}'
+            for conn in connection_list:
+                if conn[1] == slot_tag:
+                    src_key = ':'.join(conn[0].split(':')[:2])
+                    src_data = node_result_dict.get(src_key)
+                    if isinstance(src_data, dict):
+                        aggregated[f'input_{i}'] = src_data
+                    break
+        self._set_json_text(self._tag_json_input, aggregated, '_last_json_input_text')
+
+    def _refresh_json_output(self, node_result_dict):
+        """Display the JSON describing the tools the agent may use."""
+        try:
+            tools = self._discover_tools(node_result_dict)
+        except (AttributeError, TypeError):
+            tools = []
+        self._set_json_text(self._tag_json_output, tools, '_last_json_output_text')
+
+    def _set_json_text(self, item_tag, value, cache_attr):
+        try:
+            text = json.dumps(value, indent=2, ensure_ascii=False)
+        except (TypeError, ValueError):
+            text = str(value)
+        if getattr(self, cache_attr, None) == text:
+            return
+        setattr(self, cache_attr, text)
+        try:
+            dpg_set_value(item_tag, text)
+        except (SystemError, AttributeError):
+            pass
 
     # ------------------------------------------------------------------
     # LLM prompt
@@ -344,20 +441,24 @@ class Node(AmbianceAgentNode):
 
     def get_setting_dict(self, node_id):
         d = super().get_setting_dict(node_id)
-        d['enabled'] = self._is_enabled()
-        d['show_description'] = self._show_description
-        d['show_summary'] = self._show_summary
+        d['enabled'] = self._read_bool(self._tag_enabled, self._enabled)
+        d['inference'] = self._read_bool(self._tag_inference, self._inference)
+        d['show_json_input'] = self._show_json_input
+        d['show_json_output'] = self._show_json_output
         return d
 
     def set_setting_dict(self, node_id, setting_dict):
         super().set_setting_dict(node_id, setting_dict)
         self._enabled = bool(setting_dict.get('enabled', True))
-        self._show_description = bool(setting_dict.get('show_description', True))
-        self._show_summary = bool(setting_dict.get('show_summary', True))
+        self._inference = bool(setting_dict.get('inference', True))
+        self._show_json_input = bool(setting_dict.get('show_json_input', True))
+        self._show_json_output = bool(setting_dict.get('show_json_output', True))
         try:
             if self._tag_enabled and dpg.does_item_exist(self._tag_enabled):
                 dpg_set_value(self._tag_enabled, self._enabled)
+            if self._tag_inference and dpg.does_item_exist(self._tag_inference):
+                dpg_set_value(self._tag_inference, self._inference)
         except (SystemError, AttributeError):
             pass
-        self._set_show(self._tag_description, self._show_description)
-        self._set_show(self._tag_summary, self._show_summary)
+        self._set_show(self._tag_json_input, self._show_json_input)
+        self._set_show(self._tag_json_output, self._show_json_output)
