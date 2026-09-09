@@ -633,6 +633,10 @@ class Node(BaseNode):
         except (SystemError, AttributeError):
             pass
 
+    def _is_enabled(self):
+        """Hook: subclasses may gate execution with an extra boolean control."""
+        return True
+
     def _get_current_provider(self):
         """Return the currently selected provider string."""
         try:
@@ -697,7 +701,7 @@ class Node(BaseNode):
                     break
 
         # ── Read controls ────────────────────────────────────────────────
-        execute = self._execute_active
+        execute = self._execute_active and self._is_enabled()
 
         cooldown_s = self._cooldown_s
         try:
