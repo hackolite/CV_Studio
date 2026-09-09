@@ -2,12 +2,13 @@
 # -*- coding: utf-8 -*-
 """SecurityAgent — LLM-driven security assessment via OpenRouter/Google AI/Groq.
 
-Shares the AmbianceAgent engine (LLM call, tool discovery, parsing)
+Shares the AmbianceAgent engine (LLM call, tool discovery, cooldown, parsing)
 and only specialises the system prompt and the node layout:
 
     [x] Enabled            <- boolean gating the agent start
     ▶ Start
     [x] Inference          <- boolean driving the agent inference
+    Cooldown slider (unlabelled)
     Provider (routing) combo
     API key (password)
     Model combo
@@ -66,7 +67,6 @@ class Node(AmbianceAgentNode):
         super().__init__()
         self._enabled = True
         self._inference = True
-        self._cooldown_s = 0
         self._tag_enabled = None
         self._tag_inference = None
         self._tag_json_input = None
@@ -93,8 +93,6 @@ class Node(AmbianceAgentNode):
         self._tag_enabled = tag + ':EnabledValue'
         self._tag_startstop = tag + ':StartStopBtn'
         self._tag_inference = tag + ':InferenceValue'
-        # Kept for compatibility with the parent engine: the widget is not
-        # created any more (no cooldown for the security agent).
         self._tag_cooldown = tag + ':CooldownValue'
         self._tag_provider = tag + ':ProviderValue'
         self._tag_apikey = tag + ':ApiKeyValue'
@@ -151,6 +149,19 @@ class Node(AmbianceAgentNode):
                     label='Inference',
                     default_value=self._inference,
                     callback=self._cb_inference_changed,
+                )
+
+            # ── Cooldown slider (no label) ───────────────────────────────
+            with dpg.node_attribute(
+                tag=tag + ':CooldownAttr',
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_slider_int(
+                    tag=self._tag_cooldown,
+                    default_value=self._cooldown_s,
+                    min_value=5,
+                    max_value=300,
+                    width=w,
                 )
 
             # ── Provider (routing) dropdown ──────────────────────────────
