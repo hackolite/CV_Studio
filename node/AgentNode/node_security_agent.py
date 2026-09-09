@@ -5,18 +5,18 @@
 Shares the AmbianceAgent engine (LLM call, tool discovery, cooldown, parsing)
 and only specialises the system prompt and the node layout:
 
-    [x] Enabled            <- boolean gating the agent start
+    ○ Enabled              <- boolean INPUT pin, wired from a boolean source
     ▶ Start
-    [x] Inference          <- boolean driving the agent inference
+    ○ Inference            <- boolean INPUT pin, wired from a boolean source
     Cooldown slider (unlabelled)
     Provider (routing) combo
     API key (password)
     Model combo
     JsonInput   -> collapsible field showing the aggregated input JSON
     JsonOutput  -> collapsible field showing the JSON of the tools to use
+    + Add Input / - Remove Input   <- immediately below JsonOutput
     Status / JSON output
     Input 1..N
-    + Add Input / - Remove Input   <- always at the very bottom
 """
 
 import copy
@@ -25,7 +25,7 @@ import threading
 
 import dearpygui.dearpygui as dpg
 
-from node_editor.util import dpg_get_value, dpg_set_value
+from node_editor.util import dpg_set_value
 from node.AgentNode.node_ambiance_agent import (
     PROVIDERS,
     PROVIDER_OPENROUTER,
@@ -68,7 +68,9 @@ class Node(AmbianceAgentNode):
         self._enabled = True
         self._inference = True
         self._tag_enabled = None
+        self._tag_enabled_slot = None
         self._tag_inference = None
+        self._tag_inference_slot = None
         self._tag_json_input = None
         self._tag_json_output = None
         self._tag_input_mgmt = None
@@ -90,9 +92,11 @@ class Node(AmbianceAgentNode):
         tag = str(node_id) + ':' + self.node_tag
         self.tag_node_name = tag
 
-        self._tag_enabled = tag + ':EnabledValue'
+        self._tag_enabled_slot = tag + ':' + self.TYPE_BOOLEAN + ':Input00'
+        self._tag_enabled = self._tag_enabled_slot + 'Value'
         self._tag_startstop = tag + ':StartStopBtn'
-        self._tag_inference = tag + ':InferenceValue'
+        self._tag_inference_slot = tag + ':' + self.TYPE_BOOLEAN + ':Input01'
+        self._tag_inference = self._tag_inference_slot + 'Value'
         self._tag_cooldown = tag + ':CooldownValue'
         self._tag_provider = tag + ':ProviderValue'
         self._tag_apikey = tag + ':ApiKeyValue'
@@ -114,16 +118,15 @@ class Node(AmbianceAgentNode):
 
         with dpg.node(tag=tag, parent=parent, label=self.node_label, pos=pos):
 
-            # ── Enable boolean (decides whether the agent may start) ──────
+            # ── Enable boolean input (wired from a boolean source) ────────
             with dpg.node_attribute(
-                tag=tag + ':EnabledAttr',
-                attribute_type=dpg.mvNode_Attr_Static,
+                tag=self._tag_enabled_slot,
+                attribute_type=dpg.mvNode_Attr_Input,
+                shape=dpg.mvNode_PinShape_CircleFilled,
             ):
-                dpg.add_checkbox(
+                dpg.add_text(
                     tag=self._tag_enabled,
-                    label='Enabled',
-                    default_value=self._enabled,
-                    callback=self._cb_enabled_changed,
+                    default_value=self._bool_label('Enabled', self._enabled),
                 )
 
             # ── Start / Stop button ──────────────────────────────────────
@@ -139,16 +142,15 @@ class Node(AmbianceAgentNode):
                 )
                 self._update_startstop_ui()
 
-            # ── Inference boolean (drives the agent inference) ────────────
+            # ── Inference boolean input (wired from a boolean source) ─────
             with dpg.node_attribute(
-                tag=tag + ':InferenceAttr',
-                attribute_type=dpg.mvNode_Attr_Static,
+                tag=self._tag_inference_slot,
+                attribute_type=dpg.mvNode_Attr_Input,
+                shape=dpg.mvNode_PinShape_CircleFilled,
             ):
-                dpg.add_checkbox(
+                dpg.add_text(
                     tag=self._tag_inference,
-                    label='Inference',
-                    default_value=self._inference,
-                    callback=self._cb_inference_changed,
+                    default_value=self._bool_label('Inference', self._inference),
                 )
 
             # ── Cooldown slider (no label) ───────────────────────────────
@@ -262,6 +264,18 @@ class Node(AmbianceAgentNode):
                     show=False,
                 )
 
+            # ── Add / Remove input — immediately below JsonOutput ────────
+            with dpg.node_attribute(
+                tag=self._tag_input_mgmt,
+                attribute_type=dpg.mvNode_Attr_Static,
+            ):
+                dpg.add_button(label='+ Add Input', width=w,
+                               callback=self._cb_add_input,
+                               user_data=(node_id, parent))
+                dpg.add_button(label='- Remove Input', width=w,
+                               callback=self._cb_remove_input,
+                               user_data=(node_id, parent))
+
             # ── Status ───────────────────────────────────────────────────
             with dpg.node_attribute(
                 tag=tag + ':StatusAttr',
@@ -280,18 +294,6 @@ class Node(AmbianceAgentNode):
             for i in range(self.num_inputs):
                 self._create_input_slot(tag, parent, i)
 
-            # ── Add / Remove input — always at the very bottom ───────────
-            with dpg.node_attribute(
-                tag=self._tag_input_mgmt,
-                attribute_type=dpg.mvNode_Attr_Static,
-            ):
-                dpg.add_button(label='+ Add Input', width=w,
-                               callback=self._cb_add_input,
-                               user_data=(node_id, parent))
-                dpg.add_button(label='- Remove Input', width=w,
-                               callback=self._cb_remove_input,
-                               user_data=(node_id, parent))
-
         return self
 
     # ------------------------------------------------------------------
@@ -299,31 +301,20 @@ class Node(AmbianceAgentNode):
     # ------------------------------------------------------------------
 
     def _create_input_slot(self, tag, parent, idx):
-        """Create an input slot, keeping the Add/Remove buttons at the bottom."""
+        """Create a JSON input slot at the bottom of the node."""
         slot_tag = tag + ':' + self.TYPE_JSON + f':Input{idx:02d}'
         if dpg.does_item_exist(slot_tag):
             return
-        kwargs = {}
-        mgmt_tag = self._tag_input_mgmt
-        if mgmt_tag and dpg.does_item_exist(mgmt_tag):
-            kwargs['before'] = mgmt_tag
         with dpg.node_attribute(
             tag=slot_tag,
             attribute_type=dpg.mvNode_Attr_Input,
             parent=tag,
-            **kwargs,
         ):
             dpg.add_text(default_value=f'Input {idx + 1}')
 
     # ------------------------------------------------------------------
     # Callbacks
     # ------------------------------------------------------------------
-
-    def _cb_enabled_changed(self, sender, app_data, user_data=None):
-        self._enabled = bool(app_data)
-
-    def _cb_inference_changed(self, sender, app_data, user_data=None):
-        self._inference = bool(app_data)
 
     def _cb_toggle_json_input(self, sender, app_data, user_data=None):
         self._show_json_input = not self._show_json_input
@@ -346,18 +337,67 @@ class Node(AmbianceAgentNode):
     # ------------------------------------------------------------------
 
     def _is_enabled(self):
-        """Both booleans must be true for the agent to run an inference."""
-        return self._read_bool(self._tag_enabled, self._enabled) and \
-            self._read_bool(self._tag_inference, self._inference)
+        """Both wired booleans must be true for the agent to run an inference."""
+        return bool(self._enabled) and bool(self._inference)
 
     @staticmethod
-    def _read_bool(item_tag, fallback):
-        try:
-            if item_tag and dpg.does_item_exist(item_tag):
-                return bool(dpg_get_value(item_tag))
-        except (SystemError, AttributeError):
-            pass
+    def _bool_label(name, value):
+        return f'{name}: {bool(value)}'
+
+    @staticmethod
+    def _coerce_bool(value, fallback):
+        """Convert the payload of a connected boolean source into a bool."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in ('true', '1', 'on', 'yes'):
+                return True
+            if text in ('false', '0', 'off', 'no', ''):
+                return False
+            return bool(fallback)
+        if isinstance(value, dict):
+            for key in ('value', 'bool', 'boolean', 'trigger', 'state',
+                        'enabled', 'result'):
+                if key in value:
+                    return Node._coerce_bool(value[key], fallback)
         return bool(fallback)
+
+    def _read_wired_bool(self, connection_list, node_result_dict, slot_tag,
+                         fallback):
+        """Return the boolean carried by the link plugged into ``slot_tag``."""
+        if not slot_tag:
+            return bool(fallback)
+        for conn in connection_list:
+            if conn[1] != slot_tag:
+                continue
+            src_key = ':'.join(conn[0].split(':')[:2])
+            try:
+                src_data = node_result_dict.get(src_key)
+            except AttributeError:
+                return bool(fallback)
+            return self._coerce_bool(src_data, fallback)
+        return bool(fallback)
+
+    def _refresh_bool_inputs(self, connection_list, node_result_dict):
+        self._enabled = self._read_wired_bool(
+            connection_list, node_result_dict, self._tag_enabled_slot,
+            self._enabled)
+        self._inference = self._read_wired_bool(
+            connection_list, node_result_dict, self._tag_inference_slot,
+            self._inference)
+        for item_tag, name, value in (
+            (self._tag_enabled, 'Enabled', self._enabled),
+            (self._tag_inference, 'Inference', self._inference),
+        ):
+            if not item_tag:
+                continue
+            try:
+                dpg_set_value(item_tag, self._bool_label(name, value))
+            except (SystemError, AttributeError):
+                pass
 
     # ------------------------------------------------------------------
     # update()
@@ -365,6 +405,7 @@ class Node(AmbianceAgentNode):
 
     def update(self, node_id, connection_list, node_image_dict, node_result_dict,
                node_audio_dict):
+        self._refresh_bool_inputs(connection_list, node_result_dict)
         self._refresh_json_input(connection_list, node_result_dict)
         self._refresh_json_output(node_result_dict)
         return super().update(node_id, connection_list, node_image_dict,
@@ -441,8 +482,8 @@ class Node(AmbianceAgentNode):
 
     def get_setting_dict(self, node_id):
         d = super().get_setting_dict(node_id)
-        d['enabled'] = self._read_bool(self._tag_enabled, self._enabled)
-        d['inference'] = self._read_bool(self._tag_inference, self._inference)
+        d['enabled'] = bool(self._enabled)
+        d['inference'] = bool(self._inference)
         d['show_json_input'] = self._show_json_input
         d['show_json_output'] = self._show_json_output
         return d
@@ -454,10 +495,12 @@ class Node(AmbianceAgentNode):
         self._show_json_input = bool(setting_dict.get('show_json_input', True))
         self._show_json_output = bool(setting_dict.get('show_json_output', True))
         try:
-            if self._tag_enabled and dpg.does_item_exist(self._tag_enabled):
-                dpg_set_value(self._tag_enabled, self._enabled)
-            if self._tag_inference and dpg.does_item_exist(self._tag_inference):
-                dpg_set_value(self._tag_inference, self._inference)
+            if self._tag_enabled:
+                dpg_set_value(self._tag_enabled,
+                              self._bool_label('Enabled', self._enabled))
+            if self._tag_inference:
+                dpg_set_value(self._tag_inference,
+                              self._bool_label('Inference', self._inference))
         except (SystemError, AttributeError):
             pass
         self._set_show(self._tag_json_input, self._show_json_input)
