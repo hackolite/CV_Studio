@@ -6,6 +6,10 @@ PTZ Control Node
 Allows piloting a PTZ (Pan-Tilt-Zoom) camera via the ONVIF protocol.
 Accepts a JSON input with `url_ptz` (ONVIF device service URL) and
 credentials, then provides directional and zoom controls.
+
+Movements are performed with small adjustable steps (ONVIF RelativeMove),
+with a fallback to a short ContinuousMove pulse for cameras that do not
+support relative moves.
 """
 import threading
 import time
@@ -20,9 +24,24 @@ from node.basenode import Node as BaseNode
 # ONVIF PTZ helper
 # ---------------------------------------------------------------------------
 
-def _send_ptz_command(url_ptz, username, password, action, speed=0.5, timeout=3):
+def _send_ptz_command(
+    url_ptz,
+    username,
+    password,
+    action,
+    speed=0.5,
+    timeout=3,
+    step=0.05,
+    zoom_step=0.05,
+):
     """
     Send a PTZ movement command to an ONVIF camera.
+
+    Movements use ONVIF ``RelativeMove`` so that each click moves the camera by
+    a small, adjustable amount instead of starting an open-ended motion.
+    Cameras that do not support ``RelativeMove`` fall back to a short
+    ``ContinuousMove`` pulse immediately followed by ``Stop``, which emulates a
+    small step as well.
 
     Args:
         url_ptz: ONVIF device service URL (e.g. http://host:port/onvif/device_service)
@@ -32,6 +51,8 @@ def _send_ptz_command(url_ptz, username, password, action, speed=0.5, timeout=3)
                 'home', 'stop'
         speed: movement speed factor (0.0 - 1.0)
         timeout: connection timeout in seconds
+        step: pan/tilt step size, normalized (0.0 - 1.0)
+        zoom_step: zoom step size, normalized (0.0 - 1.0)
 
     Returns:
         (bool, str): (success, message)
@@ -75,28 +96,65 @@ def _send_ptz_command(url_ptz, username, password, action, speed=0.5, timeout=3)
             ptz_service.GotoHomePosition({"ProfileToken": profile_token})
             return True, "Home sent"
 
-        # Build ContinuousMove request
-        velocity = {"PanTilt": {"x": 0.0, "y": 0.0}, "Zoom": {"x": 0.0}}
-
+        # Direction factors for the requested action
+        pan, tilt, zoom = 0.0, 0.0, 0.0
         if action == "up":
-            velocity["PanTilt"]["y"] = speed
+            tilt = 1.0
         elif action == "down":
-            velocity["PanTilt"]["y"] = -speed
+            tilt = -1.0
         elif action == "left":
-            velocity["PanTilt"]["x"] = -speed
+            pan = -1.0
         elif action == "right":
-            velocity["PanTilt"]["x"] = speed
+            pan = 1.0
         elif action == "zoom_in":
-            velocity["Zoom"]["x"] = speed
+            zoom = 1.0
         elif action == "zoom_out":
-            velocity["Zoom"]["x"] = -speed
+            zoom = -1.0
+        else:
+            return False, f"Unknown action: {action}"
 
-        request = ptz_service.create_type("ContinuousMove")
-        request.ProfileToken = profile_token
-        request.Velocity = velocity
-        ptz_service.ContinuousMove(request)
+        step = max(0.0, min(1.0, float(step)))
+        zoom_step = max(0.0, min(1.0, float(zoom_step)))
+        speed = max(0.01, min(1.0, float(speed)))
 
-        return True, f"{action} sent"
+        # Preferred: RelativeMove -> one small step per click
+        try:
+            request = ptz_service.create_type("RelativeMove")
+            request.ProfileToken = profile_token
+            request.Translation = {
+                "PanTilt": {"x": pan * step, "y": tilt * step},
+                "Zoom": {"x": zoom * zoom_step},
+            }
+            request.Speed = {
+                "PanTilt": {"x": speed, "y": speed},
+                "Zoom": {"x": speed},
+            }
+            ptz_service.RelativeMove(request)
+            return True, f"{action} step sent"
+        except Exception as relative_error:
+            # Fallback: short ContinuousMove pulse followed by Stop
+            try:
+                request = ptz_service.create_type("ContinuousMove")
+                request.ProfileToken = profile_token
+                request.Velocity = {
+                    "PanTilt": {"x": pan * speed, "y": tilt * speed},
+                    "Zoom": {"x": zoom * speed},
+                }
+                ptz_service.ContinuousMove(request)
+
+                move_step = zoom_step if zoom else step
+                duration = min(2.0, max(0.05, move_step / speed))
+                time.sleep(duration)
+                ptz_service.Stop(
+                    {
+                        "ProfileToken": profile_token,
+                        "PanTilt": True,
+                        "Zoom": True,
+                    }
+                )
+                return True, f"{action} pulse sent"
+            except Exception:
+                return False, str(relative_error)
 
     except Exception as e:
         return False, str(e)
@@ -125,7 +183,7 @@ class FactoryNode:
         node.tag_node_name = f"{node_id}:{node.node_tag}"
         tag_node_name = node.tag_node_name
 
-        # Input: JSON (from Scan node with url_ptz)
+        # Input: JSON (from OnvifScan node with url_ptz)
         node.tag_node_input_json_name = (
             tag_node_name + ":" + node.TYPE_JSON + ":InputJson"
         )
@@ -204,6 +262,28 @@ class FactoryNode:
                     default_value=0.5,
                     min_value=0.1,
                     max_value=1.0,
+                    width=200,
+                )
+
+                # Step size (pan/tilt) per click
+                dpg.add_text("Pan/Tilt step:")
+                dpg.add_slider_float(
+                    tag=tag_node_name + ":Step",
+                    default_value=0.05,
+                    min_value=0.005,
+                    max_value=0.5,
+                    format="%.3f",
+                    width=200,
+                )
+
+                # Step size (zoom) per click
+                dpg.add_text("Zoom step:")
+                dpg.add_slider_float(
+                    tag=tag_node_name + ":ZoomStep",
+                    default_value=0.05,
+                    min_value=0.005,
+                    max_value=0.5,
+                    format="%.3f",
                     width=200,
                 )
 
@@ -336,21 +416,48 @@ class PTZControlNode(BaseNode):
         username = dpg_get_value(tag_node_name + ":Username") or "admin"
         password = dpg_get_value(tag_node_name + ":Password") or "admin"
         speed = dpg_get_value(tag_node_name + ":Speed") or 0.5
+        step = dpg_get_value(tag_node_name + ":Step") or 0.05
+        zoom_step = dpg_get_value(tag_node_name + ":ZoomStep") or 0.05
 
         dpg_set_value(tag_node_name + ":Status", f"Sending: {action}...")
 
         # Send command in background thread to avoid blocking UI
         thread = threading.Thread(
             target=self._send_command_thread,
-            args=(tag_node_name, url_ptz, username, password, action, speed),
+            args=(
+                tag_node_name,
+                url_ptz,
+                username,
+                password,
+                action,
+                speed,
+                step,
+                zoom_step,
+            ),
             daemon=True,
         )
         thread.start()
 
-    def _send_command_thread(self, tag_node_name, url_ptz, username, password, action, speed):
+    def _send_command_thread(
+        self,
+        tag_node_name,
+        url_ptz,
+        username,
+        password,
+        action,
+        speed,
+        step=0.05,
+        zoom_step=0.05,
+    ):
         """Send PTZ command in background thread."""
         success, message = _send_ptz_command(
-            url_ptz, username, password, action, speed=speed
+            url_ptz,
+            username,
+            password,
+            action,
+            speed=speed,
+            step=step,
+            zoom_step=zoom_step,
         )
         if success:
             dpg_set_value(tag_node_name + ":Status", f"✓ {message}")
@@ -373,7 +480,7 @@ class PTZControlNode(BaseNode):
                 connection_info_src = ":".join(connection_info_src.split(":")[:2])
                 break
 
-        # Get upstream JSON data (e.g. from Scan node)
+        # Get upstream JSON data (e.g. from OnvifScan node)
         node_result = node_result_dict.get(connection_info_src, {})
         if node_result and isinstance(node_result, dict):
             # Direct url_ptz field
@@ -400,6 +507,8 @@ class PTZControlNode(BaseNode):
         username = dpg_get_value(tag_node_name + ":Username") or "admin"
         password = dpg_get_value(tag_node_name + ":Password") or "admin"
         speed = dpg_get_value(tag_node_name + ":Speed") or 0.5
+        step = dpg_get_value(tag_node_name + ":Step") or 0.05
+        zoom_step = dpg_get_value(tag_node_name + ":ZoomStep") or 0.05
 
         return {
             "ver": self._ver,
@@ -408,6 +517,8 @@ class PTZControlNode(BaseNode):
             tag_node_name + ":Username": username,
             tag_node_name + ":Password": password,
             tag_node_name + ":Speed": speed,
+            tag_node_name + ":Step": step,
+            tag_node_name + ":ZoomStep": zoom_step,
         }
 
     def set_setting_dict(self, node_id, setting_dict):
@@ -417,8 +528,12 @@ class PTZControlNode(BaseNode):
         username = setting_dict.get(tag_node_name + ":Username", "admin")
         password = setting_dict.get(tag_node_name + ":Password", "admin")
         speed = setting_dict.get(tag_node_name + ":Speed", 0.5)
+        step = setting_dict.get(tag_node_name + ":Step", 0.05)
+        zoom_step = setting_dict.get(tag_node_name + ":ZoomStep", 0.05)
 
         dpg_set_value(tag_node_name + ":UrlPtz", url_ptz)
         dpg_set_value(tag_node_name + ":Username", username)
         dpg_set_value(tag_node_name + ":Password", password)
         dpg_set_value(tag_node_name + ":Speed", speed)
+        dpg_set_value(tag_node_name + ":Step", step)
+        dpg_set_value(tag_node_name + ":ZoomStep", zoom_step)
