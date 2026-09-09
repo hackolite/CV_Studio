@@ -421,7 +421,7 @@ hiddenimports += [
     'sounddevice',
     'streamlink',
     'wordcloud',
-    # ONVIF / WS-Discovery (lazy imports in node_scan.py)
+    # ONVIF / WS-Discovery (lazy imports in node_onvif_scan.py)
     'wsdiscovery',
     'wsdiscovery.discovery',
     'wsdiscovery.scope',

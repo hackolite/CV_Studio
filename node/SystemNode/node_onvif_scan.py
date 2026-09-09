@@ -267,8 +267,8 @@ def _get_device_profiles(xaddr, username="admin", pw="admin", timeout=5):
 # ---------------------------------------------------------------------------
 
 class FactoryNode:
-    node_label = "Scan"
-    node_tag = "Scan"
+    node_label = "OnvifScan"
+    node_tag = "OnvifScan"
 
     def __init__(self):
         pass
@@ -393,8 +393,8 @@ class FactoryNode:
 class ScanNode(Node):
     _ver = "0.0.1"
 
-    node_label = "Scan"
-    node_tag = "Scan"
+    node_label = "OnvifScan"
+    node_tag = "OnvifScan"
 
     _opencv_setting_dict = None
     _scan_results = {}  # tag_node_name -> list of device dicts

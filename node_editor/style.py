@@ -28,7 +28,7 @@ OVERLAY = ["DrawInformation", "PutText"]
 VIZ = ["Heatmap", "ObjChart", "Visual", "Map", "WordCloud", "VectorField"]
 TIMESERIES = ["PositionPrediction"]
 NLP_MODEL = ["TinyBertVigilance"]
-SYSTEM = ["SyncQueue", "Scan", "SystemResource", "SystemSizing", "Settings"]
+SYSTEM = ["SyncQueue", "OnvifScan", "SystemResource", "SystemSizing", "Settings"]
 MAP    = ["CopernicusMap"]
 
 

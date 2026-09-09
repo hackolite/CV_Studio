@@ -600,7 +600,7 @@ input_image: np.ndarray  # BGR, n'importe quelle taille
 |------|---------|-------------|
 | **Sync Queue** | `node_sync_queue.py` | Synchronisation de files d'attente |
 | **Deploy** | `node_deploy.py` | Export de schéma/déploiement |
-| **Scan** | `node_scan.py` | Scan de périphériques réseau |
+| **OnvifScan** | `node_onvif_scan.py` | Scan de périphériques réseau |
 | **System Resource** | `node_system_resource.py` | Monitoring CPU/GPU/RAM |
 
 ---
