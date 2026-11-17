@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 """Tests for the YOLOX distillation engine (node/DLNode/online_training/distill)."""
 import os
+import subprocess
+import sys
 
 import cv2
 import numpy as np
@@ -185,6 +187,21 @@ def student():
     from node.DLNode.online_training.distill.yolox_torch import TrainableYolox
 
     return TrainableYolox(_NANO)
+
+
+def test_training_does_not_depend_on_torchvision_operators(student):
+    """Packaged builds cannot always load them; YOLOX does not use them."""
+    code = (
+        "import sys; sys.modules['torchvision'] = None\n"
+        "from node.DLNode.online_training.distill import yolox_torch\n"
+        "assert yolox_torch.backend_status() == (True, ''), yolox_torch.backend_status()\n"
+        f"yolox_torch.TrainableYolox({_NANO!r}).export()\n"
+        "assert 'torchvision' not in sys.modules\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], cwd=_ROOT, capture_output=True, text=True, timeout=300
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
 
 
 def _own_predictions_as_target(student, blob):

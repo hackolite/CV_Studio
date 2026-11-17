@@ -188,10 +188,11 @@ de validation. Après chaque cycle :
    déployé sont évalués sur cette fenêtre ;
 2. le candidat est déployé seulement si sa perte de validation est meilleure
    d'au moins 1 % **et** si son AP50 face aux détections du teacher ne baisse
-   pas ;
-3. sinon rien ne change en production. Après 3 cycles sans progrès, ou dès
-   qu'un cycle diverge, l'entraînement repart des poids déployés avec un pas
-   d'apprentissage divisé par deux.
+   pas (tolérance 0,02, le bruit de mesure sur une centaine d'images) ;
+3. sinon rien ne change en production. Après 3 cycles sans progrès de la
+   perte, ou dès qu'un cycle est nettement moins bon (+10 %) ou diverge,
+   l'entraînement repart des poids déployés avec un pas d'apprentissage
+   divisé par deux.
 
 La question posée est donc toujours : *un student entraîné sur le passé
 est-il meilleur sur ce qui est venu ensuite ?* C'est volontairement sévère.

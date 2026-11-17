@@ -69,8 +69,8 @@ class DistillConfig:
 
     # Deployment gate
     min_gain: float = 0.01          # relative validation loss gain required to deploy
-    ap_tolerance: float = 0.01      # AP50 drop tolerated when the loss improves
-    patience: int = 3               # rounds without deployment before rolling back
+    ap_tolerance: float = 0.02      # AP50 drop tolerated when the loss improves
+    patience: int = 3               # rounds without progress before rolling back
     keep_checkpoints: int = 5
 
     # Detection
@@ -88,7 +88,7 @@ def disagreement(teacher_obj, teacher_cls, student_obj, student_cls):
     )
 
 
-def should_deploy(candidate, deployed, min_gain=0.01, ap_tolerance=0.01):
+def should_deploy(candidate, deployed, min_gain=0.01, ap_tolerance=0.02):
     """Is the trained student better than the deployed one on validation data?
 
     The distillation loss is the main criterion: it is measured on every
@@ -603,7 +603,10 @@ class DistillationEngine:
             self._deploy(trainer, candidate)
             record["deployed_now"] = True
         else:
-            trainer.stale_rounds += 1
+            # A lower loss held back by the AP safeguard is still progress:
+            # training goes on from where it is
+            improving = candidate["loss"] <= deployed["loss"] * (1.0 - config.min_gain)
+            trainer.stale_rounds = 0 if improving else trainer.stale_rounds + 1
             worse = candidate["loss"] > deployed["loss"] * 1.1
             if diverged or worse or trainer.stale_rounds >= config.patience:
                 # Training went nowhere: start again from what is deployed,

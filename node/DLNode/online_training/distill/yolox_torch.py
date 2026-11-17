@@ -28,6 +28,8 @@ import copy
 import hashlib
 import logging
 import os
+import sys
+import types
 
 import numpy as np
 
@@ -35,13 +37,52 @@ from node.DLNode.online_training.distill import yolox_ops
 
 logger = logging.getLogger(__name__)
 
+
+
+def _import_onnx2torch():
+    """Import ``onnx2torch.convert``, with or without a working torchvision.
+
+    onnx2torch imports torchvision for the NMS and RoiAlign operators, which a
+    YOLOX graph does not contain.  The compiled operators of torchvision
+    cannot always be loaded (notably in packaged builds); in that case a
+    placeholder stands in for torchvision while onnx2torch is imported.
+    """
+    try:
+        from onnx2torch import convert
+        return convert
+    except Exception:
+        pass
+
+    def purge(prefix):
+        for name in [n for n in sys.modules if n == prefix or n.startswith(prefix + ".")]:
+            del sys.modules[name]
+
+    def unavailable(*args, **kwargs):
+        raise NotImplementedError("torchvision operators are not available")
+
+    purge("onnx2torch")
+    purge("torchvision")
+    placeholder = types.ModuleType("torchvision")
+    placeholder.ops = types.ModuleType("torchvision.ops")
+    for name in ("nms", "box_convert", "roi_align"):
+        setattr(placeholder.ops, name, unavailable)
+    sys.modules["torchvision"] = placeholder
+    sys.modules["torchvision.ops"] = placeholder.ops
+    try:
+        from onnx2torch import convert
+        return convert
+    finally:
+        # Leave the rest of the application free to import the real one
+        purge("torchvision")
+
+
 try:
     import onnx
     import torch
     import torch.nn.functional as F
     from onnx import numpy_helper
-    from onnx2torch import convert as _onnx_to_torch
 
+    _onnx_to_torch = _import_onnx2torch()
     _IMPORT_ERROR = None
 except Exception as exc:  # pragma: no cover - depends on the installation
     torch = None
