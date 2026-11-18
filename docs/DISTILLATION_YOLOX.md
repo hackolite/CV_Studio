@@ -287,16 +287,16 @@ avant de vous fier au résultat.
 
 Pourquoi la validation « vers l'avant ». Sur ces mêmes vidéos, une validation
 tirée au milieu des images d'entraînement annonçait un AP50 passant de 0,62 à
-0,76 sur le clip de 36 s, alors que le gain réel sur les images suivantes
-était nul. La validation vers l'avant ne commet pas cette erreur. Elle a aussi
+0,75 sur le clip de 36 s, alors que sur les images suivantes il ne passait
+que de 0,55 à 0,56. La validation vers l'avant ne commet pas cette erreur. Elle a aussi
 montré qu'entraîner toutes les couches dégrade d'abord le student, d'où le
 réglage par défaut (§ 2).
 
 Interface pendant l'entraînement (machine à 2 cœurs, rendu logiciel, donc un
 cas défavorable) : 42 images/s sans distillation, 37 avec.
 
-Pour comparaison, avec le même protocole, l'entraînement du nœud
-`OnlineTraining` laissait le F1 du student inchangé (0,70 → 0,70) avec ses
+Pour comparaison, dans un essai du même type (teacher YOLOv8m, images de fin
+de vidéo jamais entraînées), l'entraînement du nœud `OnlineTraining` laissait le F1 du student inchangé (0,70 → 0,70) avec ses
 réglages par défaut et le ramenait à 0 quand toutes les couches étaient
 entraînées.
 
