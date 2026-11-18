@@ -249,7 +249,56 @@ Les valeurs par défaut conviennent ; les principales :
 
 ## 4. Résultats mesurés
 
-RESULTS_PLACEHOLDER
+Protocole : `yolox_s` (640) distillé vers `yolox_nano` (416), **sur CPU
+(2 cœurs)**, avec les réglages par défaut. Chaque vidéo est rejouée comme un
+flux ; les 70 % du début alimentent le moteur (30 cycles, 5 à 6 minutes
+d'entraînement), les **30 % de la fin ne sont jamais montrés au moteur** et
+servent à la mesure. Référence : les détections du teacher en pleine
+résolution (score ≥ 0,3, IoU ≥ 0,5, même classe).
+
+| Vidéo | Échantillons | AP50 avant → après | F1 avant → après |
+|---|---|---|---|
+| Caméra fixe, passage de personnes (139 s) | 879 | 0,990 → **0,994** | 0,730 → **0,989** |
+| Caméra fixe, allée de magasin (65 s) | 590 | 0,237 → **0,392** | 0,383 → **0,543** |
+| Personne filmée de près (36 s utilisées) | 270 | 0,553 → 0,573 | 0,606 → 0,604 |
+| Caméra embarquée sur route (36 s utilisées) | 270 | 0,373 → 0,385 | 0,526 → 0,517 |
+
+Ce qu'il faut en retenir :
+
+- **Caméra fixe et quelques centaines d'échantillons : le gain est net**, sur
+  des images postérieures que le student n'a jamais vues. Sur la première
+  vidéo, le student d'origine produisait un faux positif pour presque chaque
+  vraie détection (précision 0,58) ; après distillation la précision est de
+  0,98 pour le même rappel (0,99).
+- **Clip court ou scène qui change sans cesse : gain à peu près nul.** Avec
+  270 échantillons tirés de 36 secondes, il n'y a pas assez de variété pour
+  apprendre quelque chose qui vaille pour la suite. Le garde-fou fait alors
+  son travail : le student n'est pas dégradé.
+- Mesuré contre un détecteur tiers (YOLOv8m) au lieu du teacher, le F1 passe
+  de 0,718 à 0,937 sur la première vidéo ; sur l'allée de magasin l'AP50
+  monte (0,318 → 0,364) mais le F1 ne bouge pas (0,478 → 0,465) : le student
+  se rapproche de **son** teacher, y compris là où celui-ci et YOLOv8m ne
+  sont pas d'accord.
+
+Ces chiffres viennent de quatre vidéos courtes (deux du dépôt, deux vidéos
+publiques d'exemple) : ils indiquent un ordre de grandeur, pas une garantie.
+**Mesurez sur vos propres images** avec l'outil en ligne de commande (§ 1)
+avant de vous fier au résultat.
+
+Pourquoi la validation « vers l'avant ». Sur ces mêmes vidéos, une validation
+tirée au milieu des images d'entraînement annonçait un AP50 passant de 0,62 à
+0,76 sur le clip de 36 s, alors que le gain réel sur les images suivantes
+était nul. La validation vers l'avant ne commet pas cette erreur. Elle a aussi
+montré qu'entraîner toutes les couches dégrade d'abord le student, d'où le
+réglage par défaut (§ 2).
+
+Interface pendant l'entraînement (machine à 2 cœurs, rendu logiciel, donc un
+cas défavorable) : 42 images/s sans distillation, 37 avec.
+
+Pour comparaison, avec le même protocole, l'entraînement du nœud
+`OnlineTraining` laissait le F1 du student inchangé (0,70 → 0,70) avec ses
+réglages par défaut et le ramenait à 0 quand toutes les couches étaient
+entraînées.
 
 ---
 
