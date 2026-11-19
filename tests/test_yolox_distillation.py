@@ -346,3 +346,79 @@ def test_a_diverging_round_never_reaches_production(student, tmp_path):
     assert record["lr"] == 5.0 and engine._trainer.lr == 2.5
     state = engine._trainer.model.state()
     assert all(np.array_equal(v, engine._trainer.deployed[k]) for k, v in state.items())
+
+
+# ---------------------------------------------------------------------- #
+# Students at another input size (distill/resize.py)
+
+
+def test_resizing_changes_the_input_size_and_nothing_else():
+    onnx = pytest.importorskip("onnx")
+    from node.DLNode.online_training.distill.resize import parse_size, resize_yolox
+    from node.DLNode.online_training.distill.yolox_onnx import YoloxOnnx
+
+    assert parse_size("320") == (320, 320)
+    assert parse_size("416x256") == (256, 416)  # width x height -> (height, width)
+
+    original = onnx.load(_NANO)
+    resized = resize_yolox(_NANO, 192, 320)
+    assert list(resized.graph.initializer) == list(original.graph.initializer)
+    model = YoloxOnnx(resized.SerializeToString())
+    assert (model.height, model.width, model.num_classes) == (192, 320, 80)
+    canvas = yolox_ops.letterbox(_frames(1)[0], 192, 320)[0]
+    assert model.raw(canvas).shape == (24 * 40 + 12 * 20 + 6 * 10, 85)
+
+    # Back to the original size: the very same network
+    same = YoloxOnnx(resize_yolox(resized, 416, 416).SerializeToString())
+    canvas = yolox_ops.letterbox(_frames(1)[0], 416, 416)[0]
+    assert np.array_equal(same.raw(canvas), YoloxOnnx(_NANO).raw(canvas))
+
+    with pytest.raises(ValueError):
+        resize_yolox(_NANO, 200, 320)
+
+
+def test_node_lists_models_cheapest_first_and_keeps_its_default_student():
+    pytest.importorskip("dearpygui")
+    pytest.importorskip("onnx")
+    from node.DLNode.node_yolox_distillation import default_pair, find_yolox_models
+
+    models = list(find_yolox_models())
+    shipped = [
+        "yolox_nano_320x192", "yolox_nano_320", "yolox_nano_416x256", "yolox_nano",
+        "yolox_tiny_416x256", "yolox_tiny", "yolox_s",
+    ]
+    assert [name for name in models if name in shipped] == shipped
+    assert default_pair(shipped) == ("yolox_s", "yolox_nano")
+    assert default_pair([]) == ("", "")
+
+
+@pytest.mark.parametrize(
+    "name, height, width",
+    [
+        ("yolox_nano_320x192", 192, 320),
+        ("yolox_nano_416x256", 256, 416),
+        ("yolox_nano_320", 320, 320),
+        ("yolox_tiny_416x256", 256, 416),
+    ],
+)
+def test_shipped_students_can_be_distilled(student, tmp_path, name, height, width):
+    """Rectangular students included: collect, train, deploy, at their size."""
+    config = DistillConfig(
+        device="cpu", min_train=8, min_val=2, steps_per_round=3, batch_size=2,
+        keep_easy=1.0, min_disagreement=0.0, min_gain=-10.0, ap_tolerance=10.0,
+    )
+    engine = DistillationEngine(
+        _TINY, os.path.join(_MODELS, name + ".onnx"), str(tmp_path / "run"), config
+    )
+    assert (engine.height, engine.width) == (height, width)
+    frames = _frames(12)
+    assert all(engine.collect(frame) for frame in frames)
+
+    record = engine.train_round()
+
+    assert record["deployed_now"] and np.isfinite(record["candidate"]["loss"])
+    from node.DLNode.online_training.distill.yolox_onnx import YoloxOnnx
+    deployed = YoloxOnnx(engine.deployed_path)
+    assert (deployed.height, deployed.width) == (height, width)
+    boxes, scores, _ = engine.detect(frames[0], 0.05)
+    assert len(boxes) == len(scores) and np.isfinite(boxes).all()

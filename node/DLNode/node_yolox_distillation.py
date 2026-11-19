@@ -47,20 +47,41 @@ def _work_root():
     return os.path.abspath('_Distillation')
 
 
+def _cost(path):
+    """Rough cost of running a model: amount of weights x number of pixels."""
+    size = os.path.getsize(path)
+    try:
+        from node.DLNode.online_training.distill.resize import input_size
+        height, width = input_size(path)
+    except Exception:
+        height = width = 640
+    return size * height * width
+
+
 def find_yolox_models():
-    """``{name: path}`` of the YOLOX ONNX files available, smallest first.
+    """``{name: path}`` of the YOLOX ONNX files available, cheapest first.
 
     Any ``yolox*.onnx`` file dropped in the model directories is listed, which
-    is how a larger teacher (yolox_m, yolox_l, yolox_x) is added.
+    is how a larger teacher (yolox_m, yolox_l, yolox_x) or a student made with
+    ``distill/resize.py`` is added.
     """
     paths = []
     for directory in _model_dirs():
         paths.extend(glob.glob(os.path.join(directory, 'yolox*.onnx')))
-    paths.sort(key=os.path.getsize)
+    paths.sort(key=lambda path: (_cost(path), os.path.basename(path)))
     models = {}
     for path in paths:
         models.setdefault(os.path.splitext(os.path.basename(path))[0], path)
     return models
+
+
+def default_pair(models):
+    """``(teacher, student)`` selected in a new node: the largest model, and
+    ``yolox_nano``, which suits any image shape, when it is there."""
+    models = list(models)
+    if not models:
+        return '', ''
+    return models[-1], 'yolox_nano' if 'yolox_nano' in models else models[0]
 
 
 def format_status(status):
@@ -116,6 +137,7 @@ class FactoryNode:
             )
 
         models = list(find_yolox_models())
+        teacher, student = default_pair(models)
         with dpg.node(tag=name, parent=parent, label=node.node_label, pos=pos):
             with dpg.node_attribute(tag=tag_input, attribute_type=dpg.mvNode_Attr_Input):
                 dpg.add_text(tag=tag_input + 'Value', default_value='Image')
@@ -126,11 +148,11 @@ class FactoryNode:
             with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
                 dpg.add_combo(
                     models, tag=name + ':Teacher', label='teacher', width=width - 80,
-                    default_value=models[-1] if models else '',
+                    default_value=teacher,
                 )
                 dpg.add_combo(
                     models, tag=name + ':Student', label='student', width=width - 80,
-                    default_value=models[0] if models else '',
+                    default_value=student,
                 )
                 dpg.add_checkbox(tag=name + ':Train', label='Distill (background)',
                                  default_value=False)

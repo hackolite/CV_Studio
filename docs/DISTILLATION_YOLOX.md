@@ -44,6 +44,46 @@ Tout est conservé dans `_Distillation/<student>__from__<teacher>/`
 (`CV_Studio_data/distillation/` pour l'exécutable) : au redémarrage, le nœud
 reprend avec le dernier student déployé et les échantillons déjà collectés.
 
+### Choisir le student
+
+Six students sont fournis et apparaissent dans la liste **student** du nœud,
+du moins coûteux au plus coûteux :
+
+| Student | Entrée (L × H) | Temps CPU | Pour quoi |
+|---|---|---|---|
+| `yolox_nano_320x192` | 320 × 192 | 6 ms | machine très limitée, caméra 16:9, objets de taille moyenne ou grande |
+| `yolox_nano_320` | 320 × 320 | 10 ms | petit student pour une image 4:3, carrée ou verticale |
+| `yolox_nano_416x256` | 416 × 256 | 10 ms | **caméra 16:9 : le choix conseillé** — même finesse que `yolox_nano`, sans calculer les bandes vides |
+| `yolox_nano` | 416 × 416 | 16 ms | modèle d'origine, pour toute forme d'image ; sélectionné par défaut |
+| `yolox_tiny_416x256` | 416 × 256 | 29 ms | caméra 16:9 quand la précision compte plus que la vitesse (réseau 5 fois plus gros) |
+| `yolox_tiny` | 416 × 416 | 46 ms | modèle d'origine, le plus précis des students |
+
+Temps du réseau seul, onnxruntime sur 2 cœurs de processeur ; le teacher
+`yolox_s` (640 × 640) y demande 157 ms. Résultats mesurés de chacun : § 4.
+
+Un YOLOX est entièrement convolutif : **les mêmes poids fonctionnent à
+n'importe quelle taille d'entrée multiple de 32**, et le temps de calcul est
+proportionnel au nombre de pixels. Les students réduits sont donc `yolox_nano`
+et `yolox_tiny`, avec leurs poids officiels, réglés sur une entrée plus
+petite. Moins de pixels, c'est moins de détail : la distillation sert
+précisément à apprendre au student à tirer le meilleur de ces pixels sur
+votre scène.
+
+Une image de caméra est le plus souvent en 16:9. Dans une entrée carrée elle
+n'occupe que le haut, et le réseau calcule pour rien sur une bande vide (44 %
+de l'entrée en 416 × 416). Une entrée 416 × 256 contient la même image **à la
+même échelle** avec 38 % de pixels en moins.
+
+Pour créer un student à une autre taille (largeur × hauteur, multiples de 32,
+au plus la taille du teacher) ; le fichier est écrit à côté du modèle et
+apparaît dans les listes :
+
+```bash
+python -m node.DLNode.online_training.distill.resize \
+    --model node/DLNode/object_detection/YOLOX/model/yolox_nano.onnx \
+    --size 512x288
+```
+
 ### Ajouter un teacher plus gros
 
 Tout fichier `yolox*.onnx` déposé dans
@@ -51,7 +91,7 @@ Tout fichier `yolox*.onnx` déposé dans
 modèles doivent être des YOLOX exportés **sans décodage des boîtes**
 (`decode_in_inference=False`, l'export ONNX officiel), avec **les mêmes
 classes**, et l'entrée du teacher doit être au moins aussi grande que celle du
-student. Fournis : `yolox_nano` (416), `yolox_tiny` (416), `yolox_s` (640).
+student. Teacher fourni : `yolox_s` (640).
 
 ### Hors ligne, sur une vidéo enregistrée
 
@@ -107,11 +147,14 @@ Un YOLOX prédit, pour chaque case de trois grilles (pas de 8, 16 et 32
 pixels), une boîte, une probabilité « il y a un objet » (*objectness*) et une
 probabilité par classe. Teacher et student ont la même structure de sortie.
 
-On donne au teacher **exactement les pixels vus par le student**, placés dans
-le coin de son entrée plus grande. Comme les deux réseaux ont les mêmes pas,
-chaque case du student correspond alors à une case du teacher qui regarde le
-même endroit à la même échelle. Le student peut donc imiter le teacher **case
-par case**, sans aucun appariement de boîtes :
+Le teacher regarde l'image **à une résolution plus élevée que le student** :
+aussi grande que son entrée le permet, dans la limite de 1,6 fois celle du
+student (`teacher_zoom`). Il voit ainsi mieux les petits objets. Les deux
+grilles couvrent la même image ; comme les deux
+réseaux ont les mêmes pas, chaque case du student recouvre une ou plusieurs
+cases du teacher du même niveau, et la plus sûre d'entre elles parle pour la
+case (sa boîte est ramenée à l'échelle du student). Le student peut donc
+imiter le teacher **case par case**, sans aucun appariement de boîtes :
 
 | Sortie | Ce que le student imite | Poids |
 |---|---|---|
@@ -135,12 +178,14 @@ Pourquoi c'est une vraie distillation, et pas un simple pseudo-étiquetage :
   déjà correctes ne noient pas les quelques cases qui comptent. Conséquence :
   un student identique à son teacher a une perte nulle et n'est pas modifié.
 
-Option `teacher_view="full"` : le teacher regarde l'image dans sa propre
-résolution, plus élevée, et ses prédictions sont projetées sur la grille du
-student. Il voit mieux les petits objets, mais une partie de ce qu'il trouve
-est hors de portée du student à sa résolution. Sur nos essais ce mode n'a pas
-fait mieux ; il reste disponible pour les scènes à très petits objets avec
-beaucoup de données.
+Option `teacher_view="student"` : on donne au teacher exactement les pixels
+vus par le student, placés dans le coin de son entrée. Chaque case du student
+a alors une case jumelle chez le teacher, mais celui-ci travaille en dessous
+de sa résolution et ne trouve plus ce qu'il aurait trouvé. C'était le réglage
+par défaut ; mesuré sur caméra fixe, il apprend moins au student (§ 4).
+Changer ce réglage sur un
+dossier existant met de côté les échantillons déjà collectés (le student
+déployé est gardé).
 
 ### Entraîner le fichier ONNX lui-même
 
@@ -235,7 +280,8 @@ Les valeurs par défaut conviennent ; les principales :
 |---|---|---|
 | `device` | `auto` | `cuda` si disponible, sinon `cpu` |
 | `sample_interval` | 0,5 s | délai entre deux images montrées au teacher |
-| `teacher_view` | `student` | ce que regarde le teacher (voir § 2) |
+| `teacher_view` | `full` | ce que regarde le teacher (voir § 2) |
+| `teacher_zoom` | 1,6 | agrandissement maximal de l'image du teacher par rapport à celle du student |
 | `max_train` / `val_window` | 4000 / 96 | taille du stock et de la fenêtre de validation |
 | `min_train` / `min_val` | 48 / 12 | échantillons requis avant le premier cycle |
 | `learning_rate` | 5e-5 | pas d'apprentissage (AdamW) |
@@ -249,8 +295,74 @@ Les valeurs par défaut conviennent ; les principales :
 
 ## 4. Résultats mesurés
 
+### Students fournis (réglages par défaut)
+
+Protocole : teacher `yolox_s` (640), **sur CPU (2 cœurs)**, réglages par
+défaut, 30 cycles. Chaque vidéo est rejouée comme un flux ; les 70 % du début
+alimentent le moteur, les **30 % de la fin ne sont jamais montrés au moteur**
+et servent à la mesure. Référence : les détections du teacher en pleine
+résolution (score ≥ 0,3, IoU ≥ 0,5, même classe).
+
+| Vidéo | Student | AP50 avant → après | F1 avant → après |
+|---|---|---|---|
+| Allée de magasin, caméra fixe, personnes petites et lointaines (65 s, 590 échantillons) | `yolox_nano_320x192` | 0,232 → **0,314** | 0,376 → **0,476** |
+| | `yolox_nano_320` | 0,233 → **0,319** | 0,377 → **0,482** |
+| | `yolox_nano_416x256` | 0,237 → **0,514** | 0,382 → **0,652** |
+| | `yolox_nano` | 0,237 → **0,520** | 0,383 → **0,659** |
+| | `yolox_tiny_416x256` | 0,523 → **0,877** | 0,642 → **0,831** |
+| Passage de personnes, caméra fixe, personnes proches (139 s, 879 échantillons) | `yolox_nano_320x192` | 0,986 → 0,991 | 0,905 → **0,991** |
+| | `yolox_nano_320` | 0,985 → 0,994 | 0,710 → **0,994** |
+| | `yolox_nano_416x256` | 0,991 → 0,994 | 0,802 → **0,993** |
+| | `yolox_tiny_416x256` | 0,994 → 0,994 | 0,717 → **0,993** |
+| Personne filmée de près (clip court : 36 s, 270 échantillons) | `yolox_nano_320x192` | 0,508 → 0,516 | 0,604 → 0,505 |
+| | `yolox_nano_416x256` | 0,561 → 0,574 | 0,612 → 0,588 |
+| Caméra embarquée sur route (36 s, 270 échantillons) | `yolox_nano_416x256` | 0,370 → **0,440** | 0,522 → **0,562** |
+
+Ce qu'il faut en retenir :
+
+- **`yolox_nano_416x256` fait jeu égal avec `yolox_nano`** (0,514 contre
+  0,520 d'AP50 après distillation) pour 38 % de pixels en moins : sur une
+  caméra 16:9, c'est le student à choisir.
+- **Les students en 320 de large suffisent quand les objets sont gros**
+  (passage de personnes : F1 0,99), **pas quand ils sont petits** (allée de
+  magasin : 0,31 d'AP50 contre 0,51 en 416). La distillation ne remplace pas
+  les pixels qui manquent.
+- `yolox_tiny_416x256` est nettement au-dessus quand la scène est difficile
+  (0,88 d'AP50 dans l'allée de magasin), pour 3 fois le temps de calcul de
+  `yolox_nano_416x256`.
+- Sur le passage de personnes, l'AP50 était déjà proche de 1 : le gain de F1
+  vient surtout de scores mieux réglés (les fausses détections du student
+  d'origine passent sous le seuil), pas de nouvelles détections.
+- **Clip court (270 échantillons) : pas de gain fiable, et le F1 peut
+  baisser**, surtout pour le plus petit student (0,60 → 0,51 : l'AP50 ne
+  bouge pas, mais des détections faibles passent au-dessus du seuil).
+  Laissez collecter plusieurs centaines d'échantillons avant de juger, et
+  mesurez.
+
+Ce que regarde le teacher (`teacher_view`, § 2), mêmes vidéos, AP50 / F1
+après distillation :
+
+| Vidéo, student | `student` (ancien défaut) | `full` (défaut) |
+|---|---|---|
+| Allée de magasin, `yolox_nano_416x256` | 0,411 / 0,561 | **0,514 / 0,652** |
+| Allée de magasin, `yolox_nano_320x192` | 0,243 / 0,387 | **0,314 / 0,476** |
+| Passage de personnes, `yolox_nano_416x256` | 0,994 / 0,987 | 0,994 / 0,993 |
+| Passage de personnes, `yolox_nano_320x192` | 0,991 / 0,973 | 0,991 / **0,991** |
+| Personne filmée de près, `yolox_nano_416x256` | 0,575 / 0,606 | 0,574 / 0,588 |
+| Personne filmée de près, `yolox_nano_320x192` | 0,540 / **0,606** | 0,516 / 0,505 |
+
+`full` apprend nettement plus quand le teacher voit des objets que le student
+distingue mal (allée de magasin). Sur le clip court il fait moins bien que
+`student` : c'est le cas où il vaut mieux attendre plus d'échantillons.
+Sans la limite `teacher_zoom` (teacher 2 fois plus grand que le student en
+320), les résultats du student `yolox_nano_320x192` étaient un peu moins bons
+(allée de magasin : 0,299 / 0,447 ; clip court : 0,489 / 0,456).
+
+### Premières mesures (`yolox_nano`, `teacher_view="student"`)
+
 Protocole : `yolox_s` (640) distillé vers `yolox_nano` (416), **sur CPU
-(2 cœurs)**, avec les réglages par défaut. Chaque vidéo est rejouée comme un
+(2 cœurs)**, avec `teacher_view="student"`, le réglage par défaut d'alors.
+Chaque vidéo est rejouée comme un
 flux ; les 70 % du début alimentent le moteur (30 cycles, 5 à 6 minutes
 d'entraînement), les **30 % de la fin ne sont jamais montrés au moteur** et
 servent à la mesure. Référence : les détections du teacher en pleine
@@ -339,4 +451,6 @@ entraînées.
 | `…/distill/yolox_onnx.py` | teacher et student déployé (onnxruntime) |
 | `…/distill/store.py` | stock d'échantillons sur disque |
 | `…/distill/cli.py` | outil en ligne de commande |
+| `…/distill/resize.py` | student à une autre taille d'entrée |
+| `docs/DISTILLATION_YOLOX.pdf` | guide illustré (généré par `tools/make_distillation_pdf.py`) |
 | `tests/test_yolox_distillation.py` | tests |

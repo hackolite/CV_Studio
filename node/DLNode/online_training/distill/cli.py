@@ -72,7 +72,8 @@ def main(argv=None):
     parser.add_argument("--lr", type=float, default=DistillConfig.learning_rate)
     parser.add_argument("--steps", type=int, default=0, help="steps per round (0: automatic)")
     parser.add_argument("--batch", type=int, default=0, help="batch size (0: automatic)")
-    parser.add_argument("--teacher-view", choices=("student", "full"), default="student",
+    parser.add_argument("--teacher-view", choices=("student", "full"),
+                        default=DistillConfig.teacher_view,
                         help="what the teacher looks at (see DistillConfig.teacher_view)")
     parser.add_argument("--trainable", type=float, default=DistillConfig.trainable_fraction,
                         help="share of the layers trained, from the output")

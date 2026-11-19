@@ -46,7 +46,8 @@ class DistillConfig:
     cpu_threads: int = 0            # threads used by training and by the teacher
 
     # Collection
-    teacher_view: str = "student"   # 'student': same pixels as the student; 'full'
+    teacher_view: str = "full"      # 'full': a larger image than the student's; 'student'
+    teacher_zoom: float = 1.6       # 'full': at most this much larger than for the student
     sample_interval: float = 0.5    # seconds between two frames shown to the teacher
     min_disagreement: float = 0.03  # below: the student already agrees with the teacher
     keep_easy: float = 0.25         # share of "agreed" frames kept anyway
@@ -212,6 +213,7 @@ class DistillationEngine:
                 "teacher_bytes": os.path.getsize(teacher_path),
                 "student_input": [self.height, self.width],
                 "teacher_view": self.config.teacher_view,
+                "teacher_zoom": self.config.teacher_zoom,
                 "classes": self.num_classes,
             },
             max_train=self.config.max_train,
@@ -318,22 +320,31 @@ class DistillationEngine:
 
         ``teacher_view`` selects what the teacher looks at:
 
+        * ``'full'`` (default): the image at a higher resolution than the
+          student's, as large as the teacher input allows but at most
+          ``teacher_zoom`` times larger.  The teacher sees small objects
+          better; several of its cells fall into each student cell, the most
+          confident one speaks for the cell.  Measured on fixed cameras, this
+          is what teaches the student most (docs/DISTILLATION_YOLOX.md).
+          Beyond the limit, objects change of pyramid level between the two
+          networks and the student learns less;
         * ``'student'``: the very pixels given to the student, placed in the
           corner of the teacher input.  Each student anchor then has one
-          teacher anchor looking at the same place at the same scale: the
-          comparison is exact, and everything the teacher finds can be found
-          by the student;
-        * ``'full'``: the image at the teacher's own, higher resolution.  The
-          teacher sees small objects better, but several of its cells fall
-          into each student cell and part of what it finds is out of reach at
-          the student resolution.
+          teacher anchor looking at the same place at the same scale, but the
+          teacher works below its resolution and misses what it would have
+          found.
         """
         if (teacher.height, teacher.width) == (self.height, self.width):
             return teacher.dense(canvas)
         if self.config.teacher_view == "full":
-            teacher_canvas, teacher_ratio = yolox_ops.letterbox(
-                image, teacher.height, teacher.width
+            zoom = max(1.0, self.config.teacher_zoom)
+            view_h = min(teacher.height, int(self.height * zoom))
+            view_w = min(teacher.width, int(self.width * zoom))
+            view, teacher_ratio = yolox_ops.letterbox(image, view_h, view_w)
+            teacher_canvas = np.full(
+                (teacher.height, teacher.width, 3), yolox_ops.PAD_VALUE, dtype=np.uint8
             )
+            teacher_canvas[:view_h, :view_w] = view
             scale = ratio / teacher_ratio
         else:
             teacher_canvas = np.full(
