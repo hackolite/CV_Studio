@@ -142,6 +142,7 @@ python main.py
 - **Queue system details:** [doc/TIMESTAMPED_QUEUE_SYSTEM.md](doc/TIMESTAMPED_QUEUE_SYSTEM.md)
 - **Examples and demos:** [examples/README.md](examples/README.md)
 - **Testing guide:** [doc/TESTING.md](doc/TESTING.md)
+- **Logs & crash diagnostics:** [doc/LOGS_ET_CRASHS.md](doc/LOGS_ET_CRASHS.md)
 
 ## 🧩 Node Library
 

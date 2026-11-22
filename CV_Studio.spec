@@ -91,6 +91,7 @@ hiddenimports += [
     'src',
     'src.utils',
     'src.utils.logging',
+    'src.utils.fault_diagnostics',
     'src.utils.gpu_utils',
     'src.core',
     # Third-party packages
