@@ -149,3 +149,4 @@ node/DLNode/online_training/student_models_registry.json
 
 # YoloxDistillation node: samples, checkpoints and exported students
 _Distillation/
+logs/

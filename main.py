@@ -10,15 +10,30 @@ if __name__ == "__main__":
     if current_dir not in sys.path:
         sys.path.insert(0, current_dir)
 
+# Install the crash hooks *before* the heavy imports below (cv2, dearpygui,
+# node packages): if one of them fails inside the frozen bundle, the traceback
+# is still appended to the log file instead of vanishing with the console.
+from src.utils.logging import (
+    setup_logging,
+    get_logger,
+    get_log_dir,
+    get_active_log_files,
+    install_exception_hooks,
+    log_uncaught_exception,
+)
+from src.utils.fault_diagnostics import (
+    configure_fault_diagnostics,
+    get_fault_log_path,
+)
+
+install_exception_hooks()
+
 import copy
 import json
 import asyncio
 import argparse
-import atexit
-import faulthandler
 import logging
 import platform
-import signal
 import threading
 from collections import OrderedDict
 import time
@@ -26,7 +41,6 @@ import multiprocessing
 import cv2
 import dearpygui.dearpygui as dpg
 
-from src.utils.logging import setup_logging, get_logger
 from src.utils.gpu_utils import log_gpu_info
 
 from node_editor.util import (
@@ -51,183 +65,9 @@ from node_editor.splash import show_splash_screen as _show_splash_screen
 # Reference to the node editor instance, used by nodes that need editor access
 # (e.g., Deploy node for schema export)
 _node_editor_ref = None
-_fault_log_file_handle = None
-_fault_log_atexit_registered = False
 
 # Connection types that carry frame data (and therefore a source timestamp)
 _DATA_CONNECTION_TYPES = frozenset(("IMAGE", "AUDIO", "JSON"))
-
-
-def _log_thread_exception(args):
-    thread_name = getattr(args.thread, "name", "unknown")
-    logger.error(
-        "Unhandled exception in thread '%s'",
-        thread_name,
-        exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
-    )
-
-
-def _unique_streams(*streams):
-    """Return a deduplicated list of streams, always including sys.stderr."""
-    seen_fds = set()
-    result = []
-    for s in streams:
-        if s is None:
-            continue
-        try:
-            fd = s.fileno()
-        except Exception:
-            fd = id(s)
-        if fd not in seen_fds:
-            seen_fds.add(fd)
-            result.append(s)
-    # Always include stderr as a fallback if not already present
-    try:
-        stderr_fd = sys.stderr.fileno()
-    except Exception:
-        stderr_fd = id(sys.stderr)
-    if stderr_fd not in seen_fds:
-        result.append(sys.stderr)
-    return result
-
-
-def configure_fault_diagnostics(fault_log_path=None):
-    """Enable diagnostics for hard crashes (e.g., segfaults) and thread exceptions.
-
-    Registers handlers for SIGSEGV, SIGABRT, SIGFPE, SIGBUS and SIGUSR1/SIGUSR2 so
-    that a full stack trace of *all* threads is written on any hard crash.  The
-    handlers use chain=True so that the default OS action (core dump) still fires
-    after the Python trace is written.
-
-    When a log file path is supplied the trace is written to that file **and** to
-    stderr (fd 2), because Python I/O may be unreliable inside a signal handler
-    after a segfault.  Using raw file descriptors (sys.stderr / the open fd of the
-    log file) maximises the chance that output reaches disk before the process dies.
-
-    A background watchdog via faulthandler.dump_traceback_later() writes a full
-    thread dump every 30 seconds; this captures the last-known state even when the
-    crash happens between two watchdog ticks.
-    """
-    global _fault_log_file_handle, _fault_log_atexit_registered
-
-    target_stream = sys.stderr
-    resolved_path = None
-    path = fault_log_path or os.environ.get("CV_STUDIO_FAULT_LOG")
-    if path:
-        if _fault_log_file_handle is not None:
-            _close_fault_log_file()
-        resolved_path = os.path.abspath(path)
-        resolved_dir = os.path.dirname(resolved_path)
-        if resolved_dir:
-            os.makedirs(resolved_dir, exist_ok=True)
-        # Line-buffered text mode; every newline flushes to the OS.
-        _fault_log_file_handle = open(resolved_path, "a", buffering=1, encoding="utf-8")
-        target_stream = _fault_log_file_handle
-        if not _fault_log_atexit_registered:
-            atexit.register(_close_fault_log_file)
-            _fault_log_atexit_registered = True
-
-    # Primary handler: dumps all threads on SIGSEGV / hard faults.
-    faulthandler.enable(file=target_stream, all_threads=True)
-
-    # When writing to a file, also mirror the crash dump to stderr so that it is
-    # visible in the terminal and survives even if the file flush is incomplete.
-    if target_stream is not sys.stderr:
-        try:
-            faulthandler.enable(file=sys.stderr, all_threads=True)
-        except Exception as exc:
-            logger.warning("Failed to enable faulthandler on stderr: %s", exc)
-
-    # Explicitly register crash signals with chain=True so the OS default
-    # (e.g., core dump) still executes after the Python traceback is printed.
-    # This gives the most exhaustive output: full Python stacks from every thread.
-    # NOTE: SIGSEGV, SIGABRT, SIGFPE, SIGBUS are handled exclusively by
-    # faulthandler.enable() on Linux — faulthandler.register() raises RuntimeError
-    # for those signals.  We register them symbolically for the startup log message
-    # but rely on faulthandler.enable() (called above) for the actual handler.
-    _crash_signals = ("SIGSEGV", "SIGABRT", "SIGFPE", "SIGBUS")
-    _registered_signals = [
-        sig_name
-        for sig_name in _crash_signals
-        if getattr(signal, sig_name, None) is not None
-    ]
-
-    # SIGUSR1/SIGUSR2: on-demand dump triggered by the user.
-    # faulthandler.register() only supports a single stream per signal (each
-    # successive call replaces the previous handler).  To write to both the log
-    # file and stderr we install a Python-level signal handler that calls
-    # faulthandler.dump_traceback() for every output stream explicitly.
-    _dump_streams = _unique_streams(target_stream)
-
-    def _on_dump_signal(signum, frame, streams=_dump_streams):
-        for s in streams:
-            try:
-                faulthandler.dump_traceback(file=s, all_threads=True)
-                s.flush()
-            except Exception:
-                pass
-
-    for sig_name in ("SIGUSR1", "SIGUSR2"):
-        sig = getattr(signal, sig_name, None)
-        if sig is None:
-            continue
-        try:
-            signal.signal(sig, _on_dump_signal)
-        except (OSError, ValueError) as exc:
-            logger.warning("Failed to register fault dump signal %s: %s", sig_name, exc)
-
-    # Windows does not have SIGUSR1/SIGUSR2.  Register SIGBREAK (Ctrl+Break)
-    # as the on-demand thread-dump trigger instead so that Windows users can
-    # get a full traceback from a running process by pressing Ctrl+Break.
-    if sys.platform == "win32":
-        sig_break = getattr(signal, "SIGBREAK", None)
-        if sig_break is not None:
-            try:
-                signal.signal(sig_break, _on_dump_signal)
-                logger.info("Windows: on-demand thread dump registered on SIGBREAK (Ctrl+Break)")
-            except (OSError, ValueError) as exc:
-                logger.warning("Failed to register SIGBREAK handler: %s", exc)
-
-    # Watchdog: periodically write all-thread stacks so the last snapshot is
-    # available even if the crash happens between two watchdog ticks.
-    _watchdog_interval = int(os.environ.get("CV_STUDIO_WATCHDOG_INTERVAL", "30"))
-    try:
-        faulthandler.dump_traceback_later(
-            _watchdog_interval, repeat=True, file=target_stream, exit=False
-        )
-        logger.info(
-            "Fault watchdog enabled: full thread dump every %ds", _watchdog_interval
-        )
-    except Exception as exc:
-        logger.warning("Failed to start faulthandler watchdog: %s", exc)
-
-    threading.excepthook = _log_thread_exception
-    logger.info(
-        "Fault diagnostics enabled%s — crash signals: %s",
-        f" (fault trace output: {resolved_path})" if resolved_path else " (fault trace output: stderr)",
-        ", ".join(_registered_signals) if _registered_signals else "none",
-    )
-
-
-def _close_fault_log_file():
-    global _fault_log_file_handle
-    if _fault_log_file_handle is not None:
-        file_handle = _fault_log_file_handle
-        try:
-            # Cancel the watchdog before closing the file so it doesn't write to
-            # the closed file descriptor after this point.
-            try:
-                faulthandler.cancel_dump_traceback_later()
-            except Exception:
-                pass
-            file_handle.flush()
-            file_handle.close()
-            try:
-                faulthandler.enable(file=sys.stderr, all_threads=True)
-            except Exception:
-                pass
-        finally:
-            _fault_log_file_handle = None
 
 
 def get_resource_path(relative_path):
@@ -284,16 +124,20 @@ def get_args():
         "--fault_log",
         type=str,
         default=None,
-        help="Optional file path for faulthandler output (segfault traceback).",
+        help=(
+            "Optional file path for faulthandler output (segfault traceback). "
+            "Defaults to cv_studio_fault.log in the CV Studio log directory."
+        ),
     )
     parser.add_argument(
         "--log-file",
         type=str,
         default=None,
         help=(
-            "Optional file path for application log output. "
-            "On Windows, defaults to %%APPDATA%%\\CV_Studio\\cv_studio.log "
-            "when not provided."
+            "Optional file path for application log output. Defaults to "
+            "cv_studio.log in the CV Studio log directory (CV_Studio_data/logs "
+            "next to the executable, logs/ in the repository in dev mode, "
+            "override with CV_STUDIO_LOG_DIR)."
         ),
     )
     parser.add_argument(
@@ -570,12 +414,11 @@ def main():
     smoke_test_frames = args.smoke_test
     smoke_test = smoke_test_frames is not None
 
-    # Setup logging based on debug flag.
-    # On Windows, setup_logging() automatically writes to
-    # %APPDATA%\CV_Studio\cv_studio.log when log_file is None, ensuring a
-    # persistent log even when the process has no attached console.
+    # Setup logging based on debug flag.  setup_logging() always writes to a
+    # file (cv_studio.log in get_log_dir()) in addition to the console, so a
+    # persistent log exists even when the process has no attached console.
     log_level = logging.DEBUG if use_debug_print else logging.INFO
-    root_logger = setup_logging(level=log_level, log_file=log_file)
+    setup_logging(level=log_level, log_file=log_file)
     configure_fault_diagnostics(fault_log_path=fault_log)
 
     logger.info("=" * 60)
@@ -593,9 +436,9 @@ def main():
     )
 
     # Log the active log file paths so users know where to find their logs.
-    for handler in root_logger.handlers:
-        if hasattr(handler, "baseFilename"):
-            logger.info("Application log file: %s", handler.baseFilename)
+    logger.info("Log directory: %s", get_log_dir())
+    for path in get_active_log_files():
+        logger.info("Application log file: %s", path)
 
     # Initialize timestamped buffer system
     logger.info("Initializing timestamped buffer system")
@@ -844,21 +687,62 @@ def main():
         print(f"SMOKE TEST PASSED: {node_count} node types discovered", flush=True)
 
 
+def _report_fatal_error_location():
+    """Tell the user where the crash was recorded and, when the frozen
+    executable runs in its own console window (double-click on Windows), wait
+    for a key press so the window does not disappear before it can be read."""
+    log_files = get_active_log_files() or [os.path.join(get_log_dir(), "cv_studio.log")]
+    lines = [
+        "",
+        "CV_STUDIO a rencontré une erreur fatale / CV_STUDIO hit a fatal error.",
+        "Logs:",
+    ]
+    lines += [f"  - {path}" for path in log_files]
+    fault_log = get_fault_log_path()
+    if fault_log:
+        lines.append(f"  - {fault_log} (hard crash traces)")
+    message = "\n".join(lines) + "\n"
+    if sys.stderr is not None:
+        try:
+            sys.stderr.write(message)
+            sys.stderr.flush()
+        except Exception:
+            pass
+
+    should_pause = (
+        getattr(sys, "frozen", False)
+        and sys.platform == "win32"
+        and not os.environ.get("CV_STUDIO_NO_PAUSE")
+        and "--smoke-test" not in sys.argv
+        and sys.stdin is not None
+        and sys.stdout is not None
+    )
+    if should_pause:
+        try:
+            if sys.stdin.isatty():
+                input("Appuyez sur Entrée pour fermer / Press Enter to close...")
+        except Exception:
+            pass
+
+
 def _run():
     """Run main() and translate any failure into a non-zero exit code.
 
     Without this, an exception raised during startup in the frozen .exe may
     only show up in a console window that closes immediately, and CI would
-    have no reliable signal that the build is broken.
+    have no reliable signal that the build is broken.  The traceback is always
+    written to the log file (see src.utils.logging) and the log location is
+    printed before exiting.
     """
     try:
         main()
     except SystemExit:
         raise
     except BaseException:
-        logger.exception("CV_STUDIO terminated with an unhandled exception")
-        import traceback
-        traceback.print_exc()
+        log_uncaught_exception(
+            "CV_STUDIO terminated with an unhandled exception", sys.exc_info()
+        )
+        _report_fatal_error_location()
         sys.exit(1)
 
 

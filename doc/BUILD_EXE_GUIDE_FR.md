@@ -293,6 +293,12 @@ python build_exe.py --debug
 
 ## 🔧 Dépannage
 
+### Où sont les logs en cas de crash ?
+
+Dans `CV_Studio_data\logs\` à côté de `CV_Studio.exe` : `cv_studio.log`
+(exceptions Python) et `cv_studio_fault.log` (segfaults / crashs natifs).
+Voir [LOGS_ET_CRASHS.md](LOGS_ET_CRASHS.md).
+
 ### Problème : PyInstaller non trouvé
 
 ```bash
