@@ -289,7 +289,7 @@ class DpgNodeEditor(object):
         # rendering and starves the async update thread.
         self._pending_close_threads = {}
         self._pending_close_lock = threading.Lock()
-        # Overview mode (Ctrl + mouse wheel): see node_editor/zoom.py
+        # Zoom in / out (Ctrl + mouse wheel): see node_editor/zoom.py
         self._zoom = EditorZoom()
 
         if menu_dict is None:
@@ -504,7 +504,7 @@ class DpgNodeEditor(object):
         return self._node_factory_list.get(node_name, None)
 
     # ------------------------------------------------------------------ #
-    # Overview mode (zoom out / back to 100 %)
+    # Zoom (overview below 100 %, magnification above 100 %)
     # ------------------------------------------------------------------ #
 
     def _callback_mouse_wheel(self, sender, app_data):
@@ -513,16 +513,16 @@ class DpgNodeEditor(object):
         if app_data < 0:
             self._callback_zoom_out(mouse_pos=dpg.get_mouse_pos(local=False))
         elif app_data > 0:
-            self._callback_zoom_in()
+            self._callback_zoom_in(mouse_pos=dpg.get_mouse_pos(local=False))
 
     def _callback_zoom_out(self, sender=None, app_data=None, user_data=None, mouse_pos=None):
         with _dpg_lock:
             if self._zoom.zoom_out(self._node_list, mouse_pos):
                 self._update_zoom_label()
 
-    def _callback_zoom_in(self, sender=None, app_data=None, user_data=None):
+    def _callback_zoom_in(self, sender=None, app_data=None, user_data=None, mouse_pos=None):
         with _dpg_lock:
-            if self._zoom.zoom_in(self._node_list):
+            if self._zoom.zoom_in(self._node_list, mouse_pos):
                 self._update_zoom_label()
 
     def _callback_zoom_reset(self, sender=None, app_data=None, user_data=None):
@@ -536,17 +536,17 @@ class DpgNodeEditor(object):
 
     def _update_zoom_label(self):
         label = "View"
-        if self._zoom.is_zoomed_out:
+        if self._zoom.is_zoomed:
             label = f"View ({int(round(self._zoom.scale * 100))}%)"
         dpg.configure_item("Menu_View", label=label)
 
     def _logical_setting(self, node_id_name, setting):
         """Express the saved node position at 100 % zoom.
 
-        Node settings are read while the editor may be zoomed out; exports,
+        Node settings are read while the editor may be zoomed; exports,
         the clipboard and the undo stack must not depend on the zoom level.
         """
-        if self._zoom.is_zoomed_out and isinstance(setting, dict) and "pos" in setting:
+        if self._zoom.is_zoomed and isinstance(setting, dict) and "pos" in setting:
             with _dpg_lock:
                 setting["pos"] = self._zoom.logical_pos(node_id_name)
         return setting

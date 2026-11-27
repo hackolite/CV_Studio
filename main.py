@@ -372,7 +372,7 @@ def _smoke_test_steps(node_editor):
 
     with _dpg_lock:
         restored = dpg.get_item_label(node_name)
-    if node_editor._zoom.is_zoomed_out or restored != label:
+    if node_editor._zoom.is_zoomed or restored != label:
         raise RuntimeError(
             f"Smoke-test failed: zoom not restored ({label!r} -> {restored!r})"
         )

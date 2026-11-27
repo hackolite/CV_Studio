@@ -298,7 +298,6 @@ def test_zoom_back_to_normal_restores_everything_exactly(dpg):
     assert all(item["theme"] is None for item in dpg.items.values())
     # A widget the node itself had hidden is not shown by the restoration
     assert not _show(dpg, "1:Blur:hidden")
-    assert zoom.zoom_in(tags) is False
 
 
 def test_pivot_follows_the_mouse(dpg):
@@ -375,3 +374,81 @@ def test_adopt_is_a_no_op_at_normal_zoom(dpg):
     assert _show(dpg, "1:Blur:slider")
     assert zoom.logical_pos(node) == [100, 100]
     assert zoom.view_to_logical([10, 20]) == [10, 20]
+
+
+def test_zoom_in_above_100_percent_magnifies_nodes(dpg, monkeypatch):
+    monkeypatch.setattr(zoom_module, "_overview_fonts", {1.25: "font22", 1.5: "font27"})
+    node = _add_node(dpg, "1:ObjectDetection", [100, 100], image_size=(240, 135))
+    other = _add_node(dpg, "2:Canny", [500, 300])
+    dpg.configure_item("1:ObjectDetection:slider", width=200)
+    zoom = EditorZoom()
+
+    assert zoom.zoom_in([node, other]) is True
+    assert zoom.scale == 1.25 and zoom.is_zoomed_in and zoom.is_zoomed
+    assert not zoom.is_zoomed_out
+    # Contents and full titles stay visible, only bigger
+    assert _show(dpg, "1:ObjectDetection:slider")
+    assert _show(dpg, "1:ObjectDetection:label")
+    assert dpg.items[node]["config"]["label"] == "ObjectDetection"
+    assert _size(dpg, "1:ObjectDetection:image") == (300, 169)
+    assert _size(dpg, "2:Canny:image") == (300, 169)
+    assert dpg.items["1:ObjectDetection:slider"]["config"]["width"] == 250
+    assert dpg.items[node]["font"] == "font22"
+    assert dpg.styles(dpg.get_item_theme(node))["NodePadding"] == (10, 10)
+    # Nodes move away from the pivot (centre of the graph: 300, 200)
+    assert dpg.get_item_pos(node) == [50, 75]
+    assert dpg.get_item_pos(other) == [550, 325]
+    assert zoom.logical_pos(node) == [100, 100]
+
+    zoom.zoom_in([node, other])
+    assert zoom.scale == 1.5
+    assert dpg.items[node]["font"] == "font27"
+
+    zoom.zoom_out([node, other])
+    zoom.zoom_out([node, other])
+    assert zoom.scale == 1.0 and not zoom.is_zoomed
+    assert dpg.get_item_pos(node) == [100, 100]
+    assert _size(dpg, "1:ObjectDetection:image") == (240, 135)
+    assert _size(dpg, "2:Canny:image") == (0, 0)
+    assert dpg.items["1:ObjectDetection:slider"]["config"]["width"] == 200
+    assert dpg.items[node]["font"] is None
+    assert dpg.get_item_theme(node) is None
+
+
+def test_zoom_in_is_bounded_and_reset_restores_everything(dpg):
+    tags = [
+        _add_node(dpg, "1:Blur", [41, 67], image_size=(240, 135)),
+        _add_node(dpg, "2:Canny", [433, 59]),
+    ]
+    before = {tag: dict(item["config"]) for tag, item in dpg.items.items()}
+    zoom = EditorZoom()
+
+    while zoom.zoom_in(tags):
+        pass
+    assert zoom.scale == max(zoom_module.ZOOM_IN_LEVELS)
+
+    zoom.reset(tags)
+    assert {tag: dpg.get_item_pos(tag) for tag in tags} == {
+        "1:Blur": [41, 67], "2:Canny": [433, 59],
+    }
+    assert {tag: dict(item["config"]) for tag, item in dpg.items.items()} == before
+
+
+def test_node_added_while_zoomed_in_is_magnified(dpg):
+    first = _add_node(dpg, "1:Blur", [100, 100])
+    zoom = EditorZoom()
+    zoom.zoom_in([first])
+    zoom.zoom_in([first])
+    assert zoom.scale == 1.5
+
+    added = _add_node(dpg, "2:Flip", [300, 100])
+    zoom.adopt(added)
+
+    assert _show(dpg, "2:Flip:slider")
+    assert _size(dpg, "2:Flip:image") == (360, 202)
+    assert dpg.get_item_pos(added) == [400, 100]
+    assert zoom.view_to_logical([400, 100]) == [300, 100]
+
+    zoom.reset([first, added])
+    assert dpg.get_item_pos(added) == [300, 100]
+    assert _size(dpg, "2:Flip:image") == (0, 0)

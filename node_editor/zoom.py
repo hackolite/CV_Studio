@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Overview ("zoom out") mode for the node editor.
+"""Zoom (overview and magnification) for the node editor.
 
-DearPyGui's node editor has no zoom API, so zooming out is emulated:
+DearPyGui's node editor has no zoom API, so zooming is emulated.
+
+Zooming out (overview mode):
 
 * node positions are pulled towards a pivot (the mouse cursor),
 * node contents are hidden, leaving the title bar, the pins and the links,
@@ -10,6 +12,12 @@ DearPyGui's node editor has no zoom API, so zooming out is emulated:
   node paddings, drawn smaller and smaller as the view moves away,
 * image previews are kept and displayed as thumbnails (resized by the GPU,
   the textures themselves are untouched).
+
+Zooming in (magnification, above 100 %):
+
+* node positions are pushed away from a pivot (the mouse cursor),
+* node contents stay visible; image previews, widget widths, titles and
+  texts (through bigger fonts), paddings, pins and links are enlarged.
 
 Zooming back to 100 % restores every node exactly as it was.  Nothing here
 runs per frame: all the work happens when the zoom level changes.
@@ -26,15 +34,21 @@ logger = logging.getLogger(__name__)
 
 # Index 0 must be 1.0 (normal view); the other levels are overview scales.
 ZOOM_LEVELS = (1.0, 0.7, 0.5, 0.35, 0.25, 0.18)
+# Magnification scales, above 100 %, in increasing order.
+ZOOM_IN_LEVELS = (1.25, 1.5, 2.0, 2.5, 3.0)
 
 SHORT_LABEL_LENGTH = 5
 
 _MIN_THUMBNAIL_SIZE = 16
 _CONTENT_SLOT = 1
 
-# Title font size per overview scale.  Text is shrunk less than the layout so
-# that the short names stay readable from far away.
-_FONT_SIZES = {0.7: 15, 0.5: 13, 0.35: 11, 0.25: 9, 0.18: 8}
+# Title font size per zoom scale.  Text is shrunk less than the layout so
+# that the short names stay readable from far away; above 100 % the regular
+# 18 px font is enlarged with the layout.
+_FONT_SIZES = {
+    0.7: 15, 0.5: 13, 0.35: 11, 0.25: 9, 0.18: 8,
+    1.25: 22, 1.5: 27, 2.0: 36, 2.5: 45, 3.0: 54,
+}
 
 # DearPyGui defaults, scaled down in overview mode
 _NODE_PADDING = (8, 8)
@@ -75,7 +89,7 @@ def short_label(label, limit=SHORT_LABEL_LENGTH):
 
 
 def register_overview_fonts(font_path):
-    """Load the title fonts of the overview levels.
+    """Load the fonts of the zoom levels.
 
     Must be called inside a ``dpg.font_registry()`` block.  Without it the
     overview keeps the regular font.
@@ -101,7 +115,9 @@ def to_logical(view, pivot, scale):
 
 
 class _NodeState:
-    __slots__ = ("logical", "view", "hidden", "images", "label", "own_theme")
+    __slots__ = (
+        "logical", "view", "hidden", "images", "widths", "label", "own_theme",
+    )
 
     def __init__(self, logical):
         self.logical = list(logical)
@@ -112,6 +128,8 @@ class _NodeState:
         self.hidden = []
         # image item -> (configured size to restore, displayed size at 100 %)
         self.images = {}
+        # widget -> configured width to restore (magnification only)
+        self.widths = {}
         # (full title, short title) when the title was shortened
         self.label = None
         # True when the node had no theme and was given the overview one
@@ -119,16 +137,20 @@ class _NodeState:
 
 
 class EditorZoom:
-    """Zoom-out controller for one DearPyGui node editor.
+    """Zoom controller for one DearPyGui node editor.
 
     All methods must be called with the DearPyGui lock held.
     """
 
-    def __init__(self, levels=ZOOM_LEVELS):
+    def __init__(self, levels=ZOOM_LEVELS, zoom_in_levels=ZOOM_IN_LEVELS):
         if not levels or levels[0] != 1.0:
             raise ValueError("the first zoom level must be 1.0")
-        self._levels = tuple(levels)
-        self._index = 0
+        if any(scale <= 1.0 for scale in zoom_in_levels):
+            raise ValueError("zoom-in levels must be above 1.0")
+        # From the biggest magnification to the smallest overview scale
+        self._levels = tuple(sorted(zoom_in_levels, reverse=True)) + tuple(levels)
+        self._normal = len(zoom_in_levels)
+        self._index = self._normal
         self._pivot = [0, 0]
         self._nodes = {}
         # theme -> component holding the overview paddings of its nodes
@@ -145,37 +167,46 @@ class EditorZoom:
         return self._levels[self._index]
 
     @property
+    def is_zoomed(self):
+        """True when the view is not at 100 % (zoomed in or out)."""
+        return self._index != self._normal
+
+    @property
     def is_zoomed_out(self):
-        return self._index != 0
+        return self._index > self._normal
+
+    @property
+    def is_zoomed_in(self):
+        return self._index < self._normal
 
     def zoom_out(self, node_tags, mouse_pos=None):
         return self._set_level(self._index + 1, node_tags, mouse_pos)
 
-    def zoom_in(self, node_tags):
-        return self._set_level(self._index - 1, node_tags)
+    def zoom_in(self, node_tags, mouse_pos=None):
+        return self._set_level(self._index - 1, node_tags, mouse_pos)
 
     def reset(self, node_tags):
-        return self._set_level(0, node_tags)
+        return self._set_level(self._normal, node_tags)
 
     def adopt(self, node_tag, pos_is_logical=True):
-        """Register a node created while zoomed out and show it compacted.
+        """Register a node created while zoomed and show it at the zoom level.
 
         ``pos_is_logical`` tells whether the node was created at a logical
         position (import, paste, undo) or at an on-screen position (next to
         an existing node).
         """
-        if not self.is_zoomed_out or not dpg.does_item_exist(node_tag):
+        if not self.is_zoomed or not dpg.does_item_exist(node_tag):
             return
         pos = dpg.get_item_pos(node_tag)
         logical = pos if pos_is_logical else to_logical(pos, self._pivot, self.scale)
         state = _NodeState(logical)
         self._nodes[node_tag] = state
-        self._compact(node_tag, state)
+        self._prepare(node_tag, state, self.scale)
         self._apply(node_tag, state)
 
     def logical_pos(self, node_tag):
         """Position of the node at 100 %, whatever the current zoom level."""
-        state = self._nodes.get(node_tag) if self.is_zoomed_out else None
+        state = self._nodes.get(node_tag) if self.is_zoomed else None
         if state is None:
             return list(dpg.get_item_pos(node_tag))
         self._sync_logical(node_tag, state)
@@ -183,33 +214,49 @@ class EditorZoom:
 
     def view_to_logical(self, pos):
         """Convert an on-screen position to a logical one."""
-        if not self.is_zoomed_out:
+        if not self.is_zoomed:
             return list(pos)
         return to_logical(pos, self._pivot, self.scale)
 
     # ------------------------------------------------------------------ #
 
-    def _set_level(self, index, node_tags, mouse_pos=None):
+    def _set_level(self, index, node_tags, mouse_pos=None, keep_pivot=False):
         index = max(0, min(len(self._levels) - 1, index))
         if index == self._index:
             return False
 
         node_tags = [tag for tag in node_tags if dpg.does_item_exist(tag)]
+        target = self._levels[index]
 
-        if not self.is_zoomed_out:
+        if (
+            self.is_zoomed
+            and index != self._normal
+            and (target > 1.0) != (self.scale > 1.0)
+        ):
+            # Zoomed in and out nodes are not prepared the same way: go
+            # through the normal view first.
+            pivot = self._pivot
+            self._set_level(self._normal, node_tags)
+            if mouse_pos is None:
+                self._pivot = pivot
+                return self._set_level(index, node_tags, keep_pivot=True)
+            return self._set_level(index, node_tags, mouse_pos)
+
+        if not self.is_zoomed and not keep_pivot:
             # Leaving the normal view: the pivot stays the same until the
             # view is back to 100 %, so the restoration is exact.
             self._pivot = self._find_pivot(node_tags, mouse_pos)
+        if not self.is_zoomed:
             self._nodes = {}
 
         for tag in node_tags:
             state = self._nodes.get(tag)
             if state is None:
                 pos = dpg.get_item_pos(tag)
-                if self.is_zoomed_out:
+                if self.is_zoomed:
                     pos = to_logical(pos, self._pivot, self.scale)
                 state = self._nodes[tag] = _NodeState(pos)
-                self._compact(tag, state)
+                self._prepare(tag, state, target)
             else:
                 self._sync_logical(tag, state)
 
@@ -220,7 +267,7 @@ class EditorZoom:
         self._index = index
         # The paddings depend on the level: they are rebuilt by _apply()
         self._clear_density()
-        if index == 0:
+        if index == self._normal:
             for tag, state in self._nodes.items():
                 self._restore(tag, state)
             self._nodes = {}
@@ -232,6 +279,13 @@ class EditorZoom:
             for tag, state in self._nodes.items():
                 self._apply(tag, state)
         return True
+
+    def _prepare(self, tag, state, scale):
+        """Get a node ready to be displayed at ``scale`` (not 1.0)."""
+        if scale < 1.0:
+            self._compact(tag, state)
+        else:
+            self._collect(tag, state)
 
     def _find_pivot(self, node_tags, mouse_pos):
         """Pivot in editor (grid) coordinates.
@@ -282,6 +336,9 @@ class EditorZoom:
                     width=max(_MIN_THUMBNAIL_SIZE, int(round(width * scale))),
                     height=max(_MIN_THUMBNAIL_SIZE, int(round(height * scale))),
                 )
+        for widget, width in state.widths.items():
+            if dpg.does_item_exist(widget):
+                dpg.configure_item(widget, width=max(1, int(round(width * scale))))
         font = _overview_fonts.get(scale)
         if font is not None:
             dpg.bind_item_font(tag, font)
@@ -378,6 +435,9 @@ class EditorZoom:
         for image, ((width, height), _) in state.images.items():
             if dpg.does_item_exist(image):
                 dpg.configure_item(image, width=width, height=height)
+        for widget, width in state.widths.items():
+            if dpg.does_item_exist(widget):
+                dpg.configure_item(widget, width=width)
         for item in state.hidden:
             if dpg.does_item_exist(item):
                 dpg.configure_item(item, show=True)
@@ -397,6 +457,27 @@ class EditorZoom:
                     self._compact_item(item, state)
         except Exception as exc:
             logger.warning("zoom: could not compact node %s: %s", node_tag, exc)
+
+    def _collect(self, node_tag, state):
+        """Record the image previews and widget widths to magnify."""
+        try:
+            for attribute in dpg.get_item_children(node_tag, _CONTENT_SLOT) or []:
+                for item in dpg.get_item_children(attribute, _CONTENT_SLOT) or []:
+                    self._collect_item(item, state)
+        except Exception as exc:
+            logger.warning("zoom: could not magnify node %s: %s", node_tag, exc)
+
+    def _collect_item(self, item, state):
+        config = dpg.get_item_configuration(item)
+        if self._is_image(item):
+            configured = (config.get("width", 0), config.get("height", 0))
+            state.images[item] = (configured, self._displayed_size(config))
+            return
+        width = config.get("width", 0)
+        if isinstance(width, int) and width > 0:
+            state.widths[item] = width
+        for child in dpg.get_item_children(item, _CONTENT_SLOT) or []:
+            self._collect_item(child, state)
 
     def _compact_item(self, item, state):
         if self._is_image(item):
