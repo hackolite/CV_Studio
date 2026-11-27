@@ -35,6 +35,7 @@ class FakeDpg:
     mvStyleVar_ItemSpacing = "ItemSpacing"
     mvThemeCat_Nodes = "nodes"
     mvThemeCat_Core = "core"
+    mvNode_Attr_Static = "static"
 
     def __init__(self):
         self.items = {}
@@ -59,6 +60,12 @@ class FakeDpg:
     def _new(self, item_type, parent=None, **config):
         self._next_id += 1
         return self.add(self._next_id, item_type, parent=parent, **config)
+
+    def add_node_attribute(self, parent, attribute_type=None):
+        return self._new("mvNodeAttribute", parent=parent, attribute_type=attribute_type)
+
+    def add_spacer(self, parent, width=0, height=0):
+        return self._new("mvSpacer", parent=parent, width=width, height=height)
 
     def add_theme(self):
         return self._new("mvTheme")
@@ -452,3 +459,60 @@ def test_node_added_while_zoomed_in_is_magnified(dpg):
     zoom.reset([first, added])
     assert dpg.get_item_pos(added) == [300, 100]
     assert _size(dpg, "2:Flip:image") == (0, 0)
+
+
+def _add_plain_node(dpg, tag, pos):
+    """Node without image preview: a slider only."""
+    if "editor" not in dpg.items:
+        dpg.add("window", "mvWindowAppItem")
+        dpg.add("editor", "mvNodeEditor", parent="window")
+    dpg.add(tag, "mvNode", parent="editor", label=tag.split(":")[1])
+    dpg.set_item_pos(tag, pos)
+    attr = dpg.add(f"{tag}:attr", "mvNodeAttribute", parent=tag)
+    dpg.add(f"{tag}:slider", "mvSliderInt", parent=attr)
+    return tag
+
+
+def _placeholder_size(dpg, tag):
+    extra = [
+        child for child in dpg.items[tag]["children"]
+        if child != f"{tag}:attr"
+    ]
+    if not extra:
+        return None
+    (spacer,) = dpg.items[extra[0]]["children"]
+    return _size(dpg, spacer)
+
+
+def test_nodes_without_preview_get_a_quarter_of_a_preview_when_zoomed_out(dpg):
+    framed = _add_node(dpg, "1:Blur", [100, 100], image_size=(320, 180))
+    plain = _add_plain_node(dpg, "2:Canny", [500, 300])
+    tags = [framed, plain]
+    before = {tag: dict(item["config"]) for tag, item in dpg.items.items()}
+    zoom = EditorZoom()
+
+    zoom.zoom_out(tags)
+    # Half the width and height of the biggest preview: a quarter of its area
+    assert _size(dpg, "1:Blur:image") == (224, 126)
+    assert _placeholder_size(dpg, plain) == (112, 63)
+    assert _placeholder_size(dpg, framed) is None
+
+    while zoom.zoom_out(tags):
+        pass
+    assert _placeholder_size(dpg, plain) == (29, 16)
+
+    zoom.reset(tags)
+    assert _placeholder_size(dpg, plain) is None
+    assert {tag: dict(item["config"]) for tag, item in dpg.items.items()} == before
+
+
+def test_placeholder_uses_the_default_preview_size_without_images(dpg):
+    plain = _add_plain_node(dpg, "1:Canny", [100, 100])
+    zoom = EditorZoom()
+
+    zoom.zoom_out([plain])
+    assert _placeholder_size(dpg, plain) == (84, 47)
+
+    zoom.reset([plain])
+    zoom.zoom_in([plain])
+    assert _placeholder_size(dpg, plain) is None

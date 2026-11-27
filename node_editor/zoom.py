@@ -11,7 +11,10 @@ Zooming out (overview mode):
 * node titles are shortened (see :func:`short_label`) and, together with the
   node paddings, drawn smaller and smaller as the view moves away,
 * image previews are kept and displayed as thumbnails (resized by the GPU,
-  the textures themselves are untouched).
+  the textures themselves are untouched),
+* nodes without a preview are given an empty area a quarter of the size of
+  a preview (half its width and height), so that they do not become tiny
+  next to the nodes showing images.
 
 Zooming in (magnification, above 100 %):
 
@@ -40,6 +43,11 @@ ZOOM_IN_LEVELS = (1.25, 1.5, 2.0, 2.5, 3.0)
 SHORT_LABEL_LENGTH = 5
 
 _MIN_THUMBNAIL_SIZE = 16
+# Preview size at 100 % used when the graph shows no image
+# (input_window_width / input_window_height of node_editor/setting).
+_DEFAULT_FRAME_SIZE = (240, 135)
+# Size of the empty area of the nodes without preview, relative to a preview
+_PLACEHOLDER_RATIO = 0.5
 _CONTENT_SLOT = 1
 
 # Title font size per zoom scale.  Text is shrunk less than the layout so
@@ -117,6 +125,7 @@ def to_logical(view, pivot, scale):
 class _NodeState:
     __slots__ = (
         "logical", "view", "hidden", "images", "widths", "label", "own_theme",
+        "placeholder",
     )
 
     def __init__(self, logical):
@@ -134,6 +143,8 @@ class _NodeState:
         self.label = None
         # True when the node had no theme and was given the overview one
         self.own_theme = False
+        # Static attribute added to a node without preview while zoomed out
+        self.placeholder = None
 
 
 class EditorZoom:
@@ -159,6 +170,8 @@ class EditorZoom:
         self._own_theme = None
         # Item holding the editor, given the overview theme because it had none
         self._themed_holder = None
+        # Preview size at 100 % that sizes the nodes without preview
+        self._frame_size = _DEFAULT_FRAME_SIZE
 
     _EDITOR = "editor"
 
@@ -202,6 +215,12 @@ class EditorZoom:
         state = _NodeState(logical)
         self._nodes[node_tag] = state
         self._prepare(node_tag, state, self.scale)
+        frame_size = self._frame_size
+        self._frame_size = self._find_frame_size()
+        if self._frame_size != frame_size:
+            for tag, other in self._nodes.items():
+                if other is not state:
+                    self._apply(tag, other)
         self._apply(node_tag, state)
 
     def logical_pos(self, node_tag):
@@ -276,9 +295,22 @@ class EditorZoom:
                     dpg.delete_item(self._own_theme)
                 self._own_theme = None
         else:
+            self._frame_size = self._find_frame_size()
             for tag, state in self._nodes.items():
                 self._apply(tag, state)
         return True
+
+    def _find_frame_size(self):
+        """Biggest preview (at 100 %) of the graph."""
+        sizes = [
+            size
+            for state in self._nodes.values()
+            for _, size in state.images.values()
+            if size[0] > 0 and size[1] > 0
+        ]
+        if not sizes:
+            return _DEFAULT_FRAME_SIZE
+        return max(sizes, key=lambda size: size[0] * size[1])
 
     def _prepare(self, tag, state, scale):
         """Get a node ready to be displayed at ``scale`` (not 1.0)."""
@@ -339,10 +371,31 @@ class EditorZoom:
         for widget, width in state.widths.items():
             if dpg.does_item_exist(widget):
                 dpg.configure_item(widget, width=max(1, int(round(width * scale))))
+        if scale < 1.0 and not state.images:
+            self._place_holder(tag, state)
         font = _overview_fonts.get(scale)
         if font is not None:
             dpg.bind_item_font(tag, font)
         self._densify(tag, state)
+
+    def _place_holder(self, tag, state):
+        """Give a node without preview a quarter of the area of a preview."""
+        scale = self.scale
+        width, height = (
+            max(_MIN_THUMBNAIL_SIZE, int(round(size * _PLACEHOLDER_RATIO * scale)))
+            for size in self._frame_size
+        )
+        try:
+            if state.placeholder is None or not dpg.does_item_exist(state.placeholder):
+                state.placeholder = dpg.add_node_attribute(
+                    parent=tag, attribute_type=dpg.mvNode_Attr_Static,
+                )
+                dpg.add_spacer(parent=state.placeholder, width=width, height=height)
+            else:
+                for spacer in dpg.get_item_children(state.placeholder, _CONTENT_SLOT) or []:
+                    dpg.configure_item(spacer, width=width, height=height)
+        except Exception as exc:
+            logger.warning("zoom: could not size node %s: %s", tag, exc)
 
     def _densify(self, tag, state):
         """Shrink the paddings of the node through its theme.
@@ -423,6 +476,10 @@ class EditorZoom:
             self._themed_holder = None
 
     def _restore(self, tag, state):
+        if state.placeholder is not None:
+            if dpg.does_item_exist(state.placeholder):
+                dpg.delete_item(state.placeholder)
+            state.placeholder = None
         if state.label is not None:
             full, short = state.label
             # Leave the title alone if the node changed it in the meantime
