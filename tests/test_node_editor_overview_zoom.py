@@ -35,6 +35,7 @@ class FakeDpg:
     mvStyleVar_ItemSpacing = "ItemSpacing"
     mvThemeCat_Nodes = "nodes"
     mvThemeCat_Core = "core"
+    mvNode_Attr_Static = "static"
 
     def __init__(self):
         self.items = {}
@@ -59,6 +60,12 @@ class FakeDpg:
     def _new(self, item_type, parent=None, **config):
         self._next_id += 1
         return self.add(self._next_id, item_type, parent=parent, **config)
+
+    def add_node_attribute(self, parent, attribute_type=None):
+        return self._new("mvNodeAttribute", parent=parent, attribute_type=attribute_type)
+
+    def add_spacer(self, parent, width=0, height=0):
+        return self._new("mvSpacer", parent=parent, width=width, height=height)
 
     def add_theme(self):
         return self._new("mvTheme")
@@ -298,7 +305,6 @@ def test_zoom_back_to_normal_restores_everything_exactly(dpg):
     assert all(item["theme"] is None for item in dpg.items.values())
     # A widget the node itself had hidden is not shown by the restoration
     assert not _show(dpg, "1:Blur:hidden")
-    assert zoom.zoom_in(tags) is False
 
 
 def test_pivot_follows_the_mouse(dpg):
@@ -375,3 +381,138 @@ def test_adopt_is_a_no_op_at_normal_zoom(dpg):
     assert _show(dpg, "1:Blur:slider")
     assert zoom.logical_pos(node) == [100, 100]
     assert zoom.view_to_logical([10, 20]) == [10, 20]
+
+
+def test_zoom_in_above_100_percent_magnifies_nodes(dpg, monkeypatch):
+    monkeypatch.setattr(zoom_module, "_overview_fonts", {1.25: "font22", 1.5: "font27"})
+    node = _add_node(dpg, "1:ObjectDetection", [100, 100], image_size=(240, 135))
+    other = _add_node(dpg, "2:Canny", [500, 300])
+    dpg.configure_item("1:ObjectDetection:slider", width=200)
+    zoom = EditorZoom()
+
+    assert zoom.zoom_in([node, other]) is True
+    assert zoom.scale == 1.25 and zoom.is_zoomed_in and zoom.is_zoomed
+    assert not zoom.is_zoomed_out
+    # Contents and full titles stay visible, only bigger
+    assert _show(dpg, "1:ObjectDetection:slider")
+    assert _show(dpg, "1:ObjectDetection:label")
+    assert dpg.items[node]["config"]["label"] == "ObjectDetection"
+    assert _size(dpg, "1:ObjectDetection:image") == (300, 169)
+    assert _size(dpg, "2:Canny:image") == (300, 169)
+    assert dpg.items["1:ObjectDetection:slider"]["config"]["width"] == 250
+    assert dpg.items[node]["font"] == "font22"
+    assert dpg.styles(dpg.get_item_theme(node))["NodePadding"] == (10, 10)
+    # Nodes move away from the pivot (centre of the graph: 300, 200)
+    assert dpg.get_item_pos(node) == [50, 75]
+    assert dpg.get_item_pos(other) == [550, 325]
+    assert zoom.logical_pos(node) == [100, 100]
+
+    zoom.zoom_in([node, other])
+    assert zoom.scale == 1.5
+    assert dpg.items[node]["font"] == "font27"
+
+    zoom.zoom_out([node, other])
+    zoom.zoom_out([node, other])
+    assert zoom.scale == 1.0 and not zoom.is_zoomed
+    assert dpg.get_item_pos(node) == [100, 100]
+    assert _size(dpg, "1:ObjectDetection:image") == (240, 135)
+    assert _size(dpg, "2:Canny:image") == (0, 0)
+    assert dpg.items["1:ObjectDetection:slider"]["config"]["width"] == 200
+    assert dpg.items[node]["font"] is None
+    assert dpg.get_item_theme(node) is None
+
+
+def test_zoom_in_is_bounded_and_reset_restores_everything(dpg):
+    tags = [
+        _add_node(dpg, "1:Blur", [41, 67], image_size=(240, 135)),
+        _add_node(dpg, "2:Canny", [433, 59]),
+    ]
+    before = {tag: dict(item["config"]) for tag, item in dpg.items.items()}
+    zoom = EditorZoom()
+
+    while zoom.zoom_in(tags):
+        pass
+    assert zoom.scale == max(zoom_module.ZOOM_IN_LEVELS)
+
+    zoom.reset(tags)
+    assert {tag: dpg.get_item_pos(tag) for tag in tags} == {
+        "1:Blur": [41, 67], "2:Canny": [433, 59],
+    }
+    assert {tag: dict(item["config"]) for tag, item in dpg.items.items()} == before
+
+
+def test_node_added_while_zoomed_in_is_magnified(dpg):
+    first = _add_node(dpg, "1:Blur", [100, 100])
+    zoom = EditorZoom()
+    zoom.zoom_in([first])
+    zoom.zoom_in([first])
+    assert zoom.scale == 1.5
+
+    added = _add_node(dpg, "2:Flip", [300, 100])
+    zoom.adopt(added)
+
+    assert _show(dpg, "2:Flip:slider")
+    assert _size(dpg, "2:Flip:image") == (360, 202)
+    assert dpg.get_item_pos(added) == [400, 100]
+    assert zoom.view_to_logical([400, 100]) == [300, 100]
+
+    zoom.reset([first, added])
+    assert dpg.get_item_pos(added) == [300, 100]
+    assert _size(dpg, "2:Flip:image") == (0, 0)
+
+
+def _add_plain_node(dpg, tag, pos):
+    """Node without image preview: a slider only."""
+    if "editor" not in dpg.items:
+        dpg.add("window", "mvWindowAppItem")
+        dpg.add("editor", "mvNodeEditor", parent="window")
+    dpg.add(tag, "mvNode", parent="editor", label=tag.split(":")[1])
+    dpg.set_item_pos(tag, pos)
+    attr = dpg.add(f"{tag}:attr", "mvNodeAttribute", parent=tag)
+    dpg.add(f"{tag}:slider", "mvSliderInt", parent=attr)
+    return tag
+
+
+def _placeholder_size(dpg, tag):
+    extra = [
+        child for child in dpg.items[tag]["children"]
+        if child != f"{tag}:attr"
+    ]
+    if not extra:
+        return None
+    (spacer,) = dpg.items[extra[0]]["children"]
+    return _size(dpg, spacer)
+
+
+def test_nodes_without_preview_get_a_quarter_of_a_preview_when_zoomed_out(dpg):
+    framed = _add_node(dpg, "1:Blur", [100, 100], image_size=(320, 180))
+    plain = _add_plain_node(dpg, "2:Canny", [500, 300])
+    tags = [framed, plain]
+    before = {tag: dict(item["config"]) for tag, item in dpg.items.items()}
+    zoom = EditorZoom()
+
+    zoom.zoom_out(tags)
+    # Half the width and height of the biggest preview: a quarter of its area
+    assert _size(dpg, "1:Blur:image") == (224, 126)
+    assert _placeholder_size(dpg, plain) == (112, 63)
+    assert _placeholder_size(dpg, framed) is None
+
+    while zoom.zoom_out(tags):
+        pass
+    assert _placeholder_size(dpg, plain) == (29, 16)
+
+    zoom.reset(tags)
+    assert _placeholder_size(dpg, plain) is None
+    assert {tag: dict(item["config"]) for tag, item in dpg.items.items()} == before
+
+
+def test_placeholder_uses_the_default_preview_size_without_images(dpg):
+    plain = _add_plain_node(dpg, "1:Canny", [100, 100])
+    zoom = EditorZoom()
+
+    zoom.zoom_out([plain])
+    assert _placeholder_size(dpg, plain) == (84, 47)
+
+    zoom.reset([plain])
+    zoom.zoom_in([plain])
+    assert _placeholder_size(dpg, plain) is None
